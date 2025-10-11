@@ -1,3 +1,5 @@
+# 旧的index.js
+```
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const crypto = require('crypto');
@@ -219,3 +221,24 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("internal", "Unable to fetch managers.");
   }
 });
+```
+
+# 现在的index.js
+```
+// functions/index.js
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+
+admin.initializeApp();
+
+// 範例：檢查是否有 Super Admin
+exports.checkAdminExists = functions.https.onCall(async (data, context) => {
+  const db = admin.firestore();
+  const snapshot = await db.collection('users')
+    .where('role', '==', 'super_admin')
+    .limit(1)
+    .get();
+  
+  return { exists: !snapshot.empty };
+});
+``
