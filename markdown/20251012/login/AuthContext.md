@@ -105,13 +105,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // 检查用户是否有特定角色
   const hasRole = (role) => {
     if (!userProfile || !userProfile.roles) return false;
     return userProfile.roles.includes(role);
   };
 
-  // 获取用户主要角色（优先级最高的角色）
   const getPrimaryRole = () => {
     if (!userProfile || !userProfile.roles) return null;
     

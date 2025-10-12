@@ -1,0 +1,123 @@
+{
+  "organizations": {
+
+        "organizationId":"yy=1¥a#FcN%hc7cju6abfk": {
+
+events:{},
+
+
+
+
+
+        },
+          "organizationId":"fngmeRjgf65RAGaUcMxv": {}
+        }
+      },
+      "新增成员": {
+        "events": {
+          "eventId": {
+            "currency": "TWD",
+            "defaultLanguage": "zh-CN",
+            "supportedLanguages": ["zh-CN", "en"],
+            "timezone": "Asia/Kuala_Lumpur",
+            "statistics": {
+              "activeEvents": 0,
+              "totalEvents": 0,
+              "totalTransactions": 0,
+              "totalHours": 0
+            },
+            "status": "active",
+            "updatedAt": "2025年10月11日 下午6:44:53 [UTC+8]"
+          }
+        },
+        "新增权限": {}
+      },
+      "users": {
+        "zzaBn8F3f2iTNeqZ7fRe7Y": {
+          "欢迎使用": {
+            "createdAt": "2025年10月11日 晚上7:18:10 [UTC+8]",
+            "createdBy": "platform_admin",
+            "eventIds": "3w5F",
+            "eventInfo": {
+              "containsStartPeriod": {
+                "endDate": "2025-11-30",
+                "startDate": "2025-09-01"
+              },
+              "description": {
+                "en": "華(中)中2025宣交会",
+                "zh-CN": "華(中)中2025宣交会"
+              },
+              "fairDates": "2025-11-11",
+              "fairTime": "08:00-18:00",
+              "location": "双循坏本为3",
+              "purpose": "服考为公体市玉会"
+            },
+            "systemPeriod": {
+              "cloudDate": "2025-1-01",
+              "openDate": "2025-09-01"
+            },
+            "voucherSalesPeriod": {
+              "endDate": "2025-11-11",
+              "startDate": "2025-09-01"
+            },
+            "eventManager": null,
+            "eventName": {
+              "en": "中区5 km 11aa Cherry Fair",
+              "zh-CN": "2025区體坊小中学少壯会"
+            },
+            "settings": {
+              "allowCustomerRegistration": true,
+              "multiLanguage": true,
+              "pointsAndInstallation": 1,
+              "requireOTP": true,
+              "totalCapital": 2000000
+            },
+            "statistics": {
+              "assignedCapital": 0,
+              "availableCapital": 2000000,
+              "totalCustomers": 0,
+              "totalManagers": 0,
+              "totalMerchants": 0,
+              "totalPointsGenerated": 0,
+              "totalPointsIssued": 0,
+              "totalSellers": 0,
+              "totalTransactions": 0,
+              "totalUsers": 0
+            },
+            "status": "planning",
+            "updatedAt": "2025年10月11日 晚上7:32:32 [UTC+8]"
+          }
+        }
+      },
+      "phone_6012345678X": {
+        "欢迎使用": {
+          "phone_6012345678X": "phone_6012345678",
+          "phone_6012345678": {},
+          "phone_6012345678": {
+            "accountStatus": {},
+            "组织信息": {
+              "releaseName": "測試小課",
+              "email": "info@email.com",
+              "orgLokasiNm": "ACon Customer",
+              "IsThemeVerified": true,
+              "password(Hash)": "Htfe68Hk$i2cdb30b4bbSa8968909f71b4b947189c0e06baa6da9",
+              "password(Salt)": "6743fc3a4c02c07e6e27e674265933ae6c",
+              "phoneNumber": "60123456789"
+            },
+            "identifyTag": "student",
+            "relatedProfileData": {
+              "customer": {
+                "currentBalance": 1000,
+                "totalPointsConsumed": 0,
+                "totalPointsPurchased": 1000
+              },
+              "roles": {
+                "customer": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

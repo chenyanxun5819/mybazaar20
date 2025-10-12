@@ -38,26 +38,28 @@ function validatePassword(password) {
  */
 async function loginWithPin(phoneNumber, password, organizationId, eventId) {
   try {
-    // 验证手机号格式
     const normalized = normalizePhone(phoneNumber);
     if (!normalized) {
       throw new Error('手机号格式不正确，请输入01开头的10-11位数字');
     }
 
-    // 验证密码
     if (!validatePassword(password)) {
       throw new Error('密码至少需要8个字符，且必须包含英文字母和数字');
     }
 
-    // 验证 organizationId 和 eventId
     if (!organizationId || !eventId) {
-      throw new Error('缺少組織或活動資訊');
+      throw new Error('缺少组织或活动资讯');
     }
 
-    console.log('[authService] Calling loginWithPin function');
+    console.log('[authService] Calling loginWithPin function with:', {
+      phoneNumber: normalized,
+      organizationId,
+      eventId
+    });
     
-    // 调用 Cloud Function
     const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
+    
+    // 🔥 确保这样传参
     const result = await loginWithPinFn({ 
       phoneNumber: normalized, 
       pin: password,
@@ -65,16 +67,18 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
       eventId
     });
 
+    console.log('[authService] Function call result:', result);
+
     const data = result.data;
-    const customToken = data?.customToken || data?.token || data?.custom_token;
+    const customToken = data?.customToken;
 
     if (!customToken) {
+      console.error('[authService] No custom token in response:', data);
       throw new Error(data?.message || '密码验证失败');
     }
 
     console.log('[authService] Got custom token, signing in...');
     
-    // 使用 Custom Token 登录 Firebase Auth
     await signInWithCustomToken(auth, customToken);
 
     console.log('[authService] Login successful');
@@ -82,18 +86,28 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
     return {
       success: true,
       user: data,
+      userProfile: data.userProfile,
       message: '登录成功'
     };
   } catch (error) {
-    console.error('[authService] Login error:', error);
+    console.error('[authService] Login error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details
+    });
     
-    // 处理错误信息
     let errorMessage = '登录失败，请确认手机号与密码';
     
     if (error.code === 'not-found') {
       errorMessage = '查无此手机号码';
     } else if (error.code === 'permission-denied') {
       errorMessage = '密码错误';
+    } else if (error.code === 'invalid-argument') {
+      errorMessage = error.message || '请提供完整信息';
+    } else if (error.code === 'internal') {
+      errorMessage = '服务器错误，请稍后重试';
+    } else if (error.code === 'unavailable') {
+      errorMessage = '网络连接失败，请检查网络';
     } else if (error.message) {
       errorMessage = error.message;
     }
