@@ -1,0 +1,4 @@
+name: projects/mybazaar-c4881/policies/iam.disableServiceAccountKeyCreation
+spec:
+  rules:
+    - enforce: false

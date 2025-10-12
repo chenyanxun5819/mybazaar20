@@ -15,16 +15,31 @@ exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
 
 exports.loginWithPin = functions.https.onCall(async (data, context) => {
-  const { phoneNumber, pin } = data.data || data;
+  const { phoneNumber, pin, organizationId, eventId } = data.data || data;
+  
+  console.log('[loginWithPin] Received:', { phoneNumber, organizationId, eventId, hasPin: !!pin });
+  
   if (!phoneNumber || !pin) {
-    throw new functions.https.HttpsError("invalid-argument", "請提供手機號碼與PIN碼");
+    throw new functions.https.HttpsError("invalid-argument", "请提供手机号码与PIN码");
   }
-  const usersSnap = await admin.firestore().collection("users")
+  if (!organizationId || !eventId) {
+    throw new functions.https.HttpsError("invalid-argument", "请提供组织与活动信息");
+  }
+  
+  // 使用正确的路径查询用户
+  const collectionPath = `organizations/${organizationId}/events/${eventId}/users`;
+  console.log('[loginWithPin] Querying path:', collectionPath);
+  
+  const usersSnap = await admin.firestore()
+    .collection(collectionPath)
     .where("basicInfo.phoneNumber", "==", phoneNumber)
     .limit(1)
     .get();
+  
+  console.log('[loginWithPin] Query result:', { empty: usersSnap.empty, size: usersSnap.size });
+    
   if (usersSnap.empty) {
-    throw new functions.https.HttpsError("not-found", "查無此手機號碼");
+    throw new functions.https.HttpsError("not-found", "查无此手机号码");
   }
   const userDoc = usersSnap.docs[0];
   const userData = userDoc.data();
@@ -33,9 +48,9 @@ exports.loginWithPin = functions.https.onCall(async (data, context) => {
   const storedHash = userData.basicInfo.passwordHash || userData.basicInfo.pinHash;
   
   if (passwordHash !== storedHash) {
-    throw new functions.https.HttpsError("permission-denied", "密碼錯誤");
+    throw new functions.https.HttpsError("permission-denied", "密码错误");
   }
-  // 馬來西亞國碼是 60
+  // 马来西亚国码是 60
   const authUid = `phone_60${phoneNumber.replace(/^0/, "")}`;
   let userRecord;
   try {

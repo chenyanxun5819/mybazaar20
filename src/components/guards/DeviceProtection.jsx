@@ -23,7 +23,7 @@ export const useDeviceDetect = () => {
   return isMobile;
 };
 
-// 設備警告組件
+// 设备警告组件
 const DeviceWarning = ({ requiredDevice }) => {
   const isMobileRequired = requiredDevice === 'mobile';
   
@@ -31,18 +31,18 @@ const DeviceWarning = ({ requiredDevice }) => {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.icon}>⚠️</div>
-        <h1 style={styles.title}>設備不符</h1>
+        <h1 style={styles.title}>设备不符</h1>
         <p style={styles.message}>
           {isMobileRequired 
-            ? '此頁面僅供行動裝置瀏覽\n請使用手機或平板訪問'
-            : '此頁面僅供桌面電腦瀏覽\n請使用電腦訪問此頁面'
+            ? '此页面仅供移动设备浏览\n请使用手机或平板访问'
+            : '此页面仅供桌面电脑浏览\n请使用电脑访问此页面'
           }
         </p>
         <div style={styles.info}>
           <p style={styles.infoText}>
             {isMobileRequired 
-              ? '📱 請使用手機掃描 QR Code 或直接在手機瀏覽器中打開此連結'
-              : '🖥️ 請在桌面電腦上打開此連結以訪問管理介面'
+              ? '📱 请使用手机扫描 QR Code 或直接在手机浏览器中打开此链接'
+              : '🖥️ 请在桌面电脑上打开此链接以访问管理界面'
             }
           </p>
         </div>

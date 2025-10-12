@@ -36,7 +36,7 @@ function validatePassword(password) {
  * @param {string} password - 密码
  * @returns {Promise<Object>} - 登录结果
  */
-async function loginWithPin(phoneNumber, password) {
+async function loginWithPin(phoneNumber, password, organizationId, eventId) {
   try {
     // 验证手机号格式
     const normalized = normalizePhone(phoneNumber);
@@ -49,13 +49,20 @@ async function loginWithPin(phoneNumber, password) {
       throw new Error('密码至少需要8个字符，且必须包含英文字母和数字');
     }
 
+    // 验证 organizationId 和 eventId
+    if (!organizationId || !eventId) {
+      throw new Error('缺少組織或活動資訊');
+    }
+
     console.log('[authService] Calling loginWithPin function');
     
     // 调用 Cloud Function
     const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
     const result = await loginWithPinFn({ 
       phoneNumber: normalized, 
-      pin: password 
+      pin: password,
+      organizationId,
+      eventId
     });
 
     const data = result.data;

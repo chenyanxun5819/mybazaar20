@@ -17,6 +17,7 @@
   "dependencies": {
     "date-fns": "^4.1.0",
     "firebase": "^12.4.0",
+    "firebase-admin": "^13.5.0",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.545.0",
     "qrcode": "^1.5.4",

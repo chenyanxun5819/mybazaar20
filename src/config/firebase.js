@@ -21,9 +21,16 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
-// 在本地開發時連接到 Emulator（可選）
+// 在本地開發時連接到 Emulator
 if (import.meta.env.DEV) {
-  // connectAuthEmulator(auth, 'http://localhost:9099');
-  // connectFirestoreEmulator(db, 'localhost', 8080);
-  // connectFunctionsEmulator(functions, 'localhost', 5001);
+  const { connectAuthEmulator } = await import('firebase/auth');
+  // const { connectFunctionsEmulator } = await import('firebase/functions');
+  
+  connectAuthEmulator(auth, 'http://localhost:9099');
+  // connectFunctionsEmulator(functions, 'localhost', 5001);  // 暫時使用真實 Functions
+  
+  console.log('🔧 Firebase Configuration:');
+  console.log('   - Auth: Emulator (localhost:9099)');
+  console.log('   - Firestore: Production');
+  console.log('   - Functions: Production (需要先部署最新版本)');
 }

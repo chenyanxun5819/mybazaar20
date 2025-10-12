@@ -69,7 +69,17 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setLoading(true);
       
-      const result = await authService.loginWithPin(phoneNumber, password);
+      console.log('[AuthContext] Login called with:', {
+        phoneNumber,
+        organizationId,
+        eventId
+      });
+      
+      if (!organizationId || !eventId) {
+        throw new Error('无法获取组织或活动信息，请重新加载页面');
+      }
+      
+      const result = await authService.loginWithPin(phoneNumber, password, organizationId, eventId);
       
       // onAuthStateChanged 会自动处理后续
       return result;

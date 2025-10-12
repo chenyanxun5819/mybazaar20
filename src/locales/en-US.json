@@ -1,0 +1,47 @@
+{
+  "common": {
+    "login": "Login",
+    "logout": "Logout",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "submit": "Submit",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading...",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning"
+  },
+  "auth": {
+    "loginTitle": "User Login",
+    "loginSubtitle": "Please enter your phone number and password",
+    "phoneNumber": "Phone Number",
+    "password": "Password",
+    "phoneNumberPlaceholder": "01xxxxxxxx",
+    "passwordPlaceholder": "At least 8 characters, letters and numbers",
+    "phoneNumberHint": "Malaysian phone number, starts with 01",
+    "loginButton": "Login",
+    "loggingIn": "Logging in...",
+    "noAccount": "Don't have an account? Please contact admin",
+    "loginSuccess": "Login successful",
+    "loginFailed": "Login failed, please try again",
+    "invalidPhone": "Invalid phone number format",
+    "invalidPassword": "Password must be at least 8 characters",
+    "emptyFields": "Please fill in phone number and password",
+    "welcomeBack": "Welcome Back",
+    "pleaseLogin": "Please login to your account"
+  },
+  "errors": {
+    "networkError": "Network error, please check your connection",
+    "serverError": "Server error, please try again later",
+    "authError": "Authentication failed, please login again",
+    "notFound": "Phone number not found",
+    "wrongPassword": "Wrong password",
+    "unknownError": "Unknown error"
+  },
+  "features": {
+    "secure": "Secure & Reliable",
+    "easyToUse": "Easy to Use",
+    "realtime": "Real-time Updates"
+  }
+}

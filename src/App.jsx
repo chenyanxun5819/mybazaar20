@@ -1,25 +1,31 @@
 // src/App.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
 import PlatformDashboard from './views/platform/PlatformDashboard';
+import PhoneLogin from './views/phone/auth/Login';
+import DesktopLogin from './views/desktop/auth/Login';
 import { MobileGuard, DesktopGuard } from './components/guards/DeviceProtection';
 import { EventProvider } from './contexts/EventContext';
+import { AuthProvider } from './contexts/AuthContext';
 
 // Placeholder 組件（之後實現）
 const PhonePlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
     <h2>手機版首頁</h2>
-    <p>此功能將在第二階段實現</p>
+    <p>此功能將在第三階段實現</p>
   </div>
 );
 
 const DesktopPlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
     <h2>桌機版首頁</h2>
-    <p>此功能將在第二階段實現</p>
+    <p>此功能將在第三階段實現</p>
   </div>
 );
 
 function App() {
+  // 臨時調試
+  console.log('Current path:', window.location.pathname);
+  
   return (
     <Routes>
       {/* Platform Admin 路由 */}
@@ -29,20 +35,46 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 活動路由 - 手機版 */}
-      <Route path="/:orgCode-:eventCode/phone" element={
+      {/* 活動路由 - 手機版登入 */}
+      <Route path="/:eventSlug/phone/login" element={
         <MobileGuard>
           <EventProvider>
-            <PhonePlaceholder />
+            <AuthProvider>
+              <PhoneLogin />
+            </AuthProvider>
           </EventProvider>
         </MobileGuard>
       } />
 
-      {/* 活動路由 - 桌機版 */}
-      <Route path="/:orgCode-:eventCode/desktop" element={
+      {/* 活動路由 - 手機版首頁（需要登入） */}
+      <Route path="/:eventSlug/phone" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <PhonePlaceholder />
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* 活動路由 - 桌機版登入 */}
+      <Route path="/:eventSlug/desktop/login" element={
         <DesktopGuard>
           <EventProvider>
-            <DesktopPlaceholder />
+            <AuthProvider>
+              <DesktopLogin />
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
+      } />
+
+      {/* 活動路由 - 桌機版首頁（需要登入） */}
+      <Route path="/:eventSlug/desktop" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <DesktopPlaceholder />
+            </AuthProvider>
           </EventProvider>
         </DesktopGuard>
       } />
@@ -52,9 +84,30 @@ function App() {
       
       {/* 404 */}
       <Route path="*" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h1>404</h1>
-          <p>頁面不存在</p>
+        <div style={{ 
+          padding: '2rem', 
+          textAlign: 'center',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
+          <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>頁面不存在</p>
+          <a 
+            href="/platform/admin" 
+            style={{
+              marginTop: '1rem',
+              padding: '0.75rem 1.5rem',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              textDecoration: 'none',
+              borderRadius: '8px'
+            }}
+          >
+            回到首頁
+          </a>
         </div>
       } />
     </Routes>
