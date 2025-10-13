@@ -5,109 +5,135 @@ import { httpsCallable } from 'firebase/functions';
 import { query, where, collection, getDocs } from 'firebase/firestore';
 
 /**
- * 验证手机号格式（马来西亚格式）
- * @param {string} phoneNumber - 手机号
- * @returns {string|null} - 规范化的手机号或 null
+ * 🔥 修復：標準化手機號碼格式
  */
 function normalizePhone(phoneNumber) {
-  const trimmed = phoneNumber.trim();
-  // 马来西亚手机号：01开头，后接8-9位数字（总共10-11位）
-  if (/^01\d{8,9}$/.test(trimmed)) {
-    return trimmed;
+  if (!phoneNumber) return null;
+  
+  // 移除所有空格和特殊字符
+  let cleaned = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
+  
+  // 如果以 +60 或 60 開頭，移除它
+  if (cleaned.startsWith('+60')) {
+    cleaned = cleaned.substring(3);
+  } else if (cleaned.startsWith('60')) {
+    cleaned = cleaned.substring(2);
   }
-  return null;
+  
+  // 如果以 0 開頭，移除它
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.substring(1);
+  }
+  
+  // 驗證格式：應該是 1 開頭，後接 8-9 位數字（馬來西亞手機號）
+  if (!/^1\d{8,9}$/.test(cleaned)) {
+    return null;
+  }
+  
+  // 返回標準格式：0 + 數字（例如：0123456789）
+  return '0' + cleaned;
 }
 
 /**
- * 验证密码强度
- * @param {string} password - 密码
- * @returns {boolean} - 是否符合要求
+ * 驗證密碼強度
  */
 function validatePassword(password) {
-  if (password.length < 8) return false;
+  if (!password || password.length < 8) return false;
   const hasLetter = /[a-zA-Z]/.test(password);
   const hasNumber = /\d/.test(password);
   return hasLetter && hasNumber;
 }
 
 /**
- * 使用 PIN 码登录
- * @param {string} phoneNumber - 手机号
- * @param {string} password - 密码
- * @returns {Promise<Object>} - 登录结果
+ * 🔥 修復：使用 PIN 碼登入
  */
 async function loginWithPin(phoneNumber, password, organizationId, eventId) {
   try {
-    const normalized = normalizePhone(phoneNumber);
-    if (!normalized) {
-      throw new Error('手机号格式不正确，请输入01开头的10-11位数字');
-    }
-
-    if (!validatePassword(password)) {
-      throw new Error('密码至少需要8个字符，且必须包含英文字母和数字');
-    }
-
-    if (!organizationId || !eventId) {
-      throw new Error('缺少组织或活动资讯');
-    }
-
-    console.log('[authService] Calling loginWithPin function with:', {
-      phoneNumber: normalized,
-      organizationId,
-      eventId
+    console.log('[authService] Login attempt:', { 
+      phoneNumber, 
+      organizationId, 
+      eventId 
     });
     
-    const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
+    // 驗證參數
+    if (!phoneNumber || !password || !organizationId || !eventId) {
+      throw new Error('請提供完整的登入信息');
+    }
     
-    // 🔥 确保这样传参
-    const result = await loginWithPinFn({ 
-      phoneNumber: normalized, 
+    // 標準化手機號碼
+    const normalized = normalizePhone(phoneNumber);
+    if (!normalized) {
+      throw new Error('手機號格式不正確，請輸入 01 開頭的 10-11 位數字');
+    }
+    
+    console.log('[authService] Normalized phone:', normalized);
+    
+    // 驗證密碼
+    if (!validatePassword(password)) {
+      throw new Error('密碼至少需要 8 個字符，且必須包含英文字母和數字');
+    }
+    
+    // 🔥 調用 Cloud Function - 使用 httpsCallable (v2 onCall 自動處理 CORS)
+    console.log('[authService] Calling Cloud Function...');
+    
+    const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
+    const result = await loginWithPinFn({
+      phoneNumber: normalized,
       pin: password,
       organizationId,
       eventId
     });
-
-    console.log('[authService] Function call result:', result);
-
-    const data = result.data;
-    const customToken = data?.customToken;
-
-    if (!customToken) {
-      console.error('[authService] No custom token in response:', data);
-      throw new Error(data?.message || '密码验证失败');
-    }
-
-    console.log('[authService] Got custom token, signing in...');
     
-    await signInWithCustomToken(auth, customToken);
-
-    console.log('[authService] Login successful');
+    console.log('[authService] Cloud Function response received');
+    const data = result.data;
+    console.log('[authService] Response data:', {
+      hasCustomToken: !!data?.customToken,
+      hasUserProfile: !!data?.userProfile
+    });
+    
+    if (!data?.customToken) {
+      console.error('[authService] No custom token in response');
+      throw new Error(data?.message || '登入失敗：未收到認證令牌');
+    }
+    
+    // 🔥 使用自定義令牌登入 Firebase Auth
+    console.log('[authService] Signing in with custom token...');
+    try {
+      await signInWithCustomToken(auth, data.customToken);
+      console.log('[authService] Firebase Auth sign-in successful');
+    } catch (authError) {
+      console.error('[authService] Firebase Auth error:', authError);
+      throw new Error('認證失敗，請重試');
+    }
     
     return {
       success: true,
       user: data,
       userProfile: data.userProfile,
-      message: '登录成功'
+      message: '登入成功'
     };
+    
   } catch (error) {
-    console.error('[authService] Login error details:', {
+    console.error('[authService] Login error:', {
+      name: error.name,
       code: error.code,
       message: error.message,
-      details: error.details
+      stack: error.stack
     });
     
-    let errorMessage = '登录失败，请确认手机号与密码';
+    // 🔥 統一錯誤處理
+    let errorMessage = '登入失敗';
     
     if (error.code === 'not-found') {
-      errorMessage = '查无此手机号码';
+      errorMessage = '查無此手機號碼，請確認後重試';
     } else if (error.code === 'permission-denied') {
-      errorMessage = '密码错误';
+      errorMessage = '密碼錯誤，請重新輸入';
     } else if (error.code === 'invalid-argument') {
-      errorMessage = error.message || '请提供完整信息';
+      errorMessage = error.message || '輸入資料格式不正確';
     } else if (error.code === 'internal') {
-      errorMessage = '服务器错误，请稍后重试';
-    } else if (error.code === 'unavailable') {
-      errorMessage = '网络连接失败，请检查网络';
+      errorMessage = '服務器內部錯誤，請稍後重試';
+    } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
+      errorMessage = '網絡連接失敗，請檢查網絡後重試';
     } else if (error.message) {
       errorMessage = error.message;
     }
@@ -130,14 +156,9 @@ async function logout() {
 }
 
 /**
- * 根据 authUid 获取用户资料（新架构）
- * @param {string} authUid - Firebase Auth UID
- * @param {string} orgId - 组织 ID（必填）
- * @param {string} eventId - 活动 ID（必填）
- * @returns {Promise<Object|null>} - 用户资料
+ * 🔥 修復：根據 authUid 獲取用戶資料
  */
 async function getUserProfile(authUid, orgId, eventId) {
-  // 验证必填参数
   if (!authUid || !orgId || !eventId) {
     throw new Error('getUserProfile requires authUid, orgId, and eventId');
   }
@@ -154,12 +175,33 @@ async function getUserProfile(authUid, orgId, eventId) {
     const querySnapshot = await getDocs(q);
     
     if (querySnapshot.empty) {
+      // 🔥 嘗試查詢其他可能的 authUid 字段
+      const alternativeFields = ['accountStatus.authUid', 'authId', 'authMid'];
+      
+      for (const field of alternativeFields) {
+        const altQ = query(
+          collection(db, userCollectionPath),
+          where(field, '==', authUid)
+        );
+        
+        const altSnapshot = await getDocs(altQ);
+        if (!altSnapshot.empty) {
+          console.log(`[authService] Found user with ${field}`);
+          const userDoc = altSnapshot.docs[0];
+          return {
+            id: userDoc.id,
+            orgId,
+            eventId,
+            ...userDoc.data()
+          };
+        }
+      }
+      
       console.warn('[authService] No user profile found for authUid:', authUid);
       return null;
     }
     
     const userDoc = querySnapshot.docs[0];
-    
     return {
       id: userDoc.id,
       orgId,
@@ -173,21 +215,17 @@ async function getUserProfile(authUid, orgId, eventId) {
 }
 
 /**
- * 修改密码
- * @param {string} phoneNumber - 手机号
- * @param {string} currentPassword - 当前密码
- * @param {string} newPassword - 新密码
- * @returns {Promise<Object>} - 修改结果
+ * 修改密碼
  */
 async function changePassword(phoneNumber, currentPassword, newPassword) {
   try {
     const normalized = normalizePhone(phoneNumber);
     if (!normalized) {
-      throw new Error('手机号格式不正确');
+      throw new Error('手機號格式不正確');
     }
 
     if (!validatePassword(newPassword)) {
-      throw new Error('新密码至少需要8个字符，且必须包含英文字母和数字');
+      throw new Error('新密碼至少需要 8 個字符，且必須包含英文字母和數字');
     }
 
     const changePasswordFn = httpsCallable(functions, 'changePassword');
@@ -200,21 +238,18 @@ async function changePassword(phoneNumber, currentPassword, newPassword) {
     return result.data;
   } catch (error) {
     console.error('[authService] Change password error:', error);
-    throw new Error(error.message || '修改密码失败');
+    throw new Error(error.message || '修改密碼失敗');
   }
 }
 
 /**
- * 发送 OTP（用于注册等场景）
- * @param {string} phoneNumber - 手机号
- * @param {string} pinCode - PIN 码
- * @returns {Promise<Object>} - 包含 sessionId
+ * 發送 OTP
  */
 async function sendOtp(phoneNumber, pinCode) {
   try {
     const normalized = normalizePhone(phoneNumber);
     if (!normalized) {
-      throw new Error('手机号格式不正确');
+      throw new Error('手機號格式不正確');
     }
 
     const sendOtpFn = httpsCallable(functions, 'sendOtpToPhone');
@@ -226,11 +261,11 @@ async function sendOtp(phoneNumber, pinCode) {
     return result.data;
   } catch (error) {
     console.error('[authService] Send OTP error:', error);
-    throw new Error(error.message || '发送 OTP 失败');
+    throw new Error(error.message || '發送 OTP 失敗');
   }
 }
 
-// 导出所有函数
+// 導出所有函數
 export const authService = {
   loginWithPin,
   logout,

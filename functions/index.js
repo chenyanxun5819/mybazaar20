@@ -17,89 +17,176 @@ exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
 
-// 🔥 修正：不使用 .region() 或使用正确的语法
+// 🔥 添加 CORS 中间件
+const cors = require('cors')({
+  origin: true, // 允许所有来源（开发环境）
+  credentials: true
+});
+
+// 标准化手机号码格式
+function normalizePhoneNumber(phoneNumber) {
+  let cleaned = phoneNumber.replace(/[\s\-\(\)]/g, '');
+  
+  if (cleaned.startsWith('+60')) {
+    cleaned = cleaned.substring(3);
+  } else if (cleaned.startsWith('60')) {
+    cleaned = cleaned.substring(2);
+  }
+  
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.substring(1);
+  }
+  
+  return cleaned;
+}
+
+// 🔥 修复：loginWithPin 函數 - 使用 v1 onCall
 exports.loginWithPin = functions.https.onCall(async (data, context) => {
-  // 🔥 恢复兼容两种传参方式
-  const { phoneNumber, pin, organizationId, eventId } = data.data || data;
-  
-  console.log('[loginWithPin] Received:', { 
-    phoneNumber, 
-    organizationId, 
-    eventId, 
-    hasPin: !!pin,
-    hasContext: !!context,
-    rawData: data  // 🔥 添加这行来调试
-  });
-  
-  if (!phoneNumber || !pin) {
-    throw new functions.https.HttpsError("invalid-argument", "请提供手机号码与PIN码");
-  }
-  if (!organizationId || !eventId) {
-    throw new functions.https.HttpsError("invalid-argument", "请提供组织与活动信息");
-  }
-  
-  const collectionPath = `organizations/${organizationId}/events/${eventId}/users`;
-  console.log('[loginWithPin] Querying path:', collectionPath);
-  
-  const usersSnap = await admin.firestore()
-    .collection(collectionPath)
-    .where("basicInfo.phoneNumber", "==", phoneNumber)
-    .limit(1)
-    .get();
-  
-  console.log('[loginWithPin] Query result:', { empty: usersSnap.empty, size: usersSnap.size });
-    
-  if (usersSnap.empty) {
-    throw new functions.https.HttpsError("not-found", "查无此手机号码");
-  }
-  
-  const userDoc = usersSnap.docs[0];
-  const userData = userDoc.data();
-  const passwordSalt = userData.basicInfo.passwordSalt || userData.basicInfo.pinSalt;
-  const passwordHash = crypto.createHash("sha256").update(pin + passwordSalt).digest("hex");
-  const storedHash = userData.basicInfo.passwordHash || userData.basicInfo.pinHash;
-  
-  if (passwordHash !== storedHash) {
-    throw new functions.https.HttpsError("permission-denied", "密码错误");
-  }
-  
-  const authUid = `phone_60${phoneNumber.replace(/^0/, "")}`;
-  let userRecord;
   try {
-    userRecord = await admin.auth().getUser(authUid);
-  } catch (error) {
-    userRecord = await admin.auth().createUser({
-      uid: authUid,
-      displayName: userData.basicInfo.chineseName || phoneNumber
+    // 从 data 获取数据
+    const { phoneNumber, pin, organizationId, eventId } = data;
+    
+    console.log('[loginWithPin] Received:', { 
+      phoneNumber, 
+      organizationId, 
+      eventId, 
+      hasPin: !!pin
     });
-  }
-  
-  const customToken = await admin.auth().createCustomToken(authUid);
-  
-  if (userData.authUid !== authUid) {
-    console.log(`[loginWithPin] Updating authUid from ${userData.authUid} to ${authUid}`);
-    await userDoc.ref.update({ authUid });
-  }
-  
-  // 🔥 返回完整的用户资料
-  return {
-    customToken,
-    userProfile: {
+    
+    // 验证必填字段
+    if (!phoneNumber || !pin) {
+      throw new functions.https.HttpsError('invalid-argument', '请提供手机号码与密码');
+    }
+    if (!organizationId || !eventId) {
+      throw new functions.https.HttpsError('invalid-argument', '请提供组织与活动信息');
+    }
+    
+    // 标准化手机号码
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    console.log('[loginWithPin] Normalized phone:', normalizedPhone);
+    
+    // 正确的集合路径
+    const collectionPath = `organizations/${organizationId}/events/${eventId}/users`;
+    console.log('[loginWithPin] Querying path:', collectionPath);
+    
+    // 查询时尝试多种手机号格式
+    const phoneVariants = [
+      normalizedPhone,
+      `0${normalizedPhone}`,
+      `60${normalizedPhone}`,
+      phoneNumber
+    ];
+    
+    console.log('[loginWithPin] Trying phone variants:', phoneVariants);
+    
+    let userDoc = null;
+    let usersSnap = null;
+    
+    // 尝试每种格式
+    for (const variant of phoneVariants) {
+      usersSnap = await admin.firestore()
+        .collection(collectionPath)
+        .where("basicInfo.phoneNumber", "==", variant)
+        .limit(1)
+        .get();
+      
+      if (!usersSnap.empty) {
+        userDoc = usersSnap.docs[0];
+        console.log('[loginWithPin] Found user with phone variant:', variant);
+        break;
+      }
+    }
+    
+    if (!userDoc) {
+      console.log('[loginWithPin] User not found for any phone variant');
+      throw new functions.https.HttpsError('not-found', '查无此手机号码');
+    }
+    
+    const userData = userDoc.data();
+    console.log('[loginWithPin] User data found:', {
+      id: userDoc.id,
+      phoneNumber: userData.basicInfo?.phoneNumber,
+      roles: userData.roles
+    });
+    
+    // 验证密码
+    const passwordSalt = userData.basicInfo?.passwordSalt || userData.basicInfo?.pinSalt;
+    const storedHash = userData.basicInfo?.passwordHash || userData.basicInfo?.pinHash;
+    
+    if (!passwordSalt || !storedHash) {
+      throw new functions.https.HttpsError('failed-precondition', '用户密码资料不完整');
+    }
+    
+    const passwordHash = crypto.createHash("sha256").update(pin + passwordSalt).digest("hex");
+    
+    if (passwordHash !== storedHash) {
+      throw new functions.https.HttpsError('permission-denied', '密码错误');
+    }
+    
+    // 生成或获取 authUid
+    const authUid = `phone_60${normalizedPhone}`;
+    console.log('[loginWithPin] Using authUid:', authUid);
+    
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUser(authUid);
+      console.log('[loginWithPin] Existing auth user found');
+    } catch (error) {
+      console.log('[loginWithPin] Creating new auth user');
+      userRecord = await admin.auth().createUser({
+        uid: authUid,
+        displayName: userData.basicInfo?.englishName || userData.basicInfo?.chineseName || phoneNumber
+      });
+    }
+    
+    // 生成自定义令牌
+    const customToken = await admin.auth().createCustomToken(authUid);
+    
+    // 更新用户文档的 authUid（如果不存在或不一致）
+    const currentAuthUid = userData.authUid || userData.authId || userData.accountStatus?.authUid;
+    if (currentAuthUid !== authUid) {
+      console.log(`[loginWithPin] Updating authUid from ${currentAuthUid} to ${authUid}`);
+      await userDoc.ref.update({ 
+        authUid: authUid,
+        'accountStatus.authUid': authUid,
+        'accountStatus.updatedAt': new Date()
+      });
+    }
+    
+    // 构建返回的用户资料
+    const userProfile = {
       id: userDoc.id,
       orgId: organizationId,
       eventId: eventId,
       authUid: authUid,
       basicInfo: userData.basicInfo,
-      roles: userData.roles,
-      identityTag: userData.identityTag || ""
-    },
-    chineseName: userData.basicInfo.chineseName,
-    roles: userData.roles,
-    redirectUrl: getRedirectUrl(userData.roles)
-  };
+      roles: userData.roles || [],
+      identityTag: userData.basicInfo?.identityTag || "",
+      roleSpecificData: userData.roleSpecificData || {}
+    };
+    
+    console.log('[loginWithPin] Login successful, returning profile');
+    
+    return {
+      customToken,
+      userProfile,
+      chineseName: userData.basicInfo?.chineseName || "",
+      roles: userData.roles || [],
+      redirectUrl: getRedirectUrl(userData.roles || [])
+    };
+    
+  } catch (error) {
+    console.error('[loginWithPin] Error:', error);
+    
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    
+    throw new functions.https.HttpsError('internal', error.message || '登入失败，请稍后重试');
+  }
 });
 
-
+// changePassword 函数
 exports.changePassword = functions.https.onCall(async (data, context) => {
   const { phoneNumber, currentPassword, newPassword } = data;
   
@@ -107,12 +194,10 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("invalid-argument", "请提供手机号码、当前密码和新密码");
   }
   
-  // 验证新密码长度
   if (newPassword.length < 8) {
     throw new functions.https.HttpsError("invalid-argument", "新密码长度至少需要8个字符");
   }
   
-  // 验证新密码强度（至少包含英文和数字）
   const hasLetter = /[a-zA-Z]/.test(newPassword);
   const hasNumber = /[0-9]/.test(newPassword);
   
@@ -121,20 +206,34 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
   }
   
   try {
-    // 查询用户
-    const usersSnap = await admin.firestore().collection("users")
-      .where("basicInfo.phoneNumber", "==", phoneNumber)
-      .limit(1)
-      .get();
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const phoneVariants = [
+      normalizedPhone,
+      `0${normalizedPhone}`,
+      `60${normalizedPhone}`,
+      phoneNumber
+    ];
+    
+    let userDoc = null;
+    
+    for (const variant of phoneVariants) {
+      const usersSnap = await admin.firestore().collection("users")
+        .where("basicInfo.phoneNumber", "==", variant)
+        .limit(1)
+        .get();
       
-    if (usersSnap.empty) {
+      if (!usersSnap.empty) {
+        userDoc = usersSnap.docs[0];
+        break;
+      }
+    }
+    
+    if (!userDoc) {
       throw new functions.https.HttpsError("not-found", "查无此手机号码");
     }
     
-    const userDoc = usersSnap.docs[0];
     const userData = userDoc.data();
     
-    // 验证当前密码
     const passwordSalt = userData.basicInfo.passwordSalt || userData.basicInfo.pinSalt;
     const currentPasswordHash = crypto.createHash("sha256").update(currentPassword + passwordSalt).digest("hex");
     
@@ -143,10 +242,8 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError("permission-denied", "当前密码错误");
     }
     
-    // 生成新的密码 hash（使用相同的 salt）
     const newPasswordHash = crypto.createHash("sha256").update(newPassword + passwordSalt).digest("hex");
     
-    // 更新 Firestore
     await userDoc.ref.update({
       "basicInfo.passwordHash": newPasswordHash,
       "basicInfo.pinHash": newPasswordHash,
@@ -168,11 +265,14 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
 
 function getRedirectUrl(roles) {
   console.log(`[getRedirectUrl] Checking roles:`, JSON.stringify(roles));
+  if (!roles || !Array.isArray(roles)) return "../home/index.html";
+  
   if (roles.includes("super_admin") || roles.includes("super admin")) return "../admin/admin-dashboard.html";
   if (roles.includes("manager")) return "../manager/admin-manage-users.html";
   if (roles.includes("merchant")) return "../merchant/merchant-dashboard.html";
   if (roles.includes("seller")) return "../seller/seller-dashboard.html";
   if (roles.includes("customer")) return "../customer/consume.html";
+  
   console.log(`[getRedirectUrl] No role matched, returning default`);
   return "../home/index.html";
 }
@@ -227,9 +327,9 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
   }
 });
 
-// 🔥 新增：導出 Firestore 資料的 Cloud Function（不需要認證）
+// 导出 Firestore 资料的 Cloud Function
 exports.exportFirestoreData = functions.https.onRequest(async (req, res) => {
-  // 設置 CORS
+  // 🔥 添加 CORS 支持
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
@@ -240,22 +340,19 @@ exports.exportFirestoreData = functions.https.onRequest(async (req, res) => {
   }
   
   try {
-    console.log('🚀 開始導出 Firestore 資料...');
+    console.log('🚀 开始导出 Firestore 资料...');
     
     const exportData = {};
-    
-    // 獲取所有頂層集合
     const collections = await admin.firestore().listCollections();
     
     for (const collection of collections) {
-      console.log(`📁 導出集合: ${collection.id}`);
+      console.log(`📁 导出集合: ${collection.id}`);
       const snapshot = await collection.get();
       exportData[collection.id] = {};
       
       for (const doc of snapshot.docs) {
         exportData[collection.id][doc.id] = doc.data();
         
-        // 遞迴導出子集合
         const subcollections = await doc.ref.listCollections();
         if (subcollections.length > 0) {
           exportData[collection.id][doc.id]._subcollections = {};
@@ -271,12 +368,11 @@ exports.exportFirestoreData = functions.https.onRequest(async (req, res) => {
         }
       }
       
-      console.log(`  ✅ ${collection.id}: ${snapshot.size} 個文檔`);
+      console.log(`  ✅ ${collection.id}: ${snapshot.size} 个文档`);
     }
     
-    console.log('✅ 導出完成！');
+    console.log('✅ 导出完成！');
     
-    // 返回 JSON 資料
     res.status(200).json({
       success: true,
       exportDate: new Date().toISOString(),
@@ -284,7 +380,7 @@ exports.exportFirestoreData = functions.https.onRequest(async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ 導出失敗:', error);
+    console.error('❌ 导出失败:', error);
     res.status(500).json({
       success: false,
       error: error.message

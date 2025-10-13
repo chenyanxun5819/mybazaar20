@@ -49,7 +49,7 @@ const DesktopLogin = () => {
 
       await login(formData.phoneNumber, formData.password);
 
-      // 登录成功，跳转到桌机版首页
+      // 登录成功，跳转到桌面版首页
       navigate(`/${orgCode}-${eventCode}/desktop`);
     } catch (err) {
       console.error('[DesktopLogin] Login failed:', err);

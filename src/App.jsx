@@ -10,15 +10,15 @@ import { AuthProvider } from './contexts/AuthContext';
 // Placeholder 組件（之後實現）
 const PhonePlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
-    <h2>手機版首頁</h2>
-    <p>此功能將在第三階段實現</p>
+    <h2>手机版首页</h2>
+    <p>此功能将在第三阶段实现</p>
   </div>
 );
 
 const DesktopPlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
-    <h2>桌機版首頁</h2>
-    <p>此功能將在第三階段實現</p>
+    <h2>桌面版首页</h2>
+    <p>此功能将在第三阶段实现</p>
   </div>
 );
 
@@ -94,7 +94,7 @@ function App() {
           justifyContent: 'center'
         }}>
           <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
-          <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>頁面不存在</p>
+          <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>页面不存在</p>
           <a 
             href="/platform/admin" 
             style={{
@@ -106,7 +106,7 @@ function App() {
               borderRadius: '8px'
             }}
           >
-            回到首頁
+            回到首页
           </a>
         </div>
       } />

@@ -13,24 +13,21 @@ const firebaseConfig = {
   appId: "1:1069326034581:web:2e01401e103a54cd295d9c",
   measurementId: "G-JWBMQVNGHL"
 };
+
 // 初始化 Firebase
+console.log('🔥 [Firebase] 初始化 Firebase...');
 const app = initializeApp(firebaseConfig);
 
-// 導出服務實例
+// 初始化服务
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// 🔥 直接使用 Production Cloud Functions，指定 us-central1 region
 export const functions = getFunctions(app, 'us-central1');
 
-// 在本地開發時連接到 Emulator
-if (import.meta.env.DEV) {
-  const { connectAuthEmulator } = await import('firebase/auth');
-  const { connectFunctionsEmulator } = await import('firebase/functions');
-  
-  connectAuthEmulator(auth, 'http://localhost:9099');
-  connectFunctionsEmulator(functions, 'localhost', 5001);
-  
-  console.log('🔧 Firebase Configuration:');
-  console.log('   - Auth: Emulator (localhost:9099)');
-  console.log('   - Firestore: Production');
-  console.log('   - Functions: Emulator (localhost:5001)');
-}
+console.log('☁️ [Firebase] 使用 Firebase 生產環境');
+console.log('📍 [Firebase] Project ID:', firebaseConfig.projectId);
+console.log('🌎 [Firebase] Functions Region: us-central1');
+console.log('✅ [Firebase] 初始化完成');
+
+export default app;

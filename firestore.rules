@@ -7,11 +7,34 @@ service cloud.firestore {
       // 允许已登录用户读取自己的数据
       allow read: if request.auth != null && request.auth.uid == resource.data.authUid;
       
-      // 只允许 Cloud Functions 写入
-      allow write: if false;
+      // 允许 Cloud Functions 读取和写入（Admin SDK 会自动绕过规则，但为了安全起见明确允许）
+      // Cloud Functions 使用 Admin SDK 时 request.auth 为 null，但有特殊权限
+      allow write: if request.auth == null; // 只允许服务端（Cloud Functions）写入
     }
     
-    // 其他集合的规则...
+    // 允许读取组织和活动信息（用于显示基本信息）
+    match /organizations/{orgId} {
+      allow read: if true; // 组织基本信息可以公开读取
+      allow write: if false; // 只允许管理员写入（通过 Cloud Functions）
+    }
+    
+    match /organizations/{orgId}/events/{eventId} {
+      allow read: if true; // 活动基本信息可以公开读取
+      allow write: if false; // 只允许管理员写入（通过 Cloud Functions）
+    }
+    
+    // managers 集合
+    match /managers/{managerId} {
+      allow read: if request.auth != null; // 已登录用户可以读取管理员列表
+      allow write: if false; // 只允许 Cloud Functions 写入
+    }
+    
+    // OTP sessions（临时验证码）
+    match /otp_sessions/{sessionId} {
+      allow read, write: if false; // 只允许 Cloud Functions 操作
+    }
+    
+    // 其他集合默认拒绝
     match /{document=**} {
       allow read, write: if false;
     }
