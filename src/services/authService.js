@@ -45,7 +45,7 @@ function validatePassword(password) {
 }
 
 /**
- * 🔥 修復：使用 PIN 碼登入
+ * 🔥 修复：使用 PIN 码登入
  */
 async function loginWithPin(phoneNumber, password, organizationId, eventId) {
   try {
@@ -55,61 +55,98 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
       eventId 
     });
     
-    // 驗證參數
+    // 验证参数
     if (!phoneNumber || !password || !organizationId || !eventId) {
-      throw new Error('請提供完整的登入信息');
+      throw new Error('请提供完整的登入信息');
     }
     
-    // 標準化手機號碼
+    // 标准化手机号码
     const normalized = normalizePhone(phoneNumber);
     if (!normalized) {
-      throw new Error('手機號格式不正確，請輸入 01 開頭的 10-11 位數字');
+      throw new Error('手机号格式不正确，请输入 01 开头的 10-11 位数字');
     }
     
     console.log('[authService] Normalized phone:', normalized);
     
-    // 驗證密碼
+    // 验证密码
     if (!validatePassword(password)) {
-      throw new Error('密碼至少需要 8 個字符，且必須包含英文字母和數字');
+      throw new Error('密码至少需要 8 个字符，且必须包含英文字母和数字');
     }
     
-    // 🔥 調用 Cloud Function - 使用 httpsCallable (v2 onCall 自動處理 CORS)
+    // 🔥 调用 Cloud Function - 使用 fetch 直接请求
     console.log('[authService] Calling Cloud Function...');
     
-    const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
-    const result = await loginWithPinFn({
-      phoneNumber: normalized,
-      pin: password,
-      organizationId,
-      eventId
+    const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/loginWithPin';
+    
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        phoneNumber: normalized,
+        pin: password,
+        organizationId,
+        eventId
+      })
     });
     
-    console.log('[authService] Cloud Function response received');
-    const data = result.data;
-    console.log('[authService] Response data:', {
-      hasCustomToken: !!data?.customToken,
-      hasUserProfile: !!data?.userProfile
-    });
+    console.log('[authService] Response status:', response.status);
     
-    if (!data?.customToken) {
-      console.error('[authService] No custom token in response');
-      throw new Error(data?.message || '登入失敗：未收到認證令牌');
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        const errorText = await response.text();
+        console.error('[authService] Error response text:', errorText);
+        throw new Error(`服务器错误 (${response.status}): ${errorText}`);
+      }
+      
+      console.error('[authService] Error response:', errorData);
+      throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
     }
     
-    // 🔥 使用自定義令牌登入 Firebase Auth
+    const result = await response.json();
+    
+    console.log('[authService] Cloud Function response received');
+    console.log('[authService] Response data:', {
+      hasCustomToken: !!result?.customToken,
+      hasUserProfile: !!result?.userProfile,
+      success: result?.success
+    });
+    
+    if (!result?.customToken) {
+      console.error('[authService] No custom token in response:', result);
+      throw new Error(result?.error?.message || '登入失败：未收到认证令牌');
+    }
+    
+    // 🔥 使用自定义令牌登入 Firebase Auth
     console.log('[authService] Signing in with custom token...');
     try {
-      await signInWithCustomToken(auth, data.customToken);
-      console.log('[authService] Firebase Auth sign-in successful');
+      const userCredential = await signInWithCustomToken(auth, result.customToken);
+      console.log('[authService] Firebase Auth sign-in successful:', userCredential.user.uid);
     } catch (authError) {
-      console.error('[authService] Firebase Auth error:', authError);
-      throw new Error('認證失敗，請重試');
+      console.error('[authService] Firebase Auth error:', {
+        code: authError.code,
+        message: authError.message,
+        stack: authError.stack
+      });
+      
+      // 提供更详细的错误信息
+      if (authError.code === 'auth/invalid-custom-token') {
+        throw new Error('认证令牌无效，请重试');
+      } else if (authError.code === 'auth/custom-token-mismatch') {
+        throw new Error('认证配置错误，请联系管理员');
+      } else {
+        throw new Error(`认证失败: ${authError.message}`);
+      }
     }
     
     return {
       success: true,
-      user: data,
-      userProfile: data.userProfile,
+      user: result,
+      userProfile: result.userProfile,
       message: '登入成功'
     };
     
@@ -121,19 +158,21 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
       stack: error.stack
     });
     
-    // 🔥 統一錯誤處理
-    let errorMessage = '登入失敗';
+    // 🔥 统一错误处理
+    let errorMessage = '登入失败';
     
     if (error.code === 'not-found') {
-      errorMessage = '查無此手機號碼，請確認後重試';
+      errorMessage = '查无此手机号码，请确认后重试';
     } else if (error.code === 'permission-denied') {
-      errorMessage = '密碼錯誤，請重新輸入';
+      errorMessage = '密码错误，请重新输入';
     } else if (error.code === 'invalid-argument') {
-      errorMessage = error.message || '輸入資料格式不正確';
+      errorMessage = error.message || '输入资料格式不正确';
     } else if (error.code === 'internal') {
-      errorMessage = '服務器內部錯誤，請稍後重試';
+      errorMessage = '服务器内部错误，请稍后重试';
     } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
-      errorMessage = '網絡連接失敗，請檢查網絡後重試';
+      errorMessage = '网络连接失败，请检查网络后重试';
+    } else if (error.message.includes('Failed to fetch')) {
+      errorMessage = '无法连接到服务器，请检查网络连接';
     } else if (error.message) {
       errorMessage = error.message;
     }

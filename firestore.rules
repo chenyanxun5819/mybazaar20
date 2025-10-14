@@ -2,41 +2,146 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // 🔥 辅助函数：检查用户是否已认证
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // 🔥 辅助函数：检查是否是用户自己的数据
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // 🔥 辅助函数：检查是否是用户自己的数据（通过 authUid 字段）
+    function isOwnerByAuthUid() {
+      return isSignedIn() && (
+        request.auth.uid == resource.data.authUid ||
+        request.auth.uid == resource.data.authId ||
+        request.auth.uid == get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(userId)).data.authUid
+      );
+    }
+    
+    // ==========================================
     // 组织 > 活动 > 用户
+    // ==========================================
     match /organizations/{orgId}/events/{eventId}/users/{userId} {
-      // 允许已登录用户读取自己的数据
-      allow read: if request.auth != null && request.auth.uid == resource.data.authUid;
+      // 🔥 读取权限：
+      // 1. 已登录用户可以读取自己的数据（通过 authUid 匹配）
+      // 2. 允许通过多个可能的 authUid 字段匹配
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.authUid ||
+        request.auth.uid == resource.data.authId ||
+        request.auth.uid == resource.data.get('accountStatus', {}).get('authUid', '')
+      );
       
-      // 允许 Cloud Functions 读取和写入（Admin SDK 会自动绕过规则，但为了安全起见明确允许）
-      // Cloud Functions 使用 Admin SDK 时 request.auth 为 null，但有特殊权限
-      allow write: if request.auth == null; // 只允许服务端（Cloud Functions）写入
+      // 🔥 写入权限：
+      // 1. 用户可以更新自己的某些字段（但不能修改关键字段）
+      // 2. Cloud Functions (Admin SDK) 会自动绕过这些规则
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.authUid ||
+        request.auth.uid == resource.data.authId
+      ) && (
+        // 只允许更新特定字段，不能修改关键字段
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles', 'authUid', 'authId'])
+      );
+      
+      // 🔥 创建和删除：只允许 Cloud Functions（Admin SDK 会绕过规则）
+      allow create, delete: if false; // 前端不能直接创建或删除用户
     }
     
-    // 允许读取组织和活动信息（用于显示基本信息）
+    // ==========================================
+    // 组织基本信息
+    // ==========================================
     match /organizations/{orgId} {
-      allow read: if true; // 组织基本信息可以公开读取
-      allow write: if false; // 只允许管理员写入（通过 Cloud Functions）
+      // 🔥 公开读取：任何人都可以读取组织基本信息
+      allow read: if true;
+      
+      // 🔥 写入：只允许 Cloud Functions（Admin SDK）
+      allow write: if false;
     }
     
+    // ==========================================
+    // 活动基本信息
+    // ==========================================
     match /organizations/{orgId}/events/{eventId} {
-      allow read: if true; // 活动基本信息可以公开读取
-      allow write: if false; // 只允许管理员写入（通过 Cloud Functions）
+      // 🔥 公开读取：任何人都可以读取活动基本信息
+      allow read: if true;
+      
+      // 🔥 写入：只允许 Cloud Functions（Admin SDK）
+      allow write: if false;
+      
+      // 子集合：活动下的其他数据
+      match /{subcollection}/{document=**} {
+        // 默认拒绝，由具体规则处理
+        allow read, write: if false;
+      }
     }
     
-    // managers 集合
+    // ==========================================
+    // 管理员集合
+    // ==========================================
     match /managers/{managerId} {
-      allow read: if request.auth != null; // 已登录用户可以读取管理员列表
-      allow write: if false; // 只允许 Cloud Functions 写入
+      // 🔥 已登录用户可以读取管理员列表
+      allow read: if isSignedIn();
+      
+      // 🔥 写入：只允许 Cloud Functions
+      allow write: if false;
     }
     
-    // OTP sessions（临时验证码）
+    // ==========================================
+    // OTP 会话（临时验证码）
+    // ==========================================
     match /otp_sessions/{sessionId} {
-      allow read, write: if false; // 只允许 Cloud Functions 操作
+      // 🔥 完全由 Cloud Functions 管理
+      allow read, write: if false;
     }
     
-    // 其他集合默认拒绝
+    // ==========================================
+    // 诊断测试集合（可选，用于测试连接）
+    // ==========================================
+    match /_diagnostic_test/{document=**} {
+      // 🔥 允许已登录用户读取（用于诊断工具）
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // 默认规则：拒绝所有其他访问
+    // ==========================================
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+
+// ==========================================
+// 📝 规则说明和注意事项
+// ==========================================
+
+/*
+1. Cloud Functions 使用 Admin SDK：
+   - Admin SDK 会**完全绕过**所有 Firestore 安全规则
+   - 因此 Cloud Functions 可以读写任何数据
+   - 客户端规则只影响前端直接访问 Firestore 的行为
+
+2. 认证流程：
+   - 用户通过 Cloud Function 登录
+   - Cloud Function 创建 custom token
+   - 前端使用 custom token 登录 Firebase Auth
+   - 前端使用认证后的 uid 读取自己的用户数据
+
+3. authUid 字段：
+   - 必须确保 Firestore 中的用户文档有 authUid 字段
+   - authUid 应该与 Firebase Auth 的 uid 匹配
+   - 格式：phone_60{手机号}（例如：phone_60123456789）
+
+4. 测试规则：
+   - 使用 Firebase Console 的 Rules Playground
+   - 或使用 Firebase Emulator 本地测试
+   - 确保规则符合你的安全需求
+
+5. 常见问题：
+   - 如果读取失败，检查 authUid 是否正确设置
+   - 如果写入失败，确认是否应该由 Cloud Functions 处理
+   - 查看 Firebase Console 的审计日志了解被拒绝的请求
+*/

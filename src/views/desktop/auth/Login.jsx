@@ -1,4 +1,4 @@
-// src/views/desktop/auth/Login.jsx
+// src/views/desktop/auth/Login.jsx - Debug Version
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -7,7 +7,7 @@ import { useEvent } from '../../../contexts/EventContext';
 const DesktopLogin = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const { orgCode, eventCode, organization, event } = useEvent();
+  const { orgCode, eventCode, organization, event, organizationId, eventId } = useEvent();
 
   const [formData, setFormData] = useState({
     phoneNumber: '',
@@ -15,6 +15,7 @@ const DesktopLogin = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -27,6 +28,13 @@ const DesktopLogin = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    console.log('=== LOGIN DEBUG START ===');
+    console.log('Form data:', formData);
+    console.log('Organization ID:', organizationId);
+    console.log('Event ID:', eventId);
+    console.log('Org Code:', orgCode);
+    console.log('Event Code:', eventCode);
     
     if (!formData.phoneNumber || !formData.password) {
       setError('请填写完整的手机号和密码');
@@ -46,16 +54,32 @@ const DesktopLogin = () => {
     try {
       setLoading(true);
       setError('');
+      setDebugInfo('正在调用登入函数...');
 
-      await login(formData.phoneNumber, formData.password);
+      console.log('Calling login function...');
+      const result = await login(formData.phoneNumber, formData.password);
+      
+      console.log('Login result:', result);
+      setDebugInfo('登入成功！正在跳转...');
 
       // 登录成功，跳转到桌面版首页
-      navigate(`/${orgCode}-${eventCode}/desktop`);
+      setTimeout(() => {
+        navigate(`/${orgCode}-${eventCode}/desktop`);
+      }, 500);
+      
     } catch (err) {
-      console.error('[DesktopLogin] Login failed:', err);
+      console.error('[DesktopLogin] Login failed:', {
+        error: err,
+        message: err.message,
+        code: err.code,
+        stack: err.stack
+      });
+      
       setError(err.message || '登录失败，请重试');
+      setDebugInfo(`错误: ${err.message}`);
     } finally {
       setLoading(false);
+      console.log('=== LOGIN DEBUG END ===');
     }
   };
 
@@ -69,10 +93,27 @@ const DesktopLogin = () => {
           <p style={styles.brandSubtitle}>
             {event?.eventName?.['zh-CN'] || '活动管理平台'}
           </p>
-          <div style={styles.features}>
-            <div style={styles.feature}>✓ 安全可靠</div>
-            <div style={styles.feature}>✓ 简单易用</div>
-            <div style={styles.feature}>✓ 实时更新</div>
+          
+          {/* Debug Info Panel */}
+          <div style={styles.debugPanel}>
+            <h3 style={styles.debugTitle}>调试信息</h3>
+            <div style={styles.debugItem}>
+              <strong>Organization ID:</strong> {organizationId || '未找到'}
+            </div>
+            <div style={styles.debugItem}>
+              <strong>Event ID:</strong> {eventId || '未找到'}
+            </div>
+            <div style={styles.debugItem}>
+              <strong>Org Code:</strong> {orgCode || '未找到'}
+            </div>
+            <div style={styles.debugItem}>
+              <strong>Event Code:</strong> {eventCode || '未找到'}
+            </div>
+            {debugInfo && (
+              <div style={styles.debugItem}>
+                <strong>状态:</strong> {debugInfo}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -160,7 +201,8 @@ const styles = {
     color: 'white'
   },
   brandSection: {
-    maxWidth: '500px'
+    maxWidth: '500px',
+    width: '100%'
   },
   brandTitle: {
     fontSize: '2.5rem',
@@ -173,14 +215,21 @@ const styles = {
     opacity: 0.9,
     marginBottom: '3rem'
   },
-  features: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem'
+  debugPanel: {
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginTop: '2rem',
+    fontSize: '0.875rem'
   },
-  feature: {
-    fontSize: '1.125rem',
-    opacity: 0.95
+  debugTitle: {
+    fontSize: '1rem',
+    marginBottom: '0.5rem',
+    fontWeight: 'bold'
+  },
+  debugItem: {
+    marginBottom: '0.5rem',
+    wordBreak: 'break-all'
   },
   rightPanel: {
     flex: 1,
