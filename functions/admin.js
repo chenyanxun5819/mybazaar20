@@ -10,6 +10,155 @@ function sha256(str) {
   return crypto.createHash("sha256").update(str).digest("hex");
 }
 
+// ========== 平台：指派 Event Manager ==========
+
+/**
+ * Callable function to create/assign an Event Manager under a specific organization + event.
+ * - Auth: requires caller to be a platform admin (presence in admin_uids/{uid})
+ * - Data required: organizationId, eventId, phoneNumber, password, englishName
+ * - Optional: chineseName, email, identityTag (default 'staff')
+ * - Behavior: creates a user doc under organizations/{org}/events/{event}/users with role 'manager',
+ *             sets event.eventManager, and initializes basic statistics fields.
+ */
+exports.createEventManager = functions.https.onCall(async (data, context) => {
+  try {
+    const actual = data && data.data ? data.data : data;
+    const {
+      organizationId,
+      eventId,
+      phoneNumber,
+      password,
+      englishName,
+      chineseName = '',
+      email = '',
+      identityTag = 'staff'
+    } = actual || {};
+
+    // Auth check
+    const callerUid = context && context.auth && context.auth.uid ? context.auth.uid : null;
+    if (!callerUid) {
+      throw new functions.https.HttpsError('unauthenticated', '请先登录');
+    }
+
+    // Platform admin check (simple): must exist in admin_uids/{uid}
+    const adminDoc = await getDb().collection('admin_uids').doc(callerUid).get();
+    if (!adminDoc.exists) {
+      throw new functions.https.HttpsError('permission-denied', '权限不足，只有 Platform Admin 可以指派 Event Manager');
+    }
+
+    // Validate inputs
+    if (!organizationId || !eventId) {
+      throw new functions.https.HttpsError('invalid-argument', '缺少组织或活动编号');
+    }
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      throw new functions.https.HttpsError('invalid-argument', '请输入有效的手机号');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      throw new functions.https.HttpsError('invalid-argument', '密码至少需要 8 个字符');
+    }
+    if (!englishName) {
+      throw new functions.https.HttpsError('invalid-argument', '英文名为必填');
+    }
+
+    // Locate event
+    const orgRef = getDb().collection('organizations').doc(organizationId);
+    const eventRef = orgRef.collection('events').doc(eventId);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
+      throw new functions.https.HttpsError('not-found', '活动不存在');
+    }
+    const eventData = eventSnap.data() || {};
+    if (eventData.eventManager) {
+      throw new functions.https.HttpsError('already-exists', '此活动已指派 Event Manager');
+    }
+
+    // Check duplicate phone within the event users
+    const usersCol = eventRef.collection('users');
+    const dupSnap = await usersCol
+      .where('basicInfo.phoneNumber', '==', phoneNumber)
+      .limit(1)
+      .get();
+    if (!dupSnap.empty) {
+      throw new functions.https.HttpsError('already-exists', '该手机号已在此活动中存在');
+    }
+
+    // Prepare password hash/salt (compatible with loginWithPin which checks passwordHash/pinHash)
+    const passwordSalt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = sha256(password + passwordSalt);
+
+    const newUserId = `usr_${crypto.randomUUID()}`;
+    const now = new Date();
+
+    const userDoc = {
+      userId: newUserId,
+      roles: ['manager', 'seller'],
+      identityTag,
+      basicInfo: {
+        phoneNumber,
+        englishName,
+        chineseName,
+        email,
+        passwordHash,
+        passwordSalt,
+        pinHash: passwordHash,
+        pinSalt: passwordSalt,
+        isPhoneVerified: false
+      },
+      roleSpecificData: {
+        manager: {
+          assignedAt: now,
+          assignedBy: callerUid,
+          allocatedCapital: 0,
+          stallsManaged: 0
+        },
+        seller: {
+          availablePoints: 0,
+          currentSalesAmount: 0,
+          totalPointsSold: 0
+        }
+      },
+      accountStatus: {
+        status: 'active',
+        createdAt: now,
+        updatedAt: now
+      },
+      activityData: {
+        joinedAt: now,
+        lastActiveAt: now,
+        participationStatus: 'active'
+      }
+    };
+
+    // Write user doc under event users collection
+    await usersCol.doc(newUserId).set(userDoc);
+
+    // Update event document with eventManager
+    await eventRef.update({
+      eventManager: {
+        userId: newUserId,
+        phoneNumber,
+        englishName,
+        assignedAt: now,
+        assignedBy: callerUid
+      },
+      'statistics.totalManagers': admin.firestore.FieldValue.increment(1),
+      updatedAt: now
+    });
+
+    return {
+      success: true,
+      userId: newUserId,
+      message: 'Event Manager 创建成功'
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      throw err;
+    }
+    console.error('[createEventManager] Error:', err);
+    throw new functions.https.HttpsError('internal', err.message || '内部错误');
+  }
+});
+
 // ========== OTP 相关函数 ==========
 
 exports.sendOtpToPhone = functions.https.onCall(async (data, context) => {

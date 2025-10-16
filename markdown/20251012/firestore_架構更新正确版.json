@@ -62,7 +62,19 @@
                 "totalValues": 0
             },
             "status": "active",
-            "admins": [],
+            "admins": [
+                {
+                    "userId": "phone_60123456789",
+                    "authUid": "phone_60123456789",
+                    "phoneNumber": "0123456789",
+                    "englishName": "John Doe",
+                    "chineseName": "张三",
+                    "role": "event_manager",
+                    "eventId": "zcaWnsF3zTNeqZ738x2V",
+                    "addedAt": "2025-10-11T10:39:46+08:00",
+                    "addedBy": "platform_admin"
+                }
+            ],
             "events": {
                 "zcaWnsF3zTNeqZ738x2V": {
                     "eventCode": "2025",
@@ -221,18 +233,26 @@
                                 "passwordSalt": "81452b5a52202fe62e7bd57d3633aedc",
                                 "phoneNumber": "0123456789"
                             },
-                            "identityTag": "student",
+                            "identityTag": "staff",
                             "roleSpecificData": {
                                 "customer": {
                                     "currentBalance": 1000,
                                     "totalPointsConsumed": 0,
                                     "totalPointsPurchased": 1000
+                                },
+                                "event_manager": {
+                                    "organizationId": "VyJ7kgHC70hn7QjmdUPK",
+                                    "eventId": "zcaWnsF3zTNeqZ738x2V",
+                                    "assignedAt": "2025-10-12T09:50:25+08:00",
+                                    "assignedBy": "platform_admin"
                                 }
                             },
                             "roles": [
-                                "customer"
+                                "customer",
+                                "event_manager"
                             ]
-                        }          "updatedAt": "2025-10-12T09:50:25+08:00"
+                        },
+                        "updatedAt": "2025-10-12T09:50:25+08:00"
                     }
                 }
             },

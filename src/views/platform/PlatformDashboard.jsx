@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import AssignEventManager from './AssignEventManager';
 
 const PlatformDashboard = () => {
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [showAssignManager, setShowAssignManager] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   useEffect(() => {
     loadOrganizations();
@@ -20,7 +23,7 @@ const PlatformDashboard = () => {
       const orgsData = await Promise.all(
         orgsSnapshot.docs.map(async (orgDoc) => {
           const orgData = orgDoc.data();
-          
+
           const eventsSnapshot = await getDocs(
             collection(db, 'organizations', orgDoc.id, 'events')
           );
@@ -43,6 +46,19 @@ const PlatformDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAssignManager = (org, event) => {
+    setSelectedOrg(org);
+    setSelectedEvent(event);
+    setShowAssignManager(true);
+  };
+
+  const handleAssignSuccess = () => {
+    setShowAssignManager(false);
+    setSelectedOrg(null);
+    setSelectedEvent(null);
+    loadOrganizations(); // 刷新数据
   };
 
   if (loading) {
@@ -119,6 +135,7 @@ const PlatformDashboard = () => {
                 setSelectedOrg(org);
                 setShowCreateEvent(true);
               }}
+              onAssignManager={handleAssignManager}
               onReload={loadOrganizations}
             />
           ))
@@ -149,12 +166,25 @@ const PlatformDashboard = () => {
           }}
         />
       )}
+
+      {showAssignManager && (
+        <AssignEventManager
+          organization={selectedOrg}
+          event={selectedEvent}
+          onClose={() => {
+            setShowAssignManager(false);
+            setSelectedOrg(null);
+            setSelectedEvent(null);
+          }}
+          onSuccess={handleAssignSuccess}
+        />
+      )}
     </div>
   );
 };
 
 const StatCard = ({ title, value, icon, color }) => (
-  <div style={{...styles.statCard, borderTopColor: color}}>
+  <div style={{ ...styles.statCard, borderTopColor: color }}>
     <div style={styles.statIcon}>{icon}</div>
     <div>
       <div style={styles.statValue}>{value}</div>
@@ -163,7 +193,7 @@ const StatCard = ({ title, value, icon, color }) => (
   </div>
 );
 
-const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
+const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onReload }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -178,7 +208,8 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
             <span style={styles.metaText}>
               {organization.events.length} 个活动
             </span>
-            <span style={{...styles.statusBadge, 
+            <span style={{
+              ...styles.statusBadge,
               background: organization.status === 'active' ? '#d1fae5' : '#fee2e2',
               color: organization.status === 'active' ? '#065f46' : '#991b1b'
             }}>
@@ -210,7 +241,12 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
           ) : (
             <div style={styles.eventsGrid}>
               {organization.events.map(event => (
-                <EventCard key={event.id} event={event} organization={organization} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  organization={organization}
+                  onAssignManager={() => onAssignManager(organization, event)}
+                />
               ))}
             </div>
           )}
@@ -220,20 +256,32 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
   );
 };
 
-const EventCard = ({ event, organization }) => {
+const EventCard = ({ event, organization, onAssignManager }) => {
   const eventUrl = `/${organization.orgCode}-${event.eventCode}/phone`;
-  
+  const hasManager = !!event.eventManager;
+
   return (
     <div style={styles.eventCard}>
       <div style={styles.eventHeader}>
         <h5 style={styles.eventName}>{event.eventName['zh-CN']}</h5>
-        <span style={{...styles.statusBadge,
+        <span style={{
+          ...styles.statusBadge,
           background: event.status === 'active' ? '#dbeafe' : '#fee2e2',
           color: event.status === 'active' ? '#1e40af' : '#991b1b'
         }}>
-          {event.status === 'active' ? '进行中' : event.status}
+          {event.status === 'active' ? '进行中' : event.status === 'planning' ? '筹备中' : event.status}
         </span>
       </div>
+
+      <div style={styles.managerStatus}>
+        <span style={styles.managerLabel}>👤 Event Manager:</span>
+        {hasManager ? (
+          <span style={styles.managerAssigned}>✓ 已指派</span>
+        ) : (
+          <span style={styles.managerNotAssigned}>未指派</span>
+        )}
+      </div>
+
       <div style={styles.eventMeta}>
         <div style={styles.metaItem}>
           🎪 义卖会：{event.eventInfo?.fairDate || '未设定'}
@@ -248,6 +296,16 @@ const EventCard = ({ event, organization }) => {
           💵 RM {event.settings?.totalCapital?.toLocaleString() || 0}
         </div>
       </div>
+
+      {!hasManager && (
+        <button
+          style={styles.assignButton}
+          onClick={onAssignManager}
+        >
+          ➕ 指派 Event Manager
+        </button>
+      )}
+
       <div style={styles.eventLinks}>
         <a
           href={eventUrl}
@@ -257,6 +315,7 @@ const EventCard = ({ event, organization }) => {
         >
           📱 手机版
         </a>
+
         <a
           href={eventUrl.replace('/phone', '/desktop')}
           target="_blank"
@@ -265,8 +324,8 @@ const EventCard = ({ event, organization }) => {
         >
           🖥️ 桌机版
         </a>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 
@@ -283,15 +342,15 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!formData.orgNameZh || !formData.orgCode || !formData.email) {
-      alert('请填写必填栏位');
+      alert('请填写必填字段');
       return;
     }
 
     try {
       setSubmitting(true);
-      
+
       await addDoc(collection(db, 'organizations'), {
         orgName: {
           'zh-CN': formData.orgNameZh,
@@ -343,7 +402,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.orgNameZh}
-              onChange={e => setFormData({...formData, orgNameZh: e.target.value})}
+              onChange={e => setFormData({ ...formData, orgNameZh: e.target.value })}
               placeholder="例如：芙蓉中华中学"
               required
             />
@@ -355,7 +414,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.orgNameEn}
-              onChange={e => setFormData({...formData, orgNameEn: e.target.value})}
+              onChange={e => setFormData({ ...formData, orgNameEn: e.target.value })}
               placeholder="例如：Foon Chung Hua School"
             />
           </div>
@@ -366,7 +425,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.orgCode}
-              onChange={e => setFormData({...formData, orgCode: e.target.value.toLowerCase()})}
+              onChange={e => setFormData({ ...formData, orgCode: e.target.value.toLowerCase() })}
               placeholder="例如：fch（仅小写字母）"
               pattern="[a-z]+"
               required
@@ -380,7 +439,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               type="email"
               style={styles.input}
               value={formData.email}
-              onChange={e => setFormData({...formData, email: e.target.value})}
+              onChange={e => setFormData({ ...formData, email: e.target.value })}
               placeholder="admin@example.com"
               required
             />
@@ -392,7 +451,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               type="tel"
               style={styles.input}
               value={formData.phone}
-              onChange={e => setFormData({...formData, phone: e.target.value})}
+              onChange={e => setFormData({ ...formData, phone: e.target.value })}
               placeholder="0123456789"
             />
           </div>
@@ -400,9 +459,9 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           <div style={styles.formGroup}>
             <label style={styles.label}>地址</label>
             <textarea
-              style={{...styles.input, minHeight: '80px'}}
+              style={{ ...styles.input, minHeight: '80px' }}
               value={formData.address}
-              onChange={e => setFormData({...formData, address: e.target.value})}
+              onChange={e => setFormData({ ...formData, address: e.target.value })}
               placeholder="组织地址"
             />
           </div>
@@ -451,15 +510,15 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!formData.eventNameZh || !formData.eventCode || !formData.fairDate) {
-      alert('请填写必填栏位');
+      alert('请填写必填字段');
       return;
     }
 
     try {
       setSubmitting(true);
-      
+
       await addDoc(
         collection(db, 'organizations', organization.id, 'events'),
         {
@@ -529,7 +588,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={{...styles.modalContent, maxWidth: '700px'}} onClick={e => e.stopPropagation()}>
+      <div style={{ ...styles.modalContent, maxWidth: '700px' }} onClick={e => e.stopPropagation()}>
         <h2 style={styles.modalTitle}>
           为 {organization.orgName['zh-CN']} 创建活动
         </h2>
@@ -540,7 +599,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.eventNameZh}
-              onChange={e => setFormData({...formData, eventNameZh: e.target.value})}
+              onChange={e => setFormData({ ...formData, eventNameZh: e.target.value })}
               placeholder="例如：2025校庆义卖会"
               required
             />
@@ -552,7 +611,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.eventNameEn}
-              onChange={e => setFormData({...formData, eventNameEn: e.target.value})}
+              onChange={e => setFormData({ ...formData, eventNameEn: e.target.value })}
               placeholder="例如：2025 Charity Fair"
             />
           </div>
@@ -563,7 +622,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               type="text"
               style={styles.input}
               value={formData.eventCode}
-              onChange={e => setFormData({...formData, eventCode: e.target.value})}
+              onChange={e => setFormData({ ...formData, eventCode: e.target.value })}
               placeholder="例如：2025"
               required
             />
@@ -575,14 +634,14 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           <div style={styles.formGroup}>
             <label style={styles.label}>活动描述</label>
             <textarea
-              style={{...styles.input, minHeight: '80px'}}
+              style={{ ...styles.input, minHeight: '80px' }}
               value={formData.descriptionZh}
-              onChange={e => setFormData({...formData, descriptionZh: e.target.value})}
+              onChange={e => setFormData({ ...formData, descriptionZh: e.target.value })}
               placeholder="活动详细描述"
             />
           </div>
 
-          <div style={{...styles.sectionDivider, marginTop: '2rem'}}>
+          <div style={{ ...styles.sectionDivider, marginTop: '2rem' }}>
             <h4 style={styles.sectionTitle}>📅 固本销售期</h4>
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
@@ -591,7 +650,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.voucherSalesStart}
-                  onChange={e => setFormData({...formData, voucherSalesStart: e.target.value})}
+                  onChange={e => setFormData({ ...formData, voucherSalesStart: e.target.value })}
                 />
               </div>
               <div style={styles.formGroup}>
@@ -600,7 +659,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.voucherSalesEnd}
-                  onChange={e => setFormData({...formData, voucherSalesEnd: e.target.value})}
+                  onChange={e => setFormData({ ...formData, voucherSalesEnd: e.target.value })}
                 />
               </div>
             </div>
@@ -615,7 +674,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.fairDate}
-                  onChange={e => setFormData({...formData, fairDate: e.target.value})}
+                  onChange={e => setFormData({ ...formData, fairDate: e.target.value })}
                   required
                 />
               </div>
@@ -625,7 +684,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="text"
                   style={styles.input}
                   value={formData.fairTime}
-                  onChange={e => setFormData({...formData, fairTime: e.target.value})}
+                  onChange={e => setFormData({ ...formData, fairTime: e.target.value })}
                   placeholder="08:00 - 16:00"
                 />
               </div>
@@ -641,7 +700,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.consumptionStart}
-                  onChange={e => setFormData({...formData, consumptionStart: e.target.value})}
+                  onChange={e => setFormData({ ...formData, consumptionStart: e.target.value })}
                 />
                 <small style={styles.hint}>可能有预售</small>
               </div>
@@ -651,7 +710,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.consumptionEnd}
-                  onChange={e => setFormData({...formData, consumptionEnd: e.target.value})}
+                  onChange={e => setFormData({ ...formData, consumptionEnd: e.target.value })}
                 />
                 <small style={styles.hint}>可能延后到店消费</small>
               </div>
@@ -667,7 +726,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.systemOpenDate}
-                  onChange={e => setFormData({...formData, systemOpenDate: e.target.value})}
+                  onChange={e => setFormData({ ...formData, systemOpenDate: e.target.value })}
                 />
               </div>
               <div style={styles.formGroup}>
@@ -676,20 +735,20 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   type="date"
                   style={styles.input}
                   value={formData.systemCloseDate}
-                  onChange={e => setFormData({...formData, systemCloseDate: e.target.value})}
+                  onChange={e => setFormData({ ...formData, systemCloseDate: e.target.value })}
                 />
                 <small style={styles.hint}>关闭后仅供查询</small>
               </div>
             </div>
           </div>
 
-          <div style={{...styles.formGroup, marginTop: '1.5rem'}}>
+          <div style={{ ...styles.formGroup, marginTop: '1.5rem' }}>
             <label style={styles.label}>活动地点</label>
             <input
               type="text"
               style={styles.input}
               value={formData.location}
-              onChange={e => setFormData({...formData, location: e.target.value})}
+              onChange={e => setFormData({ ...formData, location: e.target.value })}
               placeholder="活动举办地点"
             />
           </div>
@@ -700,7 +759,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               type="number"
               style={styles.input}
               value={formData.totalCapital}
-              onChange={e => setFormData({...formData, totalCapital: e.target.value})}
+              onChange={e => setFormData({ ...formData, totalCapital: e.target.value })}
               min="0"
               step="1000"
             />
@@ -925,6 +984,28 @@ const styles = {
     color: '#1f2937',
     margin: 0
   },
+  managerStatus: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0.5rem',
+    background: '#f3f4f6',
+    borderRadius: '6px',
+    marginBottom: '0.75rem',
+    fontSize: '0.875rem'
+  },
+  managerLabel: {
+    color: '#6b7280',
+    fontWeight: '500'
+  },
+  managerAssigned: {
+    color: '#059669',
+    fontWeight: '600'
+  },
+  managerNotAssigned: {
+    color: '#dc2626',
+    fontWeight: '600'
+  },
   eventMeta: {
     display: 'flex',
     flexDirection: 'column',
@@ -934,6 +1015,18 @@ const styles = {
   metaItem: {
     fontSize: '0.875rem',
     color: '#6b7280'
+  },
+  assignButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginBottom: '0.75rem'
   },
   eventLinks: {
     display: 'flex',
@@ -948,7 +1041,8 @@ const styles = {
     borderRadius: '6px',
     fontSize: '0.875rem',
     textAlign: 'center',
-    fontWeight: '500'
+    fontWeight: '500',
+    display: 'block'
   },
   modalOverlay: {
     position: 'fixed',
@@ -1008,6 +1102,15 @@ const styles = {
     color: '#6b7280',
     marginTop: '0.25rem'
   },
+  sectionDivider: {
+    marginBottom: '1.5rem'
+  },
+  sectionTitle: {
+    fontSize: '1rem',
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: '1rem'
+  },
   modalActions: {
     display: 'flex',
     gap: '1rem',
@@ -1021,7 +1124,8 @@ const styles = {
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     fontSize: '1rem',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontWeight: '500'
   },
   submitButton: {
     padding: '0.75rem 1.5rem',
@@ -1030,7 +1134,7 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     fontSize: '1rem',
-    fontWeight: '500',
+    fontWeight: '600',
     cursor: 'pointer'
   }
 };
