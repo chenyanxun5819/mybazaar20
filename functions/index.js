@@ -8,7 +8,8 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager } = require('./admin');
+const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
+  createEventManager } = require('./admin');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.sendOtpToPhone = sendOtpToPhone;
@@ -17,6 +18,8 @@ exports.setProjectInfo = setProjectInfo;
 exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
+exports.createEventManager = createEventManager; 
+
 
 // 🔥 CORS 中间件配置
 const corsHandler = cors({

@@ -692,3 +692,319 @@ exports.createManager = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', error.message || '建立管理员失败');
   }
 });
+
+// ========== Event Manager 管理 ==========
+
+/**
+ * 创建 Event Manager（组织活动管理员）
+ * 只有 Platform Admin 可以调用
+ */
+exports.createEventManager = functions.https.onCall(async (data, context) => {
+  console.log('[createEventManager] Received request');
+  
+  const actualData = data.data || data;
+  const callerUid = context.auth ? context.auth.uid : actualData.callerUid;
+  
+  console.log('[createEventManager] Caller UID:', callerUid);
+  
+  if (!callerUid) {
+    throw new functions.https.HttpsError('unauthenticated', '必须登录才能执行此操作');
+  }
+  
+  // ========== 1. 验证权限：调用者必须是 Platform Admin ==========
+  try {
+    // 方法 1：通过 authUid 查询
+    const userQuery = await getDb().collection('users')
+      .where('authUid', '==', callerUid)
+      .limit(1)
+      .get();
+    
+    let hasPermission = false;
+    
+    if (!userQuery.empty) {
+      const userData = userQuery.docs[0].data();
+      console.log('[createEventManager] Found user by authUid:', { 
+        docId: userQuery.docs[0].id, 
+        roles: userData.roles 
+      });
+      hasPermission = userData.roles && userData.roles.includes('platform_admin');
+    } else {
+      // 方法 2：直接通过文档 ID 查询（备用）
+      const directDoc = await getDb().collection('users').doc(callerUid).get();
+      if (directDoc.exists) {
+        const userData = directDoc.data();
+        console.log('[createEventManager] Found user by docId:', { 
+          docId: directDoc.id, 
+          roles: userData.roles 
+        });
+        hasPermission = userData.roles && userData.roles.includes('platform_admin');
+      }
+    }
+    
+    if (!hasPermission) {
+      console.log('[createEventManager] Permission denied: User is not platform_admin');
+      throw new functions.https.HttpsError('permission-denied', '只有 Platform Admin 可以创建 Event Manager');
+    }
+    
+    console.log('[createEventManager] Permission check passed');
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    console.error('[createEventManager] Permission check error:', error);
+    throw new functions.https.HttpsError('internal', '权限验证失败: ' + error.message);
+  }
+  
+  // ========== 2. 提取和验证参数 ==========
+  const { 
+    organizationId, 
+    eventId, 
+    phoneNumber, 
+    password, 
+    englishName, 
+    chineseName, 
+    email,
+    identityTag 
+  } = actualData;
+  
+  console.log('[createEventManager] Creating Event Manager:', { 
+    organizationId,
+    eventId,
+    phoneNumber, 
+    englishName, 
+    chineseName,
+    identityTag
+  });
+  
+  // 验证必填字段
+  if (!organizationId || !eventId || !phoneNumber || !password || !englishName || !identityTag) {
+    throw new functions.https.HttpsError('invalid-argument', '缺少必要字段：organizationId, eventId, phoneNumber, password, englishName, identityTag');
+  }
+  
+  // 验证密码强度
+  if (password.length < 8) {
+    throw new functions.https.HttpsError('invalid-argument', '密码至少需要8个字符');
+  }
+  
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    throw new functions.https.HttpsError('invalid-argument', '密码必须包含英文字母和数字');
+  }
+  
+  // 验证身份标签
+  const validIdentityTags = ['staff', 'teacher'];
+  if (!validIdentityTags.includes(identityTag)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Event Manager 必须选择有效的身份标签 (staff 或 teacher)');
+  }
+  
+  // ========== 3. 验证组织和活动是否存在 ==========
+  try {
+    const orgDoc = await getDb().collection('organizations').doc(organizationId).get();
+    if (!orgDoc.exists) {
+      throw new functions.https.HttpsError('not-found', '组织不存在');
+    }
+    
+    const eventDoc = await getDb().collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId)
+      .get();
+    
+    if (!eventDoc.exists) {
+      throw new functions.https.HttpsError('not-found', '活动不存在');
+    }
+    
+    const eventData = eventDoc.data();
+    
+    // 检查活动是否已有 Event Manager
+    if (eventData.eventManager) {
+      throw new functions.https.HttpsError('already-exists', '此活动已有 Event Manager，请先移除现有管理员');
+    }
+    
+    console.log('[createEventManager] Organization and Event verified');
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    console.error('[createEventManager] Validation error:', error);
+    throw new functions.https.HttpsError('internal', '验证组织和活动失败: ' + error.message);
+  }
+  
+  // ========== 4. 检查手机号是否已存在于此活动 ==========
+  try {
+    const existingUserSnap = await getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId)
+      .collection('users')
+      .where('basicInfo.phoneNumber', '==', phoneNumber)
+      .limit(1)
+      .get();
+    
+    if (!existingUserSnap.empty) {
+      throw new functions.https.HttpsError('already-exists', '此手机号已在此活动中注册');
+    }
+    
+    console.log('[createEventManager] Phone number is available');
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    console.error('[createEventManager] Phone check error:', error);
+    throw new functions.https.HttpsError('internal', '检查手机号失败: ' + error.message);
+  }
+  
+  // ========== 5. 生成密码 hash 和 salt ==========
+  const passwordSalt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = sha256(password + passwordSalt);
+  
+  console.log('[createEventManager] Password hash generated');
+  
+  // ========== 6. 创建 Firebase Auth 用户 ==========
+  const normalizedPhone = phoneNumber.replace(/^0/, '');
+  const authUid = `phone_60${normalizedPhone}`;
+  
+  let userRecord;
+  try {
+    userRecord = await admin.auth().createUser({
+      uid: authUid,
+      displayName: englishName,
+      disabled: false
+    });
+    console.log('[createEventManager] Firebase Auth user created:', authUid);
+  } catch (authError) {
+    if (authError.code === 'auth/uid-already-exists') {
+      // Auth 用户已存在，获取现有用户
+      userRecord = await admin.auth().getUser(authUid);
+      console.log('[createEventManager] Firebase Auth user already exists:', authUid);
+    } else {
+      console.error('[createEventManager] Auth creation error:', authError);
+      throw new functions.https.HttpsError('internal', '创建认证用户失败: ' + authError.message);
+    }
+  }
+  
+  // ========== 7. 构建 identityInfo ==========
+  let identityInfo = {};
+  const eventManagerId = `EM${Date.now()}`; // 生成唯一 ID
+  
+  switch (identityTag) {
+    case 'staff':
+      identityInfo = {
+        staffId: eventManagerId,
+        position: 'event_manager'
+      };
+      break;
+    case 'teacher':
+      identityInfo = {
+        teacherId: eventManagerId,
+        department: '活动管理'
+      };
+      break;
+  }
+  
+  // ========== 8. 创建 Firestore 用户文档 ==========
+  const userId = authUid; // 使用 authUid 作为文档 ID
+  const now = new Date();
+  
+  const userDocData = {
+    authUid: authUid,
+    roles: ['event_manager'],
+    identityTag: identityTag,
+    basicInfo: {
+      phoneNumber: phoneNumber,
+      englishName: englishName,
+      chineseName: chineseName || '',
+      email: email || '',
+      passwordHash: passwordHash,
+      passwordSalt: passwordSalt,
+      isPhoneVerified: true
+    },
+    identityInfo: identityInfo,
+    roleSpecificData: {
+      event_manager: {
+        organizationId: organizationId,
+        eventId: eventId,
+        assignedAt: now,
+        assignedBy: callerUid
+      }
+    },
+    accountStatus: {
+      status: 'active',
+      createdAt: now,
+      updatedAt: now
+    }
+  };
+  
+  try {
+    await getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId)
+      .collection('users')
+      .doc(userId)
+      .set(userDocData);
+    
+    console.log('[createEventManager] User document created:', userId);
+  } catch (error) {
+    console.error('[createEventManager] Firestore creation error:', error);
+    throw new functions.https.HttpsError('internal', '创建用户文档失败: ' + error.message);
+  }
+  
+  // ========== 9. 更新组织的 admins 数组 ==========
+  try {
+    const adminEntry = {
+      userId: userId,
+      authUid: authUid,
+      phoneNumber: phoneNumber,
+      englishName: englishName,
+      chineseName: chineseName || '',
+      role: 'event_manager',
+      eventId: eventId,
+      addedAt: now,
+      addedBy: callerUid
+    };
+    
+    await getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .update({
+        admins: admin.firestore.FieldValue.arrayUnion(adminEntry),
+        updatedAt: now
+      });
+    
+    console.log('[createEventManager] Organization admins array updated');
+  } catch (error) {
+    console.error('[createEventManager] Update admins error:', error);
+    throw new functions.https.HttpsError('internal', '更新组织管理员列表失败: ' + error.message);
+  }
+  
+  // ========== 10. 更新活动的 eventManager 字段 ==========
+  try {
+    await getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId)
+      .update({
+        eventManager: userId,
+        updatedAt: now
+      });
+    
+    console.log('[createEventManager] Event eventManager field updated');
+  } catch (error) {
+    console.error('[createEventManager] Update eventManager error:', error);
+    throw new functions.https.HttpsError('internal', '更新活动管理员字段失败: ' + error.message);
+  }
+  
+  // ========== 11. 返回成功结果 ==========
+  console.log('[createEventManager] Event Manager created successfully:', userId);
+  
+  return {
+    success: true,
+    userId: userId,
+    authUid: authUid,
+    eventManagerId: eventManagerId,
+    message: 'Event Manager 创建成功'
+  };
+});

@@ -79,6 +79,72 @@
 ```
 
 # 第二步
+## 報錯已從「auth/configuration-not-found」變成「Permission 'iam.serviceAccounts.signBlob' denied」。這代表我們已經走到建立自訂 Token 的步驟，但執行環境的服務帳號沒有簽署權限，造成 500。
+
+先說重點：現在報錯已從「auth/configuration-not-found」變成「Permission 'iam.serviceAccounts.signBlob' denied」。這代表我們已經走到建立自訂 Token 的步驟，但執行環境的服務帳號沒有簽署權限，造成 500。
+
+我會分兩部分處理：
+- 修 signBlob 權限與必要 API
+- 修正你用 gcloud 查不到函數日誌的原因與正確查法
+
+### 1) 修復「iam.serviceAccounts.signBlob denied」
+從日誌可見你的函數在 Gen 2，使用的執行服務帳號是：
+- 1069326034581-compute@developer.gserviceaccount.com
+- 專案 ID：mybazaar-c4881（同日誌顯示）
+- 區域：us-central1
+
+請在 PowerShell 逐一執行下列命令（單行即可）：
+
+1. 設定正確專案
+```powershell
+gcloud config set project mybazaar-c4881
+```
+
+2. 啟用必要 API（IAM Credentials 與 Identity Toolkit）
+```powershell
+gcloud services enable iamcredentials.googleapis.com
+gcloud services enable identitytoolkit.googleapis.com
+```
+
+3. 把「Service Account Token Creator」授權給執行服務帳號（讓它能簽 Token）
+- 將角色授予到該服務帳號本身（最小權限做法）：
+```powershell
+gcloud iam service-accounts add-iam-policy-binding 1069326034581-compute@developer.gserviceaccount.com --member="serviceAccount:1069326034581-compute@developer.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator" --project=mybazaar-c4881
+```
+
+如果上面受組織策略限制，也可退而求其次授權在專案層（範圍較大）：
+```powershell
+gcloud projects add-iam-policy-binding mybazaar-c4881 --member="serviceAccount:1069326034581-compute@developer.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator"
+```
+
+可選（若組織策略要求）：再把 Cloud Functions Service Agent 一併加上（有些租戶策略會要求）
+```powershell
+gcloud iam service-accounts add-iam-policy-binding 1069326034581-compute@developer.gserviceaccount.com --member="serviceAccount:service-1069326034581@gcf-admin-robot.iam.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator" --project=mybazaar-c4881
+```
+
+4. 確保 Firebase Console > Authentication 已「Get started」（初始化 Auth）
+- 進入 Firebase Console > Authentication > Get started
+- 即使暫不使用 Email/Password，也先啟用以完成初始化
+
+5. 重新測一次登入（不一定需要重新部署；IAM 改變通常數十秒內生效）。若要保險可重部屬一次：
+```powershell
+firebase deploy --only functions:loginWithPin
+```
+
+預期結果：不再看到 signBlob denied；若 Auth 也已啟用，就不會再出現 configuration-not-found。
+
+
+### 補充：為何錯誤「變化」
+- 先前是「auth/configuration-not-found」：因後端 Auth 未啟用或配置不全，我已在程式碼加入 fallback，跳過 getUser/createUser，改為直接簽發 custom token。
+- 現在變成「signBlob denied」：代表真的已走到簽 token，但缺少 IAM 簽名權限與/或沒啟用 IAM Credentials API。
+- 依照上面步驟開 API + 授權後，這兩個錯誤就能一併排除。
+
+若你按上面做完還有錯誤，把新的日誌貼上來（特別是第一個包含錯誤碼的區段），我再幫你追。
+
+
+
+
+# 第三步
 ## 案的 Firebase Authentication 沒「Get started」初始化，Identity Toolkit 就會回 400 並給 auth/configuration-not-found。
 
 搜尋符合 `**/src/**/authService.js`、2 相符的檔案
