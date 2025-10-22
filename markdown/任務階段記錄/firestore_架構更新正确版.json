@@ -252,6 +252,43 @@
                                 "event_manager"
                             ]
                         },
+                        "usr_4d711157-ff50-4fe7-bbcf-0a6b26a7b815": {
+                            "accountStatus": {
+                                "createdAt": "2025-10-12T09:50:25+08:00",
+                                "status": "active",
+                                "updatedAt": "2025-10-12T09:50:25+08:00"
+                            },
+                            "activityData": {
+                                "joinedAt": "2025-10-12T09:50:25+08:00",
+                                "participationStatus": "active",
+                                "lastActiveAt": "2025-10-12T09:50:25+08:00"
+                            },
+                            "authUid": "usr_4d711157-ff50-4fe7-bbcf-0a6b26a7b815",
+                            "basicInfo": {
+                                "chineseName": "小王",
+                                "email": "astcws@hotmail.com",
+                                "englishName": "Alice Wong",
+                                "isPhoneVerified": false,
+                                "passwordHash": "cbcce7fc1052ac4832ba9a4746d83690fe7a3fc94c6e174ecc3790b81a68c593",
+                                "passwordSalt": "814bb2db9c760128697fea6856bf7c25",
+                                "phoneNumber": "0121211212",
+                                "pinHash": "cbcce7fc1052ac4832ba9a4746d83690fe7a3fc94c6e174ecc3790b81a68c593",
+                                "pinSalt": "814bb2db9c760128697fea6856bf7c25"
+                            },
+                            "identityTag": "staff",
+                            "roleSpecificData": {
+                                "event_manager": {
+                                    "organizationId": "VyJ7kgHC70hn7QjmdUPK",
+                                    "eventId": "zcaWnsF3zTNeqZ738x2V",
+                                    "assignedAt": "2025-10-12T09:50:25+08:00",
+                                    "assignedBy": "platform_admin"
+                                }
+                            },
+                            "roles": [
+                                "event_manager"
+                            ],
+                            "userId": "usr_4d711157-ff50-4fe7-bbcf-0a6b26a7b815"
+                        },
                         "updatedAt": "2025-10-12T09:50:25+08:00"
                     }
                 }

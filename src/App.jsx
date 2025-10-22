@@ -6,6 +6,8 @@ import DesktopLogin from './views/desktop/auth/Login';
 import { MobileGuard, DesktopGuard } from './components/guards/DeviceProtection';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
+import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
+import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 
 // Placeholder 組件（之後實現）
 const PhonePlaceholder = () => (
@@ -78,6 +80,10 @@ function App() {
           </EventProvider>
         </DesktopGuard>
       } />
+
+  {/* 🆕 Event Manager 登录與儀表板 */}
+      <Route path="/event-manager/login" element={<EventManagerLogin />} />
+  <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
 
       {/* 預設路由 */}
       <Route path="/" element={<Navigate to="/platform/admin" replace />} />

@@ -2,80 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 🔥 辅助函数：检查用户是否已认证
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    
-    // 🔥 辅助函数：检查是否匹配任一 authUid 字段
-    function matchesAuthUid() {
-      return isSignedIn() && (
-        request.auth.uid == resource.data.authUid ||
-        request.auth.uid == resource.data.authId ||
-        (resource.data.accountStatus != null && 
-         request.auth.uid == resource.data.accountStatus.authUid)
-      );
-    }
-    
-    // ==========================================
-    // 组织 > 活动 > 用户
-    // ==========================================
-    match /organizations/{orgId}/events/{eventId}/users/{userId} {
-      // 🔥 读取权限：已登录用户可以读取自己的数据
-      allow read: if matchesAuthUid();
-      
-      // 🔥 更新权限：用户可以更新自己的某些字段
-      allow update: if matchesAuthUid() && (
-        // 不能修改关键字段
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles', 'authUid', 'authId', 'accountStatus'])
-      );
-      
-      // 🔥 创建和删除：只允许 Cloud Functions
-      allow create, delete: if false;
-    }
-    
-    // ==========================================
-    // 组织基本信息
-    // ==========================================
+    // ========== 组织和活动（只读）==========
     match /organizations/{orgId} {
+      // 允许所有人读取组织信息
       allow read: if true;
-      allow write: if false;
+      // 只有认证用户可以写入
+      allow write: if request.auth != null;
+      
+      // 活动子集合
+      match /events/{eventId} {
+        // 允许所有人读取活动信息
+        allow read: if true;
+        // 只有认证用户可以写入
+        allow write: if request.auth != null;
+        
+        // 活动用户子集合
+        match /users/{userId} {
+          // 允许读取
+          allow read: if true;
+          // 只有认证用户可以写入
+          allow write: if request.auth != null;
+        }
+      }
     }
     
-    // ==========================================
-    // 活动基本信息
-    // ==========================================
-    match /organizations/{orgId}/events/{eventId} {
+    // ========== 系统配置（只读）==========
+    match /system_config/{docId} {
       allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ========== 用户集合 ==========
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ========== 管理员白名单（只读）==========
+    match /admin_uids/{uid} {
+      allow read: if request.auth != null;
       allow write: if false;
     }
     
-    // ==========================================
-    // 管理员集合
-    // ==========================================
-    match /managers/{managerId} {
-      allow read: if isSignedIn();
-      allow write: if false;
-    }
-    
-    // ==========================================
-    // OTP 会话
-    // ==========================================
-    match /otp_sessions/{sessionId} {
-      allow read, write: if false;
-    }
-    
-    // ==========================================
-    // 诊断测试集合
-    // ==========================================
-    match /_diagnostic_test/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if false;
-    }
-    
-    // ==========================================
-    // 默认规则
-    // ==========================================
+    // ========== 其他集合默认拒绝 ==========
     match /{document=**} {
       allow read, write: if false;
     }
