@@ -1,0 +1,5 @@
+我再看一次你給的資料，我發現，我把orgCode和organizationId，還有eventCode和eventId弄錯了，原來他們本來就不是一樣的東西。
+
+organizationId指的應該就是organization的document ID，也就是fYqHtUWjh58NVJJsCMan這個。eventId指的就是event的document ID，就是zcaWnsF3zTNeqZ738x2V…
+
+這下麻煩了～我還修了我的編碼～
