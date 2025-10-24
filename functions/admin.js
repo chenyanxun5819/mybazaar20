@@ -1830,203 +1830,318 @@ exports.createManager = functions.https.onCall(async (data, context) => {
 });
 
 
-// ========== Event Manager 登录 ==========
+// ========== Event Manager 创建用户（统一接口）==========
 
 /**
- * Event Manager 登录函数
- * 验证组织代码、活动代码、手机号和密码
- * 返回 Custom Token 用于 Firebase Auth 登录
+ * Event Manager 创建用户，支持多角色
  */
-exports.loginEventManager = functions.https.onCall(async (data, context) => {
+exports.createUserByEventManager = functions.https.onCall(async (data, context) => {
   try {
-    console.log('[loginEventManager] Login attempt');
+    console.log('[createUserByEventManager] Request received');
     
-  const { orgCode: orgCodeInput, eventCode: eventCodeInput, phoneNumber, password } = data;
+    const {
+      organizationId,
+      eventId,
+      phoneNumber,
+      password,
+      englishName,
+      chineseName = '',
+      email,
+      identityTag = 'staff',
+      department = '',
+      roles = [] // 角色数组
+    } = data;
 
     // 验证必填字段
-    if (!orgCode || !eventCode || !phoneNumber || !password) {
+    if (!organizationId || !eventId || !phoneNumber || !password || !englishName || !email) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        '请填写所有必填字段'
+        '缺少必填字段'
       );
     }
 
-    // 1. 查找组织
-    const orgsSnapshot = await getDb()
-      .collection('organizations')
-  .where('orgCode', '==', orgCodeInput.toLowerCase())
-      .limit(1)
-      .get();
-
-    if (orgsSnapshot.empty) {
-      console.log('[loginEventManager] Organization not found:', orgCodeInput);
+    // 验证至少有一个角色
+    if (!roles || roles.length === 0) {
       throw new functions.https.HttpsError(
-        'not-found',
-        '找不到该组织'
+        'invalid-argument',
+        '至少需要选择一个角色'
       );
     }
 
-  const orgDoc = orgsSnapshot.docs[0];
-  const orgId = orgDoc.id;
-  console.log('[loginEventManager] Organization found:', orgId);
-
-    // 2. 查找活动
-    const eventsSnapshot = await getDb()
-      .collection('organizations')
-      .doc(orgId)
-      .collection('events')
-      .where('eventCode', '==', eventCodeInput)
-      .limit(1)
-      .get();
-
-    if (eventsSnapshot.empty) {
-      console.log('[loginEventManager] Event not found:', eventCodeInput);
+    // 验证角色是否有效
+    const validRoles = ['seller_manager', 'merchant_manager', 'customer_manager', 'seller', 'merchant', 'customer'];
+    const invalidRoles = roles.filter(role => !validRoles.includes(role));
+    if (invalidRoles.length > 0) {
       throw new functions.https.HttpsError(
-        'not-found',
-        '找不到该活动'
+        'invalid-argument',
+        `无效的角色: ${invalidRoles.join(', ')}`
       );
     }
 
-  const eventDoc = eventsSnapshot.docs[0];
-  const eventId = eventDoc.id;
-  console.log('[loginEventManager] Event found:', eventId);
+    // 验证密码强度
+    if (password.length < 8) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '密码至少需要 8 个字符'
+      );
+    }
 
-    // 3. 查找用户
-    const usersSnapshot = await getDb()
+    if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '密码必须包含英文字母和数字'
+      );
+    }
+
+    // 验证身份标签
+    const validIdentityTags = ['staff', 'teacher', 'student', 'parent'];
+    if (!validIdentityTags.includes(identityTag)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '身份标签无效'
+      );
+    }
+
+    // 1. 验证组织和活动是否存在
+    const orgDoc = await getDb().collection('organizations').doc(organizationId).get();
+    if (!orgDoc.exists) {
+      throw new functions.https.HttpsError('not-found', '组织不存在');
+    }
+
+    const eventDoc = await getDb()
       .collection('organizations')
-      .doc(orgId)
+      .doc(organizationId)
       .collection('events')
       .doc(eventId)
-      .collection('users')
+      .get();
+
+    if (!eventDoc.exists) {
+      throw new functions.https.HttpsError('not-found', '活动不存在');
+    }
+
+    // 2. 检查手机号是否已存在
+    const usersCol = getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId)
+      .collection('users');
+
+    const existingPhone = await usersCol
       .where('basicInfo.phoneNumber', '==', phoneNumber)
       .limit(1)
       .get();
 
-    if (usersSnapshot.empty) {
-      console.log('[loginEventManager] User not found:', phoneNumber);
+    if (!existingPhone.empty) {
       throw new functions.https.HttpsError(
-        'permission-denied',
-        '手机号或密码错误'
+        'already-exists',
+        '此手机号已在此活动中注册'
       );
     }
 
-    const userDoc = usersSnapshot.docs[0];
-    const userData = userDoc.data();
-    const userId = userDoc.id;
+    // 3. 生成密码 hash
+    const passwordSalt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = sha256(password + passwordSalt);
 
-    console.log('[loginEventManager] User found:', {
-      userId,
-      roles: userData.roles
-    });
+    // 4. 创建 authUid
+    const normalizedPhone = phoneNumber.replace(/^0/, '');
+    const authUid = `phone_60${normalizedPhone}`;
 
-    // 4. 验证角色
-    if (!userData.roles || !userData.roles.includes('event_manager')) {
-      console.log('[loginEventManager] User is not an event_manager');
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        '您不是此活动的 Event Manager'
-      );
-    }
-
-    // 5. 验证密码
-    const passwordSalt = userData.basicInfo?.passwordSalt;
-    const passwordHash = userData.basicInfo?.passwordHash;
-
-    if (!passwordSalt || !passwordHash) {
-      console.log('[loginEventManager] Password data missing');
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        '密码数据缺失，请联系管理员'
-      );
-    }
-
-    const inputPasswordHash = sha256(password + passwordSalt);
-
-    if (inputPasswordHash !== passwordHash) {
-      console.log('[loginEventManager] Password mismatch');
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        '手机号或密码错误'
-      );
-    }
-
-    console.log('[loginEventManager] Password verified');
-
-    // 6. 创建或获取 Firebase Auth 用户
-    let authUid = userData.authUid;
-    
-    if (!authUid) {
-      // 如果没有 authUid，使用 userId 作为 authUid
-      authUid = userId;
-    }
-
-    // 尝试创建 Firebase Auth 用户（如果不存在）
+    // 5. 创建或获取 Firebase Auth 用户
     try {
       await admin.auth().getUser(authUid);
-      console.log('[loginEventManager] Auth user exists:', authUid);
+      console.log('[createUserByEventManager] Auth user exists');
     } catch (error) {
       if (error.code === 'auth/user-not-found') {
-        // 创建新的 Auth 用户
         await admin.auth().createUser({
           uid: authUid,
-          displayName: userData.basicInfo?.englishName || 'Event Manager',
+          displayName: englishName,
           disabled: false
         });
-        console.log('[loginEventManager] Auth user created:', authUid);
-
-        // 更新 Firestore 用户文档的 authUid
-        await getDb()
-          .collection('organizations')
-          .doc(orgCode)
-          .collection('events')
-          .doc(eventCode)
-          .collection('users')
-          .doc(userId)
-          .update({
-            authUid: authUid,
-            'accountStatus.updatedAt': new Date()
-          });
+        console.log('[createUserByEventManager] Auth user created');
       } else {
         throw error;
       }
     }
 
-    // 7. 生成 Custom Token
-    const customToken = await admin.auth().createCustomToken(authUid);
-    console.log('[loginEventManager] Custom token created');
+    // 6. 构建 identityInfo
+    let identityInfo = {};
+    
+    switch (identityTag) {
+      case 'staff':
+        identityInfo = {
+          staffId: `STF${Date.now()}`,
+          department: department || '未分配'
+        };
+        break;
+      case 'teacher':
+        identityInfo = {
+          teacherId: `TCH${Date.now()}`,
+          department: department || '未分配'
+        };
+        break;
+      case 'student':
+        identityInfo = {
+          studentId: `STU${Date.now()}`,
+          grade: department || '未分配'
+        };
+        break;
+      case 'parent':
+        identityInfo = {
+          parentId: `PAR${Date.now()}`
+        };
+        break;
+    }
 
-    // 8. 更新最后活跃时间
+    // 7. 构建 roleSpecificData
+    const roleSpecificData = {};
+    
+    if (roles.includes('seller_manager')) {
+      roleSpecificData.seller_manager = {
+        managerId: `SM${Date.now()}`,
+        assignedCapital: 0,
+        availableCapital: 0,
+        allocatedToSellers: 0,
+        totalSellersManaged: 0
+      };
+    }
+    
+    if (roles.includes('merchant_manager')) {
+      roleSpecificData.merchant_manager = {
+        managerId: `MM${Date.now()}`,
+        totalMerchantsManaged: 0
+      };
+    }
+    
+    if (roles.includes('customer_manager')) {
+      roleSpecificData.customer_manager = {
+        managerId: `CM${Date.now()}`,
+        totalCustomersManaged: 0,
+        totalSalesAmount: 0
+      };
+    }
+    
+    if (roles.includes('seller')) {
+      roleSpecificData.seller = {
+        sellerId: `SL${Date.now()}`,
+        availablePoints: 0,
+        currentSalesAmount: 0,
+        totalPointsSold: 0
+      };
+    }
+    
+    if (roles.includes('merchant')) {
+      roleSpecificData.merchant = {
+        merchantId: `MR${Date.now()}`,
+        monthlyReceivedPoints: 0,
+        totalReceivedPoints: 0
+      };
+    }
+    
+    if (roles.includes('customer')) {
+      roleSpecificData.customer = {
+        customerId: `CS${Date.now()}`,
+        currentBalance: 0,
+        totalPointsPurchased: 0,
+        totalPointsConsumed: 0
+      };
+    }
+
+    // 8. 创建用户文档
+    const userId = `usr_${crypto.randomUUID()}`;
+    const now = new Date();
+
+    const userDoc = {
+      userId: userId,
+      authUid: authUid,
+      roles: roles,
+      identityTag: identityTag,
+      basicInfo: {
+        phoneNumber: phoneNumber,
+        englishName: englishName,
+        chineseName: chineseName,
+        email: email,
+        passwordHash: passwordHash,
+        passwordSalt: passwordSalt,
+        pinHash: passwordHash,
+        pinSalt: passwordSalt,
+        isPhoneVerified: true
+      },
+      identityInfo: identityInfo,
+      roleSpecificData: roleSpecificData,
+      activityData: {
+        joinedAt: now,
+        lastActiveAt: now,
+        participationStatus: 'active'
+      },
+      accountStatus: {
+        status: 'active',
+        mustChangePassword: false,
+        createdAt: now,
+        updatedAt: now
+      },
+      metadata: {
+        registrationSource: 'event_manager_create',
+        operatorUid: context.auth?.uid || 'event_manager',
+        notes: `由 Event Manager 创建 - ${roles.join(', ')}`
+      }
+    };
+
+    // 9. 保存用户文档
+    await usersCol.doc(userId).set(userDoc);
+    console.log('[createUserByEventManager] User created:', userId);
+
+    // 10. 更新活动统计
+    const updateData = {
+      'statistics.totalUsers': admin.firestore.FieldValue.increment(1),
+      updatedAt: now
+    };
+
+    // 根据角色更新对应的统计
+    if (roles.includes('seller_manager')) {
+      updateData['statistics.totalSellerManagers'] = admin.firestore.FieldValue.increment(1);
+    }
+    if (roles.includes('merchant_manager')) {
+      updateData['statistics.totalMerchantManagers'] = admin.firestore.FieldValue.increment(1);
+    }
+    if (roles.includes('customer_manager')) {
+      updateData['statistics.totalCustomerManagers'] = admin.firestore.FieldValue.increment(1);
+    }
+    if (roles.includes('seller')) {
+      updateData['statistics.totalSellers'] = admin.firestore.FieldValue.increment(1);
+    }
+    if (roles.includes('merchant')) {
+      updateData['statistics.totalMerchants'] = admin.firestore.FieldValue.increment(1);
+    }
+    if (roles.includes('customer')) {
+      updateData['statistics.totalCustomers'] = admin.firestore.FieldValue.increment(1);
+    }
+
     await getDb()
       .collection('organizations')
-      .doc(orgCode)
+      .doc(organizationId)
       .collection('events')
-      .doc(eventCode)
-      .collection('users')
-      .doc(userId)
-      .update({
-        'activityData.lastActiveAt': new Date()
-      });
+      .doc(eventId)
+      .update(updateData);
 
-    // 9. 返回成功结果
+    console.log('[createUserByEventManager] Success');
+
     return {
       success: true,
-      customToken: customToken,
       userId: userId,
-      orgCode: orgCode,
-      eventCode: eventCode,
-      englishName: userData.basicInfo?.englishName || '',
-      chineseName: userData.basicInfo?.chineseName || '',
-      message: '登录成功'
+      authUid: authUid,
+      roles: roles,
+      message: '用户创建成功'
     };
 
   } catch (error) {
     if (error instanceof functions.https.HttpsError) {
       throw error;
     }
-    console.error('[loginEventManager] Error:', error);
+    console.error('[createUserByEventManager] Error:', error);
     throw new functions.https.HttpsError(
       'internal',
-      error.message || '登录失败'
+      error.message || '创建用户失败'
     );
   }
 });

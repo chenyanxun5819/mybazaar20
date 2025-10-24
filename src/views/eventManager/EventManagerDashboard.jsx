@@ -3,48 +3,31 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-
-// 在 import 之后添加
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-  
-  [data-action-card]:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
-    border-color: currentColor;
-  }
-  
-  [data-action-card]:hover [data-arrow] {
-    transform: translateX(4px);
-  }
-`;
-document.head.appendChild(styleSheet);
+import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 
 const EventManagerDashboard = () => {
-  const { orgEventCode } = useParams(); // 例如：fch-2025
+  const { orgEventCode } = useParams();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [eventData, setEventData] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
+  const [showAddUser, setShowAddUser] = useState(false); // 🆕
   const [statistics, setStatistics] = useState({
     totalUsers: 0,
     totalSellerManagers: 0,
     totalMerchantManagers: 0,
     totalCustomerManagers: 0,
-    totalCustomers: 0,
     totalSellers: 0,
-    totalMerchants: 0
+    totalMerchants: 0,
+    totalCustomers: 0
   });
 
   useEffect(() => {
     loadDashboardData();
   }, []);
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -60,68 +43,52 @@ const EventManagerDashboard = () => {
       const info = JSON.parse(storedInfo);
       setUserInfo(info);
 
-      // 读取 organization 主档
-      const orgDocRef = doc(db, 'organizations', info.organizationId);
-      const orgSnapshot = await getDoc(orgDocRef);
-      const org = orgSnapshot.exists() ? orgSnapshot.data() : null;
-      if (org) setOrgData(org);
+      // 加载组织信息
+      const orgDoc = await getDoc(doc(db, 'organizations', info.organizationId));
+      if (orgDoc.exists()) {
+        setOrgData(orgDoc.data());
+      }
 
-      // 先尝试用 subcollection 的 event document：organizations/{orgId}/events/{eventId}
-      const eventDocRef = doc(db, 'organizations', info.organizationId, 'events', info.eventId);
-      const eventSnapshot = await getDoc(eventDocRef);
+      // 加载活动信息（使用子集合）
+      const eventDoc = await getDoc(
+        doc(db, 'organizations', info.organizationId, 'events', info.eventId)
+      );
 
-      let eventInfo = null;
-      let stats = {
-        totalUsers: 0,
-        totalCustomers: 0,
-        totalSellers: 0,
-        totalMerchants: 0
-      };
+      if (eventDoc.exists()) {
+        const eventInfo = eventDoc.data();
+        setEventData(eventInfo);
 
-      if (eventSnapshot.exists()) {
-        // case A: events is a subcollection
-        eventInfo = eventSnapshot.data();
-        // 加载用户统计（users 为 subcollection）
+        // 加载用户统计（使用子集合）
         const usersSnapshot = await getDocs(
           collection(db, 'organizations', info.organizationId, 'events', info.eventId, 'users')
         );
 
-        stats.totalUsers = usersSnapshot.size;
-        usersSnapshot.forEach(uDoc => {
-          const userData = uDoc.data();
-          if (userData.roles?.includes('customer')) stats.totalCustomers++;
+        let stats = {
+          totalUsers: usersSnapshot.size,
+          totalSellerManagers: 0,
+          totalMerchantManagers: 0,
+          totalCustomerManagers: 0,
+          totalSellers: 0,
+          totalMerchants: 0,
+          totalCustomers: 0
+        };
+
+        usersSnapshot.forEach(doc => {
+          const userData = doc.data();
+          if (userData.roles?.includes('seller_manager')) stats.totalSellerManagers++;
+          if (userData.roles?.includes('merchant_manager')) stats.totalMerchantManagers++;
+          if (userData.roles?.includes('customer_manager')) stats.totalCustomerManagers++;
           if (userData.roles?.includes('seller')) stats.totalSellers++;
           if (userData.roles?.includes('merchant')) stats.totalMerchants++;
+          if (userData.roles?.includes('customer')) stats.totalCustomers++;
         });
-      } else if (org && org.events && org.events[info.eventId]) {
-        // case B: events 是嵌在 organization document 的 map
-        eventInfo = org.events[info.eventId];
 
-        // users 可能為 nested object map
-        const usersMap = eventInfo.users || {};
-        const userEntries = Object.values(usersMap || {});
-        stats.totalUsers = userEntries.length;
-        userEntries.forEach(userData => {
-          const roles = userData.roles || [];
-          if (roles.includes('customer')) stats.totalCustomers++;
-          if (roles.includes('seller')) stats.totalSellers++;
-          if (roles.includes('merchant')) stats.totalMerchants++;
-        });
-      } else {
-        // 未找到活动：保留 eventInfo 为 null（可在 UI 上处理）
-        console.warn('[Dashboard] Event not found as subcollection nor nested map', {
-          organizationId: info.organizationId,
-          eventId: info.eventId
-        });
-      }
-
-      if (eventInfo) {
-        setEventData(eventInfo);
         setStatistics(stats);
       }
+
     } catch (error) {
       console.error('[Dashboard] Error loading data:', error);
-      alert('加载数据失败: ' + (error?.message || error));
+      alert('加载数据失败: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -183,40 +150,37 @@ const EventManagerDashboard = () => {
         />
         <StatCard
           title="Seller Managers"
-          value={statistics.totalSellerManagers || 0} // 🆕 修改
+          value={statistics.totalSellerManagers}
           icon="💰"
           color="#10b981"
         />
         <StatCard
           title="Merchant Managers"
-          value={statistics.totalMerchantManagers || 0} // 🆕 修改
+          value={statistics.totalMerchantManagers}
           icon="🏪"
           color="#f59e0b"
         />
         <StatCard
           title="Customer Managers"
-          value={statistics.totalCustomerManagers || 0} // 🆕 修改
+          value={statistics.totalCustomerManagers}
           icon="🎫"
           color="#ec4899"
         />
-        <StatCard
-          title="顾客"
-          value={statistics.totalCustomers}
-          icon="🛒"
-          color="#10b981"
-        />
-        <StatCard
-          title="销售员"
-          value={statistics.totalSellers}
-          icon="💰"
-          color="#f59e0b"
-        />
-        <StatCard
-          title="商家"
-          value={statistics.totalMerchants}
-          icon="🏪"
-          color="#ec4899"
-        />
+      </div>
+      {/* Quick Actions Bar */}
+      <div style={styles.quickActionsBar}>
+        <button
+          style={styles.primaryButton}
+          onClick={() => setShowAddUser(true)}
+        >
+          ➕ 创建用户
+        </button>
+        <button
+          style={styles.secondaryButton}
+          onClick={() => alert('用户列表功能待开发')}
+        >
+          📋 用户列表
+        </button>
       </div>
 
       {/* Event Info */}
@@ -260,7 +224,9 @@ const EventManagerDashboard = () => {
         </div>
       </div>
 
-      {/* Quick Actions */}
+
+
+      {/* Management Team */}
       <div style={styles.actionsSection}>
         <h2 style={styles.sectionTitle}>管理团队</h2>
         <p style={styles.sectionDescription}>
@@ -335,6 +301,20 @@ const EventManagerDashboard = () => {
           />
         </div>
       </div>
+
+      {/* 创建用户弹窗 */}
+      {showAddUser && (
+        <AddUser
+          organizationId={userInfo?.organizationId}
+          eventId={userInfo?.eventId}
+          callerRole="event_manager" // 🆕 指定调用者角色
+          onClose={() => setShowAddUser(false)}
+          onSuccess={() => {
+            loadDashboardData(); // 刷新数据
+          }}
+        />
+      )}
+
     </div>
   );
 };
@@ -363,7 +343,20 @@ const InfoItem = ({ label, value, icon }) => (
 
 // Action Card Component
 const ActionCard = ({ title, description, icon, onClick, color, badge }) => (
-  <div style={styles.actionCard} onClick={onClick} data-action-card>
+  <div
+    style={styles.actionCard}
+    onClick={onClick}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.transform = 'translateY(-4px)';
+      e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.15)';
+      e.currentTarget.style.borderColor = color;
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.boxShadow = 'none';
+      e.currentTarget.style.borderColor = 'transparent';
+    }}
+  >
     <div style={{ ...styles.actionIcon, background: `${color}20`, color }}>
       {icon}
     </div>
@@ -374,7 +367,7 @@ const ActionCard = ({ title, description, icon, onClick, color, badge }) => (
     )}
     <h3 style={styles.actionTitle}>{title}</h3>
     <p style={styles.actionDescription}>{description}</p>
-    <div style={{ ...styles.actionArrow, color }} data-arrow>→</div>
+    <div style={{ ...styles.actionArrow, color }}>→</div>
   </div>
 );
 
@@ -486,6 +479,12 @@ const styles = {
     color: '#1f2937',
     marginBottom: '1.5rem'
   },
+  sectionDescription: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    marginBottom: '1rem',
+    marginTop: '-0.5rem'
+  },
   infoGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -515,6 +514,7 @@ const styles = {
     background: 'white',
     padding: '2rem',
     borderRadius: '16px',
+    marginBottom: '2rem',
     boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
   },
   actionsGrid: {
@@ -523,15 +523,13 @@ const styles = {
     gap: '1.5rem'
   },
   actionCard: {
+    position: 'relative',
     padding: '1.5rem',
     background: '#f9fafb',
     borderRadius: '12px',
     cursor: 'pointer',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-    ':hover': {
-      transform: 'translateY(-4px)',
-      boxShadow: '0 6px 12px rgba(0,0,0,0.1)'
-    }
+    transition: 'all 0.2s',
+    border: '2px solid transparent'
   },
   actionIcon: {
     width: '60px',
@@ -543,24 +541,6 @@ const styles = {
     fontSize: '2rem',
     marginBottom: '1rem'
   },
-  actionTitle: {
-    fontSize: '1.125rem',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '0.5rem'
-  },
-  actionDescription: {
-    fontSize: '0.875rem',
-    color: '#6b7280',
-    margin: 0
-  },
-  // 🆕 新增样式
-  sectionDescription: {
-    fontSize: '0.875rem',
-    color: '#6b7280',
-    marginBottom: '1rem',
-    marginTop: '-0.5rem'
-  },
   actionBadge: {
     position: 'absolute',
     top: '1rem',
@@ -571,20 +551,59 @@ const styles = {
     color: 'white',
     fontWeight: '600'
   },
+  actionTitle: {
+    fontSize: '1.125rem',
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: '0.5rem'
+  },
+  actionDescription: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    margin: 0,
+    marginBottom: '0.5rem'
+  },
   actionArrow: {
     fontSize: '1.5rem',
     fontWeight: 'bold',
-    marginTop: '0.5rem',
     transition: 'transform 0.2s'
   },
-  actionCard: {
-    position: 'relative', // 🆕 添加这个
-    padding: '1.5rem',
-    background: '#f9fafb',
+  quickActionsBar: {
+    background: 'white',
+    padding: '1rem 1.5rem',
     borderRadius: '12px',
+    marginBottom: '2rem',
+    display: 'flex',
+    gap: '1rem',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  },
+  primaryButton: {
+    padding: '0.75rem 1.5rem',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '1rem',
+    fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    border: '2px solid transparent'
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    transition: 'transform 0.2s'
+  },
+  secondaryButton: {
+    padding: '0.75rem 1.5rem',
+    background: 'white',
+    color: '#667eea',
+    border: '2px solid #667eea',
+    borderRadius: '8px',
+    fontSize: '1rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    transition: 'all 0.2s'
   }
 };
 

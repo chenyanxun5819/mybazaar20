@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, loginEventManager } = require('./admin');
+  createEventManager, loginEventManager , createUserByEventManager} = require('./admin');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.sendOtpToPhone = sendOtpToPhone;
@@ -20,7 +20,7 @@ exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
 exports.createEventManager = createEventManager; 
 exports.loginEventManager = loginEventManager; 
-
+exports.createUserByEventManager = createUserByEventManager;
 
 // CORS 中间件配置
 const allowedOrigins = [
