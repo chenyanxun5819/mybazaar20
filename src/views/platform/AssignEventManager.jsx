@@ -9,11 +9,21 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     englishName: '',
     chineseName: '',
     email: '',
-    identityTag: 'staff'
+    identityTag: '' // ✨ 不再设置默认值，改为动态选择
   });
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // ✨ 从 Organization 获取可用的身份标签
+  const availableIdentityTags = organization.identityTags
+    ?.filter(tag => tag.isActive)
+    ?.sort((a, b) => a.displayOrder - b.displayOrder) || [];
+
+  // ✨ 设置默认值为第一个可用标签
+  if (!formData.identityTag && availableIdentityTags.length > 0) {
+    formData.identityTag = availableIdentityTags[0].id;
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -136,6 +146,15 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           </div>
         </div>
 
+        {/* ✨ 检查是否有可用的身份标签 */}
+        {availableIdentityTags.length === 0 && (
+          <div style={styles.warningBox}>
+            ⚠️ <strong>警告：</strong>此组织还没有设置身份标签。
+            <br />
+            请先在组织卡片中点击"🏷️ 身份标签"按钮设置身份标签。
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>
@@ -216,15 +235,23 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
             <label style={styles.label}>
               身份标签 <span style={styles.required}>*</span>
             </label>
+            {/* ✨ 动态生成选项 */}
             <select
               name="identityTag"
               value={formData.identityTag}
               onChange={handleChange}
               style={styles.select}
-              disabled={submitting}
+              disabled={submitting || availableIdentityTags.length === 0}
             >
-              <option value="staff">职员 (Staff)</option>
-              <option value="teacher">教师 (Teacher)</option>
+              {availableIdentityTags.length === 0 ? (
+                <option value="">无可用身份标签</option>
+              ) : (
+                availableIdentityTags.map(tag => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.name['zh-CN']} ({tag.name['en']})
+                  </option>
+                ))
+              )}
             </select>
             <small style={styles.hint}>Event Manager 必须是组织成员</small>
           </div>
@@ -248,9 +275,9 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
               type="submit"
               style={{
                 ...styles.submitButton,
-                ...(submitting ? styles.submitButtonDisabled : {})
+                ...(submitting || availableIdentityTags.length === 0 ? styles.submitButtonDisabled : {})
               }}
-              disabled={submitting}
+              disabled={submitting || availableIdentityTags.length === 0}
             >
               {submitting ? '创建中...' : '创建 Event Manager'}
             </button>
@@ -321,6 +348,17 @@ const styles = {
     justifyContent: 'space-between',
     marginBottom: '0.5rem',
     fontSize: '0.875rem'
+  },
+  // ✨ 新增样式：警告框
+  warningBox: {
+    background: '#fef3c7',
+    border: '1px solid #fbbf24',
+    color: '#92400e',
+    padding: '1rem',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    marginBottom: '1.5rem',
+    lineHeight: '1.5'
   },
   formGroup: {
     marginBottom: '1.5rem'

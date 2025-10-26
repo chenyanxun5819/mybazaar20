@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, loginEventManager , createUserByEventManager} = require('./admin');
+  createEventManager, loginEventManager , createUserByEventManagerHttp} = require('./admin');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.sendOtpToPhone = sendOtpToPhone;
@@ -20,7 +20,7 @@ exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
 exports.createEventManager = createEventManager; 
 exports.loginEventManager = loginEventManager; 
-exports.createUserByEventManager = createUserByEventManager;
+exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
 
 // CORS 中间件配置
 const allowedOrigins = [
@@ -614,5 +614,83 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
   } catch (error) {
     console.error("Error fetching managers:", error);
     throw new functions.https.HttpsError("internal", "Unable to fetch managers.");
+  }
+});
+
+// functions/migrateIdentityTags.js
+exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
+  try {
+    const db = admin.firestore();
+    
+    // 获取所有 Organizations
+    const orgsSnapshot = await db.collection('organizations').get();
+    
+    const batch = db.batch();
+    let updateCount = 0;
+    const now = new Date().toISOString(); // ✅ 使用固定的时间戳字符串
+    
+    for (const orgDoc of orgsSnapshot.docs) {
+      const orgData = orgDoc.data();
+      
+      // 检查是否已有 identityTags
+      if (!orgData.identityTags) {
+        // 添加默认的身份标签
+        const defaultIdentityTags = [
+          {
+            id: 'staff',
+            name: {
+              'en': 'Staff',
+              'zh-CN': '职员'
+            },
+            displayOrder: 1,
+            isActive: true,
+            createdAt: now // ✅ 使用字符串而不是 serverTimestamp()
+          },
+          {
+            id: 'student',
+            name: {
+              'en': 'Student',
+              'zh-CN': '学生'
+            },
+            displayOrder: 2,
+            isActive: true,
+            createdAt: now
+          },
+          {
+            id: 'teacher',
+            name: {
+              'en': 'Teacher',
+              'zh-CN': '教师'
+            },
+            displayOrder: 3,
+            isActive: true,
+            createdAt: now
+          }
+        ];
+        
+        batch.update(orgDoc.ref, {
+          identityTags: defaultIdentityTags,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp() // ✅ 这里可以用 serverTimestamp
+        });
+        
+        updateCount++;
+      }
+    }
+    
+    await batch.commit();
+    
+    res.json({
+      success: true,
+      message: `成功更新 ${updateCount} 个组织的身份标签`,
+      totalOrgs: orgsSnapshot.size,
+      timestamp: now
+    });
+    
+  } catch (error) {
+    console.error('迁移失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });

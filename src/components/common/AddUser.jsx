@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { functions } from '../../config/firebase';
-import { httpsCallable } from 'firebase/functions';
+import { db } from '../../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 /**
  * 通用的用户创建组件
@@ -20,49 +20,93 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     email: '',
     password: '',
     confirmPassword: '',
-    identityTag: 'staff',
+    identityTag: '', // ✨ 不再设置默认值
     department: '',
     roles: [] // 多选的角色数组
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // ✨ 新增：存储从 Organization 获取的身份标签
+  const [identityTags, setIdentityTags] = useState([]);
+  const [loadingTags, setLoadingTags] = useState(true);
+
+  // ✨ 新增：从 Firestore 加载 Organization 的 identityTags
+  useEffect(() => {
+    const loadIdentityTags = async () => {
+      try {
+        setLoadingTags(true);
+        const orgRef = doc(db, 'organizations', organizationId);
+        const orgSnap = await getDoc(orgRef);
+        
+        if (orgSnap.exists()) {
+          const orgData = orgSnap.data();
+          const tags = orgData.identityTags || [];
+          
+          // 只显示活跃的标签
+          const activeTags = tags
+            .filter(tag => tag.isActive)
+            .sort((a, b) => a.displayOrder - b.displayOrder);
+          
+          setIdentityTags(activeTags);
+          
+          // ✨ 设置默认选中第一个标签
+          if (activeTags.length > 0) {
+            setFormData(prev => ({
+              ...prev,
+              identityTag: activeTags[0].id
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('[AddUser] 加载身份标签失败:', err);
+        setError('加载身份标签失败: ' + err.message);
+      } finally {
+        setLoadingTags(false);
+      }
+    };
+
+    if (organizationId) {
+      loadIdentityTags();
+    }
+  }, [organizationId]);
 
   // 根据 callerRole 获取可见的角色选项
   const getRoleOptions = () => {
     const allRoles = {
-      seller_manager: { 
-        value: 'seller_manager', 
-        label: 'Seller Manager', 
+      seller_manager: {
+        value: 'seller_manager',
+        label: 'Seller Manager',
         description: '销售管理员 - 管理销售团队和资本分配',
         icon: '💰'
       },
-      merchant_manager: { 
-        value: 'merchant_manager', 
-        label: 'Merchant Manager', 
+      merchant_manager: {
+        value: 'merchant_manager',
+        label: 'Merchant Manager',
         description: '商家管理员 - 管理商家和 QR Code',
         icon: '🏪'
       },
-      customer_manager: { 
-        value: 'customer_manager', 
-        label: 'Customer Manager', 
+      customer_manager: {
+        value: 'customer_manager',
+        label: 'Customer Manager',
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
       },
-      seller: { 
-        value: 'seller', 
-        label: 'Seller', 
+      seller: {
+        value: 'seller',
+        label: 'Seller',
         description: '销售员 - 销售固本给顾客',
         icon: '💳'
       },
-      merchant: { 
-        value: 'merchant', 
-        label: 'Merchant', 
+      merchant: {
+        value: 'merchant',
+        label: 'Merchant',
         description: '商家 - 接收顾客消费',
         icon: '🏬'
       },
-      customer: { 
-        value: 'customer', 
-        label: 'Customer', 
+      customer: {
+        value: 'customer',
+        label: 'Customer',
         description: '顾客 - 购买和使用固本',
         icon: '👤'
       }
@@ -73,19 +117,19 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       case 'event_manager':
         // Event Manager 可以看到所有角色
         return Object.values(allRoles);
-      
+
       case 'seller_manager':
         // Seller Manager 只能创建 Seller 和 Customer
         return [allRoles.seller, allRoles.customer];
-      
+
       case 'merchant_manager':
         // Merchant Manager 只能创建 Merchant 和 Customer
         return [allRoles.merchant, allRoles.customer];
-      
+
       case 'customer_manager':
         // Customer Manager 只能创建 Customer
         return [allRoles.customer];
-      
+
       default:
         return [];
     }
@@ -97,19 +141,19 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       case 'event_manager':
         // Event Manager: 预设勾选 Customer（但可取消）
         return ['customer'];
-      
+
       case 'seller_manager':
         // Seller Manager: 必须勾选 Seller 和 Customer
         return ['seller', 'customer'];
-      
+
       case 'merchant_manager':
         // Merchant Manager: 必须勾选 Merchant 和 Customer
         return ['merchant', 'customer'];
-      
+
       case 'customer_manager':
         // Customer Manager: 必须勾选 Customer
         return ['customer'];
-      
+
       default:
         return [];
     }
@@ -121,19 +165,19 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       case 'event_manager':
         // Event Manager 可以取消所有角色（完全自由）
         return false;
-      
+
       case 'seller_manager':
         // Seller Manager 创建的用户必须是 Seller 和 Customer
         return ['seller', 'customer'].includes(roleValue);
-      
+
       case 'merchant_manager':
         // Merchant Manager 创建的用户必须是 Merchant 和 Customer
         return ['merchant', 'customer'].includes(roleValue);
-      
+
       case 'customer_manager':
         // Customer Manager 创建的用户必须是 Customer
         return roleValue === 'customer';
-      
+
       default:
         return false;
     }
@@ -189,22 +233,36 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     setLoading(true);
 
     try {
-      // 调用后端函数
-      const createUser = httpsCallable(functions, 'createUserByEventManager');
-      const result = await createUser({
-        organizationId,
-        eventId,
-        phoneNumber: formData.phoneNumber,
-        password: formData.password,
-        englishName: formData.englishName,
-        chineseName: formData.chineseName,
-        email: formData.email,
-        identityTag: formData.identityTag,
-        department: formData.department,
-        roles: formData.roles
-      });
+      // 使用 HTTP 调用
+      const response = await fetch(
+        'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            organizationId,
+            eventId,
+            phoneNumber: formData.phoneNumber,
+            password: formData.password,
+            englishName: formData.englishName,
+            chineseName: formData.chineseName,
+            email: formData.email,
+            identityTag: formData.identityTag,
+            department: formData.department,
+            roles: formData.roles
+          })
+        }
+      );
 
-      console.log('[AddUser] Success:', result.data);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '创建失败');
+      }
+
+      const result = await response.json();
+      console.log('[AddUser] Success:', result);
       alert('用户创建成功！');
       
       if (onSuccess) {
@@ -217,11 +275,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     } catch (error) {
       console.error('[AddUser] Error:', error);
       
-      if (error.code === 'functions/already-exists') {
+      if (error.message.includes('已被使用') || error.message.includes('已在此活动中注册')) {
         setError('此手机号已被使用');
-      } else if (error.code === 'functions/invalid-argument') {
+      } else if (error.message.includes('必填字段')) {
         setError('请填写所有必填字段并至少选择一个角色');
-      } else if (error.code === 'functions/permission-denied') {
+      } else if (error.message.includes('权限不足')) {
         setError('权限不足，无法创建用户');
       } else {
         setError(error.message || '创建失败，请重试');
@@ -232,6 +290,20 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   };
 
   const roleOptions = getRoleOptions();
+
+  // ✨ 如果还在加载身份标签，显示加载状态
+  if (loadingTags) {
+    return (
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.loadingContainer}>
+            <div style={styles.spinner}></div>
+            <p>加载身份标签中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -245,7 +317,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
           {/* 基本信息 */}
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>📋 基本信息</h3>
-            
+
             <div style={styles.formGroup}>
               <label style={styles.label}>手机号 *</label>
               <input
@@ -285,17 +357,17 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>Email *</label>
+              <label style={styles.label}>电子邮箱（可选）</label>
               <input
                 type="email"
                 style={styles.input}
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="user@example.com"
-                required
+                placeholder="example@email.com"
               />
             </div>
 
+            {/* ✨ 身份标签：从 Organization 动态读取 */}
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>身份标签 *</label>
@@ -304,22 +376,33 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                   value={formData.identityTag}
                   onChange={(e) => setFormData({ ...formData, identityTag: e.target.value })}
                   required
+                  disabled={identityTags.length === 0}
                 >
-                  <option value="staff">Staff (职员)</option>
-                  <option value="teacher">Teacher (教师)</option>
-                  <option value="student">Student (学生)</option>
-                  <option value="parent">Parent (家长)</option>
+                  {identityTags.length === 0 ? (
+                    <option value="">无可用身份标签</option>
+                  ) : (
+                    identityTags.map(tag => (
+                      <option key={tag.id} value={tag.id}>
+                        {tag.name['zh-CN']} ({tag.name['en']})
+                      </option>
+                    ))
+                  )}
                 </select>
+                <small style={styles.hint}>
+                  {identityTags.length === 0 
+                    ? '此组织还没有设置身份标签'
+                    : '选择用户的身份标签'}
+                </small>
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>部门 / 班级（可选）</label>
+                <label style={styles.label}>班级 / 部门（可选）</label>
                 <input
                   type="text"
                   style={styles.input}
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="例如：初一A班 / 行政部"
+                  placeholder="例如：初一（1）班"
                 />
               </div>
             </div>
@@ -328,7 +411,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
           {/* 密码设置 */}
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>🔒 密码设置</h3>
-            
+
             <div style={styles.formGroup}>
               <label style={styles.label}>密码 *</label>
               <input
@@ -336,9 +419,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 style={styles.input}
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="至少 8 个字符，包含字母和数字"
+                placeholder="至少 8 个字符"
                 required
+                minLength="8"
               />
+              <small style={styles.hint}>至少 8 个字符，包含英文字母和数字</small>
             </div>
 
             <div style={styles.formGroup}>
@@ -358,16 +443,16 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>👥 角色分配 *</h3>
             <p style={styles.roleHint}>
-              {callerRole === 'event_manager' 
-                ? '请选择一个或多个角色（可多选）' 
+              {callerRole === 'event_manager'
+                ? '请选择一个或多个角色（可多选）'
                 : '以下角色为必选项（已自动勾选）'}
             </p>
-            
+
             <div style={styles.rolesGrid}>
               {roleOptions.map(role => {
                 const isChecked = formData.roles.includes(role.value);
                 const isDisabled = isRoleDisabled(role.value);
-                
+
                 return (
                   <div
                     key={role.value}
@@ -412,6 +497,15 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             </div>
           )}
 
+          {/* ✨ 警告：没有身份标签时 */}
+          {identityTags.length === 0 && (
+            <div style={styles.warningBox}>
+              ⚠️ <strong>警告：</strong>此组织还没有设置身份标签。
+              <br />
+              请联系 Platform Admin 在组织管理中设置身份标签。
+            </div>
+          )}
+
           {/* 按钮 */}
           <div style={styles.actions}>
             <button
@@ -426,10 +520,10 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
               type="submit"
               style={{
                 ...styles.submitButton,
-                opacity: loading ? 0.6 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer'
+                opacity: (loading || identityTags.length === 0) ? 0.6 : 1,
+                cursor: (loading || identityTags.length === 0) ? 'not-allowed' : 'pointer'
               }}
-              disabled={loading}
+              disabled={loading || identityTags.length === 0}
             >
               {loading ? '创建中...' : '创建用户'}
             </button>
@@ -464,6 +558,23 @@ const styles = {
     overflow: 'auto',
     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
     margin: 'auto'
+  },
+  // ✨ 新增：加载状态样式
+  loadingContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '3rem',
+    gap: '1rem'
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #f3f4f6',
+    borderTopColor: '#667eea',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
   },
   header: {
     display: 'flex',
@@ -611,6 +722,16 @@ const styles = {
     fontSize: '0.875rem',
     border: '1px solid #fecaca'
   },
+  // ✨ 新增：警告框样式
+  warningBox: {
+    background: '#fef3c7',
+    border: '1px solid #fbbf24',
+    color: '#92400e',
+    padding: '1rem',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    lineHeight: '1.5'
+  },
   actions: {
     display: 'flex',
     gap: '1rem',
@@ -645,5 +766,16 @@ const styles = {
     transition: 'all 0.2s'
   }
 };
+
+// 添加旋转动画
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export default AddUser;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
 
 const PlatformDashboard = () => {
@@ -58,7 +58,7 @@ const PlatformDashboard = () => {
     setShowAssignManager(false);
     setSelectedOrg(null);
     setSelectedEvent(null);
-    loadOrganizations(); // 刷新数据
+    loadOrganizations();
   };
 
   if (loading) {
@@ -195,6 +195,7 @@ const StatCard = ({ title, value, icon, color }) => (
 
 const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onReload }) => {
   const [expanded, setExpanded] = useState(false);
+  const [showEditIdentityTags, setShowEditIdentityTags] = useState(false);
 
   return (
     <div style={styles.orgCard}>
@@ -220,6 +221,13 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
         <div style={styles.orgActions}>
           <button
             style={styles.secondaryButton}
+            onClick={() => setShowEditIdentityTags(true)}
+            title="编辑身份标签"
+          >
+            🏷️ 身份标签
+          </button>
+          <button
+            style={styles.secondaryButton}
             onClick={() => onCreateEvent(organization)}
           >
             + 创建活动
@@ -231,6 +239,25 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
             {expanded ? '▲' : '▼'}
           </button>
         </div>
+      </div>
+
+      {/* ✨ 新增：显示当前身份标签 */}
+      <div style={styles.identityTagsPreview}>
+        <span style={styles.identityTagsLabel}>身份标签：</span>
+        {organization.identityTags && organization.identityTags.length > 0 ? (
+          <div style={styles.tagsList}>
+            {organization.identityTags
+              .filter(tag => tag.isActive)
+              .sort((a, b) => a.displayOrder - b.displayOrder)
+              .map(tag => (
+                <span key={tag.id} style={styles.identityTagBadge}>
+                  {tag.name['zh-CN']} / {tag.name['en']}
+                </span>
+              ))}
+          </div>
+        ) : (
+          <span style={styles.noTags}>未设置身份标签</span>
+        )}
       </div>
 
       {expanded && (
@@ -251,6 +278,18 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
             </div>
           )}
         </div>
+      )}
+
+      {/* ✨ 新增：编辑身份标签的 Modal */}
+      {showEditIdentityTags && (
+        <EditIdentityTagsModal
+          organization={organization}
+          onClose={() => setShowEditIdentityTags(false)}
+          onSuccess={() => {
+            setShowEditIdentityTags(false);
+            onReload();
+          }}
+        />
       )}
     </div>
   );
@@ -315,77 +354,177 @@ const EventCard = ({ event, organization, onAssignManager }) => {
         >
           📱 手机版
         </a>
-
         <a
-          href={eventUrl.replace('/phone', '/desktop')}
+          href={`/${organization.orgCode}-${event.eventCode}/desktop`}
           target="_blank"
           rel="noopener noreferrer"
           style={styles.linkButton}
         >
-          🖥️ 桌机版
+          🖥️ 桌面版
         </a>
-      </div >
-    </div >
+      </div>
+    </div>
   );
 };
 
-const CreateOrganizationModal = ({ onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
-    orgNameZh: '',
-    orgNameEn: '',
-    orgCode: '',
-    email: '',
-    phone: '',
-    address: ''
-  });
+// ✨ 新增：编辑身份标签的 Modal 组件
+const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
+  const [identityTags, setIdentityTags] = useState(
+    organization.identityTags || []
+  );
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [checkingUsage, setCheckingUsage] = useState(false);
 
+  // 添加新标签
+  const handleAddTag = () => {
+    const newTag = {
+      id: `tag_${Date.now()}`,
+      name: {
+        'en': '',
+        'zh-CN': ''
+      },
+      displayOrder: identityTags.length + 1,
+      isActive: true,
+      createdAt: new Date().toISOString()
+    };
+    setIdentityTags([...identityTags, newTag]);
+  };
+
+  // 更新标签
+  const handleUpdateTag = (tagId, field, lang, value) => {
+    setIdentityTags(identityTags.map(tag => {
+      if (tag.id === tagId) {
+        if (field === 'name') {
+          return {
+            ...tag,
+            name: {
+              ...tag.name,
+              [lang]: value
+            }
+          };
+        }
+        return { ...tag, [field]: value };
+      }
+      return tag;
+    }));
+  };
+
+  // 删除标签（需要检查是否有用户使用）
+  const handleDeleteTag = async (tagId) => {
+    if (!confirm('确定要删除此身份标签吗？')) {
+      return;
+    }
+
+    try {
+      setCheckingUsage(true);
+      setError('');
+
+      // 检查是否有用户使用此标签
+      const usageCount = await checkTagUsage(organization.id, tagId);
+
+      if (usageCount > 0) {
+        setError(`无法删除：目前有 ${usageCount} 个用户使用此身份标签`);
+        return;
+      }
+
+      // 如果没有用户使用，则删除
+      setIdentityTags(identityTags.filter(tag => tag.id !== tagId));
+      
+    } catch (err) {
+      console.error('检查标签使用情况失败:', err);
+      setError('检查标签使用情况失败: ' + err.message);
+    } finally {
+      setCheckingUsage(false);
+    }
+  };
+
+  // 检查标签使用情况
+  const checkTagUsage = async (orgId, tagId) => {
+    try {
+      // 遍历所有 events，查找使用此标签的用户
+      let totalCount = 0;
+
+      for (const event of organization.events) {
+        const usersSnapshot = await getDocs(
+          collection(db, 'organizations', orgId, 'events', event.id, 'users')
+        );
+
+        const count = usersSnapshot.docs.filter(doc => {
+          const userData = doc.data();
+          return userData.identityTag === tagId;
+        }).length;
+
+        totalCount += count;
+      }
+
+      return totalCount;
+    } catch (error) {
+      console.error('检查标签使用失败:', error);
+      throw error;
+    }
+  };
+
+  // 上移标签
+  const handleMoveUp = (index) => {
+    if (index === 0) return;
+    const newTags = [...identityTags];
+    [newTags[index - 1], newTags[index]] = [newTags[index], newTags[index - 1]];
+    // 更新 displayOrder
+    newTags.forEach((tag, i) => {
+      tag.displayOrder = i + 1;
+    });
+    setIdentityTags(newTags);
+  };
+
+  // 下移标签
+  const handleMoveDown = (index) => {
+    if (index === identityTags.length - 1) return;
+    const newTags = [...identityTags];
+    [newTags[index], newTags[index + 1]] = [newTags[index + 1], newTags[index]];
+    // 更新 displayOrder
+    newTags.forEach((tag, i) => {
+      tag.displayOrder = i + 1;
+    });
+    setIdentityTags(newTags);
+  };
+
+  // 验证表单
+  const validateForm = () => {
+    for (const tag of identityTags) {
+      if (!tag.name['zh-CN'].trim() || !tag.name['en'].trim()) {
+        setError('所有身份标签必须填写中英文名称');
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // 提交保存
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.orgNameZh || !formData.orgCode || !formData.email) {
-      alert('请填写必填字段');
+    if (!validateForm()) {
       return;
     }
 
     try {
       setSubmitting(true);
+      setError('');
 
-      await addDoc(collection(db, 'organizations'), {
-        orgName: {
-          'zh-CN': formData.orgNameZh,
-          'en': formData.orgNameEn || formData.orgNameZh
-        },
-        orgCode: formData.orgCode.toLowerCase(),
-        contactInfo: {
-          email: formData.email,
-          phone: formData.phone,
-          address: formData.address
-        },
-        settings: {
-          defaultLanguage: 'zh-CN',
-          supportedLanguages: ['zh-CN', 'en'],
-          timezone: 'Asia/Kuala_Lumpur',
-          currency: 'MYR'
-        },
-        admins: [],
-        statistics: {
-          totalEvents: 0,
-          activeEvents: 0,
-          totalUsers: 0,
-          totalTransactions: 0
-        },
-        status: 'active',
-        createdAt: serverTimestamp(),
-        createdBy: 'platform_admin',
+      // 更新 Organization 的 identityTags
+      const orgRef = doc(db, 'organizations', organization.id);
+      await updateDoc(orgRef, {
+        identityTags: identityTags,
         updatedAt: serverTimestamp()
       });
 
-      alert('组织创建成功！');
+      alert('身份标签更新成功！');
       onSuccess();
-    } catch (error) {
-      console.error('创建组织失败:', error);
-      alert('创建组织失败: ' + error.message);
+
+    } catch (err) {
+      console.error('更新失败:', err);
+      setError('更新失败: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -393,78 +532,119 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <h2 style={styles.modalTitle}>创建新组织</h2>
+      <div 
+        style={{ ...styles.modalContent, maxWidth: '800px' }} 
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={styles.modalHeader}>
+          <div>
+            <h2 style={styles.modalTitle}>🏷️ 编辑身份标签</h2>
+            <p style={styles.modalSubtitle}>
+              组织：{organization.orgName['zh-CN']}
+            </p>
+          </div>
+          <button 
+            style={styles.closeButton}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={styles.infoBox}>
+          <p style={styles.infoText}>
+            💡 <strong>说明：</strong>身份标签将应用于此组织下的所有活动。
+            用户注册时需要选择一个身份标签。
+          </p>
+        </div>
+
         <form onSubmit={handleSubmit}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（中文）*</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.orgNameZh}
-              onChange={e => setFormData({ ...formData, orgNameZh: e.target.value })}
-              placeholder="例如：芙蓉中华中学"
-              required
-            />
+          <div style={styles.tagsContainer}>
+            {identityTags.length === 0 ? (
+              <div style={styles.emptyTags}>
+                <p>还没有身份标签</p>
+              </div>
+            ) : (
+              identityTags.map((tag, index) => (
+                <div key={tag.id} style={styles.tagItem}>
+                  <div style={styles.tagOrderControls}>
+                    <button
+                      type="button"
+                      style={styles.orderButton}
+                      onClick={() => handleMoveUp(index)}
+                      disabled={index === 0 || submitting}
+                      title="上移"
+                    >
+                      ▲
+                    </button>
+                    <span style={styles.orderNumber}>{index + 1}</span>
+                    <button
+                      type="button"
+                      style={styles.orderButton}
+                      onClick={() => handleMoveDown(index)}
+                      disabled={index === identityTags.length - 1 || submitting}
+                      title="下移"
+                    >
+                      ▼
+                    </button>
+                  </div>
+
+                  <div style={styles.tagInputs}>
+                    <div style={styles.tagInputGroup}>
+                      <label style={styles.tagLabel}>中文名称</label>
+                      <input
+                        type="text"
+                        value={tag.name['zh-CN']}
+                        onChange={(e) => handleUpdateTag(tag.id, 'name', 'zh-CN', e.target.value)}
+                        placeholder="例如：职员"
+                        style={styles.tagInput}
+                        disabled={submitting}
+                        required
+                      />
+                    </div>
+                    <div style={styles.tagInputGroup}>
+                      <label style={styles.tagLabel}>英文名称</label>
+                      <input
+                        type="text"
+                        value={tag.name['en']}
+                        onChange={(e) => handleUpdateTag(tag.id, 'name', 'en', e.target.value)}
+                        placeholder="例如：Staff"
+                        style={styles.tagInput}
+                        disabled={submitting}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    style={styles.deleteTagButton}
+                    onClick={() => handleDeleteTag(tag.id)}
+                    disabled={submitting || checkingUsage}
+                    title="删除标签"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              ))
+            )}
           </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（英文）</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.orgNameEn}
-              onChange={e => setFormData({ ...formData, orgNameEn: e.target.value })}
-              placeholder="例如：Foon Chung Hua School"
-            />
-          </div>
+          <button
+            type="button"
+            style={styles.addTagButton}
+            onClick={handleAddTag}
+            disabled={submitting}
+          >
+            ➕ 添加新标签
+          </button>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织代码 *</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.orgCode}
-              onChange={e => setFormData({ ...formData, orgCode: e.target.value.toLowerCase() })}
-              placeholder="例如：fch（仅小写字母）"
-              pattern="[a-z]+"
-              required
-            />
-            <small style={styles.hint}>用于生成 URL，仅限小写英文字母</small>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>联络邮箱 *</label>
-            <input
-              type="email"
-              style={styles.input}
-              value={formData.email}
-              onChange={e => setFormData({ ...formData, email: e.target.value })}
-              placeholder="admin@example.com"
-              required
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>联络电话</label>
-            <input
-              type="tel"
-              style={styles.input}
-              value={formData.phone}
-              onChange={e => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="0123456789"
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>地址</label>
-            <textarea
-              style={{ ...styles.input, minHeight: '80px' }}
-              value={formData.address}
-              onChange={e => setFormData({ ...formData, address: e.target.value })}
-              placeholder="组织地址"
-            />
-          </div>
+          {error && (
+            <div style={styles.errorMessage}>
+              ⚠️ {error}
+            </div>
+          )}
 
           <div style={styles.modalActions}>
             <button
@@ -477,7 +657,205 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
             </button>
             <button
               type="submit"
-              style={styles.submitButton}
+              style={{
+                ...styles.submitButton,
+                ...(submitting ? styles.submitButtonDisabled : {})
+              }}
+              disabled={submitting}
+            >
+              {submitting ? '保存中...' : '保存修改'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// CreateOrganizationModal 组件
+const CreateOrganizationModal = ({ onClose, onSuccess }) => {
+  const [formData, setFormData] = useState({
+    orgCode: '',
+    orgNameEN: '',
+    orgNameZH: '',
+    status: 'active'
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    if (error) setError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH) {
+      setError('请填写所有必填字段');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError('');
+
+      // 检查 orgCode 是否已存在
+      const orgsSnapshot = await getDocs(collection(db, 'organizations'));
+      const existingOrg = orgsSnapshot.docs.find(
+        doc => doc.data().orgCode.toLowerCase() === formData.orgCode.toLowerCase()
+      );
+
+      if (existingOrg) {
+        setError('此组织代码已存在，请使用其他代码');
+        return;
+      }
+
+      // ✨ 创建默认的身份标签
+      const defaultIdentityTags = [
+        {
+          id: 'staff',
+          name: {
+            'en': 'Staff',
+            'zh-CN': '职员'
+          },
+          displayOrder: 1,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'student',
+          name: {
+            'en': 'Student',
+            'zh-CN': '学生'
+          },
+          displayOrder: 2,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'teacher',
+          name: {
+            'en': 'Teacher',
+            'zh-CN': '教师'
+          },
+          displayOrder: 3,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        }
+      ];
+
+      await addDoc(collection(db, 'organizations'), {
+        orgCode: formData.orgCode.toLowerCase(),
+        orgName: {
+          'en': formData.orgNameEN,
+          'zh-CN': formData.orgNameZH
+        },
+        identityTags: defaultIdentityTags, // ✨ 添加默认身份标签
+        status: formData.status,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      alert('组织创建成功！');
+      onSuccess();
+
+    } catch (err) {
+      console.error('创建失败:', err);
+      setError('创建失败: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+        <h2 style={styles.modalTitle}>创建新组织</h2>
+
+        <form onSubmit={handleSubmit}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>组织代码 *</label>
+            <input
+              type="text"
+              name="orgCode"
+              value={formData.orgCode}
+              onChange={handleChange}
+              placeholder="例如：fch"
+              style={styles.input}
+              disabled={submitting}
+              required
+            />
+            <small style={styles.hint}>小写字母，用于 URL</small>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>组织名称（英文）*</label>
+            <input
+              type="text"
+              name="orgNameEN"
+              value={formData.orgNameEN}
+              onChange={handleChange}
+              placeholder="Organization Name"
+              style={styles.input}
+              disabled={submitting}
+              required
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>组织名称（中文）*</label>
+            <input
+              type="text"
+              name="orgNameZH"
+              value={formData.orgNameZH}
+              onChange={handleChange}
+              placeholder="组织名称"
+              style={styles.input}
+              disabled={submitting}
+              required
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>状态</label>
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              style={styles.input}
+              disabled={submitting}
+            >
+              <option value="active">运作中</option>
+              <option value="inactive">已停用</option>
+            </select>
+          </div>
+
+          {error && (
+            <div style={styles.errorMessage}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <div style={styles.modalActions}>
+            <button
+              type="button"
+              style={styles.cancelButton}
+              onClick={onClose}
+              disabled={submitting}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              style={{
+                ...styles.submitButton,
+                ...(submitting ? styles.submitButtonDisabled : {})
+              }}
               disabled={submitting}
             >
               {submitting ? '创建中...' : '创建组织'}
@@ -489,98 +867,85 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   );
 };
 
+// CreateEventModal 组件
 const CreateEventModal = ({ organization, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
-    eventNameZh: '',
-    eventNameEn: '',
-    eventCode: new Date().getFullYear().toString(),
-    descriptionZh: '',
-    voucherSalesStart: '',
-    voucherSalesEnd: '',
+    eventCode: '',
+    eventNameEN: '',
+    eventNameZH: '',
     fairDate: '',
-    fairTime: '08:00 - 16:00',
-    consumptionStart: '',
-    consumptionEnd: '',
-    systemOpenDate: '',
-    systemCloseDate: '',
-    location: '',
-    totalCapital: 2000000
+    consumptionStartDate: '',
+    consumptionEndDate: '',
+    totalCapital: '',
+    status: 'planning'
   });
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    if (error) setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.eventNameZh || !formData.eventCode || !formData.fairDate) {
-      alert('请填写必填字段');
+    if (!formData.eventCode || !formData.eventNameEN || !formData.eventNameZH) {
+      setError('请填写所有必填字段');
       return;
     }
 
     try {
       setSubmitting(true);
+      setError('');
 
-      await addDoc(
-        collection(db, 'organizations', organization.id, 'events'),
-        {
-          eventCode: formData.eventCode,
-          eventName: {
-            'zh-CN': formData.eventNameZh,
-            'en': formData.eventNameEn || formData.eventNameZh
-          },
-          eventInfo: {
-            description: {
-              'zh-CN': formData.descriptionZh,
-              'en': formData.descriptionZh
-            },
-            voucherSalesPeriod: {
-              startDate: formData.voucherSalesStart,
-              endDate: formData.voucherSalesEnd
-            },
-            fairDate: formData.fairDate,
-            fairTime: formData.fairTime,
-            consumptionPeriod: {
-              startDate: formData.consumptionStart,
-              endDate: formData.consumptionEnd
-            },
-            systemPeriod: {
-              openDate: formData.systemOpenDate,
-              closeDate: formData.systemCloseDate
-            },
-            location: formData.location,
-            purpose: '筹募学校发展基金'
-          },
-          eventManager: null,
-          settings: {
-            totalCapital: parseInt(formData.totalCapital),
-            pointToRinggitRatio: 1,
-            allowCustomerRegistration: true,
-            requireOTP: true,
-            multiLanguage: true
-          },
-          statistics: {
-            totalUsers: 0,
-            totalCustomers: 0,
-            totalSellers: 0,
-            totalMerchants: 0,
-            totalManagers: 0,
-            totalTransactions: 0,
-            totalPointsIssued: 0,
-            totalPointsConsumed: 0,
-            assignedCapital: 0,
-            availableCapital: parseInt(formData.totalCapital)
-          },
-          status: 'planning',
-          createdAt: serverTimestamp(),
-          createdBy: 'platform_admin',
-          updatedAt: serverTimestamp()
-        }
+      // 检查 eventCode 是否已存在
+      const eventsSnapshot = await getDocs(
+        collection(db, 'organizations', organization.id, 'events')
       );
+      const existingEvent = eventsSnapshot.docs.find(
+        doc => doc.data().eventCode.toLowerCase() === formData.eventCode.toLowerCase()
+      );
+
+      if (existingEvent) {
+        setError('此活动代码已存在，请使用其他代码');
+        return;
+      }
+
+      await addDoc(collection(db, 'organizations', organization.id, 'events'), {
+        eventCode: formData.eventCode,
+        eventName: {
+          'en': formData.eventNameEN,
+          'zh-CN': formData.eventNameZH
+        },
+        eventInfo: {
+          fairDate: formData.fairDate || null,
+          consumptionPeriod: {
+            startDate: formData.consumptionStartDate || null,
+            endDate: formData.consumptionEndDate || null
+          }
+        },
+        settings: {
+          totalCapital: parseFloat(formData.totalCapital) || 0
+        },
+        status: formData.status,
+        statistics: {
+          totalUsers: 0
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
 
       alert('活动创建成功！');
       onSuccess();
-    } catch (error) {
-      console.error('创建活动失败:', error);
-      alert('创建活动失败: ' + error.message);
+
+    } catch (err) {
+      console.error('创建失败:', err);
+      setError('创建失败: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -588,182 +953,132 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={{ ...styles.modalContent, maxWidth: '700px' }} onClick={e => e.stopPropagation()}>
-        <h2 style={styles.modalTitle}>
-          为 {organization.orgName['zh-CN']} 创建活动
-        </h2>
+      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+        <h2 style={styles.modalTitle}>创建新活动</h2>
+        <div style={styles.infoBox}>
+          <p><strong>组织：</strong>{organization.orgName['zh-CN']}</p>
+        </div>
+
         <form onSubmit={handleSubmit}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（中文）*</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.eventNameZh}
-              onChange={e => setFormData({ ...formData, eventNameZh: e.target.value })}
-              placeholder="例如：2025校庆义卖会"
-              required
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（英文）</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.eventNameEn}
-              onChange={e => setFormData({ ...formData, eventNameEn: e.target.value })}
-              placeholder="例如：2025 Charity Fair"
-            />
-          </div>
-
           <div style={styles.formGroup}>
             <label style={styles.label}>活动代码 *</label>
             <input
               type="text"
-              style={styles.input}
+              name="eventCode"
               value={formData.eventCode}
-              onChange={e => setFormData({ ...formData, eventCode: e.target.value })}
+              onChange={handleChange}
               placeholder="例如：2025"
+              style={styles.input}
+              disabled={submitting}
               required
             />
-            <small style={styles.hint}>
-              URL 将会是: /{organization.orgCode}-{formData.eventCode}/phone
-            </small>
+            <small style={styles.hint}>通常使用年份</small>
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>活动描述</label>
-            <textarea
-              style={{ ...styles.input, minHeight: '80px' }}
-              value={formData.descriptionZh}
-              onChange={e => setFormData({ ...formData, descriptionZh: e.target.value })}
-              placeholder="活动详细描述"
-            />
-          </div>
-
-          <div style={{ ...styles.sectionDivider, marginTop: '2rem' }}>
-            <h4 style={styles.sectionTitle}>📅 固本销售期</h4>
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>开始日期</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.voucherSalesStart}
-                  onChange={e => setFormData({ ...formData, voucherSalesStart: e.target.value })}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>结束日期</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.voucherSalesEnd}
-                  onChange={e => setFormData({ ...formData, voucherSalesEnd: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.sectionDivider}>
-            <h4 style={styles.sectionTitle}>🎪 义卖会活动日</h4>
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>活动日期 *</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.fairDate}
-                  onChange={e => setFormData({ ...formData, fairDate: e.target.value })}
-                  required
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>活动时间</label>
-                <input
-                  type="text"
-                  style={styles.input}
-                  value={formData.fairTime}
-                  onChange={e => setFormData({ ...formData, fairTime: e.target.value })}
-                  placeholder="08:00 - 16:00"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.sectionDivider}>
-            <h4 style={styles.sectionTitle}>💰 消费有效期</h4>
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>开始日期</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.consumptionStart}
-                  onChange={e => setFormData({ ...formData, consumptionStart: e.target.value })}
-                />
-                <small style={styles.hint}>可能有预售</small>
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>结束日期</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.consumptionEnd}
-                  onChange={e => setFormData({ ...formData, consumptionEnd: e.target.value })}
-                />
-                <small style={styles.hint}>可能延后到店消费</small>
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.sectionDivider}>
-            <h4 style={styles.sectionTitle}>⚙️ 系统开放期</h4>
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>系统开放日</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.systemOpenDate}
-                  onChange={e => setFormData({ ...formData, systemOpenDate: e.target.value })}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>系统关闭日</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={formData.systemCloseDate}
-                  onChange={e => setFormData({ ...formData, systemCloseDate: e.target.value })}
-                />
-                <small style={styles.hint}>关闭后仅供查询</small>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ ...styles.formGroup, marginTop: '1.5rem' }}>
-            <label style={styles.label}>活动地点</label>
+            <label style={styles.label}>活动名称（英文）*</label>
             <input
               type="text"
+              name="eventNameEN"
+              value={formData.eventNameEN}
+              onChange={handleChange}
+              placeholder="Event Name"
               style={styles.input}
-              value={formData.location}
-              onChange={e => setFormData({ ...formData, location: e.target.value })}
-              placeholder="活动举办地点"
+              disabled={submitting}
+              required
             />
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>总资本额度（RM）</label>
+            <label style={styles.label}>活动名称（中文）*</label>
             <input
-              type="number"
+              type="text"
+              name="eventNameZH"
+              value={formData.eventNameZH}
+              onChange={handleChange}
+              placeholder="活动名称"
               style={styles.input}
-              value={formData.totalCapital}
-              onChange={e => setFormData({ ...formData, totalCapital: e.target.value })}
-              min="0"
-              step="1000"
+              disabled={submitting}
+              required
             />
           </div>
+
+          <div style={styles.sectionDivider}>
+            <h3 style={styles.sectionTitle}>活动详情</h3>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>义卖会日期</label>
+            <input
+              type="date"
+              name="fairDate"
+              value={formData.fairDate}
+              onChange={handleChange}
+              style={styles.input}
+              disabled={submitting}
+            />
+          </div>
+
+          <div style={styles.formRow}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>消费期开始</label>
+              <input
+                type="date"
+                name="consumptionStartDate"
+                value={formData.consumptionStartDate}
+                onChange={handleChange}
+                style={styles.input}
+                disabled={submitting}
+              />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>消费期结束</label>
+              <input
+                type="date"
+                name="consumptionEndDate"
+                value={formData.consumptionEndDate}
+                onChange={handleChange}
+                style={styles.input}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>总资金 (RM)</label>
+            <input
+              type="number"
+              name="totalCapital"
+              value={formData.totalCapital}
+              onChange={handleChange}
+              placeholder="0"
+              min="0"
+              step="0.01"
+              style={styles.input}
+              disabled={submitting}
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>状态</label>
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              style={styles.input}
+              disabled={submitting}
+            >
+              <option value="planning">筹备中</option>
+              <option value="active">进行中</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+
+          {error && (
+            <div style={styles.errorMessage}>
+              ⚠️ {error}
+            </div>
+          )}
 
           <div style={styles.modalActions}>
             <button
@@ -776,7 +1091,10 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
             </button>
             <button
               type="submit"
-              style={styles.submitButton}
+              style={{
+                ...styles.submitButton,
+                ...(submitting ? styles.submitButtonDisabled : {})
+              }}
               disabled={submitting}
             >
               {submitting ? '创建中...' : '创建活动'}
@@ -791,35 +1109,30 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 const styles = {
   container: {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: '#f9fafb',
     padding: '2rem'
   },
   loadingCard: {
     background: 'white',
-    padding: '3rem',
     borderRadius: '16px',
+    padding: '3rem',
     textAlign: 'center',
-    maxWidth: '400px',
-    margin: '0 auto'
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
   },
   spinner: {
-    width: '48px',
-    height: '48px',
-    border: '4px solid #667eea',
-    borderTopColor: 'transparent',
+    width: '50px',
+    height: '50px',
+    border: '4px solid #f3f4f6',
+    borderTopColor: '#667eea',
     borderRadius: '50%',
-    margin: '0 auto 1rem',
-    animation: 'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite',
+    margin: '0 auto 1rem'
   },
   header: {
-    background: 'white',
-    padding: '2rem',
-    borderRadius: '16px',
-    marginBottom: '2rem',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    marginBottom: '2rem'
   },
   title: {
     fontSize: '2rem',
@@ -828,6 +1141,7 @@ const styles = {
     margin: '0 0 0.5rem 0'
   },
   subtitle: {
+    fontSize: '1rem',
     color: '#6b7280',
     margin: 0
   },
@@ -935,7 +1249,8 @@ const styles = {
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     fontSize: '0.875rem',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
   },
   iconButton: {
     padding: '0.5rem 0.75rem',
@@ -943,6 +1258,40 @@ const styles = {
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     cursor: 'pointer'
+  },
+  // ✨ 新增样式：身份标签预览
+  identityTagsPreview: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem',
+    background: '#f9fafb',
+    borderRadius: '8px',
+    marginBottom: '1rem',
+    flexWrap: 'wrap'
+  },
+  identityTagsLabel: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151'
+  },
+  tagsList: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap'
+  },
+  identityTagBadge: {
+    background: '#e0e7ff',
+    color: '#3730a3',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '12px',
+    fontSize: '0.75rem',
+    fontWeight: '500'
+  },
+  noTags: {
+    color: '#9ca3af',
+    fontSize: '0.875rem',
+    fontStyle: 'italic'
   },
   eventsSection: {
     borderTop: '1px solid #e5e7eb',
@@ -1066,11 +1415,153 @@ const styles = {
     maxHeight: '90vh',
     overflowY: 'auto'
   },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'start',
+    marginBottom: '1.5rem'
+  },
   modalTitle: {
     fontSize: '1.5rem',
     fontWeight: 'bold',
     color: '#1f2937',
+    margin: 0
+  },
+  modalSubtitle: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    marginTop: '0.25rem'
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '1.5rem',
+    color: '#6b7280',
+    cursor: 'pointer',
+    padding: '0.25rem',
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '4px'
+  },
+  infoBox: {
+    background: '#f0f9ff',
+    border: '1px solid #bae6fd',
+    borderRadius: '8px',
+    padding: '1rem',
     marginBottom: '1.5rem'
+  },
+  infoText: {
+    fontSize: '0.875rem',
+    color: '#0c4a6e',
+    margin: 0
+  },
+  // ✨ 新增样式：编辑身份标签
+  tagsContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    marginBottom: '1rem',
+    maxHeight: '400px',
+    overflowY: 'auto',
+    padding: '0.5rem'
+  },
+  emptyTags: {
+    textAlign: 'center',
+    padding: '2rem',
+    color: '#9ca3af',
+    fontStyle: 'italic'
+  },
+  tagItem: {
+    display: 'flex',
+    gap: '1rem',
+    alignItems: 'center',
+    padding: '1rem',
+    background: '#f9fafb',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px'
+  },
+  tagOrderControls: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
+    alignItems: 'center'
+  },
+  orderButton: {
+    background: '#f3f4f6',
+    border: '1px solid #d1d5db',
+    borderRadius: '4px',
+    width: '28px',
+    height: '28px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: '0.75rem'
+  },
+  orderNumber: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#6b7280'
+  },
+  tagInputs: {
+    flex: 1,
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '1rem'
+  },
+  tagInputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  tagLabel: {
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    color: '#6b7280'
+  },
+  tagInput: {
+    padding: '0.5rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    outline: 'none'
+  },
+  deleteTagButton: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    color: '#991b1b',
+    borderRadius: '6px',
+    width: '36px',
+    height: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: '1.25rem'
+  },
+  addTagButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: '#f3f4f6',
+    color: '#374151',
+    border: '1px dashed #d1d5db',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    marginBottom: '1rem'
+  },
+  errorMessage: {
+    padding: '0.875rem',
+    background: '#fee2e2',
+    color: '#991b1b',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    border: '1px solid #fecaca',
+    marginBottom: '1rem'
   },
   formGroup: {
     marginBottom: '1.5rem'
@@ -1136,7 +1627,22 @@ const styles = {
     fontSize: '1rem',
     fontWeight: '600',
     cursor: 'pointer'
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed'
   }
 };
+
+// 添加旋转动画
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export default PlatformDashboard;
