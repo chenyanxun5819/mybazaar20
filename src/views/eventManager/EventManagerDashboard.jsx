@@ -4,6 +4,7 @@ import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
+import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
 
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
@@ -14,6 +15,7 @@ const EventManagerDashboard = () => {
   const [orgData, setOrgData] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
   const [showAddUser, setShowAddUser] = useState(false); // 🆕
+  const [showBatchImport, setShowBatchImport] = useState(false); // 🆕 批量导入
   const [statistics, setStatistics] = useState({
     totalUsers: 0,
     totalSellerManagers: 0,
@@ -171,9 +173,15 @@ const EventManagerDashboard = () => {
       <div style={styles.quickActionsBar}>
         <button
           style={styles.primaryButton}
+          onClick={() => setShowBatchImport(true)}
+        >
+          📥 批量导入用户
+        </button>
+        <button
+          style={styles.secondaryButton}
           onClick={() => setShowAddUser(true)}
         >
-          ➕ 创建用户
+          ➕ 单个创建用户
         </button>
         <button
           style={styles.secondaryButton}
@@ -310,6 +318,19 @@ const EventManagerDashboard = () => {
           callerRole="event_manager" // 🆕 指定调用者角色
           onClose={() => setShowAddUser(false)}
           onSuccess={() => {
+            loadDashboardData(); // 刷新数据
+          }}
+        />
+      )}
+
+      {/* 批量导入用户弹窗 */}
+      {showBatchImport && (
+        <BatchImportUser
+          organizationId={userInfo?.organizationId}
+          eventId={userInfo?.eventId}
+          onClose={() => setShowBatchImport(false)}
+          onSuccess={() => {
+            setShowBatchImport(false);
             loadDashboardData(); // 刷新数据
           }}
         />
