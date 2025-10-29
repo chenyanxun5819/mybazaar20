@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, loginEventManager , createUserByEventManagerHttp} = require('./admin');
+  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp} = require('./admin');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.sendOtpToPhone = sendOtpToPhone;
@@ -19,6 +19,7 @@ exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
 exports.createEventManager = createEventManager; 
+exports.createEventManagerHttp = createEventManagerHttp; 
 exports.loginEventManager = loginEventManager; 
 exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
 

@@ -1,9 +1,11 @@
 // src/App.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
 import PlatformDashboard from './views/platform/PlatformDashboard';
+import PlatformLogin from './views/platform/PlatformLogin';
 import PhoneLogin from './views/phone/auth/Login';
 import DesktopLogin from './views/desktop/auth/Login';
 import { MobileGuard, DesktopGuard } from './components/guards/DeviceProtection';
+import PlatformAuthGuard from './components/guards/PlatformAuthGuard';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
@@ -30,10 +32,15 @@ function App() {
   
   return (
     <Routes>
-      {/* Platform Admin 路由 */}
+      {/* 🆕 Platform Admin 登录页面 */}
+      <Route path="/platform/login" element={<PlatformLogin />} />
+
+      {/* Platform Admin 路由 - 添加认证保护 */}
       <Route path="/platform/admin" element={
         <DesktopGuard>
-          <PlatformDashboard />
+          <PlatformAuthGuard>
+            <PlatformDashboard />
+          </PlatformAuthGuard>
         </DesktopGuard>
       } />
 
@@ -81,12 +88,12 @@ function App() {
         </DesktopGuard>
       } />
 
-  {/* 🆕 Event Manager 登录與儀表板 */}
+      {/* 🆕 Event Manager 登录與儀表板 */}
       <Route path="/event-manager/login" element={<EventManagerLogin />} />
-  <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
+      <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
 
-      {/* 預設路由 */}
-      <Route path="/" element={<Navigate to="/platform/admin" replace />} />
+      {/* 預設路由 - 重定向到 Platform Admin 登录 */}
+      <Route path="/" element={<Navigate to="/platform/login" replace />} />
       
       {/* 404 */}
       <Route path="*" element={
@@ -102,7 +109,7 @@ function App() {
           <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
           <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>页面不存在</p>
           <a 
-            href="/platform/admin" 
+            href="/platform/login" 
             style={{
               marginTop: '1rem',
               padding: '0.75rem 1.5rem',
@@ -112,7 +119,7 @@ function App() {
               borderRadius: '8px'
             }}
           >
-            回到首页
+            回到登录页
           </a>
         </div>
       } />

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
+import { auth } from '../../config/firebase';
+import { signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
 const PlatformDashboard = () => {
   const [organizations, setOrganizations] = useState([]);
@@ -11,6 +14,7 @@ const PlatformDashboard = () => {
   const [showAssignManager, setShowAssignManager] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const navigate = useNavigate();  // ← 新增
 
   useEffect(() => {
     loadOrganizations();
@@ -61,6 +65,19 @@ const PlatformDashboard = () => {
     loadOrganizations();
   };
 
+  // ← 新增登出函數
+  const handleLogout = async () => {
+    try {
+      console.log('[PlatformDashboard] 开始登出');
+      await signOut(auth);
+      console.log('[PlatformDashboard] 登出成功');
+      navigate('/platform/login');
+    } catch (error) {
+      console.error('[PlatformDashboard] 登出失败:', error);
+      alert('登出失败：' + error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div style={styles.container}>
@@ -74,17 +91,27 @@ const PlatformDashboard = () => {
 
   return (
     <div style={styles.container}>
+      {/* ← 修改后的 header */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>🎯 Platform 管理中心</h1>
           <p style={styles.subtitle}>管理所有组织和活动</p>
         </div>
-        <button
-          style={styles.primaryButton}
-          onClick={() => setShowCreateOrg(true)}
-        >
-          + 创建新组织
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button
+            style={styles.primaryButton}
+            onClick={() => setShowCreateOrg(true)}
+          >
+            + 创建新组织
+          </button>
+          <button
+            style={styles.logoutButton}
+            onClick={handleLogout}
+            title="登出"
+          >
+            🚪 登出
+          </button>
+        </div>
       </div>
 
       <div style={styles.statsGrid}>
@@ -1154,6 +1181,21 @@ const styles = {
     fontSize: '1rem',
     fontWeight: '500',
     cursor: 'pointer'
+  },
+  logoutButton: {
+    padding: '0.75rem 1.5rem',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    whiteSpace: 'nowrap'
   },
   statsGrid: {
     display: 'grid',

@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { functions } from '../../config/firebase';
-import { httpsCallable } from 'firebase/functions';
+import { auth } from '../../config/firebase';
 
 const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -9,7 +8,8 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     englishName: '',
     chineseName: '',
     email: '',
-    identityTag: '' // ✨ 不再设置默认值，改为动态选择
+    identityTag: '', // ✨ 不再设置默认值，改为动态选择
+    identityId: '' // ✨ 新增：工号或学号
   });
   
   const [submitting, setSubmitting] = useState(false);
@@ -72,21 +72,43 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      console.log('[AssignEventManager] Calling createEventManager...');
+      console.log('[AssignEventManager] Calling /api/createEventManager via HTTP...');
 
-      const createEventManager = httpsCallable(functions, 'createEventManager');
-      const result = await createEventManager({
-        organizationId: organization.id,
-        eventId: event.id,
-        phoneNumber: formData.phoneNumber,
-        password: formData.password,
-        englishName: formData.englishName,
-        chineseName: formData.chineseName,
-        email: formData.email,
-        identityTag: formData.identityTag
+      const idToken = await auth.currentUser?.getIdToken(true);
+      if (!idToken) {
+        throw new Error('需要登录');
+      }
+
+      const resp = await fetch('/api/createEventManager', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId: organization.id,
+          eventId: event.id,
+          phoneNumber: formData.phoneNumber,
+          password: formData.password,
+          englishName: formData.englishName,
+          chineseName: formData.chineseName,
+          email: formData.email,
+          identityTag: formData.identityTag,
+          identityId: formData.identityId
+        })
       });
 
-      console.log('[AssignEventManager] Success:', result.data);
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          throw new Error('需要登录');
+        }
+        const errBody = await resp.json().catch(() => ({}));
+        const msg = errBody?.error || errBody?.message || `HTTP ${resp.status}`;
+        throw new Error(msg);
+      }
+
+      const result = await resp.json();
+      console.log('[AssignEventManager] Success:', result);
 
       alert(`Event Manager 创建成功！\n\n手机号：${formData.phoneNumber}\n姓名：${formData.englishName}`);
       
@@ -229,6 +251,25 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
               style={styles.input}
               disabled={submitting}
             />
+          </div>
+
+          {/* ✨ 新增：identityId 字段 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              工号/学号
+            </label>
+            <input
+              type="text"
+              name="identityId"
+              value={formData.identityId}
+              onChange={handleChange}
+              placeholder="例如：T12345 或 S202401001"
+              style={styles.input}
+              disabled={submitting}
+            />
+            <small style={styles.hint}>
+              教职员工号或学生学号（可选，但建议填写）
+            </small>
           </div>
 
           <div style={styles.formGroup}>

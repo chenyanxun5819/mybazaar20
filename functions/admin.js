@@ -185,6 +185,174 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
   }
 });
 
+// ========== Event Manager 创建（HTTP 版本，经由 Hosting /api/createEventManager，Authorization: Bearer <ID Token>） ==========
+exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
+  // CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method-not-allowed', message: '只支持 POST' } });
+  }
+
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: { code: 'unauthenticated', message: '需要登录' } });
+    }
+
+    const idToken = authHeader.substring('Bearer '.length);
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch (e) {
+      return res.status(401).json({ error: { code: 'unauthenticated', message: '无效的凭证' } });
+    }
+
+    const callerUid = decoded.uid;
+    // Verify platform admin
+    const adminCheck = await getDb().collection('admin_uids').doc(callerUid).get();
+    if (!adminCheck.exists) {
+      return res.status(403).json({ error: { code: 'permission-denied', message: '只有平台管理员可以创建 Event Manager' } });
+    }
+
+    const {
+      organizationId,
+      eventId,
+      phoneNumber,
+      password,
+      englishName,
+      chineseName = '',
+      email = '',
+      identityTag = 'staff',
+      identityId
+    } = req.body || {};
+
+    if (!organizationId || !eventId) {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少组织或活动编号' } });
+    }
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '请输入有效的手机号' } });
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '密码至少需要 8 个字符' } });
+    }
+    if (!englishName) {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '英文名为必填' } });
+    }
+
+    const orgRef = getDb().collection('organizations').doc(organizationId);
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
+    }
+    const orgData = orgSnap.data();
+    const identityTags = orgData.identityTags || [];
+    const validTag = identityTags.find(tag => tag.id === identityTag && tag.isActive);
+    if (!validTag) {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: `身份标签 "${identityTag}" 不存在或已停用` } });
+    }
+
+    const eventRef = orgRef.collection('events').doc(eventId);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
+      return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
+    }
+    const eventData = eventSnap.data() || {};
+    if (eventData.eventManager) {
+      return res.status(409).json({ error: { code: 'already-exists', message: '此活动已指派 Event Manager' } });
+    }
+
+    const usersCol = eventRef.collection('users');
+    const dupSnap = await usersCol.where('basicInfo.phoneNumber', '==', phoneNumber).limit(1).get();
+    if (!dupSnap.empty) {
+      return res.status(409).json({ error: { code: 'already-exists', message: '该手机号已在此活动中存在' } });
+    }
+
+    const passwordSalt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = sha256(password + passwordSalt);
+
+    const newUserId = `usr_${crypto.randomUUID()}`;
+    const now = new Date();
+
+    const userDoc = {
+      userId: newUserId,
+      authUid: newUserId,
+      roles: ['event_manager'],
+      identityTag,
+      basicInfo: {
+        phoneNumber,
+        englishName,
+        chineseName,
+        email,
+        passwordHash,
+        passwordSalt,
+        pinHash: passwordHash,
+        pinSalt: passwordSalt,
+        isPhoneVerified: false
+      },
+      identityInfo: identityId ? { identityId } : undefined,
+      roleSpecificData: {
+        event_manager: {
+          organizationId,
+          eventId,
+          assignedAt: now,
+          assignedBy: callerUid
+        }
+      },
+      accountStatus: {
+        status: 'active',
+        createdAt: now,
+        updatedAt: now
+      },
+      activityData: {
+        joinedAt: now,
+        lastActiveAt: now,
+        participationStatus: 'active'
+      }
+    };
+
+    // remove undefined keys
+    if (!userDoc.identityInfo) delete userDoc.identityInfo;
+
+    await usersCol.doc(newUserId).set(userDoc);
+    await eventRef.update({
+      eventManager: newUserId,
+      'statistics.totalManagers': admin.firestore.FieldValue.increment(1),
+      updatedAt: now
+    });
+
+    const adminEntry = {
+      userId: newUserId,
+      authUid: newUserId,
+      phoneNumber,
+      englishName,
+      chineseName,
+      role: 'event_manager',
+      eventId,
+      addedAt: now,
+      addedBy: callerUid
+    };
+    await orgRef.update({
+      admins: admin.firestore.FieldValue.arrayUnion(adminEntry),
+      updatedAt: now
+    });
+
+    return res.status(200).json({ success: true, userId: newUserId, message: 'Event Manager 创建成功' });
+  } catch (error) {
+    console.error('[createEventManagerHttp] Error:', error);
+    const code = error.code || 'internal';
+    const message = error.message || '内部错误';
+    return res.status(code === 'unauthenticated' ? 401 : code === 'permission-denied' ? 403 : 500)
+      .json({ error: { code, message } });
+  }
+});
+
 // ========== OTP 相关函数 ==========
 
 exports.sendOtpToPhone = functions.https.onCall(async (data, context) => {

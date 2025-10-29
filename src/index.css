@@ -49,3 +49,25 @@ select:focus {
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
+
+/* 全局 spinner 类，用于 PlatformAuthGuard 或其他加载状态 */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* code 字体样式（若尚未定义） */
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* 兼容性：确保全局 box-sizing 已定义（项目中已设置，但重复无害） */
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+/* 保证 body margin 与字体平滑 */
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -58,6 +58,13 @@
         }
       },
       {
+        "source": "/api/createEventManager",
+        "function": {
+          "functionId": "createEventManagerHttp",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/api/loginEventManagerHttp",
         "function": {
           "functionId": "loginEventManagerHttp",
