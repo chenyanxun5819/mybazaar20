@@ -100,11 +100,26 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
 
       if (!resp.ok) {
         if (resp.status === 401) {
-          throw new Error('需要登录');
+          const unauth = new Error('需要登录');
+          unauth.code = 'unauthenticated';
+          unauth.status = 401;
+          throw unauth;
         }
-        const errBody = await resp.json().catch(() => ({}));
-        const msg = errBody?.error || errBody?.message || `HTTP ${resp.status}`;
-        throw new Error(msg);
+        // 更健壮的错误解析
+        let text = '';
+        let data = null;
+        try {
+          text = await resp.text();
+          data = text ? JSON.parse(text) : null;
+        } catch (_) {
+          // 非 JSON 回應保持 text
+        }
+        const code = data?.error?.code || data?.code || undefined;
+        const message = data?.error?.message || data?.message || text || `HTTP ${resp.status}`;
+        const err = new Error(message);
+        if (code) err.code = code;
+        err.status = resp.status;
+        throw err;
       }
 
       const result = await resp.json();
@@ -121,10 +136,10 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       
       let errorMessage = '创建 Event Manager 失败';
       
-      if (err.code === 'permission-denied') {
-        errorMessage = '权限不足，只有 Platform Admin 可以指派 Event Manager';
-      } else if (err.code === 'already-exists') {
+      if (err.status === 409 || err.code === 'already-exists') {
         errorMessage = err.message || '此活动已有 Event Manager 或手机号已被使用';
+      } else if (err.code === 'permission-denied') {
+        errorMessage = '权限不足，只有 Platform Admin 可以指派 Event Manager';
       } else if (err.code === 'invalid-argument') {
         errorMessage = err.message || '输入数据格式不正确';
       } else if (err.code === 'not-found') {
