@@ -31,6 +31,12 @@
             "invoker": ["public"]
           },
           "region": "us-central1"
+        },
+        "loginUniversalHttp": {
+          "httpsOptions": {
+            "invoker": ["public"]
+          },
+          "region": "us-central1"
         }
       },
       "ignore": [
