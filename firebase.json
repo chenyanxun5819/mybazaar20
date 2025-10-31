@@ -36,7 +36,7 @@
           "httpsOptions": {
             "invoker": ["public"]
           },
-          "region": "asia-southeast1"
+          "region": "us-central1"
         }
       },
       "ignore": [
