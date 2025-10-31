@@ -2,7 +2,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const cors = require('cors');
-
+const loginUniversalHttp = require('./auth/loginUniversalHttp');
 // 确保只初始化一次
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -10,6 +10,7 @@ if (!admin.apps.length) {
 
 const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
   createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp} = require('./admin');
+const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.sendOtpToPhone = sendOtpToPhone;
@@ -22,6 +23,8 @@ exports.createEventManager = createEventManager;
 exports.createEventManagerHttp = createEventManagerHttp; 
 exports.loginEventManager = loginEventManager; 
 exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
+exports.loginUniversalHttp = loginUniversalHttp;
+exports.loginUniversalHttp = loginUniversalHttp.loginUniversalHttp;
 
 // CORS 中间件配置
 const allowedOrigins = [

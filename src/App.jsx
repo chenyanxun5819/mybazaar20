@@ -1,5 +1,6 @@
 // src/App.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
+import UniversalLogin from './views/auth/UniversalLogin';
 import PlatformDashboard from './views/platform/PlatformDashboard';
 import PlatformLogin from './views/platform/PlatformLogin';
 import PhoneLogin from './views/phone/auth/Login';
@@ -32,6 +33,9 @@ function App() {
   
   return (
     <Routes>
+      {/* 🆕 统一登录路由 */}
+      <Route path="/login/:orgEventCode" element={<UniversalLogin />} />
+
       {/* 🆕 Platform Admin 登录页面 */}
       <Route path="/platform/login" element={<PlatformLogin />} />
 
@@ -88,8 +92,8 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 🆕 Event Manager 登录與儀表板 */}
-      <Route path="/event-manager/login" element={<EventManagerLogin />} />
+  {/* 🆕 Event Manager 登录與儀表板（保留舊路徑）*/}
+  <Route path="/event-manager/login" element={<EventManagerLogin />} />
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
 
       {/* 預設路由 - 重定向到 Platform Admin 登录 */}

@@ -5,6 +5,8 @@ import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
+import UserList from '../../components/common/UserList';
+import UserManagement from '../../components/common/UserManagement'; // 🆕 用户管理和点数分配
 
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
@@ -14,6 +16,9 @@ const EventManagerDashboard = () => {
   const [eventData, setEventData] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
+  // 新增：为 UserList 传参准备独立的组织/活动 ID state
+  const [organizationId, setOrganizationId] = useState('');
+  const [eventId, setEventId] = useState('');
   const [showAddUser, setShowAddUser] = useState(false); // 🆕
   const [showBatchImport, setShowBatchImport] = useState(false); // 🆕 批量导入
   const [statistics, setStatistics] = useState({
@@ -25,6 +30,8 @@ const EventManagerDashboard = () => {
     totalMerchants: 0,
     totalCustomers: 0
   });
+  const [showUserList, setShowUserList] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 用户管理
 
   useEffect(() => {
     loadDashboardData();
@@ -34,16 +41,23 @@ const EventManagerDashboard = () => {
     try {
       setLoading(true);
 
-      // 从 localStorage 获取用户信息
-      const storedInfo = localStorage.getItem('eventManagerInfo');
+      // 从 localStorage 获取用户信息（兼容两种 key）
+      const storedInfo = localStorage.getItem('eventManagerInfo') || localStorage.getItem('eventManagerLogin');
       if (!storedInfo) {
         alert('请先登录');
-        navigate('/event-manager/login');
+        if (orgEventCode) {
+          navigate(`/login/${orgEventCode}`);
+        } else {
+          navigate('/event-manager/login');
+        }
         return;
       }
 
       const info = JSON.parse(storedInfo);
       setUserInfo(info);
+      // 同步设置 organizationId 和 eventId，以供 UserList 等组件使用
+      if (info?.organizationId) setOrganizationId(info.organizationId);
+      if (info?.eventId) setEventId(info.eventId);
 
       // 加载组织信息
       const orgDoc = await getDoc(doc(db, 'organizations', info.organizationId));
@@ -101,7 +115,11 @@ const EventManagerDashboard = () => {
       try {
         await signOut(auth);
         localStorage.removeItem('eventManagerInfo');
-        navigate('/event-manager/login');
+        if (orgEventCode) {
+          navigate(`/login/${orgEventCode}`);
+        } else {
+          navigate('/event-manager/login');
+        }
       } catch (error) {
         console.error('[Dashboard] Logout error:', error);
         alert('退出登录失败');
@@ -185,9 +203,15 @@ const EventManagerDashboard = () => {
         </button>
         <button
           style={styles.secondaryButton}
-          onClick={() => alert('用户列表功能待开发')}
+          onClick={() => setShowUserList(true)}
         >
           📋 用户列表
+        </button>
+        <button
+          style={{...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981'}}
+          onClick={() => setShowUserManagement(true)}
+        >
+          🎭 用户管理 & 点数分配
         </button>
       </div>
 
@@ -311,10 +335,10 @@ const EventManagerDashboard = () => {
       </div>
 
       {/* 创建用户弹窗 */}
-      {showAddUser && (
+      {showAddUser && organizationId && eventId && (
         <AddUser
-          organizationId={userInfo?.organizationId}
-          eventId={userInfo?.eventId}
+          organizationId={organizationId}
+          eventId={eventId}
           callerRole="event_manager" // 🆕 指定调用者角色
           onClose={() => setShowAddUser(false)}
           onSuccess={() => {
@@ -324,10 +348,10 @@ const EventManagerDashboard = () => {
       )}
 
       {/* 批量导入用户弹窗 */}
-      {showBatchImport && (
+      {showBatchImport && organizationId && eventId && (
         <BatchImportUser
-          organizationId={userInfo?.organizationId}
-          eventId={userInfo?.eventId}
+          organizationId={organizationId}
+          eventId={eventId}
           onClose={() => setShowBatchImport(false)}
           onSuccess={() => {
             setShowBatchImport(false);
@@ -336,6 +360,24 @@ const EventManagerDashboard = () => {
         />
       )}
 
+      {/* UserList Modal */}
+      {showUserList && organizationId && eventId && (
+        <UserList
+          organizationId={organizationId}
+          eventId={eventId}
+          onClose={() => setShowUserList(false)}
+        />
+      )}
+
+      {/* UserManagement Modal */}
+      {showUserManagement && organizationId && eventId && (
+        <UserManagement
+          organizationId={organizationId}
+          eventId={eventId}
+          onClose={() => setShowUserManagement(false)}
+          onUpdate={loadDashboardData}
+        />
+      )}
     </div>
   );
 };

@@ -79,6 +79,13 @@
         }
       },
       {
+        "source": "/api/loginUniversalHttp",
+        "function": {
+          "functionId": "loginUniversalHttp",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

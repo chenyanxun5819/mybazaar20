@@ -22,6 +22,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     confirmPassword: '',
     identityTag: '', // ✨ 不再设置默认值
     department: '',
+    identityId: '', // ✨ 新增：学号/工号
     roles: [] // 多选的角色数组
   });
   const [loading, setLoading] = useState(false);
@@ -251,6 +252,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             email: formData.email,
             identityTag: formData.identityTag,
             department: formData.department,
+            identityId: formData.identityId, // ✨ 新增：传递 identityId
             roles: formData.roles
           })
         }
@@ -407,6 +409,21 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
               </div>
             </div>
           </div>
+
+            {/* ✨ 新增：学号/工号输入框 */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>学号 / 工号（可选）</label>
+              <input
+                type="text"
+                style={styles.input}
+                value={formData.identityId}
+                onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
+                placeholder="例如：2024001 或 T2024001"
+              />
+              <small style={styles.hint}>
+                组织发放的学号、工号或其他证号
+              </small>
+            </div>
 
           {/* 密码设置 */}
           <div style={styles.section}>
