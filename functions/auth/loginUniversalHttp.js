@@ -1,5 +1,19 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
+
+function sha256(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+function normalizePhoneNumber(phoneNumber) {
+  if (!phoneNumber) return '';
+  let cleaned = String(phoneNumber).replace(/[\s\-()]/g, '');
+  if (cleaned.startsWith('+60')) cleaned = cleaned.slice(3);
+  else if (cleaned.startsWith('60')) cleaned = cleaned.slice(2);
+  if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+  return cleaned;
+}
 
 /**
  * 通用登录端点 - 支持所有角色
@@ -113,28 +127,37 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       eventName: eventData.eventName?.['zh-CN'] 
     });
 
-    // 📋 Step 3: 查找用户（通过手机号）
+    // 📋 Step 3: 查找用户（通过手机号 basicInfo.phoneNumber 的多种变体）
     console.log('[loginUniversalHttp] Step 3: 查找用户', { phoneNumber });
-    
-    // 构建 authUid (格式: phone_手机号)
-    const authUid = `phone_${phoneNumber}`;
-    
-    const usersSnapshot = await db
-      .collection('organizations').doc(organizationId)
-      .collection('events').doc(eventId)
-      .collection('users')
-      .where('authUid', '==', authUid)
-      .limit(1)
-      .get();
 
-    if (usersSnapshot.empty) {
-      console.warn('[loginUniversalHttp] 用户不存在', { phoneNumber, authUid });
-      return res.status(401).json({
-        error: { message: '手机号或密码错误' }
-      });
+    const norm = normalizePhoneNumber(phoneNumber);
+    const variants = [
+      norm,
+      `0${norm}`,
+      `60${norm}`,
+      `+60${norm}`,
+      String(phoneNumber)
+    ];
+
+    let userDoc = null;
+    for (const variant of variants) {
+      const snap = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('users')
+        .where('basicInfo.phoneNumber', '==', variant)
+        .limit(1)
+        .get();
+      if (!snap.empty) {
+        userDoc = snap.docs[0];
+        break;
+      }
     }
 
-    const userDoc = usersSnapshot.docs[0];
+    if (!userDoc) {
+      console.warn('[loginUniversalHttp] 用户不存在(所有变体均未命中)', { phoneNumber, variants });
+      return res.status(401).json({ error: { message: '手机号或密码错误' } });
+    }
     const userId = userDoc.id;
     const userData = userDoc.data();
     
@@ -144,15 +167,23 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       roles: userData.roles 
     });
 
-    // 🔐 Step 4: 验证密码
+    // 🔐 Step 4: 验证密码（支持 hash+salt 与简易明文两种存储）
     console.log('[loginUniversalHttp] Step 4: 验证密码');
-    
-    const storedPassword = userData.accountStatus?.password;
-    if (!storedPassword || storedPassword !== password) {
+    const passwordSalt = userData.basicInfo?.passwordSalt || userData.basicInfo?.pinSalt;
+    const hashStored = userData.basicInfo?.passwordHash || userData.basicInfo?.pinHash;
+    const plainStored = userData.accountStatus?.password;
+
+    let passOk = false;
+    if (hashStored && passwordSalt) {
+      const computed = sha256(String(password) + String(passwordSalt));
+      passOk = computed === hashStored;
+    } else if (plainStored) {
+      passOk = String(plainStored) === String(password);
+    }
+
+    if (!passOk) {
       console.warn('[loginUniversalHttp] 密码错误');
-      return res.status(401).json({
-        error: { message: '手机号或密码错误' }
-      });
+      return res.status(401).json({ error: { message: '手机号或密码错误' } });
     }
 
     // ✅ Step 5: 检查用户角色
@@ -169,7 +200,8 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     // 🎫 Step 6: 生成 Custom Token
     console.log('[loginUniversalHttp] Step 6: 生成 Custom Token');
     
-    const customToken = await admin.auth().createCustomToken(authUid, {
+    const authUidForToken = userData.authUid || `phone_60${norm}`;
+    const customToken = await admin.auth().createCustomToken(authUidForToken, {
       organizationId,
       eventId,
       userId,
