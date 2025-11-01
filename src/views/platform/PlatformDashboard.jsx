@@ -220,7 +220,7 @@ const StatCard = ({ title, value, icon, color }) => (
   </div>
 );
 
-const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onReload }) => {
+const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onBatchImport, onReload }) => {
   const [expanded, setExpanded] = useState(false);
   const [showEditIdentityTags, setShowEditIdentityTags] = useState(false);
 
@@ -300,6 +300,7 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
                   event={event}
                   organization={organization}
                   onAssignManager={() => onAssignManager(organization, event)}
+                  onBatchImport={onBatchImport}
                   onReload={onReload}
                 />
               ))}
@@ -324,7 +325,7 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
 };
 
 // ✨ 更新后的 EventCard - 添加登录网址显示 + Event Manager 信息
-const EventCard = ({ event, organization, onAssignManager, onReload }) => {
+const EventCard = ({ event, organization, onAssignManager, onBatchImport, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
@@ -553,6 +554,14 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
       )}
 
       <div style={styles.eventActions}>
+        <button
+          style={styles.batchImportButton}
+          onClick={() => onBatchImport(organization, event)}
+          disabled={deleting}
+          title="批量导入用户"
+        >
+          📥 批量导入用户
+        </button>
         <button
           style={{...styles.deleteButton, ...(deleting ? styles.deleteButtonDisabled : {})}}
           onClick={handleDeleteEvent}
@@ -1989,6 +1998,17 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.75rem'
+  },
+  batchImportButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: '#dbeafe',
+    color: '#0c4a6e',
+    border: '1px solid #93c5fd',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer'
   },
   deleteButton: {
     width: '100%',
