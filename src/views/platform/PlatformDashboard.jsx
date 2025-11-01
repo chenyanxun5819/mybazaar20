@@ -371,6 +371,24 @@ const EventCard = ({ event, organization, onAssignManager }) => {
     return String(dateStr);
   };
 
+  // 根据消费期计算事件状态
+  const getEventStatus = () => {
+    const endDate = event.eventInfo?.consumptionPeriod?.endDate;
+    if (!endDate) return event.status || 'planning';
+    
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    
+    if (today > end) {
+      return 'completed';
+    }
+    return event.status || 'active';
+  };
+
+  const eventStatus = getEventStatus();
+
   // 生成登录网址
   const generateLoginUrl = () => {
     const baseUrl = window.location.origin; // 自动获取当前域名
@@ -401,10 +419,10 @@ const EventCard = ({ event, organization, onAssignManager }) => {
         </h5>
         <span style={{
           ...styles.statusBadge,
-          background: event.status === 'active' ? '#d1fae5' : '#fee2e2',
-          color: event.status === 'active' ? '#065f46' : '#991b1b'
+          background: eventStatus === 'active' ? '#d1fae5' : '#fee2e2',
+          color: eventStatus === 'active' ? '#065f46' : '#991b1b'
         }}>
-          {event.status === 'active' ? '进行中' : '已结束'}
+          {eventStatus === 'active' ? '进行中' : '已结束'}
         </span>
       </div>
 
