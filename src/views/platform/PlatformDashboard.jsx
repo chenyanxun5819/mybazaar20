@@ -376,7 +376,13 @@ const EventCard = ({ event, organization, onAssignManager }) => {
     const endDate = event.eventInfo?.consumptionPeriod?.endDate;
     if (!endDate) return event.status || 'planning';
     
-    const end = new Date(endDate);
+    let end = new Date(endDate);
+    
+    // 处理 Firestore Timestamp 对象
+    if (typeof endDate === 'object' && endDate.toDate) {
+      end = endDate.toDate();
+    }
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
@@ -384,7 +390,7 @@ const EventCard = ({ event, organization, onAssignManager }) => {
     if (today > end) {
       return 'completed';
     }
-    return event.status || 'active';
+    return 'active';
   };
 
   const eventStatus = getEventStatus();
