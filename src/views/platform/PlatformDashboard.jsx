@@ -459,6 +459,9 @@ const EventCard = ({ event, organization, onAssignManager }) => {
             <span style={styles.managerNotAssigned}>✗ 未分配</span>
           )}
         </div>
+        <div style={styles.metaItem}>
+          <strong>参与人数:</strong> {event.statistics?.totalUsers || 0} 人
+        </div>
       </div>
 
       {/* ✨ 新增：登录网址显示区域 */}

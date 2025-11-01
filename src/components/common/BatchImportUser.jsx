@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { db } from '../../config/firebase';
-import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 
 const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
@@ -322,6 +322,22 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         }, { merge: true });
+      }
+
+      // ✅ 更新 event 的 statistics.totalUsers
+      if (successCount > 0) {
+        const eventRef = doc(
+          db,
+          'organizations',
+          organizationId,
+          'events',
+          eventId
+        );
+
+        await updateDoc(eventRef, {
+          'statistics.totalUsers': increment(successCount),
+          updatedAt: serverTimestamp()
+        });
       }
 
       // 显示结果
