@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
 import { auth } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
@@ -322,72 +322,189 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
   );
 };
 
+// ✨ 更新后的 EventCard - 添加登录网址显示 + Event Manager 信息
 const EventCard = ({ event, organization, onAssignManager }) => {
-  const eventUrl = `/${organization.orgCode}-${event.eventCode}/phone`;
-  const hasManager = !!event.eventManager;
+  const [copySuccess, setCopySuccess] = useState('');
+  const [eventManager, setEventManager] = useState(null);
+  const [loadingManager, setLoadingManager] = useState(true);
+
+  // 加载 Event Manager 信息
+  useEffect(() => {
+    const loadEventManager = async () => {
+      try {
+        setLoadingManager(true);
+        if (!event.eventManager) {
+          setEventManager(null);
+          return;
+        }
+
+        const managerRef = doc(
+          db,
+          'organizations',
+          organization.id,
+          'events',
+          event.id,
+          'users',
+          event.eventManager
+        );
+
+        const managerSnap = await getDoc(managerRef);
+        if (managerSnap.exists()) {
+          setEventManager(managerSnap.data());
+        }
+      } catch (error) {
+        console.error('[EventCard] 加载 Event Manager 失败:', error);
+      } finally {
+        setLoadingManager(false);
+      }
+    };
+
+    loadEventManager();
+  }, [event.id, event.eventManager, organization.id]);
+
+  // 格式化日期
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '未设置';
+    if (typeof dateStr === 'object' && dateStr.toDate) {
+      return dateStr.toDate().toLocaleDateString('zh-CN');
+    }
+    return String(dateStr);
+  };
+
+  // 生成登录网址
+  const generateLoginUrl = () => {
+    const baseUrl = window.location.origin; // 自动获取当前域名
+    return `${baseUrl}/login/${organization.orgCode}-${event.eventCode}`;
+  };
+
+  const loginUrl = generateLoginUrl();
+
+  // 复制登录网址
+  const handleCopyLoginUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(loginUrl);
+      setCopySuccess('✓ 已复制');
+      setTimeout(() => setCopySuccess(''), 2000);
+    } catch (err) {
+      alert('复制失败，请手动复制');
+    }
+  };
+
+  // 生成 QR Code URL
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(loginUrl)}`;
 
   return (
     <div style={styles.eventCard}>
       <div style={styles.eventHeader}>
-        <h5 style={styles.eventName}>{event.eventName['zh-CN']}</h5>
+        <h5 style={styles.eventTitle}>
+          {event.eventName?.['zh-CN'] || event.eventName}
+        </h5>
         <span style={{
           ...styles.statusBadge,
-          background: event.status === 'active' ? '#dbeafe' : '#fee2e2',
-          color: event.status === 'active' ? '#1e40af' : '#991b1b'
+          background: event.status === 'active' ? '#d1fae5' : '#fee2e2',
+          color: event.status === 'active' ? '#065f46' : '#991b1b'
         }}>
-          {event.status === 'active' ? '进行中' : event.status === 'planning' ? '筹备中' : event.status}
+          {event.status === 'active' ? '进行中' : '已结束'}
         </span>
-      </div>
-
-      <div style={styles.managerStatus}>
-        <span style={styles.managerLabel}>👤 Event Manager:</span>
-        {hasManager ? (
-          <span style={styles.managerAssigned}>✓ 已指派</span>
-        ) : (
-          <span style={styles.managerNotAssigned}>未指派</span>
-        )}
       </div>
 
       <div style={styles.eventMeta}>
         <div style={styles.metaItem}>
-          🎪 义卖会：{event.eventInfo?.fairDate || '未设定'}
+          <strong>活动代码:</strong> {event.eventCode}
         </div>
         <div style={styles.metaItem}>
-          💰 消费期：{event.eventInfo?.consumptionPeriod?.startDate || '未设定'} ~ {event.eventInfo?.consumptionPeriod?.endDate || '未设定'}
+          <strong>日期:</strong> {formatDate(event.startDate)} 至 {formatDate(event.endDate)}
         </div>
         <div style={styles.metaItem}>
-          👥 {event.statistics?.totalUsers || 0} 位用户
+          <strong>地点:</strong> {event.location?.address || '未设置'}
         </div>
         <div style={styles.metaItem}>
-          💵 RM {event.settings?.totalCapital?.toLocaleString() || 0}
+          <strong>Event Manager:</strong>
+          {' '}
+          {loadingManager ? (
+            <span style={styles.loadingText}>加载中...</span>
+          ) : eventManager ? (
+            <div style={styles.managerInfo}>
+              <span style={styles.managerAssigned}>✓ 已分配</span>
+              <div style={styles.managerDetails}>
+                <div>姓名：{eventManager.basicInfo?.englishName || eventManager.basicInfo?.chineseName || '未设置'}</div>
+                <div>电话：{eventManager.basicInfo?.phoneNumber || '未设置'}</div>
+              </div>
+            </div>
+          ) : (
+            <span style={styles.managerNotAssigned}>✗ 未分配</span>
+          )}
         </div>
       </div>
 
-      {!hasManager && (
+      {/* ✨ 新增：登录网址显示区域 */}
+      <div style={styles.loginUrlSection}>
+        <div style={styles.loginUrlHeader}>
+          <span style={styles.loginUrlLabel}>🔗 统一登录网址</span>
+          <button
+            style={styles.qrButton}
+            onClick={() => window.open(qrCodeUrl, '_blank')}
+            title="查看登录二维码"
+          >
+            📱 QR Code
+          </button>
+        </div>
+
+        <div style={styles.loginUrlBox}>
+          <input
+            type="text"
+            value={loginUrl}
+            readOnly
+            style={styles.loginUrlInput}
+          />
+          <button
+            style={styles.copyButton}
+            onClick={handleCopyLoginUrl}
+            title="复制登录网址"
+          >
+            {copySuccess || '📋 复制'}
+          </button>
+        </div>
+
+        <div style={styles.loginUrlHint}>
+          💡 分享此链接给所有角色用户登录
+        </div>
+      </div>
+
+      {!eventManager && (
         <button
           style={styles.assignButton}
           onClick={onAssignManager}
         >
-          ➕ 指派 Event Manager
+          分配 Event Manager
+        </button>
+      )}
+
+      {eventManager && (
+        <button
+          style={styles.reassignButton}
+          onClick={onAssignManager}
+        >
+          重新分配 Event Manager
         </button>
       )}
 
       <div style={styles.eventLinks}>
         <a
-          href={eventUrl}
+          href={`/event-manager/${organization.orgCode}-${event.eventCode}/dashboard`}
+          style={styles.linkButton}
           target="_blank"
           rel="noopener noreferrer"
-          style={styles.linkButton}
         >
-          📱 手机版
+          Event Manager
         </a>
         <a
-          href={`/${organization.orgCode}-${event.eventCode}/desktop`}
+          href={`/seller-manager/${organization.orgCode}-${event.eventCode}/dashboard`}
+          style={styles.linkButton}
           target="_blank"
           rel="noopener noreferrer"
-          style={styles.linkButton}
         >
-          🖥️ 桌面版
+          Seller Manager
         </a>
       </div>
     </div>
@@ -457,7 +574,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
 
       // 如果没有用户使用，则删除
       setIdentityTags(identityTags.filter(tag => tag.id !== tagId));
-      
+
     } catch (err) {
       console.error('检查标签使用情况失败:', err);
       setError('检查标签使用情况失败: ' + err.message);
@@ -559,8 +676,8 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div 
-        style={{ ...styles.modalContent, maxWidth: '800px' }} 
+      <div
+        style={{ ...styles.modalContent, maxWidth: '800px' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={styles.modalHeader}>
@@ -570,7 +687,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
               组织：{organization.orgName['zh-CN']}
             </p>
           </div>
-          <button 
+          <button
             style={styles.closeButton}
             onClick={onClose}
             disabled={submitting}
@@ -1673,6 +1790,97 @@ const styles = {
   submitButtonDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed'
+  },
+  loginUrlSection: {
+    background: 'white',
+    border: '2px solid #e0e7ff',
+    borderRadius: '10px',
+    padding: '1rem',
+    marginBottom: '1rem'
+  },
+  loginUrlHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '0.75rem'
+  },
+  loginUrlLabel: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#4338ca'
+  },
+  qrButton: {
+    padding: '0.375rem 0.75rem',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'transform 0.2s'
+  },
+  loginUrlBox: {
+    display: 'flex',
+    gap: '0.5rem',
+    marginBottom: '0.5rem'
+  },
+  loginUrlInput: {
+    flex: 1,
+    padding: '0.625rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    background: '#f9fafb',
+    color: '#374151',
+    fontFamily: 'monospace'
+  },
+  copyButton: {
+    padding: '0.625rem 1rem',
+    background: '#10b981',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    transition: 'background 0.2s'
+  },
+  loginUrlHint: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+    fontStyle: 'italic'
+  },
+  // ✨ 新增 Event Manager 信息样式
+  managerInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  managerDetails: {
+    background: '#d1fae5',
+    padding: '0.5rem 0.75rem',
+    borderRadius: '6px',
+    fontSize: '0.85rem',
+    color: '#065f46',
+    lineHeight: '1.4'
+  },
+  loadingText: {
+    color: '#9ca3af',
+    fontSize: '0.875rem'
+  },
+  reassignButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginBottom: '0.75rem'
   }
 };
 
