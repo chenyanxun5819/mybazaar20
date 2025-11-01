@@ -323,6 +323,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     await usersCol.doc(newUserId).set(userDoc);
     await eventRef.update({
       eventManager: newUserId,
+      'statistics.totalUsers': admin.firestore.FieldValue.increment(1),
       'statistics.totalManagers': admin.firestore.FieldValue.increment(1),
       updatedAt: now
     });

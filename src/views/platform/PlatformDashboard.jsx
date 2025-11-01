@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
 import { auth } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
@@ -300,6 +300,7 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
                   event={event}
                   organization={organization}
                   onAssignManager={() => onAssignManager(organization, event)}
+                  onReload={onReload}
                 />
               ))}
             </div>
@@ -323,10 +324,11 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
 };
 
 // ✨ 更新后的 EventCard - 添加登录网址显示 + Event Manager 信息
-const EventCard = ({ event, organization, onAssignManager }) => {
+const EventCard = ({ event, organization, onAssignManager, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   // 加载 Event Manager 信息
   useEffect(() => {
@@ -395,6 +397,35 @@ const EventCard = ({ event, organization, onAssignManager }) => {
 
   const eventStatus = getEventStatus();
 
+  // 删除事件
+  const handleDeleteEvent = async () => {
+    if (!confirm(`确定要删除此活动吗？\n\n活动名称：${event.eventName?.['zh-CN']}\n活动代码：${event.eventCode}\n\n此操作无法撤销！`)) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      const eventRef = doc(
+        db,
+        'organizations',
+        organization.id,
+        'events',
+        event.id
+      );
+
+      await deleteDoc(eventRef);
+      alert('活动已删除');
+      if (onReload) {
+        onReload();
+      }
+    } catch (error) {
+      console.error('[EventCard] 删除事件失败:', error);
+      alert('删除失败：' + error.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // 生成登录网址
   const generateLoginUrl = () => {
     const baseUrl = window.location.origin; // 自动获取当前域名
@@ -441,6 +472,9 @@ const EventCard = ({ event, organization, onAssignManager }) => {
         </div>
         <div style={styles.metaItem}>
           <strong>地点:</strong> {event.description?.location || '未设置'}
+        </div>
+        <div style={styles.metaItem}>
+          <strong>参与人数:</strong> {event.statistics?.totalUsers || 0} 人
         </div>
         <div style={styles.metaItem}>
           <strong>Event Manager:</strong>
@@ -502,6 +536,7 @@ const EventCard = ({ event, organization, onAssignManager }) => {
         <button
           style={styles.assignButton}
           onClick={onAssignManager}
+          disabled={deleting}
         >
           分配 Event Manager
         </button>
@@ -511,28 +546,21 @@ const EventCard = ({ event, organization, onAssignManager }) => {
         <button
           style={styles.reassignButton}
           onClick={onAssignManager}
+          disabled={deleting}
         >
           重新分配 Event Manager
         </button>
       )}
 
-      <div style={styles.eventLinks}>
-        <a
-          href={`/event-manager/${organization.orgCode}-${event.eventCode}/dashboard`}
-          style={styles.linkButton}
-          target="_blank"
-          rel="noopener noreferrer"
+      <div style={styles.eventActions}>
+        <button
+          style={{...styles.deleteButton, ...(deleting ? styles.deleteButtonDisabled : {})}}
+          onClick={handleDeleteEvent}
+          disabled={deleting}
+          title="删除此活动"
         >
-          Event Manager
-        </a>
-        <a
-          href={`/seller-manager/${organization.orgCode}-${event.eventCode}/dashboard`}
-          style={styles.linkButton}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Seller Manager
-        </a>
+          {deleting ? '删除中...' : '🗑️ 删除活动'}
+        </button>
       </div>
     </div>
   );
@@ -1956,6 +1984,26 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
     marginBottom: '0.75rem'
+  },
+  eventActions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem'
+  },
+  deleteButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: '#fee2e2',
+    color: '#991b1b',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed'
   }
 };
 
