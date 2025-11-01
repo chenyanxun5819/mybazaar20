@@ -413,10 +413,10 @@ const EventCard = ({ event, organization, onAssignManager }) => {
           <strong>活动代码:</strong> {event.eventCode}
         </div>
         <div style={styles.metaItem}>
-          <strong>日期:</strong> {formatDate(event.startDate)} 至 {formatDate(event.endDate)}
+          <strong>日期:</strong> {formatDate(event.eventInfo?.consumptionPeriod?.startDate)} 至 {formatDate(event.eventInfo?.consumptionPeriod?.endDate)}
         </div>
         <div style={styles.metaItem}>
-          <strong>地点:</strong> {event.location?.address || '未设置'}
+          <strong>地点:</strong> {event.description?.location || '未设置'}
         </div>
         <div style={styles.metaItem}>
           <strong>Event Manager:</strong>
@@ -1018,6 +1018,9 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     eventNameEN: '',
     eventNameZH: '',
     fairDate: '',
+    fairTime: '',
+    location: '',
+    purpose: '',
     consumptionStartDate: '',
     consumptionEndDate: '',
     totalCapital: '',
@@ -1065,6 +1068,12 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
         eventName: {
           'en': formData.eventNameEN,
           'zh-CN': formData.eventNameZH
+        },
+        description: {
+          fairDate: formData.fairDate || null,
+          fairTime: formData.fairTime || null,
+          location: formData.location || null,
+          purpose: formData.purpose || null
         },
         eventInfo: {
           fairDate: formData.fairDate || null,
@@ -1158,6 +1167,45 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               name="fairDate"
               value={formData.fairDate}
               onChange={handleChange}
+              style={styles.input}
+              disabled={submitting}
+            />
+          </div>
+
+          <div style={styles.formRow}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>义卖会时间</label>
+              <input
+                type="time"
+                name="fairTime"
+                value={formData.fairTime}
+                onChange={handleChange}
+                style={styles.input}
+                disabled={submitting}
+              />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>地点</label>
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleChange}
+                placeholder="例如：校礼堂、操场"
+                style={styles.input}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>活动目的</label>
+            <input
+              type="text"
+              name="purpose"
+              value={formData.purpose}
+              onChange={handleChange}
+              placeholder="例如：筹集学校发展基金"
               style={styles.input}
               disabled={submitting}
             />
