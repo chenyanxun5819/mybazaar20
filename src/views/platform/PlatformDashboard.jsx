@@ -325,255 +325,116 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onBatc
 };
 
 // ✨ 更新后的 EventCard - 添加登录网址显示 + Event Manager 信息
+// ============================================
+// 完整版：删除事件功能（包含 admins 清理）
+// ============================================
+
 const EventCard = ({ event, organization, onAssignManager, onBatchImport, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // 加载 Event Manager 信息
-  useEffect(() => {
-    const loadEventManager = async () => {
-      try {
-        setLoadingManager(true);
-        if (!event.eventManager) {
-          setEventManager(null);
-          return;
-        }
+  // ... 其他代码保持不变 ...
 
-        const managerRef = doc(
-          db,
-          'organizations',
-          organization.id,
-          'events',
-          event.id,
-          'users',
-          event.eventManager
-        );
-
-        const managerSnap = await getDoc(managerRef);
-        if (managerSnap.exists()) {
-          setEventManager(managerSnap.data());
-        }
-      } catch (error) {
-        console.error('[EventCard] 加载 Event Manager 失败:', error);
-      } finally {
-        setLoadingManager(false);
-      }
-    };
-
-    loadEventManager();
-  }, [event.id, event.eventManager, organization.id]);
-
-  // 格式化日期
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '未设置';
-    if (typeof dateStr === 'object' && dateStr.toDate) {
-      return dateStr.toDate().toLocaleDateString('zh-CN');
-    }
-    return String(dateStr);
-  };
-
-  // 根据消费期计算事件状态
-  const getEventStatus = () => {
-    const endDate = event.eventInfo?.consumptionPeriod?.endDate;
-    if (!endDate) return event.status || 'planning';
-    
-    let end = new Date(endDate);
-    
-    // 处理 Firestore Timestamp 对象
-    if (typeof endDate === 'object' && endDate.toDate) {
-      end = endDate.toDate();
-    }
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
-    
-    if (today > end) {
-      return 'completed';
-    }
-    return 'active';
-  };
-
-  const eventStatus = getEventStatus();
-
-  // 删除事件
+  // ✅ 完整版删除事件功能
   const handleDeleteEvent = async () => {
-    if (!confirm(`确定要删除此活动吗？\n\n活动名称：${event.eventName?.['zh-CN']}\n活动代码：${event.eventCode}\n\n此操作无法撤销！`)) {
+    // 1️⃣ 增强的确认对话框
+    if (!confirm(
+      `⚠️ 确定要删除此活动吗？\n\n` +
+      `活动名称：${event.eventName?.['zh-CN']}\n` +
+      `活动代码：${event.eventCode}\n` +
+      `用户数量：${event.statistics?.totalUsers || 0} 人\n` +
+      `Event Manager：${eventManager ? eventManager.basicInfo?.englishName : '未分配'}\n\n` +
+      `此操作将删除：\n` +
+      `  • 活动文档本身\n` +
+      `  • 所有用户数据 (${event.statistics?.totalUsers || 0} 位用户)\n` +
+      `  • 所有元数据 (部门等)\n` +
+      `  • 从 admins 列表移除 Event Manager\n` +
+      `  • 更新组织统计数据\n\n` +
+      `⚠️ 此操作无法撤销！`
+    )) {
       return;
     }
 
     try {
       setDeleting(true);
-      const eventRef = doc(
-        db,
-        'organizations',
-        organization.id,
-        'events',
-        event.id
+      console.log('[EventCard] 开始删除活动:', event.id);
+
+      // 2️⃣ 获取当前用户的 ID Token
+      const idToken = await auth.currentUser.getIdToken();
+
+      // 3️⃣ 调用 Cloud Function
+      const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId: organization.id,
+          eventId: event.id,
+          idToken: idToken
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '删除失败');
+      }
+
+      const result = await response.json();
+      console.log('[EventCard] ✅ 删除成功:', result);
+
+      alert(
+        `✅ 活动删除成功！\n\n` +
+        `已删除：\n` +
+        `  • 活动文档: 1 个\n` +
+        `  • 用户数据: ${result.deletedUsers} 位\n` +
+        `  • 元数据: ${result.deletedMetadata} 个\n` +
+        `  • Event Manager: ${result.removedAdmins} 位\n` +
+        `  • 已更新组织统计数据`
       );
 
-      await deleteDoc(eventRef);
-      alert('活动已删除');
+      // 4️⃣ 重新加载数据
       if (onReload) {
         onReload();
       }
+
     } catch (error) {
-      console.error('[EventCard] 删除事件失败:', error);
-      alert('删除失败：' + error.message);
+      console.error('[EventCard] 删除活动失败:', error);
+      alert(`❌ 删除失败：${error.message}\n\n请查看控制台了解详细信息`);
     } finally {
       setDeleting(false);
     }
   };
 
-  // 生成登录网址
-  const generateLoginUrl = () => {
-    const baseUrl = window.location.origin; // 自动获取当前域名
-    return `${baseUrl}/login/${organization.orgCode}-${event.eventCode}`;
-  };
-
-  const loginUrl = generateLoginUrl();
-
-  // 复制登录网址
-  const handleCopyLoginUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(loginUrl);
-      setCopySuccess('✓ 已复制');
-      setTimeout(() => setCopySuccess(''), 2000);
-    } catch (err) {
-      alert('复制失败，请手动复制');
-    }
-  };
-
-  // 生成 QR Code URL
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(loginUrl)}`;
+  // ... 其他代码保持不变 ...
 
   return (
     <div style={styles.eventCard}>
-      <div style={styles.eventHeader}>
-        <h5 style={styles.eventTitle}>
-          {event.eventName?.['zh-CN'] || event.eventName}
-        </h5>
-        <span style={{
-          ...styles.statusBadge,
-          background: eventStatus === 'active' ? '#d1fae5' : '#fee2e2',
-          color: eventStatus === 'active' ? '#065f46' : '#991b1b'
-        }}>
-          {eventStatus === 'active' ? '进行中' : '已结束'}
-        </span>
-      </div>
+      {/* ... 前面的卡片内容 ... */}
 
-      <div style={styles.eventMeta}>
-        <div style={styles.metaItem}>
-          <strong>活动代码:</strong> {event.eventCode}
-        </div>
-        <div style={styles.metaItem}>
-          <strong>日期:</strong> {formatDate(event.eventInfo?.consumptionPeriod?.startDate)} 至 {formatDate(event.eventInfo?.consumptionPeriod?.endDate)}
-        </div>
-        <div style={styles.metaItem}>
-          <strong>地点:</strong> {event.description?.location || '未设置'}
-        </div>
-        <div style={styles.metaItem}>
-          <strong>参与人数:</strong> {event.statistics?.totalUsers || 0} 人
-        </div>
-        <div style={styles.metaItem}>
-          <strong>Event Manager:</strong>
-          {' '}
-          {loadingManager ? (
-            <span style={styles.loadingText}>加载中...</span>
-          ) : eventManager ? (
-            <div style={styles.managerInfo}>
-              <span style={styles.managerAssigned}>✓ 已分配</span>
-              <div style={styles.managerDetails}>
-                <div>姓名：{eventManager.basicInfo?.englishName || eventManager.basicInfo?.chineseName || '未设置'}</div>
-                <div>电话：{eventManager.basicInfo?.phoneNumber || '未设置'}</div>
-              </div>
-            </div>
-          ) : (
-            <span style={styles.managerNotAssigned}>✗ 未分配</span>
-          )}
-        </div>
-        <div style={styles.metaItem}>
-          <strong>参与人数:</strong> {event.statistics?.totalUsers || 0} 人
-        </div>
-      </div>
-
-      {/* ✨ 新增：登录网址显示区域 */}
-      <div style={styles.loginUrlSection}>
-        <div style={styles.loginUrlHeader}>
-          <span style={styles.loginUrlLabel}>🔗 统一登录网址</span>
-          <button
-            style={styles.qrButton}
-            onClick={() => window.open(qrCodeUrl, '_blank')}
-            title="查看登录二维码"
-          >
-            📱 QR Code
-          </button>
-        </div>
-
-        <div style={styles.loginUrlBox}>
-          <input
-            type="text"
-            value={loginUrl}
-            readOnly
-            style={styles.loginUrlInput}
-          />
-          <button
-            style={styles.copyButton}
-            onClick={handleCopyLoginUrl}
-            title="复制登录网址"
-          >
-            {copySuccess || '📋 复制'}
-          </button>
-        </div>
-
-        <div style={styles.loginUrlHint}>
-          💡 分享此链接给所有角色用户登录
-        </div>
-      </div>
-
-      {!eventManager && (
-        <button
-          style={styles.assignButton}
-          onClick={onAssignManager}
-          disabled={deleting}
-        >
-          分配 Event Manager
-        </button>
-      )}
-
-      {eventManager && (
-        <button
-          style={styles.reassignButton}
-          onClick={onAssignManager}
-          disabled={deleting}
-        >
-          重新分配 Event Manager
-        </button>
-      )}
-
+      {/* 删除按钮 */}
       <div style={styles.eventActions}>
+        {/* ... 其他按钮 ... */}
+        
         <button
-          style={styles.batchImportButton}
-          onClick={() => onBatchImport(organization, event)}
-          disabled={deleting}
-          title="批量导入用户"
-        >
-          📥 批量导入用户
-        </button>
-        <button
-          style={{...styles.deleteButton, ...(deleting ? styles.deleteButtonDisabled : {})}}
+          style={{
+            ...styles.deleteButton,
+            ...(deleting ? styles.deleteButtonDisabled : {})
+          }}
           onClick={handleDeleteEvent}
           disabled={deleting}
-          title="删除此活动"
         >
-          {deleting ? '删除中...' : '🗑️ 删除活动'}
+          {deleting ? '🗑️ 删除中...' : '🗑️ 删除此活动'}
         </button>
       </div>
     </div>
   );
 };
+
 
 // ✨ 新增：编辑身份标签的 Modal 组件
 const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {

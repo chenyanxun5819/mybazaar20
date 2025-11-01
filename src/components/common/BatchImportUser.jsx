@@ -217,153 +217,200 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   };
 
   // 批量导入用户
-  const handleImportUsers = async () => {
-    if (!validateData()) {
-      alert('请修正数据错误后再导入');
-      return;
-    }
+// ============================================
+// 修复后的 BatchImportUser.jsx
+// 问题 1 的修复：同时更新两个层级的 totalUsers
+// ============================================
 
-    if (!confirm(`确定要导入 ${previewData.length} 位用户吗？\n所有用户将自动获得 Seller + Customer 角色。`)) {
-      return;
-    }
+// ... 前面的代码保持不变 ...
 
-    try {
-      setImporting(true);
+// 批量导入用户（第 220 行开始）
+const handleImportUsers = async () => {
+  if (!validateData()) {
+    alert('请修正数据错误后再导入');
+    return;
+  }
 
-      let successCount = 0;
-      let failCount = 0;
-      const failedUsers = [];
+  if (!confirm(`确定要导入 ${previewData.length} 位用户吗？\n所有用户将自动获得 Seller + Customer 角色。`)) {
+    return;
+  }
 
-      // 提取所有部门
-      const departments = [...new Set(
-        previewData.map(u => u.department.trim()).filter(d => d)
-      )];
+  try {
+    setImporting(true);
 
-      for (const user of previewData) {
-        try {
-          // 生成用户 ID
-          const timestamp = Date.now();
-          const randomStr = Math.random().toString(36).substring(2, 8);
-          const userId = `usr_${timestamp}_${randomStr}`;
+    let successCount = 0;
+    let failCount = 0;
+    const failedUsers = [];
 
-          // 标准化电话号码
-          const phone = user.phoneNumber.trim();
-          const authUid = `phone_60${phone}`;
+    // 提取所有部门
+    const departments = [...new Set(
+      previewData.map(u => u.department.trim()).filter(d => d)
+    )];
 
-          // 用户文档数据
-          const userData = {
-            userId,
-            authUid,
-            roles: ['seller', 'customer'], // 预设角色
-            identityTag: user.identityTag || 'student',
-            basicInfo: {
-              phoneNumber: phone,
-              englishName: user.englishName.trim(),
-              chineseName: user.chineseName?.trim() || '',
-              email: user.email?.trim() || '',
-              isPhoneVerified: false
-            },
-            identityInfo: {
-              identityId: user.identityId?.trim() || '', // ✅ 使用用户填写的，没填就是空字符串
-              department: user.department.trim()
-            },
-            roleSpecificData: {
-              seller: {},
-              customer: {}
-            },
-            accountStatus: {
-              status: 'active',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              createdBy: 'event_manager',
-              createdByUserId: 'batch_import'
-            }
-          };
+    // 逐个创建用户
+    for (const user of previewData) {
+      try {
+        // 生成用户 ID
+        const timestamp = Date.now();
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        const userId = `usr_${timestamp}_${randomStr}`;
 
-          // 保存到 Firestore
-          const userRef = doc(
-            db,
-            'organizations',
-            organizationId,
-            'events',
-            eventId,
-            'users',
-            userId
-          );
+        // 标准化电话号码
+        const phone = user.phoneNumber.trim();
+        const authUid = `phone_60${phone}`;
 
-          await setDoc(userRef, userData);
-          successCount++;
+        // 用户文档数据
+        const userData = {
+          userId,
+          authUid,
+          roles: ['seller', 'customer'],
+          identityTag: user.identityTag || 'student',
+          basicInfo: {
+            phoneNumber: phone,
+            englishName: user.englishName.trim(),
+            chineseName: user.chineseName?.trim() || '',
+            email: user.email?.trim() || '',
+            isPhoneVerified: false
+          },
+          identityInfo: {
+            identityId: user.identityId?.trim() || '',
+            department: user.department.trim()
+          },
+          roleSpecificData: {
+            seller: {},
+            customer: {}
+          },
+          accountStatus: {
+            status: 'active',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: 'event_manager',
+            createdByUserId: 'batch_import'
+          }
+        };
 
-        } catch (err) {
-          console.error('[BatchImport] 创建用户失败:', err);
-          failCount++;
-          failedUsers.push({
-            name: user.englishName,
-            phone: user.phoneNumber,
-            error: err.message
-          });
-        }
-      }
-
-      // 保存部门列表到 metadata
-      if (departments.length > 0) {
-        const metadataRef = doc(
+        // 保存到 Firestore
+        const userRef = doc(
           db,
           'organizations',
           organizationId,
           'events',
           eventId,
-          'metadata',
-          'departments'
+          'users',
+          userId
         );
 
-        await setDoc(metadataRef, {
-          departmentList: departments,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-      }
+        await setDoc(userRef, userData);
+        successCount++;
 
-      // ✅ 更新 event 的 statistics.totalUsers
-      if (successCount > 0) {
-        const eventRef = doc(
-          db,
-          'organizations',
-          organizationId,
-          'events',
-          eventId
-        );
-
-        await updateDoc(eventRef, {
-          'statistics.totalUsers': increment(successCount),
-          updatedAt: serverTimestamp()
+      } catch (err) {
+        console.error('[BatchImport] 创建用户失败:', err);
+        failCount++;
+        failedUsers.push({
+          name: user.englishName,
+          phone: user.phoneNumber,
+          error: err.message
         });
       }
-
-      // 显示结果
-      let message = `导入完成！\n\n`;
-      message += `✅ 成功: ${successCount} 位用户\n`;
-      if (failCount > 0) {
-        message += `❌ 失败: ${failCount} 位用户\n\n`;
-        message += `失败用户:\n`;
-        failedUsers.forEach(u => {
-          message += `- ${u.name} (${u.phone}): ${u.error}\n`;
-        });
-      }
-
-      alert(message);
-
-      if (successCount > 0 && onSuccess) {
-        onSuccess();
-      }
-
-    } catch (error) {
-      console.error('[BatchImport] 批量导入失败:', error);
-      alert('批量导入失败：' + error.message);
-    } finally {
-      setImporting(false);
     }
-  };
+
+    // 保存部门列表到 metadata
+    if (departments.length > 0) {
+      const metadataRef = doc(
+        db,
+        'organizations',
+        organizationId,
+        'events',
+        eventId,
+        'metadata',
+        'departments'
+      );
+
+      await setDoc(metadataRef, {
+        departmentList: departments,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    // ✅ 修复：同时更新两个层级的统计数据
+    if (successCount > 0) {
+      // 1️⃣ 更新活动层级的 statistics.totalUsers
+      const eventRef = doc(
+        db,
+        'organizations',
+        organizationId,
+        'events',
+        eventId
+      );
+
+      await updateDoc(eventRef, {
+        'statistics.totalUsers': increment(successCount),
+        'statistics.totalSellers': increment(successCount),  // 因为都是 seller
+        'statistics.totalCustomers': increment(successCount), // 因为都是 customer
+        updatedAt: serverTimestamp()
+      });
+
+      // 2️⃣ 更新组织层级的 statistics.totalUsers
+      const orgRef = doc(
+        db,
+        'organizations',
+        organizationId
+      );
+
+      await updateDoc(orgRef, {
+        'statistics.totalUsers': increment(successCount),
+        updatedAt: serverTimestamp()
+      });
+
+      console.log(`[BatchImport] ✅ 统计数据更新完成：`);
+      console.log(`  - Event 层级: +${successCount} users`);
+      console.log(`  - Organization 层级: +${successCount} users`);
+    }
+
+    // 显示结果
+    let message = `导入完成！\n\n`;
+    message += `✅ 成功: ${successCount} 位用户\n`;
+    if (failCount > 0) {
+      message += `❌ 失败: ${failCount} 位用户\n\n`;
+      message += `失败用户:\n`;
+      failedUsers.forEach(u => {
+        message += `- ${u.name} (${u.phone}): ${u.error}\n`;
+      });
+    }
+
+    alert(message);
+
+    // 成功后重置并回调
+    if (successCount > 0 && onSuccess) {
+      onSuccess();
+    }
+
+    // 重置表单
+    setPreviewData([]);
+    setFile(null);
+    setShowPreview(false);
+    setManualData(
+      Array(5).fill().map(() => ({
+        englishName: '',
+        chineseName: '',
+        identityId: '',
+        phoneNumber: '',
+        department: '',
+        email: '',
+        identityTag: 'student'
+      }))
+    );
+
+  } catch (error) {
+    console.error('[BatchImport] 批量导入失败:', error);
+    alert('批量导入失败: ' + error.message);
+  } finally {
+    setImporting(false);
+  }
+};
+
+
 
   // 预览界面
   if (showPreview) {

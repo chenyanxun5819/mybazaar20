@@ -2149,3 +2149,174 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     });
   }
 });
+
+/**
+ * HTTP function to delete an event and all related data
+ * - Auth: requires caller to be a platform admin
+ * - Data required: organizationId, eventId
+ * - Behavior: 
+ *   1. Deletes all users in the event
+ *   2. Deletes all metadata
+ *   3. Deletes the event document
+ *   4. Removes Event Manager from organization's admins array
+ *   5. Updates organization statistics
+ */
+exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Only POST requests are allowed' });
+    return;
+  }
+
+  try {
+    const { organizationId, eventId, idToken } = req.body;
+
+    // Validate required fields
+    if (!organizationId || !eventId || !idToken) {
+      res.status(400).json({ 
+        error: '缺少必需参数：organizationId, eventId, idToken' 
+      });
+      return;
+    }
+
+    console.log('[deleteEventHttp] Starting deletion:', { organizationId, eventId });
+
+    // Verify the ID token and check if user is platform admin
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      console.error('[deleteEventHttp] Token verification failed:', error);
+      res.status(401).json({ error: '身份验证失败' });
+      return;
+    }
+
+    const callerUid = decodedToken.uid;
+
+    // Check if caller is platform admin
+    const adminCheck = await getDb().collection('admin_uids').doc(callerUid).get();
+    if (!adminCheck.exists) {
+      res.status(403).json({ error: '只有平台管理员可以删除活动' });
+      return;
+    }
+
+    const db = getDb();
+    const eventRef = db.collection('organizations').doc(organizationId)
+                      .collection('events').doc(eventId);
+    
+    // Get event data before deletion
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
+      res.status(404).json({ error: '活动不存在' });
+      return;
+    }
+
+    const eventData = eventSnap.data();
+    const usersToDelete = eventData.statistics?.totalUsers || 0;
+    const isActive = eventData.status === 'active';
+
+    console.log('[deleteEventHttp] Event data:', { 
+      usersToDelete, 
+      isActive,
+      eventManager: eventData.eventManager 
+    });
+
+    // Get organization data (for admins array)
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const orgSnap = await orgRef.get();
+    
+    if (!orgSnap.exists) {
+      res.status(404).json({ error: '组织不存在' });
+      return;
+    }
+
+    const currentAdmins = orgSnap.data()?.admins || [];
+
+    // Use batch for atomic operations (max 500 operations per batch)
+    const batch = db.batch();
+    let operationCount = 0;
+
+    // 1. Delete all users in the event
+    const usersSnapshot = await db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('users')
+      .get();
+
+    console.log(`[deleteEventHttp] Found ${usersSnapshot.size} users to delete`);
+
+    usersSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+      operationCount++;
+    });
+
+    // 2. Delete all metadata
+    const metadataSnapshot = await db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('metadata')
+      .get();
+
+    console.log(`[deleteEventHttp] Found ${metadataSnapshot.size} metadata documents to delete`);
+
+    metadataSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+      operationCount++;
+    });
+
+    // 3. Delete the event document itself
+    batch.delete(eventRef);
+    operationCount++;
+
+    // 4. Filter out Event Manager from admins array
+    const updatedAdmins = currentAdmins.filter(admin => admin.eventId !== eventId);
+    const removedAdminsCount = currentAdmins.length - updatedAdmins.length;
+
+    console.log(`[deleteEventHttp] Removing ${removedAdminsCount} Event Manager(s) from admins array`);
+
+    // 5. Update organization data (admins + statistics)
+    batch.update(orgRef, {
+      'admins': updatedAdmins,
+      'statistics.totalUsers': admin.firestore.FieldValue.increment(-usersToDelete),
+      'statistics.totalEvents': admin.firestore.FieldValue.increment(-1),
+      'statistics.activeEvents': admin.firestore.FieldValue.increment(isActive ? -1 : 0),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    operationCount++;
+
+    console.log(`[deleteEventHttp] Committing batch with ${operationCount} operations`);
+
+    // Commit all operations atomically
+    await batch.commit();
+
+    console.log('[deleteEventHttp] ✅ Delete successful');
+
+    res.status(200).json({
+      success: true,
+      deletedUsers: usersSnapshot.size,
+      deletedMetadata: metadataSnapshot.size,
+      removedAdmins: removedAdminsCount,
+      updatedStatistics: {
+        totalUsers: -usersToDelete,
+        totalEvents: -1,
+        activeEvents: isActive ? -1 : 0
+      },
+      message: '活动删除成功'
+    });
+
+  } catch (error) {
+    console.error('[deleteEventHttp] Error:', error);
+    res.status(500).json({
+      error: error.message || '删除活动失败'
+    });
+  }
+});
