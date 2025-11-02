@@ -168,27 +168,38 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     const newErrors = [];
     const phoneSet = new Set();
 
-    // ✅ 新增：获取活动中已存在的用户电话号码
-    const existingPhones = new Set();
+    // ✅ 新增：通过 Cloud Function 检查现有用户电话号码
+    const phoneNumbers = previewData.map(u => u.phoneNumber).filter(p => p);
+    let duplicatePhones = [];
+    
     try {
-      const usersRef = collection(
-        db,
-        'organizations',
-        organizationId,
-        'events',
-        eventId,
-        'users'
-      );
-      const usersSnapshot = await getDocs(usersRef);
-      usersSnapshot.docs.forEach(doc => {
-        const phone = doc.data().basicInfo?.phoneNumber;
-        if (phone) {
-          existingPhones.add(phone);
-        }
+      const checkUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/checkDuplicateUsers';
+      const response = await fetch(checkUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId: organizationId,
+          eventId: eventId,
+          phoneNumbers: phoneNumbers
+        })
       });
-      console.log(`[BatchImport] 活动中已有 ${existingPhones.size} 个用户`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[BatchImport] ❌ 检查重复失败:', errorData);
+      } else {
+        const result = await response.json();
+        duplicatePhones = result.duplicates || [];
+        console.log(`[BatchImport] ✅ 检查完成: 现有用户 ${result.existingCount} 个，待导入 ${result.importCount} 个，重复 ${result.duplicates.length} 个`);
+        if (result.duplicates.length > 0) {
+          console.log(`[BatchImport] ⚠️ 重复电话号码:`, result.duplicates);
+        }
+      }
     } catch (error) {
-      console.error('[BatchImport] 获取已有用户失败:', error);
+      console.error('[BatchImport] ❌ 检查重复时出错:', error);
+      console.error('[BatchImport] 错误详情:', error.message);
     }
 
     previewData.forEach((user, index) => {
@@ -213,8 +224,9 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         rowErrors.push('电话号码格式错误（需要10位，以0开头）');
       }
 
-      // ✅ 新增：检查是否已存在于活动中
-      if (user.phoneNumber && existingPhones.has(user.phoneNumber)) {
+      // ✅ 新增：检查是否已存在于活动中（通过 Cloud Function 的结果）
+      if (user.phoneNumber && duplicatePhones.includes(user.phoneNumber)) {
+        console.log(`[BatchImport] ⚠️ 检测到重复: ${user.phoneNumber}`);
         rowErrors.push('⚠️ 此电话号码已在活动中存在');
       }
 
@@ -229,8 +241,6 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       if (user.identityTag && !validTags.includes(user.identityTag)) {
         rowErrors.push(`身份标签无效（只能是：${validTags.join(', ')}）`);
       }
-
-      // ✅ identityId 不验证（可选字段）
 
       if (rowErrors.length > 0) {
         newErrors.push({

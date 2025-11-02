@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp} = require('./admin');
+  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers} = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -24,6 +24,7 @@ exports.createEventManagerHttp = createEventManagerHttp;
 exports.loginEventManager = loginEventManager; 
 exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
 exports.deleteEventHttp = deleteEventHttp;
+exports.checkDuplicateUsers = checkDuplicateUsers;
 exports.loginUniversalHttp = loginUniversalHttp;
 
 // CORS 中间件配置
