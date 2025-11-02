@@ -2,46 +2,73 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // ========== 组织和活动（只读）==========
+    // ========== 组织集合 ==========
     match /organizations/{orgId} {
       // 允许所有人读取组织信息
       allow read: if true;
-      // 只有认证用户可以写入
-      allow write: if request.auth != null;
+      // 只有 platform admin 可以修改组织信息
+      allow create, update, delete: if request.auth != null && 
+        exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
       
-      // 活动子集合
+      // ========== 活动子集合 ==========
       match /events/{eventId} {
         // 允许所有人读取活动信息
         allow read: if true;
-        // 只有认证用户可以写入
-        allow write: if request.auth != null;
+        // 只有 platform admin 可以创建/删除活动
+        allow create, delete: if request.auth != null && 
+          exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+        // Event Manager 和 platform admin 可以更新活动（包括 statistics）
+        allow update: if request.auth != null && (
+          exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
+          get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)).data.eventManager == request.auth.uid
+        );
         
-        // 活动用户子集合
+        // ========== 活动用户子集合 ==========
         match /users/{userId} {
+          // 允许所有人读取用户信息
+          allow read: if true;
+          // Event Manager 和 platform admin 可以创建/修改/删除用户
+          allow create, update, delete: if request.auth != null && (
+            exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
+            get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)).data.eventManager == request.auth.uid ||
+            request.auth.uid == userId
+          );
+        }
+        
+        // ========== 元数据子集合 ==========
+        match /metadata/{docId} {
           // 允许读取
           allow read: if true;
-          // 只有认证用户可以写入
-          allow write: if request.auth != null;
+          // Event Manager 和 platform admin 可以写入
+          allow write: if request.auth != null && (
+            exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
+            get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)).data.eventManager == request.auth.uid
+          );
         }
       }
+      
+      // ========== Admins 数组（平台管理员白名单）==========
+      // 注意：admins 数组是组织文档的一部分，权限在 events 规则中控制
     }
     
     // ========== 系统配置（只读）==========
     match /system_config/{docId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && 
+        exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
     }
     
-    // ========== 用户集合 ==========
+    // ========== 用户集合（公开）==========
     match /users/{userId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
     }
     
     // ========== 管理员白名单（只读）==========
     match /admin_uids/{uid} {
       allow read: if request.auth != null;
-      allow write: if false;
+      allow write: if false; // 只能通过后端修改
     }
     
     // ========== 其他集合默认拒绝 ==========

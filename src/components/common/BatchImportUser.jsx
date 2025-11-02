@@ -164,9 +164,32 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   };
 
   // 验证数据
-  const validateData = () => {
+  const validateData = async () => {
     const newErrors = [];
     const phoneSet = new Set();
+
+    // ✅ 新增：获取活动中已存在的用户电话号码
+    const existingPhones = new Set();
+    try {
+      const usersRef = collection(
+        db,
+        'organizations',
+        organizationId,
+        'events',
+        eventId,
+        'users'
+      );
+      const usersSnapshot = await getDocs(usersRef);
+      usersSnapshot.docs.forEach(doc => {
+        const phone = doc.data().basicInfo?.phoneNumber;
+        if (phone) {
+          existingPhones.add(phone);
+        }
+      });
+      console.log(`[BatchImport] 活动中已有 ${existingPhones.size} 个用户`);
+    } catch (error) {
+      console.error('[BatchImport] 获取已有用户失败:', error);
+    }
 
     previewData.forEach((user, index) => {
       const rowErrors = [];
@@ -190,7 +213,12 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         rowErrors.push('电话号码格式错误（需要10位，以0开头）');
       }
 
-      // 重复电话检查
+      // ✅ 新增：检查是否已存在于活动中
+      if (user.phoneNumber && existingPhones.has(user.phoneNumber)) {
+        rowErrors.push('⚠️ 此电话号码已在活动中存在');
+      }
+
+      // 重复电话检查（同一批次内）
       if (user.phoneNumber && phoneSet.has(user.phoneNumber)) {
         rowErrors.push('电话号码重复');
       }
@@ -217,26 +245,18 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   };
 
   // 批量导入用户
-// ============================================
-// 修复后的 BatchImportUser.jsx
-// 问题 1 的修复：同时更新两个层级的 totalUsers
-// ============================================
+  const handleImportUsers = async () => {
+    if (!await validateData()) {
+      alert('请修正数据错误后再导入');
+      return;
+    }
 
-// ... 前面的代码保持不变 ...
+    if (!confirm(`确定要导入 ${previewData.length} 位用户吗？\n所有用户将自动获得 Seller + Customer 角色。`)) {
+      return;
+    }
 
-// 批量导入用户（第 220 行开始）
-const handleImportUsers = async () => {
-  if (!validateData()) {
-    alert('请修正数据错误后再导入');
-    return;
-  }
-
-  if (!confirm(`确定要导入 ${previewData.length} 位用户吗？\n所有用户将自动获得 Seller + Customer 角色。`)) {
-    return;
-  }
-
-  try {
-    setImporting(true);
+    try {
+      setImporting(true);
 
     let successCount = 0;
     let failCount = 0;
@@ -346,8 +366,6 @@ const handleImportUsers = async () => {
 
       await updateDoc(eventRef, {
         'statistics.totalUsers': increment(successCount),
-        'statistics.totalSellers': increment(successCount),  // 因为都是 seller
-        'statistics.totalCustomers': increment(successCount), // 因为都是 customer
         updatedAt: serverTimestamp()
       });
 

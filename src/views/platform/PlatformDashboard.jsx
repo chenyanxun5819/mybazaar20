@@ -43,6 +43,12 @@ const PlatformDashboard = () => {
           };
         })
       );
+
+      // ✅ 添加总计日志
+      const totalUsers = orgsData.reduce((sum, org) => sum + (org.statistics?.totalUsers || 0), 0);
+      console.log('[PlatformDashboard] 总用户数:', totalUsers);
+      console.log('[PlatformDashboard] 组织数据:', orgsData);
+
       setOrganizations(orgsData);
     } catch (error) {
       console.error('加载组织失败:', error);
@@ -220,7 +226,7 @@ const StatCard = ({ title, value, icon, color }) => (
   </div>
 );
 
-const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onBatchImport, onReload }) => {
+const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onReload }) => {
   const [expanded, setExpanded] = useState(false);
   const [showEditIdentityTags, setShowEditIdentityTags] = useState(false);
 
@@ -300,7 +306,6 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onBatc
                   event={event}
                   organization={organization}
                   onAssignManager={() => onAssignManager(organization, event)}
-                  onBatchImport={onBatchImport}
                   onReload={onReload}
                 />
               ))}
@@ -329,15 +334,81 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onBatc
 // 完整版：删除事件功能（包含 admins 清理）
 // ============================================
 
-const EventCard = ({ event, organization, onAssignManager, onBatchImport, onReload }) => {
+
+const EventCard = ({ event, organization, onAssignManager, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // ... 其他代码保持不变 ...
+  // 加载 Event Manager 信息
+  useEffect(() => {
+    const loadEventManager = async () => {
+      try {
+        setLoadingManager(true);
+        if (!event.eventManager) {
+          setEventManager(null);
+          return;
+        }
 
-  // ✅ 完整版删除事件功能
+        const managerRef = doc(
+          db,
+          'organizations',
+          organization.id,
+          'events',
+          event.id,
+          'users',
+          event.eventManager
+        );
+
+        const managerSnap = await getDoc(managerRef);
+        if (managerSnap.exists()) {
+          setEventManager(managerSnap.data());
+        }
+      } catch (error) {
+        console.error('[EventCard] 加载 Event Manager 失败:', error);
+      } finally {
+        setLoadingManager(false);
+      }
+    };
+
+    loadEventManager();
+  }, [event.id, event.eventManager, organization.id]);
+
+  // 格式化日期
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '未设置';
+    if (typeof dateStr === 'object' && dateStr.toDate) {
+      return dateStr.toDate().toLocaleDateString('zh-CN');
+    }
+    return String(dateStr);
+  };
+
+  // 根据消费期计算事件状态
+  const getEventStatus = () => {
+    const endDate = event.eventInfo?.consumptionPeriod?.endDate;
+    if (!endDate) return event.status || 'planning';
+
+    let end = new Date(endDate);
+
+    // 处理 Firestore Timestamp 对象
+    if (typeof endDate === 'object' && endDate.toDate) {
+      end = endDate.toDate();
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    if (today > end) {
+      return 'completed';
+    }
+    return 'active';
+  };
+
+  const eventStatus = getEventStatus();
+
+  // ✅ 使用 Cloud Function 删除事件
   const handleDeleteEvent = async () => {
     // 1️⃣ 增强的确认对话框
     if (!confirm(
@@ -366,7 +437,7 @@ const EventCard = ({ event, organization, onAssignManager, onBatchImport, onRelo
 
       // 3️⃣ 调用 Cloud Function
       const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
-      
+
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
@@ -410,16 +481,151 @@ const EventCard = ({ event, organization, onAssignManager, onBatchImport, onRelo
     }
   };
 
-  // ... 其他代码保持不变 ...
+  // 生成登录网址
+  const generateLoginUrl = () => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/login/${organization.orgCode}-${event.eventCode}`;
+  };
+
+  const loginUrl = generateLoginUrl();
+
+  // 复制登录网址
+  const handleCopyLoginUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(loginUrl);
+      setCopySuccess('✓ 已复制');
+      setTimeout(() => setCopySuccess(''), 2000);
+    } catch (err) {
+      alert('复制失败，请手动复制');
+    }
+  };
+
+  // 生成 QR Code URL
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(loginUrl)}`;
+
+  // 打开 QR Code
+  const handleShowQRCode = () => {
+    window.open(qrCodeUrl, '_blank', 'width=350,height=350');
+  };
 
   return (
     <div style={styles.eventCard}>
-      {/* ... 前面的卡片内容 ... */}
+      {/* 事件头部 */}
+      <div style={styles.eventHeader}>
+        <div>
+          <h4 style={styles.eventName}>
+            {event.eventName?.['zh-CN']}
+          </h4>
+          <div style={styles.eventMeta}>
+            <span style={styles.badge}>{event.eventCode}</span>
+            <span style={{
+              ...styles.statusBadge,
+              background:
+                eventStatus === 'active' ? '#d1fae5' :
+                  eventStatus === 'completed' ? '#fee2e2' :
+                    '#fef3c7',
+              color:
+                eventStatus === 'active' ? '#065f46' :
+                  eventStatus === 'completed' ? '#991b1b' :
+                    '#92400e'
+            }}>
+              {eventStatus === 'active' ? '进行中' :
+                eventStatus === 'completed' ? '已结束' :
+                  '筹备中'}
+            </span>
+          </div>
+        </div>
+      </div>
 
-      {/* 删除按钮 */}
+      {/* 统计数据 */}
+      <div style={styles.eventStats}>
+        <div style={styles.statItem}>
+          <div style={styles.statLabel}>用户数</div>
+          <div style={styles.statValue}>{event.statistics?.totalUsers || 0}</div>
+        </div>
+        <div style={styles.statItem}>
+          <div style={styles.statLabel}>交易数</div>
+          <div style={styles.statValue}>{event.statistics?.totalTransactions || 0}</div>
+        </div>
+        <div style={styles.statItem}>
+          <div style={styles.statLabel}>已发积分</div>
+          <div style={styles.statValue}>{event.statistics?.totalPointsIssued || 0}</div>
+        </div>
+      </div>
+
+      {/* 活动日期 */}
+      <div style={styles.eventDates}>
+        <div style={styles.dateItem}>
+          <span style={styles.dateLabel}>市集日期：</span>
+          <span>{formatDate(event.eventInfo?.fairDate)}</span>
+        </div>
+        <div style={styles.dateItem}>
+          <span style={styles.dateLabel}>消费期：</span>
+          <span>
+            {formatDate(event.eventInfo?.consumptionPeriod?.startDate)} - {formatDate(event.eventInfo?.consumptionPeriod?.endDate)}
+          </span>
+        </div>
+      </div>
+
+      {/* 登录网址区域 */}
+      <div style={styles.loginUrlSection}>
+        <div style={styles.loginUrlHeader}>
+          <span style={styles.loginUrlLabel}>🔗 登录网址</span>
+          <button
+            style={styles.qrButton}
+            onClick={handleShowQRCode}
+            title="查看二维码"
+          >
+            📱 二维码
+          </button>
+        </div>
+        <div style={styles.loginUrlBox}>
+          <input
+            type="text"
+            value={loginUrl}
+            readOnly
+            style={styles.loginUrlInput}
+          />
+          <button
+            style={styles.copyButton}
+            onClick={handleCopyLoginUrl}
+          >
+            {copySuccess || '📋 复制'}
+          </button>
+        </div>
+        <span style={styles.loginUrlHint}>
+          分享此链接给用户进行注册和登录
+        </span>
+      </div>
+
+      {/* Event Manager 信息 */}
+      <div style={styles.managerInfo}>
+        <div style={styles.dateLabel}>Event Manager：</div>
+        {loadingManager ? (
+          <span style={styles.loadingText}>加载中...</span>
+        ) : eventManager ? (
+          <div style={styles.managerDetails}>
+            <strong>{eventManager.basicInfo?.englishName}</strong> ({eventManager.basicInfo?.chineseName})
+            <br />
+            📞 {eventManager.basicInfo?.phoneNumber}
+          </div>
+        ) : (
+          <span style={styles.loadingText}>未分配</span>
+        )}
+      </div>
+
+      {/* 操作按钮 */}
       <div style={styles.eventActions}>
-        {/* ... 其他按钮 ... */}
-        
+        {/* 重新分配 Event Manager */}
+        <button
+          style={styles.reassignButton}
+          onClick={onAssignManager}
+        >
+          {eventManager ? '🔄 重新分配 Manager' : '👤 分配 Event Manager'}
+        </button>
+
+
+        {/* 删除按钮 */}
         <button
           style={{
             ...styles.deleteButton,
