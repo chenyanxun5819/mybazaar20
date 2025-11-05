@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { db } from '../../config/firebase';
+import { collection, doc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 
 const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
@@ -252,7 +254,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     return newErrors.length === 0;
   };
 
-  // 批量导入用户 - 使用 Cloud Function
+  // 批量导入用户
   const handleImportUsers = async () => {
     if (!await validateData()) {
       alert('请修正数据错误后再导入');
@@ -266,109 +268,175 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     try {
       setImporting(true);
 
-      let successCount = 0;
-      let failCount = 0;
-      const failedUsers = [];
+    let successCount = 0;
+    let failCount = 0;
+    const failedUsers = [];
 
-      // 逐个通过 Cloud Function 创建用户
-      for (const user of previewData) {
-        try {
-          // 标准化电话号码
-          const phone = user.phoneNumber.trim();
-          
-          // 📍 使用 orgCode+eventCode 作为预设密码
-          // 预设密码格式：orgCode + eventCode（例如："EXPO2024CODING"）
-          const defaultPassword = `${organizationId}${eventId}`;
+    // 提取所有部门
+    const departments = [...new Set(
+      previewData.map(u => u.department.trim()).filter(d => d)
+    )];
 
-          console.log(`[BatchImport] 正在创建用户: ${user.englishName} (${phone})`);
+    // 逐个创建用户
+    for (const user of previewData) {
+      try {
+        // 生成用户 ID
+        const timestamp = Date.now();
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        const userId = `usr_${timestamp}_${randomStr}`;
 
-          // 调用 Cloud Function 创建用户
-          const response = await fetch(
-            'https://createuserbyeventmanagerhttp-zgmq4nw2bq-uc.a.run.app',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                organizationId: organizationId,
-                eventId: eventId,
-                phoneNumber: phone,
-                password: defaultPassword,
-                englishName: user.englishName.trim(),
-                chineseName: user.chineseName?.trim() || '',
-                email: user.email?.trim() || '',
-                identityTag: user.identityTag || 'student',
-                department: user.department.trim(),
-                roles: ['seller', 'customer']
-              })
-            }
-          );
+        // 标准化电话号码
+        const phone = user.phoneNumber.trim();
+        const authUid = `phone_60${phone}`;
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP ${response.status}`);
+        // 用户文档数据
+        const userData = {
+          userId,
+          authUid,
+          roles: ['seller', 'customer'],
+          identityTag: user.identityTag || 'student',
+          basicInfo: {
+            phoneNumber: phone,
+            englishName: user.englishName.trim(),
+            chineseName: user.chineseName?.trim() || '',
+            email: user.email?.trim() || '',
+            isPhoneVerified: false
+          },
+          identityInfo: {
+            identityId: user.identityId?.trim() || '',
+            department: user.department.trim()
+          },
+          roleSpecificData: {
+            seller: {},
+            customer: {}
+          },
+          accountStatus: {
+            status: 'active',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: 'event_manager',
+            createdByUserId: 'batch_import'
           }
+        };
 
-          const result = await response.json();
-          console.log(`[BatchImport] ✅ 用户创建成功: ${result.userId}`);
-          successCount++;
+        // 保存到 Firestore
+        const userRef = doc(
+          db,
+          'organizations',
+          organizationId,
+          'events',
+          eventId,
+          'users',
+          userId
+        );
 
-        } catch (err) {
-          console.error(`[BatchImport] ❌ 创建用户失败: ${user.englishName}`, err);
-          failCount++;
-          failedUsers.push({
-            name: user.englishName,
-            phone: user.phoneNumber,
-            error: err.message
-          });
-        }
-      }
+        await setDoc(userRef, userData);
+        successCount++;
 
-      // 显示结果
-      let message = `导入完成！\n\n`;
-      message += `✅ 成功: ${successCount} 位用户\n`;
-      
-      if (failCount > 0) {
-        message += `❌ 失败: ${failCount} 位用户\n\n`;
-        message += `失败用户:\n`;
-        failedUsers.forEach(u => {
-          message += `- ${u.name} (${u.phone}): ${u.error}\n`;
+      } catch (err) {
+        console.error('[BatchImport] 创建用户失败:', err);
+        failCount++;
+        failedUsers.push({
+          name: user.englishName,
+          phone: user.phoneNumber,
+          error: err.message
         });
       }
+    }
 
-      message += `\n📍 预设密码: ${organizationId}${eventId}`;
-
-      alert(message);
-
-      // 成功后重置并回调
-      if (successCount > 0 && onSuccess) {
-        onSuccess();
-      }
-
-      // 重置表单
-      setPreviewData([]);
-      setFile(null);
-      setShowPreview(false);
-      setManualData(
-        Array(5).fill().map(() => ({
-          englishName: '',
-          chineseName: '',
-          identityId: '',
-          phoneNumber: '',
-          department: '',
-          email: '',
-          identityTag: 'student'
-        }))
+    // 保存部门列表到 metadata
+    if (departments.length > 0) {
+      const metadataRef = doc(
+        db,
+        'organizations',
+        organizationId,
+        'events',
+        eventId,
+        'metadata',
+        'departments'
       );
 
-    } catch (error) {
-      console.error('[BatchImport] 批量导入失败:', error);
-      alert('批量导入失败: ' + error.message);
-    } finally {
-      setImporting(false);
+      await setDoc(metadataRef, {
+        departmentList: departments,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
     }
-  };
+
+    // ✅ 修复：同时更新两个层级的统计数据
+    if (successCount > 0) {
+      // 1️⃣ 更新活动层级的 statistics.totalUsers
+      const eventRef = doc(
+        db,
+        'organizations',
+        organizationId,
+        'events',
+        eventId
+      );
+
+      await updateDoc(eventRef, {
+        'statistics.totalUsers': increment(successCount),
+        updatedAt: serverTimestamp()
+      });
+
+      // 2️⃣ 更新组织层级的 statistics.totalUsers
+      const orgRef = doc(
+        db,
+        'organizations',
+        organizationId
+      );
+
+      await updateDoc(orgRef, {
+        'statistics.totalUsers': increment(successCount),
+        updatedAt: serverTimestamp()
+      });
+
+      console.log(`[BatchImport] ✅ 统计数据更新完成：`);
+      console.log(`  - Event 层级: +${successCount} users`);
+      console.log(`  - Organization 层级: +${successCount} users`);
+    }
+
+    // 显示结果
+    let message = `导入完成！\n\n`;
+    message += `✅ 成功: ${successCount} 位用户\n`;
+    if (failCount > 0) {
+      message += `❌ 失败: ${failCount} 位用户\n\n`;
+      message += `失败用户:\n`;
+      failedUsers.forEach(u => {
+        message += `- ${u.name} (${u.phone}): ${u.error}\n`;
+      });
+    }
+
+    alert(message);
+
+    // 成功后重置并回调
+    if (successCount > 0 && onSuccess) {
+      onSuccess();
+    }
+
+    // 重置表单
+    setPreviewData([]);
+    setFile(null);
+    setShowPreview(false);
+    setManualData(
+      Array(5).fill().map(() => ({
+        englishName: '',
+        chineseName: '',
+        identityId: '',
+        phoneNumber: '',
+        department: '',
+        email: '',
+        identityTag: 'student'
+      }))
+    );
+
+  } catch (error) {
+    console.error('[BatchImport] 批量导入失败:', error);
+    alert('批量导入失败: ' + error.message);
+  } finally {
+    setImporting(false);
+  }
+};
 
 
 
