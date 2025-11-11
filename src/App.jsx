@@ -11,6 +11,7 @@ import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
+import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 
 // Placeholder 組件（之後實現）
 const PhonePlaceholder = () => (
@@ -30,7 +31,7 @@ const DesktopPlaceholder = () => (
 function App() {
   // 臨時調試
   console.log('Current path:', window.location.pathname);
-  
+
   return (
     <Routes>
       {/* 🆕 统一登录路由 */}
@@ -92,17 +93,17 @@ function App() {
         </DesktopGuard>
       } />
 
-  {/* 🆕 Event Manager 登录與儀表板（保留舊路徑）*/}
-  <Route path="/event-manager/login" element={<EventManagerLogin />} />
+      {/* 🆕 Event Manager 登录與儀表板（保留舊路徑）*/}
+      <Route path="/event-manager/login" element={<EventManagerLogin />} />
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
 
       {/* 預設路由 - 重定向到 Platform Admin 登录 */}
       <Route path="/" element={<Navigate to="/platform/login" replace />} />
-      
+
       {/* 404 */}
       <Route path="*" element={
-        <div style={{ 
-          padding: '2rem', 
+        <div style={{
+          padding: '2rem',
           textAlign: 'center',
           minHeight: '100vh',
           display: 'flex',
@@ -112,8 +113,8 @@ function App() {
         }}>
           <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
           <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>页面不存在</p>
-          <a 
-            href="/platform/login" 
+          <a
+            href="/platform/login"
             style={{
               marginTop: '1rem',
               padding: '0.75rem 1.5rem',
@@ -127,6 +128,13 @@ function App() {
           </a>
         </div>
       } />
+      {/* 🆕 Seller Manager Dashboard */}
+      <Route
+        path="/seller-manager/:orgEventCode/dashboard"
+        element={<SellerManagerDashboard />}
+      />
+
+
     </Routes>
   );
 }

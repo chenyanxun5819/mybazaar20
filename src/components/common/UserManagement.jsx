@@ -11,6 +11,8 @@ import {
   increment 
 } from 'firebase/firestore';
 
+const ALLOWED_IDENTITY_TAGS = new Set(['staff', 'teacher']);
+
 const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
@@ -20,6 +22,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
   const [eventData, setEventData] = useState(null);
+  const [deptOrderMaps, setDeptOrderMaps] = useState({ byId: {}, byName: {} });
   
   // 角色分配状态
   const [selectedRoles, setSelectedRoles] = useState({
@@ -46,7 +49,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
   useEffect(() => {
     filterUsers();
-  }, [users, searchTerm]);
+  }, [users, searchTerm, deptOrderMaps]);
 
   // 获取活动数据和用户列表
   const fetchData = async () => {
@@ -60,6 +63,27 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       
       if (eventDoc.exists()) {
         setEventData(eventDoc.data());
+      }
+
+      // 获取组织部门排序（用于用户排序）
+      try {
+        const orgRef = doc(db, 'organizations', organizationId);
+        const orgSnap = await getDoc(orgRef);
+        if (orgSnap.exists()) {
+          const data = orgSnap.data();
+          const depts = Array.isArray(data?.departments) ? data.departments : [];
+          const byId = {};
+          const byName = {};
+          const normalize = (s) => (s || '').toString().trim().toLowerCase();
+          depts.forEach(d => {
+            const order = typeof d.displayOrder === 'number' ? d.displayOrder : Number(d.displayOrder) || 999999;
+            if (d.id) byId[d.id] = order;
+            if (d.name) byName[normalize(d.name)] = order;
+          });
+          setDeptOrderMaps({ byId, byName });
+        }
+      } catch (e) {
+        console.warn('部门排序读取失败，将按名称/工号排序:', e);
       }
 
       // 获取用户列表
@@ -87,21 +111,60 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     }
   };
 
-  // 过滤用户
+  // 过滤与排序用户
   const filterUsers = () => {
-    if (!searchTerm.trim()) {
-      setFilteredUsers(users);
-      return;
+    const normalize = (s) => (s || '').toString().trim().toLowerCase();
+
+    // 1) 先按身份过滤，只保留 staff / teacher
+    const base = users.filter(u => {
+      const tag = normalize(u.identityTag || u.identityInfo?.identityTag);
+      return ALLOWED_IDENTITY_TAGS.has(tag);
+    });
+
+    // 2) 再做搜索过滤
+    let filtered = base;
+    const term = searchTerm.trim().toLowerCase();
+    if (term) {
+      filtered = base.filter(user =>
+        user.basicInfo?.englishName?.toLowerCase().includes(term) ||
+        user.basicInfo?.chineseName?.toLowerCase().includes(term) ||
+        user.basicInfo?.phoneNumber?.includes(term) ||
+        user.identityInfo?.identityId?.toLowerCase().includes(term)
+      );
     }
-    
-    const search = searchTerm.toLowerCase();
-    const filtered = users.filter(user =>
-      user.basicInfo?.englishName?.toLowerCase().includes(search) ||
-      user.basicInfo?.chineseName?.toLowerCase().includes(search) ||
-      user.basicInfo?.phoneNumber?.includes(search) ||
-      user.identityInfo?.identityId?.toLowerCase().includes(search)
-    );
-    
+
+    // 3) 按部门显示顺序 + 工号排序
+    const getDeptOrder = (user) => {
+      const deptId = user.identityInfo?.departmentId || user.department?.id;
+      const deptName = user.identityInfo?.department || user.department?.name || user.departmentName;
+      const byId = deptOrderMaps.byId || {};
+      const byName = deptOrderMaps.byName || {};
+      const orderFromId = deptId ? byId[deptId] : undefined;
+      const orderFromName = deptName ? byName[normalize(deptName)] : undefined;
+      const order = orderFromId ?? orderFromName;
+      return typeof order === 'number' ? order : 999999; // 未分配部门排在最后
+    };
+
+    const getEmpNo = (user) => {
+      const id = user.identityInfo?.identityId || '';
+      // 若是纯数字则按数值，否则按字典序
+      if (/^\d+$/.test(id)) return { num: parseInt(id, 10), str: '' };
+      return { num: null, str: id.toString() };
+    };
+
+    filtered.sort((a, b) => {
+      const ao = getDeptOrder(a);
+      const bo = getDeptOrder(b);
+      if (ao !== bo) return ao - bo;
+
+      const ae = getEmpNo(a);
+      const be = getEmpNo(b);
+      if (ae.num !== null && be.num !== null) return ae.num - be.num;
+      if (ae.num !== null) return -1; // 数字在前
+      if (be.num !== null) return 1;
+      return ae.str.localeCompare(be.str, 'zh');
+    });
+
     setFilteredUsers(filtered);
   };
 

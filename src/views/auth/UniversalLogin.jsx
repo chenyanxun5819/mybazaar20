@@ -97,6 +97,10 @@ const UniversalLogin = () => {
         await signInWithCustomToken(auth, data.customToken);
 
         // 保存基本信息
+        const normalizedRoles = Array.isArray(data.roles)
+          ? data.roles.map(r => r === 'event_manager' ? 'eventManager' : r)
+          : [];
+
         const baseInfo = {
           userId: data.userId,
           organizationId: data.organizationId,
@@ -106,7 +110,7 @@ const UniversalLogin = () => {
           orgEventCode: orgEventCode,
           englishName: data.englishName,
           chineseName: data.chineseName,
-          roles: data.roles, // ['event_manager', 'seller_manager']
+          roles: normalizedRoles, // normalized to camelCase
           loginTime: new Date().toISOString()
         };
 
@@ -157,13 +161,13 @@ const UniversalLogin = () => {
    * 根据角色跳转到对应的 Dashboard
    */
   const handleRoleNavigation = (role, userInfo) => {
-    // 角色到路由的映射
+    // 角色到路由的映射（统一使用驼峰式）
     const roleRoutes = {
-      'platform_admin': '/platform-admin/dashboard',
-      'event_manager': `/event-manager/${orgEventCode}/dashboard`,
-      'seller_manager': `/seller-manager/${orgEventCode}/dashboard`,
-      'merchant_manager': `/merchant-manager/${orgEventCode}/dashboard`,
-      'customer_manager': `/customer-manager/${orgEventCode}/dashboard`,
+      'platformAdmin': '/platform-admin/dashboard',
+      'eventManager': `/event-manager/${orgEventCode}/dashboard`,
+      'sellerManager': `/seller-manager/${orgEventCode}/dashboard`,
+      'merchantManager': `/merchant-manager/${orgEventCode}/dashboard`,
+      'customerManager': `/customer-manager/${orgEventCode}/dashboard`,
       'seller': `/seller/${orgEventCode}/dashboard`,
       'merchant': `/merchant/${orgEventCode}/dashboard`,
       'customer': `/customer/${orgEventCode}/dashboard`
@@ -171,11 +175,11 @@ const UniversalLogin = () => {
 
     // localStorage key 映射
     const storageKeys = {
-      'platform_admin': 'platformAdminInfo',
-      'event_manager': 'eventManagerInfo',
-      'seller_manager': 'sellerManagerInfo',
-      'merchant_manager': 'merchantManagerInfo',
-      'customer_manager': 'customerManagerInfo',
+      'platformAdmin': 'platformAdminInfo',
+      'eventManager': 'eventManagerInfo',
+      'sellerManager': 'sellerManagerInfo',
+      'merchantManager': 'merchantManagerInfo',
+      'customerManager': 'customerManagerInfo',
       'seller': 'sellerInfo',
       'merchant': 'merchantInfo',
       'customer': 'customerInfo'
@@ -200,13 +204,13 @@ const UniversalLogin = () => {
     }
   };
 
-  // 角色显示配置
+  // 角色显示配置（驼峰式）
   const roleConfig = {
-    'platform_admin': { label: 'Platform Admin', icon: '🔧', color: '#ef4444' },
-    'event_manager': { label: 'Event Manager', icon: '🎯', color: '#667eea' },
-    'seller_manager': { label: 'Seller Manager', icon: '💰', color: '#f59e0b' },
-    'merchant_manager': { label: 'Merchant Manager', icon: '🏪', color: '#8b5cf6' },
-    'customer_manager': { label: 'Customer Manager', icon: '🎫', color: '#10b981' },
+    'platformAdmin': { label: 'Platform Admin', icon: '🔧', color: '#ef4444' },
+    'eventManager': { label: 'Event Manager', icon: '🎯', color: '#667eea' },
+    'sellerManager': { label: 'Seller Manager', icon: '💰', color: '#f59e0b' },
+    'merchantManager': { label: 'Merchant Manager', icon: '🏪', color: '#8b5cf6' },
+    'customerManager': { label: 'Customer Manager', icon: '🎫', color: '#10b981' },
     'seller': { label: 'Seller (销售员)', icon: '🛍️', color: '#06b6d4' },
     'merchant': { label: 'Merchant (商家)', icon: '🏬', color: '#84cc16' },
     'customer': { label: 'Customer (顾客)', icon: '👤', color: '#ec4899' }

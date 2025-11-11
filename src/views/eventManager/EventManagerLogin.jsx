@@ -76,7 +76,7 @@ const EventManagerLogin = () => {
           orgCode: formData.orgCode,
           eventCode: formData.eventCode,
           englishName: data.englishName,
-          role: 'event_manager'
+          role: 'eventManager'
         }));
 
         // 跳转到 Event Manager Dashboard

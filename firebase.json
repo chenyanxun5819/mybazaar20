@@ -92,6 +92,41 @@
         }
       },
       {
+        "source": "/api/addDepartment",
+        "function": {
+          "functionId": "addDepartment",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/deleteDepartment",
+        "function": {
+          "functionId": "deleteDepartment",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/reorderDepartments",
+        "function": {
+          "functionId": "reorderDepartments",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/departments",
+        "function": {
+          "functionId": "departmentsHttp",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/batchImportUsers",
+        "function": {
+          "functionId": "batchImportUsersHttp",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

@@ -46,8 +46,13 @@ export const AuthProvider = ({ children }) => {
               organizationId, 
               eventId
             );
-            setUserProfile(profile);
-            console.log('[AuthContext] User profile loaded from Firestore:', profile);
+            // 规范化 legacy role 名称
+            const normalized = { ...profile };
+            if (Array.isArray(normalized.roles)) {
+              normalized.roles = normalized.roles.map(r => r === 'event_manager' ? 'eventManager' : r);
+            }
+            setUserProfile(normalized);
+            console.log('[AuthContext] User profile loaded from Firestore (normalized):', normalized);
           } catch (err) {
             console.error('[AuthContext] Failed to load user profile:', err);
             // 不设置为 null，保留已有的 userProfile
@@ -78,11 +83,15 @@ export const AuthProvider = ({ children }) => {
       
       const result = await authService.loginWithPin(phoneNumber, password, organizationId, eventId);
       
-      // 🔥 如果登录返回了用户资料，直接设置
-      if (result.userProfile) {
-        setUserProfile(result.userProfile);
-        console.log('[AuthContext] User profile set from login result:', result.userProfile);
-      }
+      // 🔥 如果登录返回了用户资料，直接设置，并将旧式 'event_manager' 规范化为 'eventManager'
+        if (result.userProfile) {
+          const normalized = { ...result.userProfile };
+          if (Array.isArray(normalized.roles)) {
+            normalized.roles = normalized.roles.map(r => r === 'event_manager' ? 'eventManager' : r);
+          }
+          setUserProfile(normalized);
+          console.log('[AuthContext] User profile set from login result (normalized):', normalized);
+        }
       
       return result;
     } catch (err) {
@@ -118,7 +127,7 @@ export const AuthProvider = ({ children }) => {
     const rolePriority = [
       'platform_admin',
       'org_admin', 
-      'event_manager',
+      'eventManager',
       'manager',
       'merchant',
       'seller',

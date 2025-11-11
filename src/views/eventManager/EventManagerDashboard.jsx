@@ -7,6 +7,7 @@ import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
 import UserList from '../../components/common/UserList';
 import UserManagement from '../../components/common/UserManagement'; // 🆕 用户管理和点数分配
+import DepartmentManagement from '../../components/common/DepartmentManagement'; // 部门管理
 
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
@@ -32,6 +33,7 @@ const EventManagerDashboard = () => {
   });
   const [showUserList, setShowUserList] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 用户管理
+  const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
 
   useEffect(() => {
     loadDashboardData();
@@ -213,6 +215,12 @@ const EventManagerDashboard = () => {
         >
           🎭 用户管理 & 点数分配
         </button>
+        <button
+          style={{...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#f59e0b'}}
+          onClick={() => setShowDepartmentManagement(true)}
+        >
+          🏢 部门管理
+        </button>
       </div>
 
       {/* Event Info */}
@@ -339,7 +347,7 @@ const EventManagerDashboard = () => {
         <AddUser
           organizationId={organizationId}
           eventId={eventId}
-          callerRole="event_manager" // 🆕 指定调用者角色
+          callerRole="eventManager" // 🆕 指定调用者角色 (camelCase)
           onClose={() => setShowAddUser(false)}
           onSuccess={() => {
             loadDashboardData(); // 刷新数据
@@ -377,6 +385,49 @@ const EventManagerDashboard = () => {
           onClose={() => setShowUserManagement(false)}
           onUpdate={loadDashboardData}
         />
+      )}
+
+      {/* DepartmentManagement Modal */}
+      {showDepartmentManagement && organizationId && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            maxWidth: '1200px',
+            width: '90%',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => setShowDepartmentManagement(false)}
+              style={{
+                position: 'absolute',
+                top: '15px',
+                right: '15px',
+                background: 'none',
+                border: 'none',
+                fontSize: '24px',
+                cursor: 'pointer',
+                zIndex: 1
+              }}
+            >
+              ✕
+            </button>
+            <DepartmentManagement organizationId={organizationId} eventId={eventId} />
+          </div>
+        </div>
       )}
     </div>
   );

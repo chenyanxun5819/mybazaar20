@@ -8,7 +8,7 @@ import { doc, getDoc } from 'firebase/firestore';
  * 
  * @param {string} organizationId - 组织 ID
  * @param {string} eventId - 活动 ID
- * @param {string} callerRole - 调用者角色 (event_manager, seller_manager, merchant_manager, customer_manager)
+ * @param {string} callerRole - 调用者角色 (eventManager, seller_manager, merchant_manager, customer_manager)
  * @param {function} onClose - 关闭回调
  * @param {function} onSuccess - 成功回调
  */
@@ -27,11 +27,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
   // ✨ 新增：存储从 Organization 获取的身份标签
   const [identityTags, setIdentityTags] = useState([]);
   const [loadingTags, setLoadingTags] = useState(true);
-
+  const [departments, setDepartments] = useState([]);
   // ✨ 新增：从 Firestore 加载 Organization 的 identityTags
   useEffect(() => {
     const loadIdentityTags = async () => {
@@ -39,18 +39,18 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         setLoadingTags(true);
         const orgRef = doc(db, 'organizations', organizationId);
         const orgSnap = await getDoc(orgRef);
-        
+
         if (orgSnap.exists()) {
           const orgData = orgSnap.data();
           const tags = orgData.identityTags || [];
-          
+
           // 只显示活跃的标签
           const activeTags = tags
             .filter(tag => tag.isActive)
             .sort((a, b) => a.displayOrder - b.displayOrder);
-          
+
           setIdentityTags(activeTags);
-          
+
           // ✨ 设置默认选中第一个标签
           if (activeTags.length > 0) {
             setFormData(prev => ({
@@ -71,6 +71,30 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       loadIdentityTags();
     }
   }, [organizationId]);
+
+  // 加载组织的部门列表
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const orgRef = doc(db, 'organizations', organizationId);
+        const orgSnap = await getDoc(orgRef);
+        
+        if (orgSnap.exists()) {
+          const orgData = orgSnap.data();
+          const depts = orgData.departments || [];
+          setDepartments(depts.sort((a, b) => a.displayOrder - b.displayOrder));
+        }
+      } catch (err) {
+        console.error('[AddUser] 加载部门列表失败:', err);
+      }
+    };
+
+    if (organizationId) {
+      loadDepartments();
+    }
+  }, [organizationId]);
+
+  
 
   // 根据 callerRole 获取可见的角色选项
   const getRoleOptions = () => {
@@ -115,6 +139,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
     // 根据调用者角色返回可见的角色
     switch (callerRole) {
+      case 'eventManager':
       case 'event_manager':
         // Event Manager 可以看到所有角色
         return Object.values(allRoles);
@@ -139,6 +164,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 根据 callerRole 获取默认勾选的角色
   const getDefaultRoles = () => {
     switch (callerRole) {
+      case 'eventManager':
       case 'event_manager':
         // Event Manager: 预设勾选 Customer（但可取消）
         return ['customer'];
@@ -163,6 +189,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 判断某个角色是否可以取消勾选
   const isRoleDisabled = (roleValue) => {
     switch (callerRole) {
+      case 'eventManager':
       case 'event_manager':
         // Event Manager 可以取消所有角色（完全自由）
         return false;
@@ -266,17 +293,17 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       const result = await response.json();
       console.log('[AddUser] Success:', result);
       alert('用户创建成功！');
-      
+
       if (onSuccess) {
         onSuccess();
       }
-      
+
       if (onClose) {
         onClose();
       }
     } catch (error) {
       console.error('[AddUser] Error:', error);
-      
+
       if (error.message.includes('已被使用') || error.message.includes('已在此活动中注册')) {
         setError('此手机号已被使用');
       } else if (error.message.includes('必填字段')) {
@@ -391,7 +418,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                   )}
                 </select>
                 <small style={styles.hint}>
-                  {identityTags.length === 0 
+                  {identityTags.length === 0
                     ? '此组织还没有设置身份标签'
                     : '选择用户的身份标签'}
                 </small>
@@ -401,29 +428,40 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 <label style={styles.label}>班级 / 部门（可选）</label>
                 <input
                   type="text"
+                  list="departments-list"
                   style={styles.input}
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="例如：初一（1）班"
+                  placeholder={departments.length > 0 ? "选择或输入部门" : "例如：初一（1）班"}
                 />
+                <datalist id="departments-list">
+                  {departments.map(dept => (
+                    <option key={dept.id} value={dept.name} />
+                  ))}
+                </datalist>
+                {departments.length > 0 && (
+                  <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                    可用部门：{departments.map(d => d.name).join('、')}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-            {/* ✨ 新增：学号/工号输入框 */}
-            <div style={styles.formGroup}>
-              <label style={styles.label}>学号 / 工号（可选）</label>
-              <input
-                type="text"
-                style={styles.input}
-                value={formData.identityId}
-                onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
-                placeholder="例如：2024001 或 T2024001"
-              />
-              <small style={styles.hint}>
-                组织发放的学号、工号或其他证号
-              </small>
-            </div>
+          {/* ✨ 新增：学号/工号输入框 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>学号 / 工号（可选）</label>
+            <input
+              type="text"
+              style={styles.input}
+              value={formData.identityId}
+              onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
+              placeholder="例如：2024001 或 T2024001"
+            />
+            <small style={styles.hint}>
+              组织发放的学号、工号或其他证号
+            </small>
+          </div>
 
           {/* 密码设置 */}
           <div style={styles.section}>
@@ -460,7 +498,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>👥 角色分配 *</h3>
             <p style={styles.roleHint}>
-              {callerRole === 'event_manager'
+              {(callerRole === 'eventManager' || callerRole === 'event_manager')
                 ? '请选择一个或多个角色（可多选）'
                 : '以下角色为必选项（已自动勾选）'}
             </p>

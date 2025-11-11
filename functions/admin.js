@@ -107,7 +107,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
     const userDoc = {
       userId: newUserId,
       authUid: newUserId,
-      roles: ['event_manager'],
+      roles: ['eventManager'],
       identityTag,
       basicInfo: {
         phoneNumber,
@@ -121,7 +121,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
         isPhoneVerified: false
       },
       roleSpecificData: {
-        event_manager: {
+        eventManager: {
           organizationId,
           eventId,
           assignedAt: now,
@@ -159,7 +159,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
       phoneNumber,
       englishName,
       chineseName,
-      role: 'event_manager',
+      role: 'eventManager',
       eventId,
       addedAt: now,
       addedBy: callerUid
@@ -283,7 +283,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     const userDoc = {
       userId: newUserId,
       authUid: newUserId,
-      roles: ['event_manager'],
+      roles: ['eventManager'],
       identityTag,
       basicInfo: {
         phoneNumber,
@@ -298,7 +298,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       },
       identityInfo: identityId ? { identityId } : undefined,
       roleSpecificData: {
-        event_manager: {
+        eventManager: {
           organizationId,
           eventId,
           assignedAt: now,
@@ -334,7 +334,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       phoneNumber,
       englishName,
       chineseName,
-      role: 'event_manager',
+      role: 'eventManager',
       eventId,
       addedAt: now,
       addedBy: callerUid
@@ -1102,8 +1102,8 @@ exports.loginEventManager = functions.https.onCall(async (data, context) => {
 
     console.log('[loginEventManager] User found:', { userId, roles: userData.roles });
 
-    if (!userData.roles || !userData.roles.includes('event_manager')) {
-      console.log('[loginEventManager] User is not an event_manager');
+    if (!userData.roles || !(userData.roles.includes('eventManager') || userData.roles.includes('event_manager'))) {
+      console.log('[loginEventManager] User is not an eventManager (checked both eventManager and event_manager)');
       throw new functions.https.HttpsError('permission-denied', '您不是此活动的 Event Manager');
     }
 
@@ -1196,6 +1196,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       email,
       identityTag = 'staff',
       department = '',
+      identityId = '',
       roles = []
     } = req.body;
 
@@ -1306,8 +1307,11 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     }
 
 // 6. 构建 identityInfo（通用方式，支持任意身份标签）
+    // ✅ 使用前端传入的 identityId（学号/工号），如果没有则自动生成
     const identityInfo = {
-      identityId: `${identityTag.toUpperCase()}_${Date.now()}`,
+      identityId: identityId && String(identityId).trim() 
+        ? String(identityId).trim() 
+        : `${identityTag.toUpperCase()}_${Date.now()}`,
       identityName: validTag.name['zh-CN'],
       identityNameEn: validTag.name['en'],
       department: department || '未分配'
@@ -1371,6 +1375,8 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     const userId = `usr_${crypto.randomUUID()}`;
     const now = new Date();
 
+    // （保留在後續 8.5 統一處理）
+
     const userDoc = {
       userId: userId,
       authUid: authUid,
@@ -1401,11 +1407,22 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         updatedAt: now
       },
       metadata: {
-        registrationSource: 'event_manager_create',
-        operatorUid: 'event_manager',
+        registrationSource: 'eventManager_create',
+        operatorUid: 'eventManager',
         notes: `由 Event Manager 创建 - ${roles.join(', ')}`
       }
     };
+
+    // 8.5. 自动添加部门到组织（如果有department）
+    if (department && department.trim()) {
+      try {
+        await addDepartmentIfNew(organizationId, department.trim(), 'system');
+        console.log('[createUserByEventManagerHttp] Department processed:', department);
+      } catch (err) {
+        console.error('[createUserByEventManagerHttp] 添加部门失败:', err);
+        // 不阻止用户创建，继续执行
+      }
+    }
 
     // 9. 保存用户文档
     await usersCol.doc(userId).set(userDoc);
@@ -1552,7 +1569,25 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    const currentAdmins = orgSnap.data()?.admins || [];
+  const currentAdmins = orgSnap.data()?.admins || [];
+
+    // 先聚合本活動中各部門使用人數，刪除後要回沖（減少） organization.departments 的 userCount，避免累積過多
+    const departmentUsageCounter = new Map(); // key: normalized lower-case name, value: { name, count }
+    const usersForDeptScan = await db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('users')
+      .get();
+    usersForDeptScan.forEach(doc => {
+      const deptName = doc.data()?.identityInfo?.department;
+      if (typeof deptName === 'string' && deptName.trim()) {
+        const display = deptName.trim();
+        const key = display.toLocaleLowerCase();
+        const prev = departmentUsageCounter.get(key) || { name: display, count: 0 };
+        prev.count += 1;
+        departmentUsageCounter.set(key, prev);
+      }
+    });
 
     // Use batch for atomic operations (max 500 operations per batch)
     const batch = db.batch();
@@ -1596,12 +1631,9 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
 
     console.log(`[deleteEventHttp] Removing ${removedAdminsCount} Event Manager(s) from admins array`);
 
-    // 5. Update organization data (admins + statistics)
+    // 5. Update organization admins（統計將在後續交易中以 clamp 方式更新，避免負數）
     batch.update(orgRef, {
       'admins': updatedAdmins,
-      'statistics.totalUsers': admin.firestore.FieldValue.increment(-usersToDelete),
-      'statistics.totalEvents': admin.firestore.FieldValue.increment(-1),
-      'statistics.activeEvents': admin.firestore.FieldValue.increment(isActive ? -1 : 0),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     operationCount++;
@@ -1611,6 +1643,108 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     // Commit all operations atomically
     await batch.commit();
 
+    // 進行 department userCount 回沖（減少） - 使用 transaction 保證一致性
+    try {
+      await db.runTransaction(async (tx) => {
+        const orgDoc = await tx.get(orgRef);
+        if (!orgDoc.exists) return; // 組織不存在則略過
+        const orgData = orgDoc.data() || {};
+        const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
+        const next = departments.map(d => {
+          if (!d || typeof d.name !== 'string') return d;
+          const key = d.name.trim().toLocaleLowerCase();
+          const usage = departmentUsageCounter.get(key);
+          if (!usage) return d;
+          const current = d.userCount || 0;
+          const decremented = current - usage.count;
+          return { ...d, userCount: decremented >= 0 ? decremented : 0 }; // 不允許負數
+        });
+        tx.update(orgRef, {
+          departments: next,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      console.log('[deleteEventHttp] Department userCounts decremented:', Array.from(departmentUsageCounter.values()));
+    } catch (deptErr) {
+      console.error('[deleteEventHttp] Department decrement transaction error:', deptErr && deptErr.message);
+      // 不影響主流程，僅記錄錯誤
+    }
+
+    // 使用交易對組織統計做 clamp，避免負數
+    try {
+      await db.runTransaction(async (tx) => {
+        const orgDoc = await tx.get(orgRef);
+        if (!orgDoc.exists) return;
+        const data = orgDoc.data() || {};
+        const stats = data.statistics || {};
+        const totalUsers = Math.max(0, (stats.totalUsers || 0) - usersToDelete);
+        const totalEvents = Math.max(0, (stats.totalEvents || 0) - 1);
+        const activeEvents = Math.max(0, (stats.activeEvents || 0) - (isActive ? 1 : 0));
+        tx.update(orgRef, {
+          'statistics.totalUsers': totalUsers,
+          'statistics.totalEvents': totalEvents,
+          'statistics.activeEvents': activeEvents,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      console.log('[deleteEventHttp] Organization statistics clamped to non-negative');
+    } catch (clampErr) {
+      console.error('[deleteEventHttp] Clamp stats transaction error:', clampErr && clampErr.message);
+    }
+
+    // 最後做一次全組織層面的部門人數重算（保險），並可選擇清理 userCount=0 且為 system 建立的部門
+    try {
+      const remainingEvents = await orgRef.collection('events').get();
+      const counterAll = new Map();
+      for (const ev of remainingEvents.docs) {
+        const usersSnapshot = await ev.ref.collection('users').get();
+        usersSnapshot.forEach(u => {
+          const name = u.data()?.identityInfo?.department;
+          if (typeof name === 'string' && name.trim()) {
+            const display = name.trim();
+            const key = display.toLocaleLowerCase();
+            const prev = counterAll.get(key) || { displayName: display, count: 0 };
+            prev.count += 1; counterAll.set(key, prev);
+          }
+        });
+      }
+
+      await db.runTransaction(async (tx) => {
+        const orgDoc = await tx.get(orgRef);
+        if (!orgDoc.exists) return;
+        const data = orgDoc.data() || {};
+        const current = Array.isArray(data.departments) ? data.departments : [];
+        const byKey = new Map(current.map(d => [typeof d.name === 'string' ? d.name.trim().toLocaleLowerCase() : '', d]));
+        const merged = [];
+        let order = 1;
+        current.forEach(d => {
+          if (!d || typeof d.name !== 'string') return;
+          const key = d.name.trim().toLocaleLowerCase();
+          const cnt = counterAll.get(key)?.count || 0;
+          // 若為 system 建立且計數為 0，可選擇清理；這裡直接清理
+          if (cnt === 0 && (d.createdBy === 'system' || !d.createdBy)) return;
+          merged.push({ ...d, userCount: cnt, displayOrder: order++ });
+        });
+        // 加入新的（counter 有但 current 沒有）
+        counterAll.forEach((stat, key) => {
+          if (!byKey.has(key)) {
+            merged.push({
+              id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: stat.displayName,
+              displayOrder: order++,
+              userCount: stat.count,
+              createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+              createdBy: 'system'
+            });
+          }
+        });
+        tx.update(orgRef, { departments: merged, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      });
+      console.log('[deleteEventHttp] Departments fully recounted post-deletion');
+    } catch (fullRecountErr) {
+      console.error('[deleteEventHttp] Full recount after deletion failed:', fullRecountErr && fullRecountErr.message);
+    }
+
     console.log('[deleteEventHttp] ✅ Delete successful');
 
     res.status(200).json({
@@ -1618,6 +1752,7 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       deletedUsers: usersSnapshot.size,
       deletedMetadata: metadataSnapshot.size,
       removedAdmins: removedAdminsCount,
+      departmentsAdjusted: Array.from(departmentUsageCounter.values()),
       updatedStatistics: {
         totalUsers: -usersToDelete,
         totalEvents: -1,
@@ -1705,5 +1840,847 @@ exports.checkDuplicateUsers = functions.https.onRequest(async (req, res) => {
     res.status(500).json({
       error: error.message || '检查重复失败'
     });
+  }
+});
+/**
+ * Helper function: Add department to organization if it doesn't exist
+ * Called internally by addUser and batchImportUsers
+ */
+async function addDepartmentIfNew(orgId, departmentName, createdBy = 'system') {
+  // 使用交易確保並發導入時 userCount 不會遺失更新，且避免重複部門被同時建立
+  if (!departmentName || typeof departmentName !== 'string' || !departmentName.trim()) return;
+
+  const db = getDb();
+  const orgRef = db.collection('organizations').doc(orgId);
+
+  const normalizedName = departmentName.trim();
+  const compareKey = normalizedName.toLocaleLowerCase();
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(orgRef);
+      if (!snap.exists) return; // 組織不存在則跳過
+
+      const data = snap.data() || {};
+      const departments = Array.isArray(data.departments) ? data.departments : [];
+
+      // 尋找是否存在（以名稱大小寫不敏感 + trim 比對）
+      const idx = departments.findIndex(
+        (d) => d && typeof d.name === 'string' && d.name.trim().toLocaleLowerCase() === compareKey
+      );
+
+      if (idx === -1) {
+        // 新增部門，第一位使用者計數 = 1
+        const newDept = {
+          id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name: normalizedName,
+          displayOrder: departments.length + 1,
+          userCount: 1,
+          createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+          createdBy: createdBy
+        };
+        const nextDepts = [...departments, newDept];
+        tx.update(orgRef, {
+          departments: nextDepts,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`[addDepartmentIfNew][tx] Added: ${normalizedName}`);
+      } else {
+        // 遞增既有部門人數
+        const target = departments[idx] || {};
+        const nextDepts = departments.slice();
+        nextDepts[idx] = { ...target, userCount: (target.userCount || 0) + 1 };
+        tx.update(orgRef, {
+          departments: nextDepts,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`[addDepartmentIfNew][tx] Incremented: ${normalizedName}`);
+      }
+    });
+  } catch (e) {
+    console.error('[addDepartmentIfNew] Transaction error:', e && e.message);
+  }
+}
+
+/**
+ * HTTP function: Add a new department manually
+ * Auth: requires eventManager role
+ * Data: organizationId, departmentName, idToken
+ */
+exports.addDepartment = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Only POST requests are allowed' });
+    return;
+  }
+
+  try {
+    console.log('[addDepartment] headers:', JSON.stringify(req.headers || {}));
+    const rawBodyForLog = typeof req.body === 'string' ? req.body : (req.body ? JSON.stringify(req.body) : 'undefined');
+    console.log('[addDepartment] raw body:', rawBodyForLog);
+    // 支援兩種攜帶 token 的方式：Authorization: Bearer <token> 或 body.idToken
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring('Bearer '.length)
+      : null;
+
+    // 對於 body 可能為字串（rewrite/代理情境），做健壯解析
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const { organizationId, departmentName } = body;
+    const idToken = body.idToken || tokenFromHeader;
+
+    if (!organizationId || !departmentName || !idToken) {
+      res.status(400).json({ error: '缺少必需参数' });
+      return;
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      console.error('[addDepartment] verifyIdToken error:', error && error.message);
+      res.status(401).json({ error: '身份验证失败' });
+      return;
+    }
+
+    const callerUid = decodedToken.uid;
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const eventsSnapshot = await orgRef.collection('events').get();
+    
+    let hasPermission = false;
+    for (const eventDoc of eventsSnapshot.docs) {
+      // 避免複合索引需求：先用 authUid 單欄位查詢，再在記憶體檢查角色
+      const usersSnapshot = await eventDoc.ref.collection('users')
+        .where('authUid', '==', callerUid)
+        .limit(1)
+        .get();
+      if (!usersSnapshot.empty) {
+        const u = usersSnapshot.docs[0].data();
+        const roles = Array.isArray(u.roles) ? u.roles : [];
+        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+          hasPermission = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasPermission) {
+      res.status(403).json({ error: '需要 Event Manager 权限' });
+      return;
+    }
+
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      res.status(404).json({ error: '组织不存在' });
+      return;
+    }
+
+    const orgData = orgSnap.data() || {};
+    const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
+    const normalizedName = departmentName.trim();
+    const compareKey = normalizedName.toLocaleLowerCase();
+
+    if (departments.some(d => d && typeof d.name === 'string' && d.name.trim().toLocaleLowerCase() === compareKey)) {
+      res.status(400).json({ error: '部门名称已存在' });
+      return;
+    }
+
+    const newDept = {
+      id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: normalizedName,
+      displayOrder: departments.length + 1,
+      userCount: 0,
+      createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+      createdBy: callerUid
+    };
+
+    try {
+      await orgRef.update({
+        departments: admin.firestore.FieldValue.arrayUnion(newDept),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.error('[addDepartment] Firestore update error (arrayUnion):', e && e.message);
+      throw e; // 繼續往外層 catch 讓 HTTP 500 回傳
+    }
+
+    res.status(200).json({
+      success: true,
+      department: newDept,
+      message: '部门添加成功'
+    });
+
+  } catch (error) {
+    console.error('[addDepartment] Error:', error);
+    res.status(500).json({ error: error && error.message ? error.message : '添加部门失败' });
+  }
+});
+
+/**
+ * HTTP function: Delete a department
+ */
+exports.deleteDepartment = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Only POST requests are allowed' });
+    return;
+  }
+
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring('Bearer '.length)
+      : null;
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const { organizationId, departmentId } = body;
+    const idToken = body.idToken || tokenFromHeader;
+
+    if (!organizationId || !departmentId || !idToken) {
+      res.status(400).json({ error: '缺少必需参数' });
+      return;
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      res.status(401).json({ error: '身份验证失败' });
+      return;
+    }
+
+    const callerUid = decodedToken.uid;
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const eventsSnapshot = await orgRef.collection('events').get();
+    
+    let hasPermission = false;
+    for (const eventDoc of eventsSnapshot.docs) {
+      const usersSnapshot = await eventDoc.ref.collection('users')
+        .where('authUid', '==', callerUid)
+        .limit(1)
+        .get();
+      if (!usersSnapshot.empty) {
+        const u = usersSnapshot.docs[0].data();
+        const roles = Array.isArray(u.roles) ? u.roles : [];
+        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+          hasPermission = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasPermission) {
+      res.status(403).json({ error: '需要 Event Manager 权限' });
+      return;
+    }
+
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      res.status(404).json({ error: '组织不存在' });
+      return;
+    }
+
+  const orgData = orgSnap.data() || {};
+  const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
+  const deptToDelete = departments.find(d => d.id === departmentId);
+
+    if (!deptToDelete) {
+      res.status(404).json({ error: '部门不存在' });
+      return;
+    }
+
+    // Clear department from users
+    let clearedUsersCount = 0;
+    for (const eventDoc of eventsSnapshot.docs) {
+      const usersSnapshot = await eventDoc.ref.collection('users')
+        .where('identityInfo.department', '==', deptToDelete.name)
+        .get();
+
+      if (!usersSnapshot.empty) {
+        const batch = db.batch();
+        usersSnapshot.docs.forEach(userDoc => {
+          batch.update(userDoc.ref, {
+            'identityInfo.department': admin.firestore.FieldValue.delete()
+          });
+        });
+        await batch.commit();
+        clearedUsersCount += usersSnapshot.size;
+      }
+    }
+
+  const updatedDepts = departments.filter(d => d.id !== departmentId);
+    await orgRef.update({
+      departments: updatedDepts,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(200).json({
+      success: true,
+      clearedUsers: clearedUsersCount,
+      message: `部门删除成功${clearedUsersCount > 0 ? `，已清除 ${clearedUsersCount} 位用户的部门信息` : ''}`
+    });
+
+  } catch (error) {
+    console.error('[deleteDepartment] Error:', error);
+    res.status(500).json({ error: error.message || '删除部门失败' });
+  }
+});
+
+/**
+ * HTTP function: Update department display order
+ */
+exports.reorderDepartments = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Only POST requests are allowed' });
+    return;
+  }
+
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring('Bearer '.length)
+      : null;
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+  const { organizationId, reorderedDepartments } = body;
+    const idToken = body.idToken || tokenFromHeader;
+
+    if (!organizationId || !Array.isArray(reorderedDepartments) || !idToken) {
+      res.status(400).json({ error: '缺少必需参数' });
+      return;
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      res.status(401).json({ error: '身份验证失败' });
+      return;
+    }
+
+    const callerUid = decodedToken.uid;
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const eventsSnapshot = await orgRef.collection('events').get();
+    
+    let hasPermission = false;
+    for (const eventDoc of eventsSnapshot.docs) {
+      const usersSnapshot = await eventDoc.ref.collection('users')
+        .where('authUid', '==', callerUid)
+        .limit(1)
+        .get();
+      if (!usersSnapshot.empty) {
+        const u = usersSnapshot.docs[0].data();
+        const roles = Array.isArray(u.roles) ? u.roles : [];
+        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+          hasPermission = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasPermission) {
+      res.status(403).json({ error: '需要 Event Manager 权限' });
+      return;
+    }
+
+    // 排序更新時也做名稱 trim（保留原大小寫顯示，但消除意外的前後空白差異）
+    const cleaned = reorderedDepartments.map(d => ({
+      ...d,
+      name: typeof d.name === 'string' ? d.name.trim() : d.name
+    }));
+    await orgRef.update({
+      departments: cleaned,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(200).json({
+      success: true,
+      message: '部门顺序更新成功'
+    });
+
+  } catch (error) {
+    console.error('[reorderDepartments] Error:', error);
+    res.status(500).json({ error: error.message || '更新部门顺序失败' });
+  }
+});
+
+exports.addDepartmentIfNew = addDepartmentIfNew;
+
+// ========== 單一入口：部門管理（CRUD + 排序 + 查詢） ==========
+// POST /api/departments  { action: 'add'|'delete'|'reorder'|'list', ... }
+// 可接受 Authorization: Bearer <idToken> 或 body.idToken
+exports.departmentsHttp = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring('Bearer '.length)
+      : null;
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const action = (body.action || (req.method === 'GET' ? 'list' : '')).toString();
+    const organizationId = body.organizationId || req.query.organizationId;
+    const idToken = body.idToken || tokenFromHeader;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: '缺少组织编号' });
+    }
+
+    // list 動作允許未登入（僅讀取組織文件），其餘需要 Event Manager 權限
+    let callerUid = null;
+    if (action !== 'list') {
+      if (!idToken) return res.status(401).json({ error: '需要登录' });
+      try {
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        callerUid = decoded.uid;
+      } catch (e) {
+        return res.status(401).json({ error: '身份验证失败' });
+      }
+    }
+
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) return res.status(404).json({ error: '组织不存在' });
+
+    const ensurePermission = async () => {
+      if (!callerUid) return false;
+      const eventsSnapshot = await orgRef.collection('events').get();
+      for (const eventDoc of eventsSnapshot.docs) {
+        const usersSnapshot = await eventDoc.ref.collection('users')
+          .where('authUid', '==', callerUid)
+          .limit(1)
+          .get();
+        if (!usersSnapshot.empty) {
+          const u = usersSnapshot.docs[0].data();
+          const roles = Array.isArray(u.roles) ? u.roles : [];
+          if (roles.includes('eventManager') || roles.includes('event_manager')) return true;
+        }
+      }
+      return false;
+    };
+
+    const getDepartments = () => {
+      const data = orgSnap.data() || {};
+      return Array.isArray(data.departments) ? data.departments : [];
+    };
+
+    switch (action) {
+      case 'list': {
+        return res.status(200).json({ success: true, departments: getDepartments() });
+      }
+      case 'recount': {
+        // 重新統計所有 events 之使用者的部門人數，修復因並發或歷史資料造成的 userCount 不一致
+        if (!(await ensurePermission())) return res.status(403).json({ error: '需要 Event Manager 权限' });
+        const { eventId } = body;
+        const eventsSnapshot = eventId
+          ? { docs: [await orgRef.collection('events').doc(eventId).get()] }
+          : await orgRef.collection('events').get();
+        const counter = new Map(); // key: normalized name, value: { displayName, count }
+        for (const ev of eventsSnapshot.docs) {
+          if (!ev || (ev.exists !== undefined && !ev.exists)) continue;
+          const evRef = ev.ref || orgRef.collection('events').doc(ev.id);
+          const usersSnapshot = await evRef.collection('users').get();
+          usersSnapshot.forEach((u) => {
+            const name = u.data()?.identityInfo?.department;
+            if (typeof name === 'string' && name.trim()) {
+              const display = name.trim();
+              const key = display.toLocaleLowerCase();
+              const stat = counter.get(key) || { displayName: display, count: 0 };
+              stat.count += 1;
+              // 若不同大小寫以首次出現為準
+              if (!counter.has(key)) counter.set(key, stat); else counter.set(key, stat);
+            }
+          });
+        }
+
+        // 合併到現有清單：更新既有部門的 userCount；若使用者資料含有新部門但清單中沒有，則自動補上
+        const existing = getDepartments();
+        const existingByKey = new Map(existing.map(d => [
+          (d && typeof d.name === 'string' ? d.name.trim().toLocaleLowerCase() : ''), d
+        ]));
+
+        const merged = [];
+        let order = 1;
+        existing.forEach((d) => {
+          if (!d || typeof d.name !== 'string') return;
+          const key = d.name.trim().toLocaleLowerCase();
+          const cnt = counter.get(key)?.count || 0;
+          merged.push({ ...d, userCount: cnt, displayOrder: order++ });
+        });
+
+        // 加入新部門（存在於 counter 但不存在於清單）
+        counter.forEach((stat, key) => {
+          if (!existingByKey.has(key)) {
+            merged.push({
+              id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: stat.displayName,
+              displayOrder: order++,
+              userCount: stat.count,
+              createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+              createdBy: 'system'
+            });
+          }
+        });
+
+        await orgRef.update({ departments: merged, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return res.status(200).json({ success: true, departments: merged, message: '部门人数已重新统计' });
+      }
+      case 'add': {
+        if (!(await ensurePermission())) return res.status(403).json({ error: '需要 Event Manager 权限' });
+        const { departmentName } = body;
+        if (!departmentName || !departmentName.trim()) return res.status(400).json({ error: '缺少部门名称' });
+        const departments = getDepartments();
+        const name = departmentName.trim();
+        const key = name.toLocaleLowerCase();
+        if (departments.some(d => d && typeof d.name === 'string' && d.name.trim().toLocaleLowerCase() === key)) {
+          return res.status(400).json({ error: '部门名称已存在' });
+        }
+        const newDept = {
+          id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name,
+          displayOrder: departments.length + 1,
+          userCount: 0,
+          createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+          createdBy: callerUid
+        };
+        await orgRef.update({
+          departments: admin.firestore.FieldValue.arrayUnion(newDept),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return res.status(200).json({ success: true, department: newDept, message: '部门添加成功' });
+      }
+      case 'delete': {
+        if (!(await ensurePermission())) return res.status(403).json({ error: '需要 Event Manager 权限' });
+        const { departmentId } = body;
+        if (!departmentId) return res.status(400).json({ error: '缺少部门编号' });
+        const departments = getDepartments();
+        const target = departments.find(d => d.id === departmentId);
+        if (!target) return res.status(404).json({ error: '部门不存在' });
+        // 清理所有 event 下使用此部門的使用者欄位
+        const eventsSnapshot = await orgRef.collection('events').get();
+        let clearedUsersCount = 0;
+        for (const eventDoc of eventsSnapshot.docs) {
+          const usersSnapshot = await eventDoc.ref.collection('users')
+            .where('identityInfo.department', '==', target.name)
+            .get();
+          if (!usersSnapshot.empty) {
+            const batch = db.batch();
+            usersSnapshot.docs.forEach(userDoc => batch.update(userDoc.ref, { 'identityInfo.department': admin.firestore.FieldValue.delete() }));
+            await batch.commit();
+            clearedUsersCount += usersSnapshot.size;
+          }
+        }
+        const updatedDepts = departments.filter(d => d.id !== departmentId);
+        await orgRef.update({ departments: updatedDepts, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return res.status(200).json({ success: true, clearedUsers: clearedUsersCount, message: '部门删除成功' });
+      }
+      case 'reorder': {
+        if (!(await ensurePermission())) return res.status(403).json({ error: '需要 Event Manager 权限' });
+        const { reorderedDepartments } = body;
+        if (!Array.isArray(reorderedDepartments)) return res.status(400).json({ error: '缺少排序数据' });
+        const cleaned = reorderedDepartments.map((d, idx) => ({
+          ...d,
+          name: typeof d.name === 'string' ? d.name.trim() : d.name,
+          displayOrder: idx + 1
+        }));
+        await orgRef.update({ departments: cleaned, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return res.status(200).json({ success: true, message: '部门顺序更新成功' });
+      }
+      default:
+        return res.status(400).json({ error: '未知的 action' });
+    }
+  } catch (error) {
+    console.error('[departmentsHttp] Error:', error);
+    return res.status(500).json({ error: error && error.message ? error.message : '内部错误' });
+  }
+});
+
+// ========== 批量匯入使用者（Event Manager） ==========
+// POST /api/batchImportUsers  { organizationId, eventId, users: [...], idToken, skipAuth? }
+// 每個 user 項目: { phoneNumber, password, englishName, chineseName?, email, identityTag, department?, roles[], identityId? }
+// 效能策略：
+// 1. 先驗證權限與基本欄位
+// 2. 一次讀取現有使用者手機集合做重複過濾
+// 3. 聚合各部門新增人數，後續一次 transaction 更新 departments
+// 4. 使用 Firestore batch 分批寫入 (<=500)
+// 5. 使用單次 update 對 event 統計做 FieldValue.increment (彙總後一次送)
+exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST' });
+
+  const start = Date.now();
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring('Bearer '.length) : null;
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const { organizationId, eventId, users, idToken, skipAuth } = body;
+    const effectiveToken = idToken || tokenFromHeader;
+
+    if (!organizationId || !eventId || !Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ error: '缺少必要參數或 users 為空' });
+    }
+    if (!effectiveToken) return res.status(401).json({ error: '需要登录' });
+
+    let decoded;
+    try { decoded = await admin.auth().verifyIdToken(effectiveToken); } catch (e) { return res.status(401).json({ error: '身份验证失败' }); }
+    const callerUid = decoded.uid;
+
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const eventRef = orgRef.collection('events').doc(eventId);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
+
+    // 權限：確認 callerUid 在任一 event.users 中擁有 eventManager / event_manager 角色
+    const eventsSnapshot = await orgRef.collection('events').get();
+    let hasPermission = false;
+    for (const ev of eventsSnapshot.docs) {
+      const userSnap = await ev.ref.collection('users').where('authUid', '==', callerUid).limit(1).get();
+      if (!userSnap.empty) {
+        const r = userSnap.docs[0].data().roles || [];
+        if (r.includes('eventManager') || r.includes('event_manager')) { hasPermission = true; break; }
+      }
+    }
+    if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 权限' });
+
+    // 讀取現有手機號集合（加速重複檢查）
+    const usersCol = eventRef.collection('users');
+    const existingSnap = await usersCol.get();
+    const existingPhones = new Set();
+    existingSnap.forEach(d => { const p = d.data()?.basicInfo?.phoneNumber; if (p) existingPhones.add(String(p)); });
+
+    // 身份標籤驗證準備
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) return res.status(404).json({ error: '组织不存在' });
+    const identityTags = (orgSnap.data()?.identityTags || []).filter(t => t.isActive);
+    const identityTagMap = new Map(identityTags.map(t => [t.id, t]));
+
+    // 準備批次、部門計數
+    const departmentIncrements = new Map(); // key lower-case name -> { displayName, count }
+    const statIncrements = {
+      totalUsers: 0,
+      totalSellerManagers: 0,
+      totalMerchantManagers: 0,
+      totalCustomerManagers: 0,
+      totalSellers: 0,
+      totalMerchants: 0,
+      totalCustomers: 0
+    };
+
+    const batches = [];
+    let currentBatch = db.batch();
+    let batchOpCount = 0;
+
+    const now = new Date();
+    const errors = [];
+    let successCount = 0;
+
+  for (const raw of users) {
+      // 基本欄位解析
+      const {
+        phoneNumber,
+        password,
+        englishName,
+        chineseName = '',
+  email = '',
+        identityTag = 'staff',
+        department = '',
+        roles = [],
+        identityId = ''
+      } = raw || {};
+
+      // 驗證
+      if (!phoneNumber || !password || !englishName || !Array.isArray(roles) || roles.length === 0) {
+        errors.push({ phoneNumber, reason: '缺少必填字段(需: phoneNumber,password,englishName,roles)' });
+        continue;
+      }
+      if (password.length < 8 || !(/[a-zA-Z]/.test(password) && /\d/.test(password))) {
+        errors.push({ phoneNumber, reason: '密码强度不足' });
+        continue;
+      }
+      if (existingPhones.has(phoneNumber)) {
+        errors.push({ phoneNumber, reason: '手机号已存在' });
+        continue;
+      }
+      if (!identityTagMap.has(identityTag)) {
+        errors.push({ phoneNumber, reason: `身份标签 ${identityTag} 不存在或未启用` });
+        continue;
+      }
+
+      // 構建 userId / authUid
+      const userId = `usr_${crypto.randomUUID()}`;
+      const normalizedPhone = String(phoneNumber).replace(/^0/, '');
+      const authUid = `phone_60${normalizedPhone}`;
+
+      // 可選建立 Auth
+      if (!skipAuth) {
+        try {
+          await admin.auth().getUser(authUid);
+        } catch (e) {
+          if (e.code === 'auth/user-not-found') {
+            try { await admin.auth().createUser({ uid: authUid, displayName: englishName, disabled: false }); } catch (ce) { errors.push({ phoneNumber, reason: '建立 Auth 失败: ' + ce.message }); continue; }
+          } else { errors.push({ phoneNumber, reason: '查 Auth 失败: ' + e.message }); continue; }
+        }
+      }
+
+      // 密碼雜湊
+      const passwordSalt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = sha256(password + passwordSalt);
+
+      const tagMeta = identityTagMap.get(identityTag);
+      const identityInfo = {
+        identityId: identityId && String(identityId).trim() ? String(identityId).trim() : `${identityTag.toUpperCase()}_${Date.now()}`,
+        identityName: tagMeta.name['zh-CN'],
+        identityNameEn: tagMeta.name['en'],
+        department: department ? department.trim() : '未分配'
+      };
+
+      // 角色資料
+      const roleSpecificData = {};
+      if (roles.includes('seller_manager')) roleSpecificData.seller_manager = { managerId: `SM${Date.now()}`, assignedCapital: 0, availableCapital: 0, allocatedToSellers: 0, totalSellersManaged: 0 };
+      if (roles.includes('merchant_manager')) roleSpecificData.merchant_manager = { managerId: `MM${Date.now()}`, totalMerchantsManaged: 0 };
+      if (roles.includes('customer_manager')) roleSpecificData.customer_manager = { managerId: `CM${Date.now()}`, totalCustomersManaged: 0, totalSalesAmount: 0 };
+      if (roles.includes('seller')) roleSpecificData.seller = { sellerId: `SL${Date.now()}`, availablePoints: 0, currentSalesAmount: 0, totalPointsSold: 0 };
+      if (roles.includes('merchant')) roleSpecificData.merchant = { merchantId: `MR${Date.now()}`, monthlyReceivedPoints: 0, totalReceivedPoints: 0 };
+      if (roles.includes('customer')) roleSpecificData.customer = { customerId: `CS${Date.now()}`, currentBalance: 0, totalPointsPurchased: 0, totalPointsConsumed: 0 };
+
+      const userDoc = {
+        userId,
+        authUid,
+        roles,
+        identityTag,
+        basicInfo: {
+          phoneNumber,
+          englishName,
+          chineseName,
+          // email 可留空；若為空則不寫入欄位
+          ...(email && email.trim() ? { email: email.trim() } : {}),
+          passwordHash,
+          passwordSalt,
+          pinHash: passwordHash,
+          pinSalt: passwordSalt,
+          isPhoneVerified: true
+        },
+        identityInfo,
+        roleSpecificData,
+        activityData: { joinedAt: now, lastActiveAt: now, participationStatus: 'active' },
+        accountStatus: { status: 'active', mustChangePassword: false, createdAt: now, updatedAt: now },
+        metadata: { registrationSource: 'batch_import', operatorUid: callerUid, notes: `批量匯入 - ${roles.join(', ')}` }
+      };
+
+      currentBatch.set(usersCol.doc(userId), userDoc);
+      batchOpCount++;
+      existingPhones.add(phoneNumber); // 避免後續列表中重複
+
+      // 部門計數
+      if (department && department.trim()) {
+        const dName = department.trim();
+        const key = dName.toLocaleLowerCase();
+        const prev = departmentIncrements.get(key) || { displayName: dName, count: 0 };
+        prev.count += 1; departmentIncrements.set(key, prev);
+      }
+
+      // 統計累加
+      statIncrements.totalUsers++;
+      if (roles.includes('seller_manager')) statIncrements.totalSellerManagers++;
+      if (roles.includes('merchant_manager')) statIncrements.totalMerchantManagers++;
+      if (roles.includes('customer_manager')) statIncrements.totalCustomerManagers++;
+      if (roles.includes('seller')) statIncrements.totalSellers++;
+      if (roles.includes('merchant')) statIncrements.totalMerchants++;
+      if (roles.includes('customer')) statIncrements.totalCustomers++;
+
+      // 批次切換
+      if (batchOpCount >= 450) { // 留餘裕避免超過限制
+        batches.push(currentBatch);
+        currentBatch = db.batch();
+        batchOpCount = 0;
+      }
+      successCount++;
+    }
+
+    if (batchOpCount > 0) batches.push(currentBatch);
+
+    // 提交所有批次
+    for (const b of batches) { await b.commit(); }
+
+    // 更新 event 統計
+    const eventUpdate = { updatedAt: now };
+    Object.entries(statIncrements).forEach(([k, v]) => { if (v > 0) eventUpdate[`statistics.${k}`] = admin.firestore.FieldValue.increment(v); });
+    await eventRef.update(eventUpdate);
+
+    // 交易更新部門 userCount（新部門則建立）
+    await db.runTransaction(async (tx) => {
+      const orgDoc = await tx.get(orgRef);
+      if (!orgDoc.exists) return;
+      const data = orgDoc.data() || {};
+      const departments = Array.isArray(data.departments) ? data.departments : [];
+      const map = new Map(departments.map(d => [d && typeof d.name === 'string' ? d.name.trim().toLocaleLowerCase() : '', d]));
+      departmentIncrements.forEach(({ displayName, count }, key) => {
+        if (!key) return;
+        if (map.has(key)) {
+          const original = map.get(key);
+          map.set(key, { ...original, userCount: (original.userCount || 0) + count });
+        } else {
+          map.set(key, {
+            id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: displayName,
+            displayOrder: map.size + 1,
+            userCount: count,
+            createdAt: admin.firestore.Timestamp.fromDate(new Date()),
+            createdBy: 'system'
+          });
+        }
+      });
+      const next = Array.from(map.values()).filter(Boolean).sort((a, b) => a.displayOrder - b.displayOrder);
+      tx.update(orgRef, { departments: next, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    });
+
+    const elapsed = Date.now() - start;
+    return res.status(200).json({
+      success: true,
+      imported: successCount,
+      errors,
+      statIncrements,
+      departmentIncrements: Array.from(departmentIncrements.values()),
+      elapsedMs: elapsed,
+      message: `批量匯入完成 (${successCount} 成功 / ${errors.length} 失败)`
+    });
+  } catch (e) {
+    console.error('[batchImportUsersHttp] Error:', e);
+    return res.status(500).json({ error: e && e.message ? e.message : '内部错误' });
   }
 });
