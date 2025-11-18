@@ -4,16 +4,17 @@ import { auth } from '../../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
 
 /**
- * 统一登录页面 - 支持所有角色
+ * 统一登录页面 - 支持所有角色 + SMS OTP 验证
  * 
  * @route /login/:orgEventCode
  * @example /login/fch-2025
  * 
  * @description
  * 1. 从 URL 获取 orgEventCode (格式: orgCode-eventCode)
- * 2. 用户只需输入手机号和密码
- * 3. 登录成功后根据角色自动跳转到对应的 Dashboard
- * 4. 支持多角色用户选择进入哪个角色
+ * 2. 用户输入手机号和密码，进行初始验证
+ * 3. 验证通过后，系统发送 OTP 验证码到手机
+ * 4. 用户输入 OTP，验证成功后根据角色自动跳转到对应的 Dashboard
+ * 5. 支持多角色用户选择进入哪个角色
  */
 const UniversalLogin = () => {
   const navigate = useNavigate();
@@ -32,14 +33,20 @@ const UniversalLogin = () => {
   const [showRoleSelection, setShowRoleSelection] = useState(false);
   const [userRoles, setUserRoles] = useState([]);
   const [userData, setUserData] = useState(null);
+  
+  // SMS OTP 相关状态
+  const [otpStep, setOtpStep] = useState(false); // false: 密码登录, true: OTP 验证
+  const [otp, setOtp] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0); // OTP 倒计时
 
   // 验证 orgEventCode 格式
   const isValidOrgEventCode = orgCode && eventCode;
 
   /**
-   * 处理登录提交
+   * 处理密码登录提交 - 第一步
    */
-  const handleSubmit = async (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setError('');
     
@@ -51,13 +58,13 @@ const UniversalLogin = () => {
     setLoading(true);
 
     try {
-      console.log('[UniversalLogin] 登录请求:', { 
+      console.log('[UniversalLogin] 密码验证请求:', { 
         orgCode, 
         eventCode, 
         phoneNumber: formData.phoneNumber 
       });
 
-      const url = '/api/loginUniversalHttp'; // 🆕 新的通用登录端点
+      const url = '/api/loginUniversalHttp'; // 通用登录端点
       
       const payload = {
         orgCode: orgCode.toLowerCase(),
@@ -90,43 +97,34 @@ const UniversalLogin = () => {
         throw new Error(serverMsg || `请求失败 (HTTP ${resp.status})`);
       }
 
-      console.log('[UniversalLogin] 登录成功:', data, '耗时:', Date.now() - startTime, 'ms');
+      console.log('[UniversalLogin] 密码验证成功:', data, '耗时:', Date.now() - startTime, 'ms');
 
-      // ✅ 使用 Custom Token 登录 Firebase Auth
-      if (data.customToken) {
-        await signInWithCustomToken(auth, data.customToken);
-
-        // 保存基本信息
-        const normalizedRoles = Array.isArray(data.roles)
+      // 密码验证通过，保存临时信息并发送 OTP
+      const tempUserData = {
+        userId: data.userId,
+        organizationId: data.organizationId,
+        eventId: data.eventId,
+        orgCode: orgCode,
+        eventCode: eventCode,
+        orgEventCode: orgEventCode,
+        englishName: data.englishName,
+        chineseName: data.chineseName,
+        roles: Array.isArray(data.roles)
           ? data.roles.map(r => r === 'event_manager' ? 'eventManager' : r)
-          : [];
+          : [],
+        phoneNumber: formData.phoneNumber,
+        customToken: data.customToken
+      };
 
-        const baseInfo = {
-          userId: data.userId,
-          organizationId: data.organizationId,
-          eventId: data.eventId,
-          orgCode: orgCode,
-          eventCode: eventCode,
-          orgEventCode: orgEventCode,
-          englishName: data.englishName,
-          chineseName: data.chineseName,
-          roles: normalizedRoles, // normalized to camelCase
-          loginTime: new Date().toISOString()
-        };
-
-        // 🎯 处理角色跳转
-        if (data.roles.length === 1) {
-          // 只有一个角色，直接跳转
-          handleRoleNavigation(data.roles[0], baseInfo);
-        } else if (data.roles.length > 1) {
-          // 多个角色，显示选择界面
-          setUserData(baseInfo);
-          setUserRoles(data.roles);
-          setShowRoleSelection(true);
-        } else {
-          throw new Error('用户没有分配任何角色，请联系管理员');
-        }
-      }
+      setUserData(tempUserData);
+      
+      // 发送 OTP
+      await sendOtp(formData.phoneNumber);
+      
+      // 切换到 OTP 输入界面
+      setOtpStep(true);
+      setOtp('');
+      
     } catch (error) {
       console.error('[UniversalLogin] 错误:', error);
       const msg = error?.message || '登录失败，请重试';
@@ -146,6 +144,151 @@ const UniversalLogin = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * 发送 OTP 到手机
+   */
+  const sendOtp = async (phoneNumber) => {
+    try {
+      console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
+      
+      const url = '/api/sendOtp';
+      const payload = {
+        phoneNumber: phoneNumber,
+        orgCode: orgCode.toLowerCase(),
+        eventCode: eventCode
+      };
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await resp.text();
+      let data = null;
+      
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (_) {
+        console.warn('[UniversalLogin] 发送 OTP 响应非 JSON');
+      }
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || `发送 OTP 失败 (HTTP ${resp.status})`);
+      }
+
+      console.log('[UniversalLogin] OTP 已发送');
+      setOtpTimer(300); // 5分钟倒计时
+      startOtpTimer();
+      
+    } catch (error) {
+      console.error('[UniversalLogin] 发送 OTP 错误:', error);
+      throw new Error('发送验证码失败，请重试');
+    }
+  };
+
+  /**
+   * OTP 倒计时
+   */
+  const startOtpTimer = () => {
+    const interval = setInterval(() => {
+      setOtpTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  /**
+   * 验证 OTP - 第二步
+   */
+  const handleOtpVerify = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!otp || otp.length !== 6) {
+      setError('请输入6位验证码');
+      return;
+    }
+
+    setOtpLoading(true);
+
+    try {
+      console.log('[UniversalLogin] 验证 OTP');
+
+      const url = '/api/verifyOtp';
+      const payload = {
+        phoneNumber: formData.phoneNumber,
+        otp: otp,
+        orgCode: orgCode.toLowerCase(),
+        eventCode: eventCode
+      };
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await resp.text();
+      let data = null;
+      
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (_) {
+        console.warn('[UniversalLogin] 验证 OTP 响应非 JSON');
+      }
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || `OTP 验证失败 (HTTP ${resp.status})`);
+      }
+
+      console.log('[UniversalLogin] OTP 验证成功');
+
+      // ✅ OTP 验证通过，使用 Custom Token 登录 Firebase Auth
+      if (userData?.customToken) {
+        await signInWithCustomToken(auth, userData.customToken);
+
+        const baseInfo = {
+          ...userData,
+          loginTime: new Date().toISOString()
+        };
+
+        // 🎯 处理角色跳转
+        if (userData.roles.length === 1) {
+          // 只有一个角色，直接跳转
+          handleRoleNavigation(userData.roles[0], baseInfo);
+        } else if (userData.roles.length > 1) {
+          // 多个角色，显示选择界面
+          setUserRoles(userData.roles);
+          setShowRoleSelection(true);
+        } else {
+          throw new Error('用户没有分配任何角色，请联系管理员');
+        }
+      }
+    } catch (error) {
+      console.error('[UniversalLogin] OTP 验证错误:', error);
+      const msg = error?.message || 'OTP 验证失败，请重试';
+      setError(msg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  /**
+   * 返回密码登录
+   */
+  const handleBackToPassword = () => {
+    setOtpStep(false);
+    setOtp('');
+    setError('');
+    setOtpTimer(0);
+    setUserData(null);
   };
 
   /**
@@ -262,7 +405,90 @@ const UniversalLogin = () => {
               setShowRoleSelection(false);
               setUserRoles([]);
               setUserData(null);
+              setOtpStep(false);
             }}
+          >
+            ← 返回登录
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // OTP 验证界面
+  if (otpStep) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.loginCard}>
+          <div style={styles.header}>
+            <div style={styles.logo}>📱</div>
+            <h1 style={styles.title}>短信验证</h1>
+            <p style={styles.subtitle}>验证码已发送到 {formData.phoneNumber}</p>
+          </div>
+
+          <form onSubmit={handleOtpVerify} style={styles.form}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>验证码 (6位数字) *</label>
+              <input
+                type="text"
+                maxLength="6"
+                style={styles.otpInput}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                required
+              />
+              <small style={styles.hint}>请输入收到的6位验证码</small>
+            </div>
+
+            {/* 错误提示 */}
+            {error && (
+              <div style={styles.errorBox}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            {/* OTP 验证按钮 */}
+            <button
+              type="submit"
+              style={{
+                ...styles.submitButton,
+                opacity: otpLoading ? 0.6 : 1,
+                cursor: otpLoading ? 'not-allowed' : 'pointer'
+              }}
+              disabled={otpLoading}
+            >
+              {otpLoading ? '验证中...' : '确认验证'}
+            </button>
+
+            {/* 重新发送按钮 */}
+            {otpTimer <= 0 ? (
+              <button
+                type="button"
+                style={styles.resendButton}
+                onClick={async () => {
+                  try {
+                    await sendOtp(formData.phoneNumber);
+                    setOtp('');
+                    setError('');
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                重新发送验证码
+              </button>
+            ) : (
+              <div style={styles.timerInfo}>
+                重新发送倒计时: {Math.floor(otpTimer / 60)}:{String(otpTimer % 60).padStart(2, '0')}
+              </div>
+            )}
+          </form>
+
+          {/* 返回登录按钮 */}
+          <button
+            style={styles.backToLoginButton}
+            onClick={handleBackToPassword}
           >
             ← 返回登录
           </button>
@@ -299,7 +525,7 @@ const UniversalLogin = () => {
         )}
 
         {/* 登录表单 */}
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form onSubmit={handlePasswordSubmit} style={styles.form}>
           <div style={styles.formGroup}>
             <label style={styles.label}>手机号 *</label>
             <input
@@ -435,6 +661,17 @@ const styles = {
     outline: 'none',
     transition: 'border-color 0.2s'
   },
+  otpInput: {
+    padding: '1.5rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '2rem',
+    textAlign: 'center',
+    letterSpacing: '0.5rem',
+    fontFamily: 'monospace',
+    outline: 'none',
+    transition: 'border-color 0.2s'
+  },
   hint: {
     fontSize: '0.75rem',
     color: '#6b7280',
@@ -504,6 +741,30 @@ const styles = {
     fontSize: '0.875rem',
     fontWeight: '500',
     cursor: 'pointer'
+  },
+  resendButton: {
+    width: '100%',
+    padding: '0.75rem',
+    marginTop: '1rem',
+    background: '#f3f4f6',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  timerInfo: {
+    width: '100%',
+    textAlign: 'center',
+    marginTop: '1rem',
+    padding: '0.75rem',
+    background: '#f0f4ff',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: '#667eea'
   }
 };
 

@@ -1,109 +1,64 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 注意：為避免編譯器對 function + let 的限制，以下改為在各規則中就地運算 admin / manager 判斷。
+    
+    // ========== 辅助函数 ==========
+    function isAdmin() {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+    }
     
     // ========== 组织集合 ==========
     match /organizations/{orgId} {
-      // 允许所有人读取组织信息
       allow read: if true;
-      // 只有 platform admin 可以修改组织信息
-      allow create, update, delete: if request.auth != null &&
-        exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+      allow create, update, delete: if isAdmin();
       
       // ========== 活动子集合 ==========
       match /events/{eventId} {
-        // 允许所有人读取活动信息
         allow read: if true;
-        // 只有 platform admin 可以创建/删除活动
-        allow create, delete: if request.auth != null &&
-          exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
-        // Event Manager 和 platform admin 可以更新活动（包括 statistics）
-        allow update: if request.auth != null && (
-          // platform admin
-          exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
-          // event manager（支援 eventManager 為 user docId 或直接為 auth.uid）
-          (
-            let ev = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId));
-            let mgrId = ev.data.eventManager;
-            (mgrId == request.auth.uid) ||
-            (
-              mgrId != null &&
-              exists(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)) &&
-              get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)).data.authUid == request.auth.uid
-            )
-          )
-        );
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || 
+          (request.auth != null && resource.data.eventManager == request.auth.uid);
         
         // ========== 活动用户子集合 ==========
         match /users/{userId} {
-          // 允许所有人读取用户信息
           allow read: if true;
-          // Event Manager 和 platform admin 可以创建/修改/删除用户
-          allow create, update, delete: if request.auth != null && (
-            // platform admin
-            exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
-            // event manager 判斷
-            (
-              let ev = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId));
-              let mgrId = ev.data.eventManager;
-              (mgrId == request.auth.uid) ||
-              (
-                mgrId != null &&
-                exists(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)) &&
-                get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)).data.authUid == request.auth.uid
-              )
-            ) ||
-            // 允許使用者本人修改自己的子文件（依實際需求保留或移除）
-            request.auth.uid == userId
-          );
+          allow create, update, delete: if isAdmin();
         }
         
         // ========== 元数据子集合 ==========
         match /metadata/{docId} {
-          // 允许读取
           allow read: if true;
-          // Event Manager 和 platform admin 可以写入
-          allow write: if request.auth != null && (
-            exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid)) ||
-            (
-              let ev = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId));
-              let mgrId = ev.data.eventManager;
-              (mgrId == request.auth.uid) ||
-              (
-                mgrId != null &&
-                exists(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)) &&
-                get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(mgrId)).data.authUid == request.auth.uid
-              )
-            )
-          );
+          allow write: if isAdmin();
         }
       }
-      
-      // ========== Admins 数组（平台管理员白名单）==========
-      // 注意：admins 数组是组织文档的一部分，权限在 events 规则中控制
     }
     
-    // ========== 系统配置（只读）==========
+    // ========== OTP Sessions（登录验证码） ==========
+    match /otp_sessions/{sessionId} {
+      allow read, write: if false;
+    }
+    
+    // ========== 系统配置 ==========
     match /system_config/{docId} {
       allow read: if true;
-      allow write: if isPlatformAdmin();
+      allow write: if isAdmin();
     }
     
-    // ========== 用户集合（公开）==========
+    // ========== 用户集合 ==========
     match /users/{userId} {
       allow read: if true;
       allow create: if request.auth != null;
       allow update, delete: if request.auth != null && request.auth.uid == userId;
     }
     
-    // ========== 管理员白名单（只读）==========
+    // ========== 管理员白名单 ==========
     match /admin_uids/{uid} {
       allow read: if request.auth != null;
-      allow write: if false; // 只能通过后端修改
+      allow write: if false;
     }
     
-    // ========== 其他集合默认拒绝 ==========
+    // ========== 默认拒绝规则 ==========
     match /{document=**} {
       allow read, write: if false;
     }

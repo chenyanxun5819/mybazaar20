@@ -37,6 +37,24 @@
             "invoker": ["public"]
           },
           "region": "us-central1"
+        },
+        "sendOtpHttp": {
+          "httpsOptions": {
+            "invoker": ["public"]
+          },
+          "region": "us-central1"
+        },
+        "verifyOtpHttp": {
+          "httpsOptions": {
+            "invoker": ["public"]
+          },
+          "region": "us-central1"
+        },
+        "generateTestOtp": {
+          "httpsOptions": {
+            "invoker": ["public"]
+          },
+          "region": "us-central1"
         }
       },
       "ignore": [
@@ -123,6 +141,20 @@
         "source": "/api/batchImportUsers",
         "function": {
           "functionId": "batchImportUsersHttp",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/sendOtp",
+        "function": {
+          "functionId": "sendOtpHttp",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/verifyOtp",
+        "function": {
+          "functionId": "verifyOtpHttp",
           "region": "us-central1"
         }
       },
