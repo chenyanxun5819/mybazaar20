@@ -4,16 +4,97 @@ const admin = require('firebase-admin');
 const https = require('https');
 require('dotenv').config();
 
-// Infobip 配置
+// 360 配置
+const SMS_PROVIDER = process.env.SMS_PROVIDER || '360'; // 'infobip' 或 '360'
+const API_KEY_360 = process.env.API_KEY_360 || 'GELe3DQa69';
+const API_SECRET_360 = process.env.API_SECRET_360 || 'P5k4ukqYOmE2ULjjCZGQc5Mvzh7OFZLw7sY8zjUc';
+const API_BASE_URL_360 = process.env.API_BASE_URL_360 || 'https://api.365dm.com/sms/send';
+
+// Infobip 配置（備用）
 const INFOBIP_API_KEY = process.env.INFOBIP_API_KEY || '6af983e84d2cd133e4afef095c5dd90e-b6ad3de7-5278-416d-916c-8bcb684a234a';
 const INFOBIP_API_BASE_URL = process.env.INFOBIP_API_BASE_URL || '51w5lj.api.infobip.com';
 const INFOBIP_SENDER_NUMBER = process.env.INFOBIP_SENDER_NUMBER || 'MyBazaar'; // 使用字母發送者 ID
 
-console.log('[Infobip Config]', {
-  apiKey: INFOBIP_API_KEY.substring(0, 10) + '***',
-  baseUrl: INFOBIP_API_BASE_URL,
-  senderNumber: INFOBIP_SENDER_NUMBER
+console.log('[SMS Provider]', {
+  provider: SMS_PROVIDER,
+  ...(SMS_PROVIDER === '360' ? {
+    apiKey360: API_KEY_360.substring(0, 5) + '***',
+    apiBaseUrl360: API_BASE_URL_360
+  } : {
+    infobipApiKey: INFOBIP_API_KEY.substring(0, 10) + '***',
+    infobipBaseUrl: INFOBIP_API_BASE_URL,
+    infobipSenderNumber: INFOBIP_SENDER_NUMBER
+  })
 });
+
+/**
+ * 使用 360 API 發送 SMS
+ */
+function sendSmsVia360(phoneNumber, message) {
+  return new Promise((resolve, reject) => {
+    try {
+      // 計算签名（360 API 要求）
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const signStr = `${API_KEY_360}${phoneNumber}${message}${timestamp}${API_SECRET_360}`;
+      const sign = crypto.createHash('md5').update(signStr).digest('hex');
+
+      const requestBody = JSON.stringify({
+        apiKey: API_KEY_360,
+        phone: phoneNumber,
+        message: message,
+        timestamp: timestamp,
+        sign: sign
+      });
+
+      const options = {
+        hostname: 'api.365dm.com',
+        port: 443,
+        path: '/sms/send',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const result = JSON.parse(data);
+              if (result.success || result.code === 0) {
+                console.log('[sendSmsVia360] SMS 已發送，Response:', result);
+                resolve(result);
+              } else {
+                reject(new Error(`360 API 錯誤: ${result.message || result.error || data}`));
+              }
+            } catch (e) {
+              reject(new Error(`解析 360 API 響應失敗: ${data}`));
+            }
+          } else {
+            reject(new Error(`360 API 錯誤 (${res.statusCode}): ${data}`));
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        console.error('[sendSmsVia360] 請求錯誤:', error);
+        reject(error);
+      });
+
+      req.write(requestBody);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
 
 /**
  * 使用 HTTPS 發送 SMS（基於 Infobip API）
@@ -170,8 +251,14 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
     }
 
     try {
-      const smsResult = await sendSmsViaHttps(formattedPhone, message);
-      console.log(`[sendOtpHttp] SMS 已發送到: ${formattedPhone}, MessageID:`, smsResult?.messages?.[0]?.messageId);
+      let smsResult;
+      if (SMS_PROVIDER === '360') {
+        smsResult = await sendSmsVia360(formattedPhone, message);
+        console.log(`[sendOtpHttp] 360 SMS 已發送到: ${formattedPhone}`, smsResult);
+      } else {
+        smsResult = await sendSmsViaHttps(formattedPhone, message);
+        console.log(`[sendOtpHttp] Infobip SMS 已發送到: ${formattedPhone}, MessageID:`, smsResult?.messages?.[0]?.messageId);
+      }
     } catch (smsError) {
       console.error('[sendOtpHttp] SMS 發送失敗，錯誤詳情:', smsError.message);
       console.error('[sendOtpHttp] 但 OTP 已保存到 Firestore，可繼續驗證');
