@@ -33,16 +33,23 @@ console.log('[SMS Provider]', {
 function sendSmsVia360(phoneNumber, message) {
   return new Promise((resolve, reject) => {
     try {
-      // 360 API 不需要簽名，直接用 GET 參數或 POST body
-      // 推薦用 POST 以避免 URL 長度限制
+      // 360 API 參數
+      // 注意：from 只能是 11 個英數字，不能有空格或特殊符號
       const queryParams = new URLSearchParams({
         user: API_KEY_360,
         pass: API_SECRET_360,
         to: phoneNumber,
-        from: 'MyBazaar', // 發送者名稱
-        text: message,
-        detail: '1' // 返回餘額
+        from: 'MyBazaar', // 11 個英數字
+        text: message
+        // 移除 detail，避免可能的參數問題
       });
+
+      const bodyStr = queryParams.toString();
+      console.log('[sendSmsVia360] 準備發送到 360 API');
+      console.log('[sendSmsVia360] 請求 URL: https://sms.360.my/gw/bulk360/v3_0/send.php');
+      console.log('[sendSmsVia360] 請求 Body:', bodyStr);
+      console.log('[sendSmsVia360] 電話號碼:', phoneNumber);
+      console.log('[sendSmsVia360] 訊息:', message);
 
       const options = {
         hostname: 'sms.360.my',
@@ -51,7 +58,7 @@ function sendSmsVia360(phoneNumber, message) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(queryParams.toString())
+          'Content-Length': Buffer.byteLength(bodyStr)
         }
       };
 
@@ -63,33 +70,36 @@ function sendSmsVia360(phoneNumber, message) {
         });
 
         res.on('end', () => {
-          console.log(`[sendSmsVia360] 響應狀態碼: ${res.statusCode}`);
+          console.log(`[sendSmsVia360] 360 API 響應狀態碼: ${res.statusCode}`);
+          console.log(`[sendSmsVia360] 360 API 響應內容: ${data}`);
+          
           try {
             const result = JSON.parse(data);
-            console.log('[sendSmsVia360] 360 API 響應:', result);
+            console.log('[sendSmsVia360] 360 API 解析結果:', result);
             
             if (result.code === 200 || result.code === '200') {
-              console.log('[sendSmsVia360] SMS 已成功發送到 360');
+              console.log('[sendSmsVia360] ✅ SMS 已成功發送到 360，Reference ID:', result.ref);
               resolve(result);
             } else {
-              reject(new Error(`360 API 錯誤 (${result.code}): ${result.desc || data}`));
+              reject(new Error(`360 API 錯誤 (code=${result.code}): ${result.desc || data}`));
             }
           } catch (e) {
-            console.error('[sendSmsVia360] 解析 360 API 響應失敗:', data);
+            console.error('[sendSmsVia360] ❌ 解析 360 API 響應失敗:', data);
+            console.error('[sendSmsVia360] 解析錯誤詳情:', e.message);
             reject(new Error(`解析 360 API 響應失敗: ${data}`));
           }
         });
       });
 
       req.on('error', (error) => {
-        console.error('[sendSmsVia360] 請求錯誤:', error.message);
+        console.error('[sendSmsVia360] ❌ HTTPS 請求錯誤:', error.message);
         reject(error);
       });
 
-      req.write(queryParams.toString());
+      req.write(bodyStr);
       req.end();
     } catch (error) {
-      console.error('[sendSmsVia360] 異常:', error);
+      console.error('[sendSmsVia360] ❌ 異常:', error);
       reject(error);
     }
   });
