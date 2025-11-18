@@ -33,22 +33,32 @@ console.log('[SMS Provider]', {
 function sendSmsVia360(phoneNumber, message) {
   return new Promise((resolve, reject) => {
     try {
-      // 360 API 參數
-      // 注意：from 只能是 11 個英數字，不能有空格或特殊符號
+      // 將號碼轉為 360 需要的 MSISDN（國碼在前，且不含 +）
+      let msisdn = String(phoneNumber || '').replace(/[^\d+]/g, '');
+      if (msisdn.startsWith('+')) msisdn = msisdn.slice(1);
+      if (msisdn.startsWith('0')) {
+        // 本地 0 開頭，轉為 60 + 去頭
+        msisdn = '60' + msisdn.slice(1);
+      } else if (!msisdn.startsWith('60')) {
+        // 仍非 60 開頭，若疑似本地 1 開頭，補 60
+        if (msisdn.startsWith('1')) {
+          msisdn = '60' + msisdn;
+        }
+      }
+
       const queryParams = new URLSearchParams({
         user: API_KEY_360,
         pass: API_SECRET_360,
-        to: phoneNumber,
-        from: 'MyBazaar', // 11 個英數字
+        to: msisdn,
+        // 'from' 在馬來西亞不適用，為避免 400 直接省略
         text: message
-        // 移除 detail，避免可能的參數問題
       });
 
       const bodyStr = queryParams.toString();
       console.log('[sendSmsVia360] 準備發送到 360 API');
       console.log('[sendSmsVia360] 請求 URL: https://sms.360.my/gw/bulk360/v3_0/send.php');
-      console.log('[sendSmsVia360] 請求 Body:', bodyStr);
-      console.log('[sendSmsVia360] 電話號碼:', phoneNumber);
+      console.log('[sendSmsVia360] 電話號碼原始:', phoneNumber);
+      console.log('[sendSmsVia360] 電話號碼(360 MSISDN):', msisdn);
       console.log('[sendSmsVia360] 訊息:', message);
 
       const options = {
