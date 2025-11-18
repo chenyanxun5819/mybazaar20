@@ -8,7 +8,7 @@ require('dotenv').config();
 const SMS_PROVIDER = process.env.SMS_PROVIDER || '360'; // 'infobip' 或 '360'
 const API_KEY_360 = process.env.API_KEY_360 || 'GELe3DQa69';
 const API_SECRET_360 = process.env.API_SECRET_360 || 'P5k4ukqYOmE2ULjjCZGQc5Mvzh7OFZLw7sY8zjUc';
-const API_BASE_URL_360 = process.env.API_BASE_URL_360 || 'https://api.365dm.com/sms/send';
+const API_BASE_URL_360 = process.env.API_BASE_URL_360 || 'https://sms.360.my/gw/bulk360/v3_0/send.php';
 
 // Infobip 配置（備用）
 const INFOBIP_API_KEY = process.env.INFOBIP_API_KEY || '6af983e84d2cd133e4afef095c5dd90e-b6ad3de7-5278-416d-916c-8bcb684a234a';
@@ -33,27 +33,25 @@ console.log('[SMS Provider]', {
 function sendSmsVia360(phoneNumber, message) {
   return new Promise((resolve, reject) => {
     try {
-      // 計算签名（360 API 要求）
-      const timestamp = Math.floor(Date.now() / 1000).toString();
-      const signStr = `${API_KEY_360}${phoneNumber}${message}${timestamp}${API_SECRET_360}`;
-      const sign = crypto.createHash('md5').update(signStr).digest('hex');
-
-      const requestBody = JSON.stringify({
-        apiKey: API_KEY_360,
-        phone: phoneNumber,
-        message: message,
-        timestamp: timestamp,
-        sign: sign
+      // 360 API 不需要簽名，直接用 GET 參數或 POST body
+      // 推薦用 POST 以避免 URL 長度限制
+      const queryParams = new URLSearchParams({
+        user: API_KEY_360,
+        pass: API_SECRET_360,
+        to: phoneNumber,
+        from: 'MyBazaar', // 發送者名稱
+        text: message,
+        detail: '1' // 返回餘額
       });
 
       const options = {
-        hostname: 'api.365dm.com',
+        hostname: 'sms.360.my',
         port: 443,
-        path: '/sms/send',
+        path: '/gw/bulk360/v3_0/send.php',
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(requestBody)
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(queryParams.toString())
         }
       };
 
@@ -65,32 +63,33 @@ function sendSmsVia360(phoneNumber, message) {
         });
 
         res.on('end', () => {
-          if (res.statusCode === 200) {
-            try {
-              const result = JSON.parse(data);
-              if (result.success || result.code === 0) {
-                console.log('[sendSmsVia360] SMS 已發送，Response:', result);
-                resolve(result);
-              } else {
-                reject(new Error(`360 API 錯誤: ${result.message || result.error || data}`));
-              }
-            } catch (e) {
-              reject(new Error(`解析 360 API 響應失敗: ${data}`));
+          console.log(`[sendSmsVia360] 響應狀態碼: ${res.statusCode}`);
+          try {
+            const result = JSON.parse(data);
+            console.log('[sendSmsVia360] 360 API 響應:', result);
+            
+            if (result.code === 200 || result.code === '200') {
+              console.log('[sendSmsVia360] SMS 已成功發送到 360');
+              resolve(result);
+            } else {
+              reject(new Error(`360 API 錯誤 (${result.code}): ${result.desc || data}`));
             }
-          } else {
-            reject(new Error(`360 API 錯誤 (${res.statusCode}): ${data}`));
+          } catch (e) {
+            console.error('[sendSmsVia360] 解析 360 API 響應失敗:', data);
+            reject(new Error(`解析 360 API 響應失敗: ${data}`));
           }
         });
       });
 
       req.on('error', (error) => {
-        console.error('[sendSmsVia360] 請求錯誤:', error);
+        console.error('[sendSmsVia360] 請求錯誤:', error.message);
         reject(error);
       });
 
-      req.write(requestBody);
+      req.write(queryParams.toString());
       req.end();
     } catch (error) {
+      console.error('[sendSmsVia360] 異常:', error);
       reject(error);
     }
   });
@@ -253,14 +252,17 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
     try {
       let smsResult;
       if (SMS_PROVIDER === '360') {
+        console.log(`[sendOtpHttp] 使用 360 SMS Provider 發送到: ${formattedPhone}`);
         smsResult = await sendSmsVia360(formattedPhone, message);
-        console.log(`[sendOtpHttp] 360 SMS 已發送到: ${formattedPhone}`, smsResult);
+        console.log(`[sendOtpHttp] 360 SMS 已發送，Result:`, smsResult);
       } else {
+        console.log(`[sendOtpHttp] 使用 Infobip SMS Provider 發送到: ${formattedPhone}`);
         smsResult = await sendSmsViaHttps(formattedPhone, message);
-        console.log(`[sendOtpHttp] Infobip SMS 已發送到: ${formattedPhone}, MessageID:`, smsResult?.messages?.[0]?.messageId);
+        console.log(`[sendOtpHttp] Infobip SMS 已發送，MessageID:`, smsResult?.messages?.[0]?.messageId);
       }
     } catch (smsError) {
       console.error('[sendOtpHttp] SMS 發送失敗，錯誤詳情:', smsError.message);
+      console.error('[sendOtpHttp] 錯誤堆棧:', smsError.stack);
       console.error('[sendOtpHttp] 但 OTP 已保存到 Firestore，可繼續驗證');
       
       // 開發環境：即使 SMS 失敗也在日誌中顯示 OTP
