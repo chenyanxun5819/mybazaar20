@@ -4,6 +4,19 @@ const admin = require('firebase-admin');
 const https = require('https');
 require('dotenv').config();
 
+// ===========================================
+// 🔧 開發模式配置
+// ===========================================
+// 設置為 true：使用固定 OTP 223344（節省測試費用）
+// 設置為 false：使用真實 SMS OTP（生產環境）
+const USE_DEV_OTP = process.env.USE_DEV_OTP === 'true' || true; // 默認開啟開發模式
+const DEV_OTP_CODE = '223344'; // 固定的開發 OTP
+
+console.log('[SMS Config] USE_DEV_OTP:', USE_DEV_OTP);
+if (USE_DEV_OTP) {
+  console.log('[SMS Config] 🔧 開發模式：使用固定 OTP', DEV_OTP_CODE);
+}
+
 // 360 配置
 const SMS_PROVIDER = process.env.SMS_PROVIDER || '360'; // 'infobip' 或 '360'
 const API_KEY_360 = process.env.API_KEY_360 || 'GELe3DQa69';
@@ -155,6 +168,13 @@ function sendSmsViaHttps(phoneNumber, message) {
  * 生成 OTP 碼
  */
 function generateOtpCode() {
+  // 🔧 開發模式：返回固定 OTP
+  if (USE_DEV_OTP) {
+    console.log('[generateOtpCode] 🔧 開發模式：返回固定 OTP');
+    return DEV_OTP_CODE;
+  }
+  
+  // 生產模式：生成隨機 OTP
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
@@ -191,7 +211,7 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码' } });
     }
 
-    // 生成 OTP 碼
+    // 生成 OTP 碼（開發模式會返回固定值）
     const otpCode = generateOtpCode();
     const otpCodeHash = sha256(otpCode);
     const sessionId = crypto.randomUUID();
@@ -207,10 +227,26 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       otpCodeHash,
       expiresAt,
       attempts: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      devMode: USE_DEV_OTP // 標記是否為開發模式
     });
 
-    // 發送 SMS
+    // 🔧 開發模式：跳過真實 SMS 發送
+    if (USE_DEV_OTP) {
+      console.log('[sendOtpHttp] 🔧 開發模式：跳過真實 SMS 發送');
+      console.log('[sendOtpHttp] 🔧 請使用固定 OTP:', DEV_OTP_CODE);
+      
+      return res.status(200).json({
+        success: true,
+        sessionId,
+        message: `🔧 開發模式：請輸入固定驗證碼 ${DEV_OTP_CODE}`,
+        expiresIn: 300, // 秒
+        devMode: true,
+        devOtp: DEV_OTP_CODE // 開發模式下直接返回 OTP（僅用於測試）
+      });
+    }
+
+    // 生產模式：發送 SMS
     // 正確格式化馬來西亞電話號碼：將 0 開頭轉為 +60
     let formattedPhone = phoneNumber.trim();
     
@@ -244,7 +280,8 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       success: true,
       sessionId,
       message: '驗證碼已發送，請檢查手機短信',
-      expiresIn: 300 // 秒
+      expiresIn: 300, // 秒
+      devMode: false
     });
   } catch (error) {
     console.error('[sendOtpHttp] 錯誤:', error);
@@ -330,7 +367,8 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       success: true,
       message: '驗證成功',
       phoneNumber,
-      verified: true
+      verified: true,
+      devMode: otpData.devMode || false
     });
   } catch (error) {
     console.error('[verifyOtpHttp] 錯誤:', error);
