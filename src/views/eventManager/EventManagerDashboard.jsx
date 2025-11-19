@@ -34,6 +34,8 @@ const EventManagerDashboard = () => {
   const [showUserList, setShowUserList] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 用户管理
   const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
+  const [users, setUsers] = useState([]); // 用户列表（表格显示）
+  const [showUserTable, setShowUserTable] = useState(true); // 默认显示用户表格
 
   useEffect(() => {
     loadDashboardData();
@@ -49,8 +51,6 @@ const EventManagerDashboard = () => {
         alert('请先登录');
         if (orgEventCode) {
           navigate(`/login/${orgEventCode}`);
-        } else {
-          navigate('/event-manager/login');
         }
         return;
       }
@@ -101,6 +101,12 @@ const EventManagerDashboard = () => {
           if (userData.roles?.includes('customer')) stats.totalCustomers++;
         });
 
+        // 加载用户列表（表格显示）
+        const usersList = usersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setUsers(usersList);
         setStatistics(stats);
       }
 
@@ -119,8 +125,6 @@ const EventManagerDashboard = () => {
         localStorage.removeItem('eventManagerInfo');
         if (orgEventCode) {
           navigate(`/login/${orgEventCode}`);
-        } else {
-          navigate('/event-manager/login');
         }
       } catch (error) {
         console.error('[Dashboard] Logout error:', error);
@@ -189,6 +193,7 @@ const EventManagerDashboard = () => {
           color="#ec4899"
         />
       </div>
+
       {/* Quick Actions Bar */}
       <div style={styles.quickActionsBar}>
         <button
@@ -204,142 +209,95 @@ const EventManagerDashboard = () => {
           ➕ 单个创建用户
         </button>
         <button
-          style={styles.secondaryButton}
-          onClick={() => setShowUserList(true)}
-        >
-          📋 用户列表
-        </button>
-        <button
-          style={{...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981'}}
-          onClick={() => setShowUserManagement(true)}
-        >
-          🎭 用户管理 & 点数分配
-        </button>
-        <button
           style={{...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#f59e0b'}}
           onClick={() => setShowDepartmentManagement(true)}
         >
           🏢 部门管理
         </button>
+        <button
+          style={{...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981'}}
+          onClick={() => setShowUserManagement(true)}
+        >
+          🎭 角色分配 & 点数
+        </button>
       </div>
 
-      {/* Event Info */}
-      <div style={styles.infoSection}>
-        <h2 style={styles.sectionTitle}>活动信息</h2>
-        <div style={styles.infoGrid}>
-          <InfoItem
-            label="义卖会日期"
-            value={eventData?.eventInfo?.fairDate || '未设定'}
-            icon="📅"
-          />
-          <InfoItem
-            label="义卖会时间"
-            value={eventData?.eventInfo?.fairTime || '未设定'}
-            icon="⏰"
-          />
-          <InfoItem
-            label="消费有效期"
-            value={
-              eventData?.eventInfo?.consumptionPeriod
-                ? `${eventData.eventInfo.consumptionPeriod.startDate} ~ ${eventData.eventInfo.consumptionPeriod.endDate}`
-                : '未设定'
-            }
-            icon="💳"
-          />
-          <InfoItem
-            label="活动地点"
-            value={eventData?.eventInfo?.location || '未设定'}
-            icon="📍"
-          />
-          <InfoItem
-            label="总资本"
-            value={`RM ${eventData?.settings?.totalCapital?.toLocaleString() || 0}`}
-            icon="💵"
-          />
-          <InfoItem
-            label="活动状态"
-            value={eventData?.status === 'active' ? '进行中' : eventData?.status === 'planning' ? '筹备中' : '未知'}
-            icon="📊"
-          />
+      {/* User Table Section */}
+      <div style={styles.tableSection}>
+        <div style={styles.tableHeader}>
+          <h2 style={styles.sectionTitle}>用户管理</h2>
+          <div style={styles.tableStats}>
+            共 <strong>{users.length}</strong> 个用户
+          </div>
         </div>
-      </div>
 
-
-
-      {/* Management Team */}
-      <div style={styles.actionsSection}>
-        <h2 style={styles.sectionTitle}>管理团队</h2>
-        <p style={styles.sectionDescription}>
-          创建和管理活动的三类管理员
-        </p>
-        <div style={styles.actionsGrid}>
-          <ActionCard
-            title="Seller Manager"
-            description="管理销售团队，分配和回收资本"
-            icon="💰"
-            badge="销售管理"
-            onClick={() => alert('Seller Manager 功能开发中')}
-            color="#667eea"
-          />
-          <ActionCard
-            title="Merchant Manager"
-            description="管理商家，印制 QR Code"
-            icon="🏪"
-            badge="商家管理"
-            onClick={() => alert('Merchant Manager 功能开发中')}
-            color="#10b981"
-          />
-          <ActionCard
-            title="Customer Manager"
-            description="义卖会当日销售和收款"
-            icon="🎫"
-            badge="顾客管理"
-            onClick={() => alert('Customer Manager 功能开发中')}
-            color="#f59e0b"
-          />
-        </div>
-      </div>
-
-      {/* Capital Management */}
-      <div style={styles.actionsSection}>
-        <h2 style={styles.sectionTitle}>资本管理</h2>
-        <div style={styles.actionsGrid}>
-          <ActionCard
-            title="分配资本"
-            description="分配资本给 Seller Manager"
-            icon="💵"
-            onClick={() => alert('资本分配功能开发中')}
-            color="#ec4899"
-          />
-          <ActionCard
-            title="资本统计"
-            description="查看资本分配和使用情况"
-            icon="📊"
-            onClick={() => alert('统计功能开发中')}
-            color="#8b5cf6"
-          />
-        </div>
-      </div>
-
-      {/* System Management */}
-      <div style={styles.actionsSection}>
-        <h2 style={styles.sectionTitle}>系统管理</h2>
-        <div style={styles.actionsGrid}>
-          <ActionCard
-            title="活动设置"
-            description="修改活动配置和信息"
-            icon="⚙️"
-            onClick={() => alert('活动设置功能开发中')}
-            color="#06b6d4"
-          />
-          <ActionCard
-            title="系统日志"
-            description="查看操作记录和审计日志"
-            icon="📝"
-            onClick={() => alert('系统日志功能开发中')}
-            color="#64748b"
-          />
-        </div>
+        {users.length > 0 ? (
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.tableHeaderRow}>
+                  <th style={styles.tableCell}>姓名</th>
+                  <th style={styles.tableCell}>手机号</th>
+                  <th style={styles.tableCell}>邮箱</th>
+                  <th style={styles.tableCell}>部门</th>
+                  <th style={styles.tableCell}>学号/工号</th>
+                  <th style={styles.tableCell}>身份</th>
+                  <th style={styles.tableCell}>角色</th>
+                  <th style={styles.tableCell}>状态</th>
+                  <th style={styles.tableCell}>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user, index) => (
+                  <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
+                    <td style={styles.tableCell}>
+                      <strong>{user.basicInfo?.englishName || '-'}</strong>
+                      {user.basicInfo?.chineseName && (
+                        <div style={{fontSize: '0.75rem', color: '#6b7280'}}>
+                          {user.basicInfo.chineseName}
+                        </div>
+                      )}
+                    </td>
+                    <td style={styles.tableCell}>{user.basicInfo?.phoneNumber || '-'}</td>
+                    <td style={styles.tableCell}>{user.basicInfo?.email || '-'}</td>
+                    <td style={styles.tableCell}>{user.department || '-'}</td>
+                    <td style={styles.tableCell}>{user.identityInfo?.studentId || user.identityInfo?.staffId || '-'}</td>
+                    <td style={styles.tableCell}>
+                      <span style={{...styles.badge, background: user.identityTag === 'student' ? '#dbeafe' : '#fef3c7', color: user.identityTag === 'student' ? '#1e40af' : '#92400e'}}>
+                        {user.identityTag === 'student' ? '学生' : user.identityTag === 'staff' ? '员工' : user.identityTag === 'teacher' ? '教师' : '-'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={styles.roleContainer}>
+                        {user.roles?.map((role, i) => (
+                          <span key={i} style={{...styles.roleBadge, background: getRoleColor(role)}}>
+                            {formatRole(role)}
+                          </span>
+                        )) || '-'}
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{...styles.badge, background: user.accountStatus?.status === 'active' ? '#dcfce7' : '#fee2e2', color: user.accountStatus?.status === 'active' ? '#166534' : '#991b1b'}}>
+                        {user.accountStatus?.status === 'active' ? '活跃' : '禁用'}
+                      </span>
+                    </td>
+                    <td style={{...styles.tableCell, fontSize: '0.875rem', color: '#6b7280'}}>
+                      {user.activityData?.joinedAt 
+                        ? new Date(user.activityData.joinedAt.toDate?.() || user.activityData.joinedAt).toLocaleDateString('zh-CN')
+                        : '-'
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>📭</div>
+            <p style={styles.emptyText}>暂无用户数据</p>
+          </div>
+        )}
       </div>
 
       {/* 创建用户弹窗 */}
@@ -484,6 +442,44 @@ const ActionCard = ({ title, description, icon, onClick, color, badge }) => (
     <div style={{ ...styles.actionArrow, color }}>→</div>
   </div>
 );
+
+// 辅助函数：格式化角色名称
+function formatRole(role) {
+  const roleMap = {
+    'eventManager': 'Event Manager',
+    'event_manager': 'Event Manager',
+    'sellerManager': 'Seller Manager',
+    'seller_manager': 'Seller Manager',
+    'merchantManager': 'Merchant Manager',
+    'merchant_manager': 'Merchant Manager',
+    'customerManager': 'Customer Manager',
+    'customer_manager': 'Customer Manager',
+    'seller': 'Seller',
+    'merchant': 'Merchant',
+    'customer': 'Customer'
+  };
+  return roleMap[role] || role;
+}
+
+// 辅助函数：获取角色颜色
+function getRoleColor(role) {
+  const colorMap = {
+    'eventManager': '#667eea',
+    'event_manager': '#667eea',
+    'sellerManager': '#10b981',
+    'seller_manager': '#10b981',
+    'merchantManager': '#f59e0b',
+    'merchant_manager': '#f59e0b',
+    'customerManager': '#ec4899',
+    'customer_manager': '#ec4899',
+    'seller': '#06b6d4',
+    'merchant': '#84cc16',
+    'customer': '#8b5cf6'
+  };
+  const hexColor = colorMap[role] || '#667eea';
+  // 转换为浅色背景
+  return hexColor + '20';
+}
 
 const styles = {
   container: {
@@ -718,6 +714,80 @@ const styles = {
     alignItems: 'center',
     gap: '0.5rem',
     transition: 'all 0.2s'
+  },
+  // 表格相关样式
+  tableSection: {
+    background: 'white',
+    borderRadius: '16px',
+    marginBottom: '2rem',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    overflow: 'hidden'
+  },
+  tableHeader: {
+    padding: '2rem',
+    borderBottom: '1px solid #e5e7eb',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  tableStats: {
+    fontSize: '0.875rem',
+    color: '#6b7280'
+  },
+  tableWrapper: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  tableHeaderRow: {
+    background: '#f9fafb',
+    borderBottom: '2px solid #e5e7eb'
+  },
+  tableCell: {
+    padding: '1rem',
+    textAlign: 'left',
+    fontSize: '0.875rem',
+    color: '#1f2937',
+    borderRight: '1px solid #e5e7eb'
+  },
+  tableRow: {
+    borderBottom: '1px solid #e5e7eb',
+    transition: 'background-color 0.2s'
+  },
+  badge: {
+    display: 'inline-block',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '12px',
+    fontSize: '0.75rem',
+    fontWeight: '600'
+  },
+  roleContainer: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap'
+  },
+  roleBadge: {
+    display: 'inline-block',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '12px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    color: 'white'
+  },
+  emptyState: {
+    padding: '4rem 2rem',
+    textAlign: 'center',
+    color: '#6b7280'
+  },
+  emptyIcon: {
+    fontSize: '3rem',
+    marginBottom: '1rem'
+  },
+  emptyText: {
+    fontSize: '1rem',
+    margin: 0
   }
 };
 
