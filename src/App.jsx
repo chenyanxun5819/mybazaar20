@@ -9,7 +9,6 @@ import { MobileGuard, DesktopGuard } from './components/guards/DeviceProtection'
 import PlatformAuthGuard from './components/guards/PlatformAuthGuard';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
-import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 
@@ -93,8 +92,7 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 🆕 Event Manager 登录與儀表板（保留舊路徑）*/}
-      <Route path="/event-manager/login" element={<EventManagerLogin />} />
+      {/* 🆕 Event Manager 儀表板 */}
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
 
       {/* 預設路由 - 重定向到 Platform Admin 登录 */}
