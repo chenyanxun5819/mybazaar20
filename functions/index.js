@@ -8,15 +8,13 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-const { checkAdminExists, createInitialAdmin, sendOtpToPhone, verifyOtpCode, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
+const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
   createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp} = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { sendOtpHttp, verifyOtpHttp, generateTestOtp } = require('./twilio');
 
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
-exports.sendOtpToPhone = sendOtpToPhone;
-exports.verifyOtpCode = verifyOtpCode;
 exports.setProjectInfo = setProjectInfo;
 exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
@@ -37,7 +35,6 @@ exports.loginUniversalHttp = loginUniversalHttp;
 // SMS OTP 函式
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
-exports.generateTestOtp = generateTestOtp;
 
 // CORS 中间件配置
 const allowedOrigins = [
