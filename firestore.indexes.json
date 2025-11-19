@@ -1,4 +1,15 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "otp_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "phoneNumber", "order": "ASCENDING" },
+        { "fieldPath": "orgCode", "order": "ASCENDING" },
+        { "fieldPath": "eventCode", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
