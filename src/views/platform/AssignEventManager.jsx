@@ -9,7 +9,8 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     chineseName: '',
     email: '',
     identityTag: '', // ✨ 不再设置默认值，改为动态选择
-    identityId: '' // ✨ 新增：工号或学号
+    identityId: '', // ✨ 新增：工号或学号
+    department: '' // ✨ 新增：部门
   });
   
   const [submitting, setSubmitting] = useState(false);
@@ -94,7 +95,8 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           chineseName: formData.chineseName,
           email: formData.email,
           identityTag: formData.identityTag,
-          identityId: formData.identityId
+          identityId: formData.identityId,
+          department: formData.department
         })
       });
 
@@ -310,6 +312,21 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
               )}
             </select>
             <small style={styles.hint}>Event Manager 必须是组织成员</small>
+          </div>
+
+          {/* ✨ 新增：部门字段 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>部门</label>
+            <input
+              type="text"
+              name="department"
+              value={formData.department}
+              onChange={handleChange}
+              placeholder="例如：市场部、销售部、技术部"
+              style={styles.input}
+              disabled={submitting}
+            />
+            <small style={styles.hint}>Event Manager 所属部门（可选）</small>
           </div>
 
           {error && (
