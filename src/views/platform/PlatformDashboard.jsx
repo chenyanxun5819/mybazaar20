@@ -616,14 +616,22 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
 
       {/* 操作按钮 */}
       <div style={styles.eventActions}>
-        {/* 重新分配 Event Manager */}
-        <button
-          style={styles.reassignButton}
-          onClick={onAssignManager}
-        >
-          {eventManager ? '🔄 重新分配 Manager' : '👤 分配 Event Manager'}
-        </button>
+        {/* 分配 Event Manager - 仅当未分配时显示 */}
+        {!eventManager && (
+          <button
+            style={styles.assignButton}
+            onClick={onAssignManager}
+          >
+            👤 分配 Event Manager
+          </button>
+        )}
 
+        {/* Event Manager 已分配提示 */}
+        {eventManager && (
+          <div style={styles.managerAssignedInfo}>
+            ✅ Event Manager 已分配，不支持更改
+          </div>
+        )}
 
         {/* 删除按钮 */}
         <button
@@ -2049,33 +2057,22 @@ const styles = {
     color: '#9ca3af',
     fontSize: '0.875rem'
   },
-  reassignButton: {
+  managerAssignedInfo: {
     width: '100%',
     padding: '0.75rem',
-    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-    color: 'white',
-    border: 'none',
+    background: '#d1fae5',
+    color: '#065f46',
+    border: '1px solid #a7f3d0',
     borderRadius: '8px',
     fontSize: '0.875rem',
     fontWeight: '600',
-    cursor: 'pointer',
+    textAlign: 'center',
     marginBottom: '0.75rem'
   },
   eventActions: {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.75rem'
-  },
-  batchImportButton: {
-    width: '100%',
-    padding: '0.75rem',
-    background: '#dbeafe',
-    color: '#0c4a6e',
-    border: '1px solid #93c5fd',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    cursor: 'pointer'
   },
   deleteButton: {
     width: '100%',
