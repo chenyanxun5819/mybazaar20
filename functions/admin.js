@@ -264,8 +264,26 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
     }
     const eventData = eventSnap.data() || {};
+    
+    // 🔄 如果已有 Event Manager，需要处理替换逻辑
+    let oldEventManagerId = null;
     if (eventData.eventManager) {
-      return res.status(409).json({ error: { code: 'already-exists', message: '此活动已指派 Event Manager' } });
+      console.log('[createEventManagerHttp] 活动已有 Event Manager:', eventData.eventManager);
+      oldEventManagerId = eventData.eventManager;
+      
+      // 检查是否试图分配同一个人（防止重复）
+      const oldUserSnap = await usersCol.doc(oldEventManagerId).get();
+      if (oldUserSnap.exists) {
+        const oldUserData = oldUserSnap.data();
+        if (oldUserData?.basicInfo?.phoneNumber === phoneNumber) {
+          return res.status(409).json({ 
+            error: { 
+              code: 'already-exists', 
+              message: '此用户已是该活动的 Event Manager，无需重新分配' 
+            } 
+          });
+        }
+      }
     }
 
     const usersCol = eventRef.collection('users');
@@ -279,11 +297,34 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
 
     const newUserId = `usr_${crypto.randomUUID()}`;
     const now = new Date();
+    
+    // 🔄 如果要替换旧的 Event Manager，先删除旧的
+    if (oldEventManagerId) {
+      console.log('[createEventManagerHttp] 删除旧 Event Manager:', oldEventManagerId);
+      try {
+        // 删除旧用户文档
+        await usersCol.doc(oldEventManagerId).delete();
+        console.log('[createEventManagerHttp] 旧 Event Manager 用户已删除');
+        
+        // 从组织的 admins 数组中移除旧 Event Manager
+        const currentOrgData = (await orgRef.get()).data() || {};
+        const updatedAdmins = (currentOrgData.admins || []).filter(
+          admin => admin.userId !== oldEventManagerId
+        );
+        if (updatedAdmins.length !== (currentOrgData.admins || []).length) {
+          await orgRef.update({ admins: updatedAdmins });
+          console.log('[createEventManagerHttp] 组织 admins 已更新');
+        }
+      } catch (cleanupError) {
+        console.warn('[createEventManagerHttp] 清理旧 Event Manager 时出错:', cleanupError);
+        // 继续处理，不中断流程
+      }
+    }
 
     const userDoc = {
       userId: newUserId,
       authUid: newUserId,
-      roles: ['eventManager'],
+      roles: ['event_manager'],
       identityTag,
       basicInfo: {
         phoneNumber,
@@ -296,9 +337,9 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
         pinSalt: passwordSalt,
         isPhoneVerified: false
       },
-      identityInfo: identityId ? { identityId } : undefined,
+      identityInfo: identityId ? { identityId, department: req.body?.department || '' } : { department: req.body?.department || '' },
       roleSpecificData: {
-        eventManager: {
+        event_manager: {
           organizationId,
           eventId,
           assignedAt: now,
@@ -321,12 +362,20 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     if (!userDoc.identityInfo) delete userDoc.identityInfo;
 
     await usersCol.doc(newUserId).set(userDoc);
-    await eventRef.update({
+    
+    // 更新事件统计 - 如果是替换，不增加计数
+    const eventUpdateData = {
       eventManager: newUserId,
-      'statistics.totalUsers': admin.firestore.FieldValue.increment(1),
-      'statistics.totalManagers': admin.firestore.FieldValue.increment(1),
       updatedAt: now
-    });
+    };
+    
+    if (!oldEventManagerId) {
+      // 新增 Event Manager，增加统计数
+      eventUpdateData['statistics.totalUsers'] = admin.firestore.FieldValue.increment(1);
+      eventUpdateData['statistics.totalManagers'] = admin.firestore.FieldValue.increment(1);
+    }
+    
+    await eventRef.update(eventUpdateData);
 
     const adminEntry = {
       userId: newUserId,
@@ -334,7 +383,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       phoneNumber,
       englishName,
       chineseName,
-      role: 'eventManager',
+      role: 'event_manager',
       eventId,
       addedAt: now,
       addedBy: callerUid
@@ -344,7 +393,8 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       updatedAt: now
     });
 
-    return res.status(200).json({ success: true, userId: newUserId, message: 'Event Manager 创建成功' });
+    const message = oldEventManagerId ? 'Event Manager 重新分配成功' : 'Event Manager 创建成功';
+    return res.status(200).json({ success: true, userId: newUserId, message });
   } catch (error) {
     console.error('[createEventManagerHttp] Error:', error);
     const code = error.code || 'internal';
