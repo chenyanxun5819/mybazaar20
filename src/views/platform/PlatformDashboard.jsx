@@ -626,13 +626,6 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
           </button>
         )}
 
-        {/* Event Manager 已分配提示 */}
-        {eventManager && (
-          <div style={styles.managerAssignedInfo}>
-            ✅ Event Manager 已分配，不支持更改
-          </div>
-        )}
-
         {/* 删除按钮 */}
         <button
           style={{
@@ -2056,18 +2049,6 @@ const styles = {
   loadingText: {
     color: '#9ca3af',
     fontSize: '0.875rem'
-  },
-  managerAssignedInfo: {
-    width: '100%',
-    padding: '0.75rem',
-    background: '#d1fae5',
-    color: '#065f46',
-    border: '1px solid #a7f3d0',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: '0.75rem'
   },
   eventActions: {
     display: 'flex',
