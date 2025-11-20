@@ -1155,7 +1155,6 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     purpose: '',
     consumptionStartDate: '',
     consumptionEndDate: '',
-    totalCapital: '',
     status: 'planning'
   });
   const [submitting, setSubmitting] = useState(false);
@@ -1214,9 +1213,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
             endDate: formData.consumptionEndDate || null
           }
         },
-        settings: {
-          totalCapital: parseFloat(formData.totalCapital) || 0
-        },
+        settings: {},
         status: formData.status,
         statistics: {
           totalUsers: 0
@@ -1366,21 +1363,6 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                 disabled={submitting}
               />
             </div>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>总资金 (RM)</label>
-            <input
-              type="number"
-              name="totalCapital"
-              value={formData.totalCapital}
-              onChange={handleChange}
-              placeholder="0"
-              min="0"
-              step="0.01"
-              style={styles.input}
-              disabled={submitting}
-            />
           </div>
 
           <div style={styles.formGroup}>
