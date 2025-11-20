@@ -14,6 +14,7 @@ import { signOut } from 'firebase/auth';
 import AddUser from '../../components/common/AddUser';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
+import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
 
 /**
  * Seller Manager Dashboard
@@ -104,12 +105,13 @@ const SellerManagerDashboard = () => {
       const eventDoc = await getDoc(
         doc(db, 'organizations', info.organizationId, 'events', info.eventId)
       );
+      
       if (eventDoc.exists()) {
         setEventData(eventDoc.data());
         console.log('[Dashboard] 活动数据加载成功');
       }
 
-      // 📋 加载 Seller Manager 的用户数据
+      // 📋 加载 Seller Manager 用户文档
       const userDoc = await getDoc(
         doc(db, 'organizations', info.organizationId, 'events', info.eventId, 'users', info.userId)
       );
@@ -118,63 +120,72 @@ const SellerManagerDashboard = () => {
         const userData = userDoc.data();
         setSellerManagerData(userData);
         
-        // 提取 Seller Manager 的统计数据
-        const smData = userData.roleSpecificData?.seller_manager || {};
-        setStatistics({
-          assignedCapital: smData.assignedCapital || 0,
-          availableCapital: smData.availableCapital || 0,
-          allocatedToSellers: smData.allocatedToSellers || 0,
-          totalSellersManaged: smData.totalSellersManaged || 0
-        });
+        // 🎯 计算统计数据
+        const capital = userData.capital || {};
+        const stats = {
+          assignedCapital: capital.assignedCapital || 0,
+          availableCapital: capital.availableCapital || 0,
+          allocatedToSellers: capital.allocatedToSellers || 0,
+          totalSellersManaged: 0 // 稍后从 sellers 加载
+        };
+        setStatistics(stats);
         
-        console.log('[Dashboard] Seller Manager 数据加载成功:', smData);
+        console.log('[Dashboard] Seller Manager 数据加载成功:', {
+          capital: stats
+        });
       }
 
     } catch (error) {
-      console.error('[Dashboard] 加载数据失败:', error);
-      alert('加载数据失败: ' + error.message);
+      console.error('[Dashboard] 加载失败:', error);
+      alert(`加载失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   /**
-   * 加载所有属于当前 Seller Manager 的 Sellers
+   * 加载该 Seller Manager 管理的所有 Sellers
    */
   const loadSellers = async () => {
     try {
       setLoadingSellers(true);
-      console.log('[Dashboard] 加载 Sellers 列表...');
+      console.log('[Dashboard] 开始加载 Sellers...');
 
       const usersRef = collection(
-        db,
-        'organizations', userInfo.organizationId,
-        'events', userInfo.eventId,
+        db, 
+        'organizations', 
+        userInfo.organizationId, 
+        'events', 
+        userInfo.eventId, 
         'users'
       );
 
-      // 🔍 查询条件：
-      // 1. 包含 'seller' 角色
-      // 2. managedBy 等于当前 Seller Manager 的 userId
+      // 查询所有 seller 角色且由当前 Seller Manager 管理的用户
       const q = query(
         usersRef,
         where('roles', 'array-contains', 'seller'),
-        orderBy('accountStatus.createdAt', 'desc')
+        where('managedBy', '==', userInfo.userId),
+        orderBy('createdAt', 'desc')
       );
 
       const snapshot = await getDocs(q);
-      
-      // 过滤出由当前 SM 管理的 Sellers
-      const sellersList = snapshot.docs
-        .map(doc => ({
+      const sellersList = [];
+
+      snapshot.forEach(doc => {
+        sellersList.push({
           id: doc.id,
           ...doc.data()
-        }))
-        .filter(user => 
-          user.roleSpecificData?.seller?.managedBy === userInfo.userId
-        );
+        });
+      });
 
       setSellers(sellersList);
+      
+      // 更新统计中的 Sellers 数量
+      setStatistics(prev => ({
+        ...prev,
+        totalSellersManaged: sellersList.length
+      }));
+
       console.log('[Dashboard] Sellers 加载成功:', sellersList.length);
 
     } catch (error) {
@@ -230,16 +241,29 @@ const SellerManagerDashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
+      {/* Header with Role Switcher */}
       <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>
-            💰 Seller Manager Dashboard
-          </h1>
-          <p style={styles.subtitle}>
-            {orgData?.orgName?.['zh-CN'] || '组织'} - {eventData?.eventName?.['zh-CN'] || '活动'}
-          </p>
-          <p style={styles.roleLabel}>班级老师管理系统</p>
+        <div style={styles.headerLeft}>
+          <div>
+            <h1 style={styles.title}>
+              💰 Seller Manager Dashboard
+            </h1>
+            <p style={styles.subtitle}>
+              {orgData?.orgName?.['zh-CN'] || '组织'} - {eventData?.eventName?.['zh-CN'] || '活动'}
+            </p>
+            <p style={styles.roleLabel}>班级老师管理系统</p>
+          </div>
+          {/* 🆕 角色切换器 */}
+          {userInfo?.availableRoles && userInfo.availableRoles.length > 1 && (
+            <div style={styles.roleSwitcherWrapper}>
+              <RoleSwitcher
+                currentRole={userInfo.currentRole || 'sellerManager'}
+                availableRoles={userInfo.availableRoles}
+                orgEventCode={orgEventCode}
+                userInfo={userInfo}
+              />
+            </div>
+          )}
         </div>
         <div style={styles.headerActions}>
           <div style={styles.userInfo}>
@@ -279,75 +303,62 @@ const SellerManagerDashboard = () => {
         <StatCard
           title="管理学生"
           value={statistics.totalSellersManaged}
-          icon="👥"
+          icon="🛍️"
           color="#ec4899"
-          description="总共管理的学生数量"
+          description="您管理的学生 (Sellers)"
         />
       </div>
 
-      {/* Quick Actions Bar */}
-      <div style={styles.quickActionsBar}>
-        <button
+      {/* 🚀 Quick Actions */}
+      <div style={styles.actionsBar}>
+        <button 
           style={styles.primaryButton}
           onClick={() => setShowAddUser(true)}
-          disabled={statistics.availableCapital <= 0}
         >
-          ➕ 创建 Seller（学生）
+          ➕ 创建新学生 (Seller)
         </button>
-        <button
+        <button 
           style={styles.secondaryButton}
           onClick={handleRefresh}
+          disabled={loadingSellers}
         >
           🔄 刷新数据
         </button>
       </div>
 
-      {/* 资本不足提示 */}
-      {statistics.availableCapital <= 0 && (
-        <div style={styles.warningBox}>
-          ⚠️ 您的可用资本不足，无法创建新的 Seller。请联系 Event Manager 申请更多资本。
-        </div>
-      )}
-
-      {/* 💡 使用提示 */}
-      <div style={styles.infoBox}>
-        <h3 style={styles.infoTitle}>💡 使用指南</h3>
-        <ul style={styles.infoList}>
-          <li>点击 "创建 Seller" 添加学生账户</li>
-          <li>在学生列表中点击 "分配固本" 给学生分配销售资本</li>
-          <li>学生可以使用分配的固本向家长销售</li>
-          <li>您可以随时查看每个学生的销售情况</li>
-        </ul>
-      </div>
-
       {/* 📋 Sellers List */}
-      <div style={styles.section}>
+      <div style={styles.sellersSection}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>
-            👥 我的 Sellers（学生）
+            我管理的学生 (Sellers)
           </h2>
-          <span style={styles.badge}>
-            {sellers.length} 位学生
-          </span>
+          <div style={styles.sellerCount}>
+            共 <strong>{sellers.length}</strong> 个学生
+          </div>
         </div>
 
         {loadingSellers ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div style={styles.loadingCard}>
             <div style={styles.spinner}></div>
-            <p>加载学生列表中...</p>
+            <p>加载学生列表...</p>
           </div>
-        ) : sellers.length === 0 ? (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>📝</div>
-            <h3>还没有 Seller</h3>
-            <p>点击上方 "创建 Seller" 按钮添加您的第一位学生</p>
-          </div>
-        ) : (
+        ) : sellers.length > 0 ? (
           <SellerList
             sellers={sellers}
             onAllocatePoints={handleAllocatePoints}
             onRefresh={handleRefresh}
           />
+        ) : (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>🛍️</div>
+            <p style={styles.emptyText}>还没有创建任何学生</p>
+            <button 
+              style={styles.primaryButton}
+              onClick={() => setShowAddUser(true)}
+            >
+              创建第一个学生
+            </button>
+          </div>
         )}
       </div>
 
@@ -356,27 +367,24 @@ const SellerManagerDashboard = () => {
         <AddUser
           organizationId={userInfo.organizationId}
           eventId={userInfo.eventId}
-          callerRole="seller_manager"  // 🔑 关键：限制只能创建 Seller
-          onClose={() => setShowAddUser(false)}
-          onSuccess={() => {
+          onClose={() => {
             setShowAddUser(false);
             handleRefresh();
           }}
+          currentUserRole="sellerManager"
+          managedBy={userInfo.userId}
+          presetRoles={['seller']}
+          departmentId={sellerManagerData?.departmentInfo?.departmentId}
         />
       )}
 
       {showAllocatePoints && selectedSeller && (
         <AllocatePoints
           seller={selectedSeller}
-          sellerManager={userInfo}
-          availableCapital={statistics.availableCapital}
+          sellerManager={sellerManagerData}
           organizationId={userInfo.organizationId}
           eventId={userInfo.eventId}
           onClose={() => {
-            setShowAllocatePoints(false);
-            setSelectedSeller(null);
-          }}
-          onSuccess={() => {
             setShowAllocatePoints(false);
             setSelectedSeller(null);
             handleRefresh();
@@ -389,11 +397,11 @@ const SellerManagerDashboard = () => {
 
 // 📊 Statistics Card Component
 const StatCard = ({ title, value, icon, color, description }) => (
-  <div style={{ ...styles.statCard, borderTopColor: color }}>
+  <div style={{ ...styles.statCard, borderLeftColor: color }}>
     <div style={styles.statIcon}>{icon}</div>
     <div style={styles.statContent}>
       <div style={styles.statValue}>{value}</div>
-      <div style={styles.statTitle}>{title}</div>
+      <div style={styles.statLabel}>{title}</div>
       {description && (
         <div style={styles.statDescription}>{description}</div>
       )}
@@ -404,35 +412,47 @@ const StatCard = ({ title, value, icon, color, description }) => (
 const styles = {
   container: {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    background: '#f3f4f6',
     padding: '2rem'
   },
   loadingCard: {
-    background: 'white',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: '3rem',
-    borderRadius: '16px',
-    textAlign: 'center',
-    maxWidth: '400px',
-    margin: '0 auto'
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   spinner: {
-    width: '48px',
-    height: '48px',
-    border: '4px solid #f59e0b',
-    borderTopColor: 'transparent',
+    width: '3rem',
+    height: '3rem',
+    border: '4px solid #e5e7eb',
+    borderTopColor: '#667eea',
     borderRadius: '50%',
-    margin: '0 auto 1rem',
-    animation: 'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite',
+    marginBottom: '1rem'
   },
   header: {
-    background: 'white',
-    padding: '2rem',
-    borderRadius: '16px',
-    marginBottom: '2rem',
     display: 'flex',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '2rem',
+    background: 'white',
+    padding: '1.5rem',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '2rem'
+  },
+  roleSwitcherWrapper: {
+    display: 'flex',
     alignItems: 'center',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    paddingTop: '0.5rem'
   },
   title: {
     fontSize: '2rem',
@@ -443,7 +463,7 @@ const styles = {
   subtitle: {
     color: '#6b7280',
     margin: '0 0 0.25rem 0',
-    fontSize: '1.1rem'
+    fontSize: '0.95rem'
   },
   roleLabel: {
     color: '#f59e0b',
@@ -458,22 +478,24 @@ const styles = {
   },
   userInfo: {
     padding: '0.5rem 1rem',
-    background: '#fef3c7',
+    background: '#f3f4f6',
     borderRadius: '8px'
   },
   userName: {
-    color: '#92400e',
-    fontWeight: '500'
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: '#374151'
   },
   logoutButton: {
-    padding: '0.75rem 1.5rem',
+    padding: '0.5rem 1rem',
     background: '#ef4444',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
+    fontSize: '0.875rem',
     fontWeight: '500',
-    transition: 'background 0.2s'
+    transition: 'all 0.2s'
   },
   statsGrid: {
     display: 'grid',
@@ -485,17 +507,14 @@ const styles = {
     background: 'white',
     padding: '1.5rem',
     borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     display: 'flex',
     alignItems: 'flex-start',
     gap: '1rem',
-    borderTop: '4px solid',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s',
-    cursor: 'default'
+    borderLeft: '4px solid'
   },
   statIcon: {
-    fontSize: '2.5rem',
-    lineHeight: 1
+    fontSize: '2.5rem'
   },
   statContent: {
     flex: 1
@@ -506,86 +525,50 @@ const styles = {
     color: '#1f2937',
     marginBottom: '0.25rem'
   },
-  statTitle: {
+  statLabel: {
     fontSize: '0.875rem',
     color: '#6b7280',
-    fontWeight: '600'
+    fontWeight: '600',
+    marginBottom: '0.25rem'
   },
   statDescription: {
     fontSize: '0.75rem',
     color: '#9ca3af',
     marginTop: '0.25rem'
   },
-  quickActionsBar: {
-    background: 'white',
-    padding: '1rem 1.5rem',
-    borderRadius: '12px',
-    marginBottom: '2rem',
+  actionsBar: {
     display: 'flex',
     gap: '1rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    marginBottom: '2rem',
+    flexWrap: 'wrap'
   },
   primaryButton: {
     padding: '0.75rem 1.5rem',
-    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    background: '#667eea',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
+    cursor: 'pointer',
     fontSize: '1rem',
     fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'transform 0.2s',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem'
+    transition: 'all 0.2s'
   },
   secondaryButton: {
     padding: '0.75rem 1.5rem',
     background: 'white',
-    color: '#f59e0b',
-    border: '2px solid #f59e0b',
+    color: '#374151',
+    border: '2px solid #e5e7eb',
     borderRadius: '8px',
+    cursor: 'pointer',
     fontSize: '1rem',
     fontWeight: '600',
-    cursor: 'pointer',
     transition: 'all 0.2s'
   },
-  warningBox: {
-    background: '#fef3c7',
-    border: '2px solid #fbbf24',
-    color: '#92400e',
-    padding: '1rem',
-    borderRadius: '8px',
-    marginBottom: '2rem',
-    fontSize: '0.875rem',
-    fontWeight: '500'
-  },
-  infoBox: {
+  sellersSection: {
     background: 'white',
-    padding: '1.5rem',
     borderRadius: '12px',
-    marginBottom: '2rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-  },
-  infoTitle: {
-    fontSize: '1.125rem',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '1rem',
-    marginTop: 0
-  },
-  infoList: {
-    margin: 0,
-    paddingLeft: '1.5rem',
-    color: '#6b7280',
-    fontSize: '0.875rem',
-    lineHeight: '1.8'
-  },
-  section: {
-    background: 'white',
-    padding: '2rem',
-    borderRadius: '16px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    padding: '1.5rem'
   },
   sectionHeader: {
     display: 'flex',
@@ -599,32 +582,31 @@ const styles = {
     color: '#1f2937',
     margin: 0
   },
-  badge: {
-    background: '#fef3c7',
-    color: '#92400e',
-    padding: '0.5rem 1rem',
-    borderRadius: '20px',
+  sellerCount: {
     fontSize: '0.875rem',
-    fontWeight: '600'
+    color: '#6b7280'
   },
   emptyState: {
     textAlign: 'center',
-    padding: '3rem 1rem',
+    padding: '3rem',
     color: '#6b7280'
   },
   emptyIcon: {
     fontSize: '4rem',
     marginBottom: '1rem'
+  },
+  emptyText: {
+    fontSize: '1rem',
+    marginBottom: '1.5rem'
   }
 };
 
-// 添加旋转动画
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
+// 🎨 CSS Animation for spinner
+const styleSheet = document.styleSheets[0];
+styleSheet.insertRule(`
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
-`;
-document.head.appendChild(styleSheet);
+`, styleSheet.cssRules.length);
 
 export default SellerManagerDashboard;

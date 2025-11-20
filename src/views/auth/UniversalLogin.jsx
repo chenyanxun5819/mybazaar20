@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth } from '../../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
@@ -13,8 +13,8 @@ import { signInWithCustomToken } from 'firebase/auth';
  * 1. 从 URL 获取 orgEventCode (格式: orgCode-eventCode)
  * 2. 用户输入手机号和密码，进行初始验证
  * 3. 验证通过后，系统发送 OTP 验证码到手机
- * 4. 用户输入 OTP，验证成功后根据角色自动跳转到对应的 Dashboard
- * 5. 支持多角色用户选择进入哪个角色
+ * 4. 用户输入 OTP，验证成功后根据设备类型和角色优先级自动跳转
+ * 5. 不显示角色选择界面，直接进入最高优先级角色的Dashboard
  */
 const UniversalLogin = () => {
   const navigate = useNavigate();
@@ -30,15 +30,28 @@ const UniversalLogin = () => {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showRoleSelection, setShowRoleSelection] = useState(false);
-  const [userRoles, setUserRoles] = useState([]);
   const [userData, setUserData] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
   
   // SMS OTP 相关状态
   const [otpStep, setOtpStep] = useState(false); // false: 密码登录, true: OTP 验证
   const [otp, setOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0); // OTP 倒计时
+
+  // 检测设备类型
+  useEffect(() => {
+    const checkDeviceType = () => {
+      const width = window.innerWidth;
+      // 768px 以下认为是 phone
+      setIsMobile(width < 768);
+    };
+    
+    checkDeviceType();
+    window.addEventListener('resize', checkDeviceType);
+    
+    return () => window.removeEventListener('resize', checkDeviceType);
+  }, []);
 
   // 验证 orgEventCode 格式
   const isValidOrgEventCode = orgCode && eventCode;
@@ -205,6 +218,45 @@ const UniversalLogin = () => {
   };
 
   /**
+   * 根据设备类型过滤角色
+   */
+  const filterRolesByDevice = (roles) => {
+    if (isMobile) {
+      // Phone: 只显示 customer, seller, merchant
+      const phoneRoles = ['customer', 'seller', 'merchant'];
+      return roles.filter(role => phoneRoles.includes(role));
+    } else {
+      // Desktop: 只显示 eventManager, sellerManager, merchantManager, customerManager
+      const desktopRoles = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager'];
+      return roles.filter(role => desktopRoles.includes(role));
+    }
+  };
+
+  /**
+   * 获取优先级最高的角色
+   */
+  const getPriorityRole = (roles) => {
+    if (isMobile) {
+      // Phone 优先级: customer > seller > merchant
+      const priority = ['customer', 'seller', 'merchant'];
+      for (const role of priority) {
+        if (roles.includes(role)) {
+          return role;
+        }
+      }
+    } else {
+      // Desktop 优先级: eventManager > sellerManager > merchantManager > customerManager
+      const priority = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager'];
+      for (const role of priority) {
+        if (roles.includes(role)) {
+          return role;
+        }
+      }
+    }
+    return null;
+  };
+
+  /**
    * 验证 OTP - 第二步
    */
   const handleOtpVerify = async (e) => {
@@ -254,22 +306,29 @@ const UniversalLogin = () => {
       if (userData?.customToken) {
         await signInWithCustomToken(auth, userData.customToken);
 
+        // 根据设备类型过滤角色
+        const filteredRoles = filterRolesByDevice(userData.roles);
+        
+        if (filteredRoles.length === 0) {
+          throw new Error(`您在当前设备（${isMobile ? '手机' : '电脑'}）上没有可用的角色`);
+        }
+
+        // 获取优先级最高的角色
+        const priorityRole = getPriorityRole(filteredRoles);
+        
+        if (!priorityRole) {
+          throw new Error('无法确定要进入的角色');
+        }
+
         const baseInfo = {
           ...userData,
-          loginTime: new Date().toISOString()
+          loginTime: new Date().toISOString(),
+          availableRoles: filteredRoles, // 保存所有可用角色，供切换使用
+          currentRole: priorityRole
         };
 
-        // 🎯 处理角色跳转
-        if (userData.roles.length === 1) {
-          // 只有一个角色，直接跳转
-          handleRoleNavigation(userData.roles[0], baseInfo);
-        } else if (userData.roles.length > 1) {
-          // 多个角色，显示选择界面
-          setUserRoles(userData.roles);
-          setShowRoleSelection(true);
-        } else {
-          throw new Error('用户没有分配任何角色，请联系管理员');
-        }
+        // 🎯 直接跳转到优先级最高的角色
+        handleRoleNavigation(priorityRole, baseInfo);
       }
     } catch (error) {
       console.error('[UniversalLogin] OTP 验证错误:', error);
@@ -289,15 +348,6 @@ const UniversalLogin = () => {
     setError('');
     setOtpTimer(0);
     setUserData(null);
-  };
-
-  /**
-   * 处理角色选择后的跳转
-   */
-  const handleRoleSelection = (selectedRole) => {
-    if (userData) {
-      handleRoleNavigation(selectedRole, userData);
-    }
   };
 
   /**
@@ -331,89 +381,18 @@ const UniversalLogin = () => {
     // 保存当前角色信息到 localStorage
     const storageKey = storageKeys[role];
     if (storageKey) {
-      localStorage.setItem(storageKey, JSON.stringify({
-        ...userInfo,
-        currentRole: role
-      }));
+      localStorage.setItem(storageKey, JSON.stringify(userInfo));
     }
 
     // 跳转到对应的 Dashboard
     const route = roleRoutes[role];
     if (route) {
-      console.log('[UniversalLogin] 跳转到:', route, '角色:', role);
+      console.log('[UniversalLogin] 跳转到:', route, '角色:', role, '设备类型:', isMobile ? 'Mobile' : 'Desktop');
       navigate(route);
     } else {
       setError(`未知角色: ${role}`);
     }
   };
-
-  // 角色显示配置（驼峰式）
-  const roleConfig = {
-    'platformAdmin': { label: 'Platform Admin', icon: '🔧', color: '#ef4444' },
-    'eventManager': { label: 'Event Manager', icon: '🎯', color: '#667eea' },
-    'sellerManager': { label: 'Seller Manager', icon: '💰', color: '#f59e0b' },
-    'merchantManager': { label: 'Merchant Manager', icon: '🏪', color: '#8b5cf6' },
-    'customerManager': { label: 'Customer Manager', icon: '🎫', color: '#10b981' },
-    'seller': { label: 'Seller (销售员)', icon: '🛍️', color: '#06b6d4' },
-    'merchant': { label: 'Merchant (商家)', icon: '🏬', color: '#84cc16' },
-    'customer': { label: 'Customer (顾客)', icon: '👤', color: '#ec4899' }
-  };
-
-  // 如果显示角色选择界面
-  if (showRoleSelection) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.loginCard}>
-          <div style={styles.header}>
-            <div style={styles.logo}>🎭</div>
-            <h1 style={styles.title}>选择身份</h1>
-            <p style={styles.subtitle}>您有多个身份，请选择要使用的身份</p>
-          </div>
-
-          <div style={styles.roleGrid}>
-            {userRoles.map(role => {
-              const config = roleConfig[role] || { label: role, icon: '👤', color: '#6b7280' };
-              return (
-                <div
-                  key={role}
-                  style={{
-                    ...styles.roleCard,
-                    borderColor: config.color
-                  }}
-                  onClick={() => handleRoleSelection(role)}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = `0 8px 16px ${config.color}40`;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                  }}
-                >
-                  <div style={{ ...styles.roleIcon, color: config.color }}>
-                    {config.icon}
-                  </div>
-                  <div style={styles.roleLabel}>{config.label}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          <button
-            style={styles.backToLoginButton}
-            onClick={() => {
-              setShowRoleSelection(false);
-              setUserRoles([]);
-              setUserData(null);
-              setOtpStep(false);
-            }}
-          >
-            ← 返回登录
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // OTP 验证界面
   if (otpStep) {
@@ -512,6 +491,16 @@ const UniversalLogin = () => {
               <span>{orgCode.toUpperCase()}-{eventCode}</span>
             </div>
           )}
+          {/* 显示设备类型提示 */}
+          <div style={{
+            ...styles.eventBadge,
+            background: isMobile ? '#dbeafe' : '#fef3c7',
+            color: isMobile ? '#1e40af' : '#92400e',
+            marginTop: '0.5rem'
+          }}>
+            <span>{isMobile ? '📱' : '💻'}</span>
+            <span>{isMobile ? '手机模式' : '桌面模式'}</span>
+          </div>
         </div>
 
         {/* 无效链接提示 */}
@@ -705,31 +694,6 @@ const styles = {
     fontSize: '0.875rem',
     color: '#6b7280',
     margin: '0.5rem 0'
-  },
-  // 角色选择样式
-  roleGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '1rem',
-    marginBottom: '2rem'
-  },
-  roleCard: {
-    padding: '1.5rem',
-    border: '2px solid',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    textAlign: 'center',
-    background: 'white'
-  },
-  roleIcon: {
-    fontSize: '3rem',
-    marginBottom: '0.5rem'
-  },
-  roleLabel: {
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#374151'
   },
   backToLoginButton: {
     width: '100%',
