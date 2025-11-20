@@ -214,6 +214,13 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       if (selectedRoles.merchantManager) newRoles.push('merchantManager');
       if (selectedRoles.customerManager) newRoles.push('customerManager');
       
+      console.log('[UserManagement] 准备更新用户角色:', {
+        userId: selectedUser.id,
+        newRoles,
+        organizationId,
+        eventId
+      });
+      
       // 更新用户文档
       const userRef = doc(
         db,
@@ -227,8 +234,11 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         'accountStatus.lastUpdated': new Date()
       });
       
+      console.log('[UserManagement] 角色更新成功');
+      
       // 如果添加了 sellerManager 角色，初始化点数账户
       if (selectedRoles.sellerManager && !selectedUser.roles?.includes('sellerManager')) {
+        console.log('[UserManagement] 初始化 Seller Manager 点数账户');
         await updateDoc(userRef, {
           'sellerManager.totalPoints': 0,
           'sellerManager.allocatedPoints': 0,
@@ -243,8 +253,22 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       if (onUpdate) onUpdate();
       
     } catch (error) {
-      console.error('❌ 角色分配失败:', error);
-      alert('角色分配失败: ' + error.message);
+      console.error('[UserManagement] ❌ 角色分配失败:', error);
+      console.error('[UserManagement] 错误代码:', error.code);
+      console.error('[UserManagement] 错误信息:', error.message);
+      console.error('[UserManagement] 完整错误:', JSON.stringify(error, null, 2));
+      
+      // 根据错误类型提供更详细的提示
+      let errorMsg = error.message;
+      if (error.code === 'permission-denied') {
+        errorMsg = '权限不足：无法更新用户角色。请检查 Firestore 安全规则配置。';
+      } else if (error.code === 'not-found') {
+        errorMsg = '用户文档不存在：无法找到该用户。';
+      } else if (error.code === 'invalid-argument') {
+        errorMsg = '参数错误：请检查输入数据。';
+      }
+      
+      alert('角色分配失败: ' + errorMsg);
     } finally {
       setIsProcessing(false);
     }
@@ -277,6 +301,14 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     try {
       setIsProcessing(true);
       
+      console.log('[UserManagement] 准备分配点数:', {
+        userId: selectedUser.id,
+        points,
+        note: pointsNote,
+        organizationId,
+        eventId
+      });
+      
       // 创建交易记录
       const transaction = {
         type: 'allocation',
@@ -302,20 +334,36 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         'accountStatus.lastUpdated': new Date()
       });
       
+      console.log('[UserManagement] 用户点数更新成功');
+      
       // 更新活动的已分配资本
       const eventRef = doc(db, 'organizations', organizationId, 'events', eventId);
       await updateDoc(eventRef, {
         'settings.allocatedCapital': increment(points)
       });
       
+      console.log('[UserManagement] 活动已分配资本更新成功');
+      
       alert(`成功分配 RM ${points.toLocaleString()} 给 ${selectedUser.basicInfo?.englishName}`);
       setShowPointsModal(false);
+      setPointsAmount('');
+      setPointsNote('');
       fetchData(); // 刷新数据
       if (onUpdate) onUpdate();
       
     } catch (error) {
-      console.error('❌ 点数分配失败:', error);
-      alert('点数分配失败: ' + error.message);
+      console.error('[UserManagement] ❌ 点数分配失败:', error);
+      console.error('[UserManagement] 错误代码:', error.code);
+      console.error('[UserManagement] 错误信息:', error.message);
+      
+      let errorMsg = error.message;
+      if (error.code === 'permission-denied') {
+        errorMsg = '权限不足：无法更新点数。请检查 Firestore 安全规则配置。';
+      } else if (error.code === 'not-found') {
+        errorMsg = '用户或活动文档不存在。';
+      }
+      
+      alert('点数分配失败: ' + errorMsg);
     } finally {
       setIsProcessing(false);
     }
@@ -425,78 +473,76 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
               <p>😕 没有找到符合条件的用户</p>
             </div>
           ) : (
-            <div style={styles.userGrid}>
-              {filteredUsers.map(user => (
-                <div key={user.id} style={styles.userCard}>
-                  
-                  {/* 用户基本信息 */}
-                  <div style={styles.userInfo}>
-                    <div style={styles.userName}>
-                      {user.basicInfo?.englishName || '未知'}
-                      {user.basicInfo?.chineseName && (
-                        <span style={styles.userNameChinese}>
-                          ({user.basicInfo.chineseName})
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div style={styles.userDetails}>
-                      {user.basicInfo?.phoneNumber && (
-                        <div>📱 {user.basicInfo.phoneNumber}</div>
-                      )}
-                      {user.identityInfo?.identityId && (
-                        <div>🆔 {user.identityInfo.identityId}</div>
-                      )}
-                      {user.identityInfo?.department && (
-                        <div>🏢 {user.identityInfo.department}</div>
-                      )}
-                    </div>
-
-                    {/* 当前管理员角色 */}
-                    {hasManagerRole(user) && (
-                      <div style={styles.currentRoles}>
-                        {getManagerRoleBadges(user)}
-                      </div>
-                    )}
-
-                    {/* Seller Manager 点数信息 */}
-                    {user.roles?.includes('sellerManager') && (
-                      <div style={styles.pointsInfo}>
-                        <div style={styles.pointsItem}>
-                          <span>总点数:</span>
-                          <span style={styles.pointsValue}>
-                            RM {(user.sellerManager?.totalPoints || 0).toLocaleString()}
-                          </span>
-                        </div>
-                        {user.sellerManager?.transactions?.length > 0 && (
-                          <div style={styles.lastTransaction}>
-                            最后更新: {formatDate(user.sellerManager.transactions[user.sellerManager.transactions.length - 1].timestamp)}
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeaderRow}>
+                    <th style={styles.tableHeaderCell}>姓名</th>
+                    <th style={styles.tableHeaderCell}>手机号</th>
+                    <th style={styles.tableHeaderCell}>身份证/工号</th>
+                    <th style={styles.tableHeaderCell}>部门</th>
+                    <th style={styles.tableHeaderCell}>当前角色</th>
+                    <th style={styles.tableHeaderCell}>Seller Manager 点数</th>
+                    <th style={styles.tableHeaderCell}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user, index) => (
+                    <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
+                      <td style={styles.tableCell}>
+                        <strong>{user.basicInfo?.englishName || '未知'}</strong>
+                        {user.basicInfo?.chineseName && (
+                          <div style={{fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem'}}>
+                            {user.basicInfo.chineseName}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 操作按钮 */}
-                  <div style={styles.userActions}>
-                    <button
-                      onClick={() => openRoleModal(user)}
-                      style={styles.actionButton}
-                    >
-                      🎭 管理角色
-                    </button>
-                    
-                    {user.roles?.includes('sellerManager') && (
-                      <button
-                        onClick={() => openPointsModal(user)}
-                        style={{...styles.actionButton, ...styles.pointsButton}}
-                      >
-                        💰 分配点数
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                      </td>
+                      <td style={styles.tableCell}>{user.basicInfo?.phoneNumber || '-'}</td>
+                      <td style={styles.tableCell}>{user.identityInfo?.identityId || '-'}</td>
+                      <td style={styles.tableCell}>{user.identityInfo?.department || '-'}</td>
+                      <td style={styles.tableCell}>
+                        <div style={styles.rolesBadgeContainer}>
+                          {hasManagerRole(user) ? getManagerRoleBadges(user) : <span style={{color: '#9ca3af'}}>-</span>}
+                        </div>
+                      </td>
+                      <td style={styles.tableCell}>
+                        {user.roles?.includes('sellerManager') ? (
+                          <div>
+                            <div style={{fontWeight: '600', color: '#10b981'}}>
+                              RM {(user.sellerManager?.totalPoints || 0).toLocaleString()}
+                            </div>
+                            {user.sellerManager?.transactions?.length > 0 && (
+                              <div style={{fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem'}}>
+                                {formatDate(user.sellerManager.transactions[user.sellerManager.transactions.length - 1].timestamp)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{color: '#9ca3af'}}>-</span>
+                        )}
+                      </td>
+                      <td style={styles.tableCell}>
+                        <div style={styles.actionButtonsContainer}>
+                          <button
+                            onClick={() => openRoleModal(user)}
+                            style={styles.tableActionButton}
+                          >
+                            🎭 角色
+                          </button>
+                          {user.roles?.includes('sellerManager') && (
+                            <button
+                              onClick={() => openPointsModal(user)}
+                              style={{...styles.tableActionButton, backgroundColor: '#10b981'}}
+                            >
+                              💰 点数
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -727,6 +773,58 @@ const styles = {
     flex: 1,
     overflow: 'auto',
     padding: '2rem'
+  },
+  tableWrapper: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  tableHeaderRow: {
+    background: '#f9fafb',
+    borderBottom: '2px solid #e5e7eb'
+  },
+  tableHeaderCell: {
+    padding: '1rem',
+    textAlign: 'left',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151',
+    borderRight: '1px solid #e5e7eb'
+  },
+  tableRow: {
+    borderBottom: '1px solid #e5e7eb',
+    transition: 'background-color 0.2s'
+  },
+  tableCell: {
+    padding: '1rem',
+    textAlign: 'left',
+    fontSize: '0.875rem',
+    color: '#1f2937',
+    borderRight: '1px solid #e5e7eb'
+  },
+  rolesBadgeContainer: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap'
+  },
+  actionButtonsContainer: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap'
+  },
+  tableActionButton: {
+    padding: '0.5rem 0.75rem',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    whiteSpace: 'nowrap'
   },
   userGrid: {
     display: 'grid',
