@@ -85,8 +85,9 @@ const SellerManagerDashboard = () => {
       const info = JSON.parse(storedInfo);
       console.log('[Dashboard] 加载用户信息:', info);
       
-      // 验证角色（驼峰式）
-      if (!info.roles?.includes('sellerManager')) {
+      // 验证角色（检查 availableRoles，这是已转换为驼峰式的）
+      if (!info.availableRoles?.includes('sellerManager')) {
+        console.warn('[Dashboard] 没有 Seller Manager 权限，availableRoles:', info.availableRoles);
         alert('您没有 Seller Manager 权限');
         navigate(`/login/${orgEventCode}`);
         return;
@@ -160,23 +161,97 @@ const SellerManagerDashboard = () => {
         'users'
       );
 
-      // 查询所有 seller 角色且由当前 Seller Manager 管理的用户
-      const q = query(
-        usersRef,
-        where('roles', 'array-contains', 'seller'),
-        where('managedBy', '==', userInfo.userId),
-        orderBy('createdAt', 'desc')
-      );
+      let sellersList = [];
 
-      const snapshot = await getDocs(q);
-      const sellersList = [];
+      try {
+        // 🔍 策略1：尝试使用复合查询（需要 Firestore 索引）
+        console.log('[Dashboard] 尝试复合查询 (roles + managedBy + orderBy)...');
+        const q = query(
+          usersRef,
+          where('roles', 'array-contains', 'seller'),
+          where('managedBy', '==', userInfo.userId),
+          orderBy('createdAt', 'desc')
+        );
 
-      snapshot.forEach(doc => {
-        sellersList.push({
-          id: doc.id,
-          ...doc.data()
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => {
+          sellersList.push({
+            id: doc.id,
+            ...doc.data()
+          });
         });
-      });
+
+        console.log('[Dashboard] ✅ 复合查询成功，Sellers:', sellersList.length);
+
+      } catch (indexError) {
+        console.warn('[Dashboard] ⚠️ 复合查询失败，尝试备选方案 1...');
+        
+        try {
+          // 🔍 策略2：查询 managedBy，再在内存中过滤 seller 角色
+          console.log('[Dashboard] 尝试查询 (managedBy only)...');
+          const q = query(
+            usersRef,
+            where('managedBy', '==', userInfo.userId)
+          );
+
+          const snapshot = await getDocs(q);
+          const tempList = [];
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            tempList.push({
+              id: doc.id,
+              ...data
+            });
+          });
+
+          // 在内存中过滤出 seller 角色，并按 createdAt 排序
+          sellersList = tempList
+            .filter(item => item.roles?.includes('seller'))
+            .sort((a, b) => {
+              const timeA = a.createdAt?.getTime?.() || 0;
+              const timeB = b.createdAt?.getTime?.() || 0;
+              return timeB - timeA;
+            });
+
+          console.log('[Dashboard] ✅ 备选方案 1 成功，Sellers:', sellersList.length);
+
+        } catch (fallback1Error) {
+          console.warn('[Dashboard] ⚠️ 备选方案 1 失败，尝试备选方案 2...');
+          
+          try {
+            // 🔍 策略3：获取所有用户，在内存中过滤（最后的手段）
+            console.log('[Dashboard] 尝试查询所有用户并在内存过滤...');
+            const snapshot = await getDocs(usersRef);
+            const tempList = [];
+            snapshot.forEach(doc => {
+              const data = doc.data();
+              tempList.push({
+                id: doc.id,
+                ...data
+              });
+            });
+
+            // 在内存中过滤：seller 角色 + 由当前 Seller Manager 管理
+            sellersList = tempList
+              .filter(item => 
+                item.roles?.includes('seller') && 
+                item.managedBy === userInfo.userId
+              )
+              .sort((a, b) => {
+                const timeA = a.createdAt?.getTime?.() || 0;
+                const timeB = b.createdAt?.getTime?.() || 0;
+                return timeB - timeA;
+              });
+
+            console.log('[Dashboard] ✅ 备选方案 2 成功，Sellers:', sellersList.length);
+
+          } catch (fallback2Error) {
+            console.error('[Dashboard] ❌ 所有查询方案都失败:', fallback2Error.message);
+            alert('加载 Sellers 失败，请稍后重试');
+            throw fallback2Error;
+          }
+        }
+      }
 
       setSellers(sellersList);
       
@@ -186,11 +261,11 @@ const SellerManagerDashboard = () => {
         totalSellersManaged: sellersList.length
       }));
 
-      console.log('[Dashboard] Sellers 加载成功:', sellersList.length);
+      console.log('[Dashboard] ✅ Sellers 加载成功:', sellersList.length);
 
     } catch (error) {
-      console.error('[Dashboard] 加载 Sellers 失败:', error);
-      alert('加载 Sellers 失败: ' + error.message);
+      console.error('[Dashboard] ❌ 加载 Sellers 失败:', error);
+      setSellers([]);
     } finally {
       setLoadingSellers(false);
     }

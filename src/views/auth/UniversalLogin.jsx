@@ -322,6 +322,7 @@ const UniversalLogin = () => {
 
         const baseInfo = {
           ...userData,
+          roles: filteredRoles, // ✨ 使用转换后的驼峰式角色列表
           loginTime: new Date().toISOString(),
           availableRoles: filteredRoles, // 保存所有可用角色，供切换使用
           currentRole: priorityRole
