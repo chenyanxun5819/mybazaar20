@@ -8,20 +8,17 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     englishName: '',
     chineseName: '',
     email: '',
-    identityTag: '', // ✨ 不再设置默认值，改为动态选择
-    identityId: '', // ✨ 新增：工号或学号
-    department: '' // ✨ 新增：部门
+    identityTag: '',
+    identityId: ''
   });
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // ✨ 从 Organization 获取可用的身份标签
   const availableIdentityTags = organization.identityTags
     ?.filter(tag => tag.isActive)
     ?.sort((a, b) => a.displayOrder - b.displayOrder) || [];
 
-  // ✨ 设置默认值为第一个可用标签
   if (!formData.identityTag && availableIdentityTags.length > 0) {
     formData.identityTag = availableIdentityTags[0].id;
   }
@@ -95,8 +92,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           chineseName: formData.chineseName,
           email: formData.email,
           identityTag: formData.identityTag,
-          identityId: formData.identityId,
-          department: formData.department
+          identityId: formData.identityId
         })
       });
 
@@ -185,7 +181,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           </div>
         </div>
 
-        {/* ✨ 检查是否有可用的身份标签 */}
+        {/* 检查是否有可用的身份标签 */}
         {availableIdentityTags.length === 0 && (
           <div style={styles.warningBox}>
             ⚠️ <strong>警告：</strong>此组织还没有设置身份标签。
@@ -293,7 +289,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
             <label style={styles.label}>
               身份标签 <span style={styles.required}>*</span>
             </label>
-            {/* ✨ 动态生成选项 */}
+            {/* 动态生成选项 */}
             <select
               name="identityTag"
               value={formData.identityTag}
@@ -312,21 +308,6 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
               )}
             </select>
             <small style={styles.hint}>Event Manager 必须是组织成员</small>
-          </div>
-
-          {/* ✨ 新增：部门字段 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>部门</label>
-            <input
-              type="text"
-              name="department"
-              value={formData.department}
-              onChange={handleChange}
-              placeholder="例如：市场部、销售部、技术部"
-              style={styles.input}
-              disabled={submitting}
-            />
-            <small style={styles.hint}>Event Manager 所属部门（可选）</small>
           </div>
 
           {error && (
@@ -422,7 +403,6 @@ const styles = {
     marginBottom: '0.5rem',
     fontSize: '0.875rem'
   },
-  // ✨ 新增样式：警告框
   warningBox: {
     background: '#fef3c7',
     border: '1px solid #fbbf24',
