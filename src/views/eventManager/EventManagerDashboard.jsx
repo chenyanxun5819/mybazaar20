@@ -25,6 +25,7 @@ const EventManagerDashboard = () => {
   const [showBatchImport, setShowBatchImport] = useState(false); // 🆕 批量导入
   const [statistics, setStatistics] = useState({
     totalUsers: 0,
+    totalEventManagers: 0,
     totalSellerManagers: 0,
     totalMerchantManagers: 0,
     totalCustomerManagers: 0,
@@ -87,6 +88,7 @@ const EventManagerDashboard = () => {
 
         let stats = {
           totalUsers: usersSnapshot.size,
+          totalEventManagers: 0,
           totalSellerManagers: 0,
           totalMerchantManagers: 0,
           totalCustomerManagers: 0,
@@ -105,6 +107,7 @@ const EventManagerDashboard = () => {
             ...userData
           });
 
+          if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
           if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
           if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
           if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
@@ -138,13 +141,19 @@ const EventManagerDashboard = () => {
       let aVal = a[sortConfig.key];
       let bVal = b[sortConfig.key];
 
-      // 处理嵌套字段（如 basicInfo.englishName）
-      if (sortConfig.key === 'englishName') {
-        aVal = a.basicInfo?.englishName || '';
-        bVal = b.basicInfo?.englishName || '';
+      // 处理嵌套字段
+      if (sortConfig.key === 'chineseName') {
+        aVal = a.basicInfo?.chineseName || '';
+        bVal = b.basicInfo?.chineseName || '';
       } else if (sortConfig.key === 'department') {
-        aVal = a.departmentInfo?.departmentName?.['zh-CN'] || '';
-        bVal = b.departmentInfo?.departmentName?.['zh-CN'] || '';
+        aVal = a.identityInfo?.department || '';
+        bVal = b.identityInfo?.department || '';
+      } else if (sortConfig.key === 'identityId') {
+        aVal = a.identityInfo?.identityId || '';
+        bVal = b.identityInfo?.identityId || '';
+      } else if (sortConfig.key === 'identityTag') {
+        aVal = a.identityTag?.value || '';
+        bVal = b.identityTag?.value || '';
       }
 
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -230,6 +239,12 @@ const EventManagerDashboard = () => {
           color="#667eea"
         />
         <StatCard
+          title="Event Managers"
+          value={statistics.totalEventManagers}
+          icon="🎯"
+          color="#7c3aed"
+        />
+        <StatCard
           title="Seller Managers"
           value={statistics.totalSellerManagers}
           icon="💰"
@@ -312,104 +327,116 @@ const EventManagerDashboard = () => {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeaderRow}>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('englishName')}>
-                    姓名 {sortConfig.key === 'englishName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  <th style={styles.tableCell}>序号</th>
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('chineseName')}>
+                    姓名 {sortConfig.key === 'chineseName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th style={styles.tableCell}>手机号</th>
-                  <th style={styles.tableCell}>邮箱</th>
+                  <th style={styles.tableCell}>电话</th>
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('identityTag')}>
+                    身份标签 {sortConfig.key === 'identityTag' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('department')}>
                     部门 {sortConfig.key === 'department' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th style={styles.tableCell}>学号/工号</th>
-                  <th style={styles.tableCell}>身份</th>
-                  <th style={styles.tableCell}>角色</th>
-                  <th style={styles.tableCell}>状态</th>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('createdAt')}>
-                    创建时间 {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('identityId')}>
+                    身份ID {sortConfig.key === 'identityId' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                   </th>
+                  <th style={styles.tableCell}>角色</th>
                 </tr>
               </thead>
               <tbody>
-                {getPaginatedUsers().map((user, index) => (
-                  <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
-                    <td style={styles.tableCell}>
-                      <strong>{user.basicInfo?.englishName || '-'}</strong>
-                      {user.basicInfo?.chineseName && (
-                        <div style={{fontSize: '0.75rem', color: '#6b7280'}}>
-                          {user.basicInfo.chineseName}
+                {getPaginatedUsers().map((user, index) => {
+                  // 计算全局序号（考虑分页）
+                  const globalIndex = (currentPage - 1) * pageSize + index + 1;
+                  
+                  return (
+                    <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
+                      <td style={styles.tableCell}>{globalIndex}</td>
+                      <td style={styles.tableCell}>
+                        <div>
+                          <strong>{user.basicInfo?.chineseName || '-'}</strong>
+                          {user.basicInfo?.englishName && (
+                            <div style={{fontSize: '0.75rem', color: '#6b7280'}}>
+                              {user.basicInfo.englishName}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td style={styles.tableCell}>{user.phoneNumber || '-'}</td>
-                    <td style={styles.tableCell}>{user.email || '-'}</td>
-                    <td style={styles.tableCell}>
-                      {user.departmentInfo?.departmentName?.['zh-CN'] || '-'}
-                    </td>
-                    <td style={styles.tableCell}>{user.studentId || user.employeeId || '-'}</td>
-                    <td style={styles.tableCell}>
-                      <span style={{
-                        ...styles.badge,
-                        backgroundColor: user.identity === 'student' ? '#dbeafe' : '#fef3c7',
-                        color: user.identity === 'student' ? '#1e40af' : '#92400e'
-                      }}>
-                        {user.identity === 'student' ? '学生' : user.identity === 'employee' ? '员工' : '-'}
-                      </span>
-                    </td>
-                    <td style={styles.tableCell}>
-                      <div style={styles.rolesContainer}>
-                        {user.roles?.map(role => {
-                          const roleLabels = {
-                            'sellerManager': 'SM',
-                            'merchantManager': 'MM',
-                            'customerManager': 'CM',
-                            'seller': 'S',
-                            'merchant': 'M',
-                            'customer': 'C'
-                          };
-                          const roleColors = {
-                            'sellerManager': '#10b981',
-                            'merchantManager': '#f59e0b',
-                            'customerManager': '#ec4899',
-                            'seller': '#06b6d4',
-                            'merchant': '#84cc16',
-                            'customer': '#8b5cf6'
-                          };
-                          return (
-                            <span
-                              key={role}
-                              style={{
-                                ...styles.roleBadge,
-                                backgroundColor: `${roleColors[role]}20`,
-                                color: roleColors[role]
-                              }}
-                            >
-                              {roleLabels[role] || role}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td style={styles.tableCell}>
-                      <span style={{
-                        ...styles.badge,
-                        backgroundColor: user.status === 'active' ? '#d1fae5' : '#fee2e2',
-                        color: user.status === 'active' ? '#065f46' : '#991b1b'
-                      }}>
-                        {user.status === 'active' ? '活跃' : '停用'}
-                      </span>
-                    </td>
-                    <td style={styles.tableCell}>
-                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString('zh-CN') : '-'}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={styles.tableCell}>
+                        {user.basicInfo?.phoneNumber || '-'}
+                      </td>
+                      <td style={styles.tableCell}>
+                        <span style={{
+                          ...styles.badge,
+                          backgroundColor: 
+                            user.identityTag?.value === 'student' ? '#dbeafe' : 
+                            user.identityTag?.value === 'teacher' ? '#d1fae5' :
+                            user.identityTag?.value === 'staff' ? '#fef3c7' :
+                            user.identityTag?.value === 'board' ? '#e9d5ff' : '#f3f4f6',
+                          color: 
+                            user.identityTag?.value === 'student' ? '#1e40af' : 
+                            user.identityTag?.value === 'teacher' ? '#065f46' :
+                            user.identityTag?.value === 'staff' ? '#92400e' :
+                            user.identityTag?.value === 'board' ? '#6b21a8' : '#374151'
+                        }}>
+                          {user.identityInfo?.identityName || user.identityTag?.value || '-'}
+                        </span>
+                      </td>
+                      <td style={styles.tableCell}>
+                        {user.identityInfo?.department || '-'}
+                      </td>
+                      <td style={styles.tableCell}>
+                        {user.identityInfo?.identityId || '-'}
+                      </td>
+                      <td style={styles.tableCell}>
+                        <div style={styles.rolesContainer}>
+                          {user.roles && user.roles.length > 0 ? user.roles.map(role => {
+                            const roleLabels = {
+                              'eventManager': 'EM',
+                              'sellerManager': 'SM',
+                              'merchantManager': 'MM',
+                              'customerManager': 'CM',
+                              'seller': 'S',
+                              'merchant': 'M',
+                              'customer': 'C'
+                            };
+                            const roleColors = {
+                              'eventManager': '#7c3aed',
+                              'sellerManager': '#10b981',
+                              'merchantManager': '#f59e0b',
+                              'customerManager': '#ec4899',
+                              'seller': '#06b6d4',
+                              'merchant': '#84cc16',
+                              'customer': '#8b5cf6'
+                            };
+                            return (
+                              <span
+                                key={role}
+                                style={{
+                                  ...styles.roleBadge,
+                                  backgroundColor: `${roleColors[role] || '#6b7280'}20`,
+                                  color: roleColors[role] || '#6b7280'
+                                }}
+                              >
+                                {roleLabels[role] || role}
+                              </span>
+                            );
+                          }) : '-'}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
           <div style={styles.emptyState}>
-            <p style={styles.emptyText}>暂无用户数据</p>
-            <button style={styles.primaryButton} onClick={() => setShowAddUser(true)}>
+            <div style={styles.emptyText}>📭 暂无用户</div>
+            <button
+              style={styles.secondaryButton}
+              onClick={() => setShowAddUser(true)}
+            >
               创建第一个用户
             </button>
           </div>
@@ -419,33 +446,79 @@ const EventManagerDashboard = () => {
         {users.length > 0 && totalPages > 1 && (
           <div style={styles.paginationNav}>
             <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              style={{
+                ...styles.paginationButton,
+                opacity: currentPage === 1 ? 0.5 : 1,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+              onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              style={{...styles.paginationButton, opacity: currentPage === 1 ? 0.5 : 1}}
             >
-              ← 上一页
+              首页
             </button>
-            <div style={styles.pageIndicator}>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  style={{
-                    ...styles.pageNumber,
-                    backgroundColor: page === currentPage ? '#667eea' : '#f3f4f6',
-                    color: page === currentPage ? 'white' : '#374151'
-                  }}
-                >
-                  {page}
-                </button>
-              ))}
-            </div>
             <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages}
-              style={{...styles.paginationButton, opacity: currentPage === totalPages ? 0.5 : 1}}
+              style={{
+                ...styles.paginationButton,
+                opacity: currentPage === 1 ? 0.5 : 1,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
             >
-              下一页 →
+              上一页
+            </button>
+
+            <div style={styles.pageIndicator}>
+              {(() => {
+                const pages = [];
+                const maxVisible = 5;
+                let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                let end = Math.min(totalPages, start + maxVisible - 1);
+                
+                if (end - start < maxVisible - 1) {
+                  start = Math.max(1, end - maxVisible + 1);
+                }
+
+                for (let i = start; i <= end; i++) {
+                  pages.push(
+                    <button
+                      key={i}
+                      style={{
+                        ...styles.pageNumber,
+                        backgroundColor: i === currentPage ? '#667eea' : '#e5e7eb',
+                        color: i === currentPage ? 'white' : '#374151'
+                      }}
+                      onClick={() => setCurrentPage(i)}
+                    >
+                      {i}
+                    </button>
+                  );
+                }
+                return pages;
+              })()}
+            </div>
+
+            <button
+              style={{
+                ...styles.paginationButton,
+                opacity: currentPage === totalPages ? 0.5 : 1,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              下一页
+            </button>
+            <button
+              style={{
+                ...styles.paginationButton,
+                opacity: currentPage === totalPages ? 0.5 : 1,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              末页
             </button>
           </div>
         )}
@@ -458,9 +531,8 @@ const EventManagerDashboard = () => {
           eventId={eventId}
           onClose={() => {
             setShowAddUser(false);
-            loadDashboardData();
+            loadDashboardData(); // 重新加载数据
           }}
-          currentUserRole="eventManager"
         />
       )}
 
@@ -472,18 +544,6 @@ const EventManagerDashboard = () => {
             setShowBatchImport(false);
             loadDashboardData();
           }}
-          currentUserRole="eventManager"
-        />
-      )}
-
-      {showUserManagement && (
-        <UserManagement
-          organizationId={organizationId}
-          eventId={eventId}
-          onClose={() => {
-            setShowUserManagement(false);
-            loadDashboardData();
-          }}
         />
       )}
 
@@ -493,6 +553,17 @@ const EventManagerDashboard = () => {
           eventId={eventId}
           onClose={() => {
             setShowDepartmentManagement(false);
+            loadDashboardData();
+          }}
+        />
+      )}
+
+      {showUserManagement && (
+        <UserManagement
+          organizationId={organizationId}
+          eventId={eventId}
+          onClose={() => {
+            setShowUserManagement(false);
             loadDashboardData();
           }}
         />
