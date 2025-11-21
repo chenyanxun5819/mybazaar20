@@ -1,24 +1,55 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
-import AssignEventManager from './AssignEventManager';
-import { auth } from '../../config/firebase';
-import { signOut } from 'firebase/auth';
-import { useNavigate } from 'react-router-dom';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where, deleteDoc, getDoc } from 'firebase/firestore';
+import { Table, Button, Space, Card, Modal, Form, Input, Select, message, Spin } from 'antd';
+import { useParams, useNavigate } from 'react-router-dom';
 
-const PlatformDashboard = () => {
-  const [organizations, setOrganizations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreateOrg, setShowCreateOrg] = useState(false);
-  const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [showAssignManager, setShowAssignManager] = useState(false);
-  const [selectedOrg, setSelectedOrg] = useState(null);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const navigate = useNavigate();  // ← 新增
+const { Option } = Select;
+
+// 根據 identityTag 獲取中文身份名稱
+const getIdentityName = (identityTag) => {
+  const identityMap = {
+    'staff': '教職工',
+    'student': '學生',
+    'teacher': '教師',
+    'admin': '管理員',
+  };
+  return identityMap[identityTag] || identityTag;
+};
+
+// 根據 identityTag 獲取英文身份名稱
+const getIdentityNameEn = (identityTag) => {
+  const identityMap = {
+    'staff': 'Staff',
+    'student': 'Student',
+    'teacher': 'Teacher',
+    'admin': 'Admin',
+  };
+  return identityMap[identityTag] || identityTag;
+};
+
+function PlatformDashboard() {
+  const { organizationId } = useParams();
+  const navigate = useNavigate();
+
+  const [organization, setOrganization] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+
+  const [addForm] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   useEffect(() => {
-    loadOrganizations();
-  }, []);
+    if (organizationId) {
+      fetchOrganization();
+      fetchEvents();
+      fetchUsers();
+    }
+  }, [organizationId]);
 
   const loadOrganizations = async () => {
     try {
