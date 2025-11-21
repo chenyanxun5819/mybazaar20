@@ -9,8 +9,11 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     chineseName: '',
     email: '',
     identityTag: '',
-    identityId: ''
+    identityId: '',
+    department: ''
   });
+    // 部門選項（根據 organization.departments）
+    const availableDepartments = organization.departments?.filter(dep => dep.isActive) || [];
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -34,7 +37,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
 
   const validateForm = () => {
     // 验证必填字段
-    if (!formData.phoneNumber || !formData.password || !formData.englishName || !formData.identityTag) {
+    if (!formData.phoneNumber || !formData.password || !formData.englishName || !formData.identityTag || !formData.department) {
       setError('请填写所有必填字段');
       return false;
     }
@@ -92,7 +95,9 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           chineseName: formData.chineseName,
           email: formData.email,
           identityTag: formData.identityTag,
-          identityId: formData.identityId
+          identityId: formData.identityId,
+          department: formData.department,
+          roles: ['eventManager']
         })
       });
 
@@ -206,6 +211,23 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
               maxLength="11"
             />
             <small style={styles.hint}>马来西亚手机号，01开头</small>
+          </div>
+
+          {/* 部門輸入欄位 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              部门 <span style={styles.required}>*</span>
+            </label>
+            <input
+              type="text"
+              name="department"
+              value={formData.department}
+              onChange={handleChange}
+              placeholder="请输入部门名称"
+              style={styles.input}
+              disabled={submitting}
+            />
+            <small style={styles.hint}>请填写 Event Manager 所属部门（如无可填“无”）</small>
           </div>
 
           <div style={styles.formGroup}>

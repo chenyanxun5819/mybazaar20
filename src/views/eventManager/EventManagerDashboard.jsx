@@ -37,6 +37,9 @@ const EventManagerDashboard = () => {
   const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
   const [users, setUsers] = useState([]); // 用户列表（表格显示）
   const [showUserTable, setShowUserTable] = useState(true); // 默认显示用户表格
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' }); // 排序配置
+  const [currentPage, setCurrentPage] = useState(1); // 当前页码
+  const [pageSize, setPageSize] = useState(50); // 每页显示条数
 
   useEffect(() => {
     loadDashboardData();
@@ -102,9 +105,9 @@ const EventManagerDashboard = () => {
             ...userData
           });
 
-          if (userData.roles?.includes('seller_manager')) stats.totalSellerManagers++;
-          if (userData.roles?.includes('merchant_manager')) stats.totalMerchantManagers++;
-          if (userData.roles?.includes('customer_manager')) stats.totalCustomerManagers++;
+          if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
+          if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
+          if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
           if (userData.roles?.includes('seller')) stats.totalSellers++;
           if (userData.roles?.includes('merchant')) stats.totalMerchants++;
           if (userData.roles?.includes('customer')) stats.totalCustomers++;
@@ -120,6 +123,44 @@ const EventManagerDashboard = () => {
       setLoading(false);
     }
   };
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+    setCurrentPage(1); // 重置分页
+  };
+
+  const getSortedUsers = () => {
+    const sorted = [...users].sort((a, b) => {
+      let aVal = a[sortConfig.key];
+      let bVal = b[sortConfig.key];
+
+      // 处理嵌套字段（如 basicInfo.englishName）
+      if (sortConfig.key === 'englishName') {
+        aVal = a.basicInfo?.englishName || '';
+        bVal = b.basicInfo?.englishName || '';
+      } else if (sortConfig.key === 'department') {
+        aVal = a.departmentInfo?.departmentName?.['zh-CN'] || '';
+        bVal = b.departmentInfo?.departmentName?.['zh-CN'] || '';
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  };
+
+  const getPaginatedUsers = () => {
+    const sorted = getSortedUsers();
+    const startIndex = (currentPage - 1) * pageSize;
+    return sorted.slice(startIndex, startIndex + pageSize);
+  };
+
+  const totalPages = Math.ceil(users.length / pageSize);
 
   const handleLogout = async () => {
     try {
@@ -241,28 +282,55 @@ const EventManagerDashboard = () => {
         <div style={styles.tableHeader}>
           <h2 style={styles.sectionTitle}>用户管理</h2>
           <div style={styles.tableStats}>
-            共 <strong>{users.length}</strong> 个用户
+            共 <strong>{users.length}</strong> 个用户（第 <strong>{currentPage}</strong> / <strong>{totalPages}</strong> 页）
           </div>
         </div>
+
+        {/* 分页控制 */}
+        {users.length > 0 && (
+          <div style={styles.paginationControl}>
+            <div style={styles.pageSizeControl}>
+              <label style={styles.pageSizeLabel}>每页显示:</label>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value));
+                  setCurrentPage(1);
+                }}
+                style={styles.pageSizeSelect}
+              >
+                <option value={30}>30人</option>
+                <option value={50}>50人</option>
+                <option value={100}>100人</option>
+              </select>
+            </div>
+          </div>
+        )}
 
         {users.length > 0 ? (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeaderRow}>
-                  <th style={styles.tableCell}>姓名</th>
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('englishName')}>
+                    姓名 {sortConfig.key === 'englishName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th style={styles.tableCell}>手机号</th>
                   <th style={styles.tableCell}>邮箱</th>
-                  <th style={styles.tableCell}>部门</th>
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('department')}>
+                    部门 {sortConfig.key === 'department' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th style={styles.tableCell}>学号/工号</th>
                   <th style={styles.tableCell}>身份</th>
                   <th style={styles.tableCell}>角色</th>
                   <th style={styles.tableCell}>状态</th>
-                  <th style={styles.tableCell}>创建时间</th>
+                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('createdAt')}>
+                    创建时间 {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user, index) => (
+                {getPaginatedUsers().map((user, index) => (
                   <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
                     <td style={styles.tableCell}>
                       <strong>{user.basicInfo?.englishName || '-'}</strong>
@@ -291,17 +359,17 @@ const EventManagerDashboard = () => {
                       <div style={styles.rolesContainer}>
                         {user.roles?.map(role => {
                           const roleLabels = {
-                            'seller_manager': 'SM',
-                            'merchant_manager': 'MM',
-                            'customer_manager': 'CM',
+                            'sellerManager': 'SM',
+                            'merchantManager': 'MM',
+                            'customerManager': 'CM',
                             'seller': 'S',
                             'merchant': 'M',
                             'customer': 'C'
                           };
                           const roleColors = {
-                            'seller_manager': '#10b981',
-                            'merchant_manager': '#f59e0b',
-                            'customer_manager': '#ec4899',
+                            'sellerManager': '#10b981',
+                            'merchantManager': '#f59e0b',
+                            'customerManager': '#ec4899',
                             'seller': '#06b6d4',
                             'merchant': '#84cc16',
                             'customer': '#8b5cf6'
@@ -343,6 +411,41 @@ const EventManagerDashboard = () => {
             <p style={styles.emptyText}>暂无用户数据</p>
             <button style={styles.primaryButton} onClick={() => setShowAddUser(true)}>
               创建第一个用户
+            </button>
+          </div>
+        )}
+
+        {/* 分页导航 */}
+        {users.length > 0 && totalPages > 1 && (
+          <div style={styles.paginationNav}>
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              style={{...styles.paginationButton, opacity: currentPage === 1 ? 0.5 : 1}}
+            >
+              ← 上一页
+            </button>
+            <div style={styles.pageIndicator}>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  style={{
+                    ...styles.pageNumber,
+                    backgroundColor: page === currentPage ? '#667eea' : '#f3f4f6',
+                    color: page === currentPage ? 'white' : '#374151'
+                  }}
+                >
+                  {page}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              style={{...styles.paginationButton, opacity: currentPage === totalPages ? 0.5 : 1}}
+            >
+              下一页 →
             </button>
           </div>
         )}
@@ -612,6 +715,68 @@ const styles = {
   emptyText: {
     fontSize: '1rem',
     marginBottom: '1rem'
+  },
+  paginationControl: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+    padding: '1rem',
+    background: '#f9fafb',
+    borderRadius: '8px'
+  },
+  pageSizeControl: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
+  },
+  pageSizeLabel: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151'
+  },
+  pageSizeSelect: {
+    padding: '0.5rem 0.75rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    background: 'white'
+  },
+  paginationNav: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginTop: '1.5rem',
+    padding: '1rem',
+    background: '#f9fafb',
+    borderRadius: '8px'
+  },
+  paginationButton: {
+    padding: '0.5rem 1rem',
+    background: '#e5e7eb',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    transition: 'all 0.2s'
+  },
+  pageIndicator: {
+    display: 'flex',
+    gap: '0.25rem',
+    alignItems: 'center'
+  },
+  pageNumber: {
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    transition: 'all 0.2s'
   }
 };
 

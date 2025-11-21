@@ -36,7 +36,7 @@ async function migrateBatch() {
         .collection('users');
 
       // Query users that have legacy role
-      const q = usersRef.where('roles', 'array-contains', 'event_manager');
+      const q = usersRef.where('roles', 'array-contains', 'eventManager');
       const snap = await q.get();
       if (snap.empty) continue;
 

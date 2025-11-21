@@ -8,7 +8,7 @@ import { doc, getDoc } from 'firebase/firestore';
  * 
  * @param {string} organizationId - 组织 ID
  * @param {string} eventId - 活动 ID
- * @param {string} callerRole - 调用者角色 (eventManager, seller_manager, merchant_manager, customer_manager)
+ * @param {string} callerRole - 调用者角色 (eventManager, sellerManager, merchantManager, customerManager)
  * @param {function} onClose - 关闭回调
  * @param {function} onSuccess - 成功回调
  */
@@ -99,20 +99,20 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 根据 callerRole 获取可见的角色选项
   const getRoleOptions = () => {
     const allRoles = {
-      seller_manager: {
-        value: 'seller_manager',
+      sellerManager: {
+        value: 'sellerManager',
         label: 'Seller Manager',
         description: '销售管理员 - 管理销售团队和资本分配',
         icon: '💰'
       },
-      merchant_manager: {
-        value: 'merchant_manager',
+      merchantManager: {
+        value: 'merchantManager',
         label: 'Merchant Manager',
         description: '商家管理员 - 管理商家和 QR Code',
         icon: '🏪'
       },
-      customer_manager: {
-        value: 'customer_manager',
+      customerManager: {
+        value: 'customerManager',
         label: 'Customer Manager',
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
@@ -140,19 +140,18 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     // 根据调用者角色返回可见的角色
     switch (callerRole) {
       case 'eventManager':
-      case 'event_manager':
         // Event Manager 可以看到所有角色
         return Object.values(allRoles);
 
-      case 'seller_manager':
+      case 'sellerManager':
         // Seller Manager 只能创建 Seller 和 Customer
         return [allRoles.seller, allRoles.customer];
 
-      case 'merchant_manager':
+      case 'merchantManager':
         // Merchant Manager 只能创建 Merchant 和 Customer
         return [allRoles.merchant, allRoles.customer];
 
-      case 'customer_manager':
+      case 'customerManager':
         // Customer Manager 只能创建 Customer
         return [allRoles.customer];
 
@@ -163,21 +162,18 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
   // 根据 callerRole 获取默认勾选的角色
   const getDefaultRoles = () => {
-    switch (callerRole) {
-      case 'eventManager':
-      case 'event_manager':
-        // Event Manager: 预设勾选 Customer（但可取消）
-        return ['customer'];
-
-      case 'seller_manager':
+      switch (callerRole) {
+        case 'eventManager':
+          // Event Manager: 预设勾选 Customer（但可取消）
+          return ['customer'];      case 'sellerManager':
         // Seller Manager: 必须勾选 Seller 和 Customer
         return ['seller', 'customer'];
 
-      case 'merchant_manager':
+      case 'merchantManager':
         // Merchant Manager: 必须勾选 Merchant 和 Customer
         return ['merchant', 'customer'];
 
-      case 'customer_manager':
+      case 'customerManager':
         // Customer Manager: 必须勾选 Customer
         return ['customer'];
 
@@ -188,21 +184,18 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
   // 判断某个角色是否可以取消勾选
   const isRoleDisabled = (roleValue) => {
-    switch (callerRole) {
-      case 'eventManager':
-      case 'event_manager':
-        // Event Manager 可以取消所有角色（完全自由）
-        return false;
-
-      case 'seller_manager':
+      switch (callerRole) {
+        case 'eventManager':
+          // Event Manager 可以取消所有角色（完全自由）
+          return false;      case 'sellerManager':
         // Seller Manager 创建的用户必须是 Seller 和 Customer
         return ['seller', 'customer'].includes(roleValue);
 
-      case 'merchant_manager':
+      case 'merchantManager':
         // Merchant Manager 创建的用户必须是 Merchant 和 Customer
         return ['merchant', 'customer'].includes(roleValue);
 
-      case 'customer_manager':
+      case 'customerManager':
         // Customer Manager 创建的用户必须是 Customer
         return roleValue === 'customer';
 
@@ -498,7 +491,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>👥 角色分配 *</h3>
             <p style={styles.roleHint}>
-              {(callerRole === 'eventManager' || callerRole === 'event_manager')
+              {(callerRole === 'eventManager')
                 ? '请选择一个或多个角色（可多选）'
                 : '以下角色为必选项（已自动勾选）'}
             </p>

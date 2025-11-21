@@ -409,7 +409,7 @@ exports.loginEventManagerHttp = functions.https.onRequest((req, res) => {
 
       const userData = userDoc.data();
 
-      if (!userData.roles || !(userData.roles.includes('eventManager') || userData.roles.includes('event_manager'))) {
+      if (!userData.roles || !(userData.roles.includes('eventManager'))) {
         return res.status(403).json({ 
           error: { code: 'permission-denied', message: '您不是此活动的 Event Manager' }
         });

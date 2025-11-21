@@ -285,7 +285,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     const userDoc = {
       userId: newUserId,
       authUid: newUserId,
-      roles: ['event_manager'],
+      roles: ['eventManager'],
       identityTag,
       basicInfo: {
         phoneNumber,
@@ -300,7 +300,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       },
       identityInfo: identityId ? { identityId } : {},
       roleSpecificData: {
-        event_manager: {
+        eventManager: {
           organizationId,
           eventId,
           assignedAt: now,
@@ -340,7 +340,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       phoneNumber,
       englishName,
       chineseName,
-      role: 'event_manager',
+      role: 'eventManager',
       eventId,
       addedAt: now,
       addedBy: callerUid
@@ -1108,8 +1108,8 @@ exports.loginEventManager = functions.https.onCall(async (data, context) => {
 
     console.log('[loginEventManager] User found:', { userId, roles: userData.roles });
 
-    if (!userData.roles || !(userData.roles.includes('eventManager') || userData.roles.includes('event_manager'))) {
-      console.log('[loginEventManager] User is not an eventManager (checked both eventManager and event_manager)');
+    if (!userData.roles || !(userData.roles.includes('eventManager'))) {
+      console.log('[loginEventManager] User is not an eventManager');
       throw new functions.https.HttpsError('permission-denied', '您不是此活动的 Event Manager');
     }
 
@@ -1219,7 +1219,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     }
 
     // 验证角色是否有效
-    const validRoles = ['seller_manager', 'merchant_manager', 'customer_manager', 'seller', 'merchant', 'customer'];
+    const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
     const invalidRoles = roles.filter(role => !validRoles.includes(role));
     if (invalidRoles.length > 0) {
       res.status(400).json({ error: `无效的角色: ${invalidRoles.join(', ')}` });
@@ -1326,8 +1326,8 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     // 7. 构建 roleSpecificData
     const roleSpecificData = {};
     
-    if (roles.includes('seller_manager')) {
-      roleSpecificData.seller_manager = {
+    if (roles.includes('sellerManager')) {
+      roleSpecificData.sellerManager = {
         managerId: `SM${Date.now()}`,
         assignedCapital: 0,
         availableCapital: 0,
@@ -1336,15 +1336,15 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       };
     }
     
-    if (roles.includes('merchant_manager')) {
-      roleSpecificData.merchant_manager = {
+    if (roles.includes('merchantManager')) {
+      roleSpecificData.merchantManager = {
         managerId: `MM${Date.now()}`,
         totalMerchantsManaged: 0
       };
     }
     
-    if (roles.includes('customer_manager')) {
-      roleSpecificData.customer_manager = {
+    if (roles.includes('customerManager')) {
+      roleSpecificData.customerManager = {
         managerId: `CM${Date.now()}`,
         totalCustomersManaged: 0,
         totalSalesAmount: 0
@@ -1441,13 +1441,13 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     };
 
     // 根据角色更新对应的统计
-    if (roles.includes('seller_manager')) {
+    if (roles.includes('sellerManager')) {
       updateData['statistics.totalSellerManagers'] = admin.firestore.FieldValue.increment(1);
     }
-    if (roles.includes('merchant_manager')) {
+    if (roles.includes('merchantManager')) {
       updateData['statistics.totalMerchantManagers'] = admin.firestore.FieldValue.increment(1);
     }
-    if (roles.includes('customer_manager')) {
+    if (roles.includes('customerManager')) {
       updateData['statistics.totalCustomerManagers'] = admin.firestore.FieldValue.increment(1);
     }
     if (roles.includes('seller')) {
@@ -1972,7 +1972,7 @@ exports.addDepartment = functions.https.onRequest(async (req, res) => {
       if (!usersSnapshot.empty) {
         const u = usersSnapshot.docs[0].data();
         const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+        if (roles.includes('eventManager')) {
           hasPermission = true;
           break;
         }
@@ -2085,7 +2085,7 @@ exports.deleteDepartment = functions.https.onRequest(async (req, res) => {
       if (!usersSnapshot.empty) {
         const u = usersSnapshot.docs[0].data();
         const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+        if (roles.includes('eventManager')) {
           hasPermission = true;
           break;
         }
@@ -2203,7 +2203,7 @@ exports.reorderDepartments = functions.https.onRequest(async (req, res) => {
       if (!usersSnapshot.empty) {
         const u = usersSnapshot.docs[0].data();
         const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager') || roles.includes('event_manager')) {
+        if (roles.includes('eventManager')) {
           hasPermission = true;
           break;
         }
@@ -2290,7 +2290,7 @@ exports.departmentsHttp = functions.https.onRequest(async (req, res) => {
         if (!usersSnapshot.empty) {
           const u = usersSnapshot.docs[0].data();
           const roles = Array.isArray(u.roles) ? u.roles : [];
-          if (roles.includes('eventManager') || roles.includes('event_manager')) return true;
+          if (roles.includes('eventManager')) return true;
         }
       }
       return false;
@@ -2471,14 +2471,14 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
 
-    // 權限：確認 callerUid 在任一 event.users 中擁有 eventManager / event_manager 角色
+    // 權限：確認 callerUid 在任一 event.users 中擁有 eventManager 角色
     const eventsSnapshot = await orgRef.collection('events').get();
     let hasPermission = false;
     for (const ev of eventsSnapshot.docs) {
       const userSnap = await ev.ref.collection('users').where('authUid', '==', callerUid).limit(1).get();
       if (!userSnap.empty) {
         const r = userSnap.docs[0].data().roles || [];
-        if (r.includes('eventManager') || r.includes('event_manager')) { hasPermission = true; break; }
+        if (r.includes('eventManager')) { hasPermission = true; break; }
       }
     }
     if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 权限' });
@@ -2577,9 +2577,9 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
 
       // 角色資料
       const roleSpecificData = {};
-      if (roles.includes('seller_manager')) roleSpecificData.seller_manager = { managerId: `SM${Date.now()}`, assignedCapital: 0, availableCapital: 0, allocatedToSellers: 0, totalSellersManaged: 0 };
-      if (roles.includes('merchant_manager')) roleSpecificData.merchant_manager = { managerId: `MM${Date.now()}`, totalMerchantsManaged: 0 };
-      if (roles.includes('customer_manager')) roleSpecificData.customer_manager = { managerId: `CM${Date.now()}`, totalCustomersManaged: 0, totalSalesAmount: 0 };
+      if (roles.includes('sellerManager')) roleSpecificData.sellerManager = { managerId: `SM${Date.now()}`, assignedCapital: 0, availableCapital: 0, allocatedToSellers: 0, totalSellersManaged: 0 };
+      if (roles.includes('merchantManager')) roleSpecificData.merchantManager = { managerId: `MM${Date.now()}`, totalMerchantsManaged: 0 };
+      if (roles.includes('customerManager')) roleSpecificData.customerManager = { managerId: `CM${Date.now()}`, totalCustomersManaged: 0, totalSalesAmount: 0 };
       if (roles.includes('seller')) roleSpecificData.seller = { sellerId: `SL${Date.now()}`, availablePoints: 0, currentSalesAmount: 0, totalPointsSold: 0 };
       if (roles.includes('merchant')) roleSpecificData.merchant = { merchantId: `MR${Date.now()}`, monthlyReceivedPoints: 0, totalReceivedPoints: 0 };
       if (roles.includes('customer')) roleSpecificData.customer = { customerId: `CS${Date.now()}`, currentBalance: 0, totalPointsPurchased: 0, totalPointsConsumed: 0 };
@@ -2622,9 +2622,9 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
 
       // 統計累加
       statIncrements.totalUsers++;
-      if (roles.includes('seller_manager')) statIncrements.totalSellerManagers++;
-      if (roles.includes('merchant_manager')) statIncrements.totalMerchantManagers++;
-      if (roles.includes('customer_manager')) statIncrements.totalCustomerManagers++;
+      if (roles.includes('sellerManager')) statIncrements.totalSellerManagers++;
+      if (roles.includes('merchantManager')) statIncrements.totalMerchantManagers++;
+      if (roles.includes('customerManager')) statIncrements.totalCustomerManagers++;
       if (roles.includes('seller')) statIncrements.totalSellers++;
       if (roles.includes('merchant')) statIncrements.totalMerchants++;
       if (roles.includes('customer')) statIncrements.totalCustomers++;
