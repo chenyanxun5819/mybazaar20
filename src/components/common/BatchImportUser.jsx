@@ -174,7 +174,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     let duplicatePhones = [];
     
     try {
-      const checkUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/checkDuplicateUsers';
+      const checkUrl = 'https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/checkDuplicateUsers';
       const response = await fetch(checkUrl, {
         method: 'POST',
         headers: {

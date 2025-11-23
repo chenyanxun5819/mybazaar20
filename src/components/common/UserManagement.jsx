@@ -261,7 +261,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   };
 
   // 打开批量分配模态框
-  const openBatchModal = () => {
+  constopenBatchModal = () => {
     setBatchDepartment('');
     setBatchAmount('');
     setBatchNote('');
@@ -413,7 +413,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         type: 'allocation',
         amount: points,
         timestamp: new Date(),
-        allocatedBy: 'eventManager',
+        allocatedBy: 'admin',
         note: pointsNote || '点数分配'
       };
       
@@ -487,7 +487,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         type: 'recall',
         amount: -points,
         timestamp: new Date(),
-        recalledBy: 'eventManager',
+        recalledBy: 'admin',
         note: recallNote || '点数回收'
       };
       
@@ -561,7 +561,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         type: 'allocation',
         amount: points,
         timestamp: new Date(),
-        allocatedBy: 'eventManager',
+        allocatedBy: 'admin',
         note: batchNote || `批量分配 - ${batchDepartment}`
       };
       
