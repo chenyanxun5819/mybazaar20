@@ -29,6 +29,7 @@ const EventManagerDashboard = () => {
     totalSellerManagers: 0,
     totalMerchantManagers: 0,
     totalCustomerManagers: 0,
+    totalFinanceManagers: 0,
     totalSellers: 0,
     totalMerchants: 0,
     totalCustomers: 0
@@ -41,6 +42,19 @@ const EventManagerDashboard = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' }); // 排序配置
   const [currentPage, setCurrentPage] = useState(1); // 当前页码
   const [pageSize, setPageSize] = useState(50); // 每页显示条数
+  const [roleFilter, setRoleFilter] = useState('all'); // 角色过滤
+  const [showColumnSelector, setShowColumnSelector] = useState(false); // 列显示选择器
+  const [visibleColumns, setVisibleColumns] = useState({
+    序号: true,
+    姓名: true,
+    电话: true,
+    身份标签: true,
+    部门: true,
+    身份ID: true,
+    角色: true,
+    现有点数: true,
+    已销售点数: true
+  });
 
   useEffect(() => {
     loadDashboardData();
@@ -92,6 +106,7 @@ const EventManagerDashboard = () => {
           totalSellerManagers: 0,
           totalMerchantManagers: 0,
           totalCustomerManagers: 0,
+          totalFinanceManagers: 0,
           totalSellers: 0,
           totalMerchants: 0,
           totalCustomers: 0
@@ -136,7 +151,42 @@ const EventManagerDashboard = () => {
     setCurrentPage(1); // 重置分页
   };
 
+  // 获取用户点数信息
+  const getUserPointsInfo = (user) => {
+    let availablePoints = 0;
+    let totalPointsSold = 0;
+
+    if (user.seller) {
+      availablePoints += user.seller.availablePoints || 0;
+      totalPointsSold += user.seller.totalPointsSold || 0;
+    }
+    if (user.merchant) {
+      availablePoints += user.merchant.availablePoints || 0;
+      totalPointsSold += user.merchant.totalPointsSold || 0;
+    }
+    if (user.customer) {
+      availablePoints += user.customer.availablePoints || 0;
+    }
+
+    return { availablePoints, totalPointsSold };
+  };
+
+  // 切换列显示
+  const toggleColumn = (columnName) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [columnName]: !prev[columnName]
+    }));
+  };
+
   const getSortedUsers = () => {
+    // 先进行角色过滤
+    let filtered = [...users];
+    if (roleFilter !== 'all') {
+      filtered = filtered.filter(user => user.roles?.includes(roleFilter));
+    }
+
+    // 然后进行排序
     const sorted = [...users].sort((a, b) => {
       let aVal = a[sortConfig.key];
       let bVal = b[sortConfig.key];
@@ -262,6 +312,13 @@ const EventManagerDashboard = () => {
           icon="🎫"
           color="#ec4899"
         />
+        <StatCard
+          title="Finance Managers"
+          value={statistics.totalFinanceManagers || 0}
+          icon="💵"
+          color="#3b82f6"
+        />
+
       </div>
 
       {/* Quick Actions Bar */}
@@ -279,17 +336,122 @@ const EventManagerDashboard = () => {
           ➕ 单个创建用户
         </button>
         <button
-          style={{...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#f59e0b'}}
+          style={{ ...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#f59e0b' }}
           onClick={() => setShowDepartmentManagement(true)}
         >
           🏢 部门管理
         </button>
         <button
-          style={{...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981'}}
+          style={{ ...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981' }}
           onClick={() => setShowUserManagement(true)}
         >
           🎭 角色分配 & 点数
         </button>
+      </div>
+
+      {/* 过滤和列显示控制栏 */}
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        padding: '1.5rem',
+        marginBottom: '1.5rem'
+      }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* 角色过滤 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: '600', color: '#374151' }}>
+              角色过滤:
+            </label>
+            <select
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setCurrentPage(1); // 重置到第一页
+              }}
+              style={{
+                padding: '0.5rem 0.75rem',
+                border: '2px solid #e5e7eb',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                background: 'white',
+                minWidth: '180px'
+              }}
+            >
+              <option value="all">全部用户</option>
+              <option value="sellerManager">Seller Manager</option>
+              <option value="merchantManager">Merchant Manager</option>
+              <option value="customerManager">Customer Manager</option>
+              <option value="financeManager">Finance Manager</option>
+              <option value="seller">Seller</option>
+              <option value="merchant">Merchant</option>
+              <option value="customer">Customer</option>
+            </select>
+          </div>
+
+          {/* 列显示按钮 */}
+          <button
+            onClick={() => setShowColumnSelector(!showColumnSelector)}
+            style={{
+              padding: '0.5rem 1rem',
+              background: '#f3f4f6',
+              color: '#374151',
+              border: '2px solid #e5e7eb',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              fontWeight: '600'
+            }}
+          >
+            ⚙️ 列显示设置
+          </button>
+        </div>
+
+        {/* 列显示选择器 */}
+        {showColumnSelector && (
+          <div style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            background: '#f9fafb',
+            borderRadius: '8px'
+          }}>
+            <div style={{
+              fontSize: '0.875rem',
+              fontWeight: '600',
+              color: '#374151',
+              marginBottom: '0.75rem'
+            }}>
+              选择要显示的列:
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+              gap: '0.75rem'
+            }}>
+              {Object.keys(visibleColumns).map(columnName => (
+                <label
+                  key={columnName}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.875rem',
+                    color: '#374151',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns[columnName]}
+                    onChange={() => toggleColumn(columnName)}
+                    style={{ marginRight: '0.5rem' }}
+                  />
+                  {columnName}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* User Table Section */}
@@ -327,103 +489,155 @@ const EventManagerDashboard = () => {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeaderRow}>
-                  <th style={styles.tableCell}>序号</th>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('chineseName')}>
-                    姓名 {sortConfig.key === 'chineseName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th style={styles.tableCell}>电话</th>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('identityTag')}>
-                    身份标签 {sortConfig.key === 'identityTag' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('department')}>
-                    部门 {sortConfig.key === 'department' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th style={{...styles.tableCell, cursor: 'pointer'}} onClick={() => handleSort('identityId')}>
-                    身份ID {sortConfig.key === 'identityId' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th style={styles.tableCell}>角色</th>
+                  {visibleColumns.序号 && <th style={styles.tableCell}>序号</th>}
+                  {visibleColumns.姓名 && (
+                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('chineseName')}>
+                      姓名 {sortConfig.key === 'chineseName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.电话 && <th style={styles.tableCell}>电话</th>}
+                  {visibleColumns.身份标签 && (
+                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('identityTag')}>
+                      身份标签 {sortConfig.key === 'identityTag' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.部门 && (
+                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('department')}>
+                      部门 {sortConfig.key === 'department' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.身份ID && (
+                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('identityId')}>
+                      身份ID {sortConfig.key === 'identityId' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.角色 && <th style={styles.tableCell}>角色</th>}
+                  {visibleColumns.现有点数 && <th style={styles.tableCell}>现有点数</th>}
+                  {visibleColumns.已销售点数 && <th style={styles.tableCell}>已销售点数</th>}
                 </tr>
               </thead>
               <tbody>
                 {getPaginatedUsers().map((user, index) => {
-                  // 计算全局序号（考虑分页）
                   const globalIndex = (currentPage - 1) * pageSize + index + 1;
-                  
+                  const pointsInfo = getUserPointsInfo(user);
+
                   return (
-                    <tr key={user.id} style={{...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb'}}>
-                      <td style={styles.tableCell}>{globalIndex}</td>
-                      <td style={styles.tableCell}>
-                        <div>
-                          <strong>{user.basicInfo?.chineseName || '-'}</strong>
-                          {user.basicInfo?.englishName && (
-                            <div style={{fontSize: '0.75rem', color: '#6b7280'}}>
-                              {user.basicInfo.englishName}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td style={styles.tableCell}>
-                        {user.basicInfo?.phoneNumber || '-'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        <span style={{
-                          ...styles.badge,
-                          backgroundColor: 
-                            user.identityTag?.value === 'student' ? '#dbeafe' : 
-                            user.identityTag?.value === 'teacher' ? '#d1fae5' :
-                            user.identityTag?.value === 'staff' ? '#fef3c7' :
-                            user.identityTag?.value === 'board' ? '#e9d5ff' : '#f3f4f6',
-                          color: 
-                            user.identityTag?.value === 'student' ? '#1e40af' : 
-                            user.identityTag?.value === 'teacher' ? '#065f46' :
-                            user.identityTag?.value === 'staff' ? '#92400e' :
-                            user.identityTag?.value === 'board' ? '#6b21a8' : '#374151'
-                        }}>
-                          {user.identityInfo?.identityName || user.identityTag?.value || '-'}
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>
-                        {user.identityInfo?.department || '-'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        {user.identityInfo?.identityId || '-'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        <div style={styles.rolesContainer}>
-                          {user.roles && user.roles.length > 0 ? user.roles.map(role => {
-                            const roleLabels = {
-                              'eventManager': 'EM',
-                              'sellerManager': 'SM',
-                              'merchantManager': 'MM',
-                              'customerManager': 'CM',
-                              'seller': 'S',
-                              'merchant': 'M',
-                              'customer': 'C'
-                            };
-                            const roleColors = {
-                              'eventManager': '#7c3aed',
-                              'sellerManager': '#10b981',
-                              'merchantManager': '#f59e0b',
-                              'customerManager': '#ec4899',
-                              'seller': '#06b6d4',
-                              'merchant': '#84cc16',
-                              'customer': '#8b5cf6'
-                            };
-                            return (
-                              <span
-                                key={role}
-                                style={{
-                                  ...styles.roleBadge,
-                                  backgroundColor: `${roleColors[role] || '#6b7280'}20`,
-                                  color: roleColors[role] || '#6b7280'
-                                }}
-                              >
-                                {roleLabels[role] || role}
-                              </span>
-                            );
-                          }) : '-'}
-                        </div>
-                      </td>
+                    <tr key={user.id} style={{ ...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
+                      {visibleColumns.序号 && (
+                        <td style={styles.tableCell}>{globalIndex}</td>
+                      )}
+
+                      {visibleColumns.姓名 && (
+                        <td style={styles.tableCell}>
+                          <div>
+                            <strong>{user.basicInfo?.chineseName || '-'}</strong>
+                            {user.basicInfo?.englishName && (
+                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                {user.basicInfo.englishName}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.电话 && (
+                        <td style={styles.tableCell}>
+                          {user.basicInfo?.phoneNumber || '-'}
+                        </td>
+                      )}
+
+                      {visibleColumns.身份标签 && (
+                        <td style={styles.tableCell}>
+                          <span style={{
+                            ...styles.badge,
+                            backgroundColor:
+                              user.identityTag?.value === 'student' ? '#dbeafe' :
+                                user.identityTag?.value === 'teacher' ? '#d1fae5' :
+                                  user.identityTag?.value === 'staff' ? '#fef3c7' :
+                                    user.identityTag?.value === 'board' ? '#e9d5ff' : '#f3f4f6',
+                            color:
+                              user.identityTag?.value === 'student' ? '#1e40af' :
+                                user.identityTag?.value === 'teacher' ? '#065f46' :
+                                  user.identityTag?.value === 'staff' ? '#92400e' :
+                                    user.identityTag?.value === 'board' ? '#6b21a8' : '#374151'
+                          }}>
+                            {user.identityInfo?.identityName || user.identityTag?.value || '-'}
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleColumns.部门 && (
+                        <td style={styles.tableCell}>
+                          {user.identityInfo?.department || '-'}
+                        </td>
+                      )}
+
+                      {visibleColumns.身份ID && (
+                        <td style={styles.tableCell}>
+                          {user.identityInfo?.identityId || '-'}
+                        </td>
+                      )}
+
+                      {visibleColumns.角色 && (
+                        <td style={styles.tableCell}>
+                          <div style={styles.rolesContainer}>
+                            {user.roles && user.roles.length > 0 ? user.roles.map(role => {
+                              const roleLabels = {
+                                'eventManager': 'EM',
+                                'sellerManager': 'SM',
+                                'merchantManager': 'MM',
+                                'customerManager': 'CM',
+                                'financeManager': 'FM',
+                                'seller': 'S',
+                                'merchant': 'M',
+                                'customer': 'C'
+                              };
+                              const roleColors = {
+                                'eventManager': '#7c3aed',
+                                'sellerManager': '#10b981',
+                                'merchantManager': '#f59e0b',
+                                'customerManager': '#ec4899',
+                                'financeManager': '#3b82f6',
+                                'seller': '#06b6d4',
+                                'merchant': '#84cc16',
+                                'customer': '#8b5cf6'
+                              };
+                              return (
+                                <span
+                                  key={role}
+                                  style={{
+                                    ...styles.roleBadge,
+                                    backgroundColor: `${roleColors[role] || '#6b7280'}20`,
+                                    color: roleColors[role] || '#6b7280'
+                                  }}
+                                >
+                                  {roleLabels[role] || role}
+                                </span>
+                              );
+                            }) : '-'}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.现有点数 && (
+                        <td style={styles.tableCell}>
+                          <span style={{ fontWeight: '600', color: '#10b981' }}>
+                            {pointsInfo.availablePoints > 0
+                              ? pointsInfo.availablePoints.toLocaleString()
+                              : '-'}
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleColumns.已销售点数 && (
+                        <td style={styles.tableCell}>
+                          <span style={{ fontWeight: '600', color: '#3b82f6' }}>
+                            {pointsInfo.totalPointsSold > 0
+                              ? pointsInfo.totalPointsSold.toLocaleString()
+                              : '-'}
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -474,7 +688,7 @@ const EventManagerDashboard = () => {
                 const maxVisible = 5;
                 let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
                 let end = Math.min(totalPages, start + maxVisible - 1);
-                
+
                 if (end - start < maxVisible - 1) {
                   start = Math.max(1, end - maxVisible + 1);
                 }

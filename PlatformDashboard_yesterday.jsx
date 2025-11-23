@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
@@ -14,7 +14,7 @@ const PlatformDashboard = () => {
   const [showAssignManager, setShowAssignManager] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const navigate = useNavigate();  // ← 新增
+  const navigate = useNavigate();  // ???啣?
 
   useEffect(() => {
     loadOrganizations();
@@ -44,15 +44,15 @@ const PlatformDashboard = () => {
         })
       );
 
-      // ✅ 添加总计日志
+      // ??瘛餃??餉恣?亙?
       const totalUsers = orgsData.reduce((sum, org) => sum + (org.statistics?.totalUsers || 0), 0);
-      console.log('[PlatformDashboard] 总用户数:', totalUsers);
-      console.log('[PlatformDashboard] 组织数据:', orgsData);
+      console.log('[PlatformDashboard] ?餌?瑟:', totalUsers);
+      console.log('[PlatformDashboard] 蝏??唳:', orgsData);
 
       setOrganizations(orgsData);
     } catch (error) {
-      console.error('加载组织失败:', error);
-      alert('加载组织失败: ' + error.message);
+      console.error('?蝸蝏?憭梯揖:', error);
+      alert('?蝸蝏?憭梯揖: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -71,16 +71,16 @@ const PlatformDashboard = () => {
     loadOrganizations();
   };
 
-  // ← 新增登出函數
+  // ???啣??餃?賣
   const handleLogout = async () => {
     try {
-      console.log('[PlatformDashboard] 开始登出');
+      console.log('[PlatformDashboard] 撘憪??);
       await signOut(auth);
-      console.log('[PlatformDashboard] 登出成功');
+      console.log('[PlatformDashboard] ?餃??');
       navigate('/platform/login');
     } catch (error) {
-      console.error('[PlatformDashboard] 登出失败:', error);
-      alert('登出失败：' + error.message);
+      console.error('[PlatformDashboard] ?餃憭梯揖:', error);
+      alert('?餃憭梯揖嚗? + error.message);
     }
   };
 
@@ -89,7 +89,7 @@ const PlatformDashboard = () => {
       <div style={styles.container}>
         <div style={styles.loadingCard}>
           <div style={styles.spinner}></div>
-          <p>加载中...</p>
+          <p>?蝸銝?..</p>
         </div>
       </div>
     );
@@ -97,55 +97,54 @@ const PlatformDashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* ← 修改后的 header */}
+      {/* ??靽格?? header */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>🎯 Platform 管理中心</h1>
-          <p style={styles.subtitle}>管理所有组织和活动</p>
+          <h1 style={styles.title}>? Platform 蝞∠?銝剖?</h1>
+          <p style={styles.subtitle}>蝞∠????蝏?瘣餃</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <button
             style={styles.primaryButton}
             onClick={() => setShowCreateOrg(true)}
           >
-            + 创建新组织
-          </button>
+            + ?遣?啁?蝏?          </button>
           <button
             style={styles.logoutButton}
             onClick={handleLogout}
-            title="登出"
+            title="?餃"
           >
-            🚪 登出
+            ? ?餃
           </button>
         </div>
       </div>
 
       <div style={styles.statsGrid}>
         <StatCard
-          title="总组织数"
+          title="?餌?蝏"
           value={organizations.length}
-          icon="🏢"
+          icon="?"
           color="#667eea"
         />
         <StatCard
-          title="总活动数"
+          title="?餅暑?冽"
           value={organizations.reduce((sum, org) => sum + org.events.length, 0)}
-          icon="📅"
+          icon="??"
           color="#764ba2"
         />
         <StatCard
-          title="活跃活动"
+          title="瘣餉?瘣餃"
           value={organizations.reduce(
             (sum, org) => sum + org.events.filter(e => e.status === 'active').length,
             0
           )}
-          icon="✨"
+          icon="??
           color="#10b981"
         />
         <StatCard
-          title="总用户数"
+          title="?餌?瑟"
           value={organizations.reduce((sum, org) => sum + (org.statistics?.totalUsers || 0), 0)}
-          icon="👥"
+          icon="?"
           color="#f59e0b"
         />
       </div>
@@ -153,11 +152,10 @@ const PlatformDashboard = () => {
       <div style={styles.orgList}>
         {organizations.length === 0 ? (
           <div style={styles.emptyState}>
-            <div style={{ fontSize: '64px', marginBottom: '1rem' }}>📦</div>
-            <h3>还没有组织</h3>
+            <div style={{ fontSize: '64px', marginBottom: '1rem' }}>?</div>
+            <h3>餈瓷??蝏?/h3>
             <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
-              点击上方按钮创建第一个组织
-            </p>
+              ?孵銝??遣蝚砌?銝芰?蝏?            </p>
           </div>
         ) : (
           organizations.map(org => (
@@ -240,14 +238,13 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
           <div style={styles.orgMeta}>
             <span style={styles.badge}>{organization.orgCode}</span>
             <span style={styles.metaText}>
-              {organization.events.length} 个活动
-            </span>
+              {organization.events.length} 銝芣暑??            </span>
             <span style={{
               ...styles.statusBadge,
               background: organization.status === 'active' ? '#d1fae5' : '#fee2e2',
               color: organization.status === 'active' ? '#065f46' : '#991b1b'
             }}>
-              {organization.status === 'active' ? '运作中' : '已停用'}
+              {organization.status === 'active' ? '餈?銝? : '撌脣???}
             </span>
           </div>
         </div>
@@ -255,28 +252,28 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
           <button
             style={styles.secondaryButton}
             onClick={() => setShowEditIdentityTags(true)}
-            title="编辑身份标签"
+            title="蝻?頨思遢?倌"
           >
-            🏷️ 身份标签
+            ?儭?頨思遢?倌
           </button>
           <button
             style={styles.secondaryButton}
             onClick={() => onCreateEvent(organization)}
           >
-            + 创建活动
+            + ?遣瘣餃
           </button>
           <button
             style={styles.iconButton}
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded ? '▲' : '▼'}
+            {expanded ? '?? : '??}
           </button>
         </div>
       </div>
 
-      {/* ✨ 新增：显示当前身份标签 */}
+      {/* ???啣?嚗蝷箏??澈隞賣?蝑?*/}
       <div style={styles.identityTagsPreview}>
-        <span style={styles.identityTagsLabel}>身份标签：</span>
+        <span style={styles.identityTagsLabel}>頨思遢?倌嚗?/span>
         {organization.identityTags && organization.identityTags.length > 0 ? (
           <div style={styles.tagsList}>
             {organization.identityTags
@@ -289,15 +286,15 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
               ))}
           </div>
         ) : (
-          <span style={styles.noTags}>未设置身份标签</span>
+          <span style={styles.noTags}>?芾挽蝵株澈隞賣?蝑?/span>
         )}
       </div>
 
       {expanded && (
         <div style={styles.eventsSection}>
-          <h4 style={styles.eventsTitle}>活动列表</h4>
+          <h4 style={styles.eventsTitle}>瘣餃?”</h4>
           {organization.events.length === 0 ? (
-            <p style={styles.noEvents}>此组织还没有活动</p>
+            <p style={styles.noEvents}>甇斤?蝏?瘝⊥?瘣餃</p>
           ) : (
             <div style={styles.eventsGrid}>
               {organization.events.map(event => (
@@ -314,7 +311,7 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
         </div>
       )}
 
-      {/* ✨ 新增：编辑身份标签的 Modal */}
+      {/* ???啣?嚗?颲澈隞賣?蝑曄? Modal */}
       {showEditIdentityTags && (
         <EditIdentityTagsModal
           organization={organization}
@@ -329,10 +326,9 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
   );
 };
 
-// ✨ 更新后的 EventCard - 添加登录网址显示 + Event Manager 信息
+// ???湔?? EventCard - 瘛餃??餃?蝵??曄內 + Event Manager 靽⊥
 // ============================================
-// 完整版：删除事件功能（包含 admins 清理）
-// ============================================
+// 摰???鈭辣?嚗???admins 皜?嚗?// ============================================
 
 
 const EventCard = ({ event, organization, onAssignManager, onReload }) => {
@@ -341,7 +337,7 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // 加载 Event Manager 信息
+  // ?蝸 Event Manager 靽⊥
   useEffect(() => {
     const loadEventManager = async () => {
       try {
@@ -366,7 +362,7 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
           setEventManager(managerSnap.data());
         }
       } catch (error) {
-        console.error('[EventCard] 加载 Event Manager 失败:', error);
+        console.error('[EventCard] ?蝸 Event Manager 憭梯揖:', error);
       } finally {
         setLoadingManager(false);
       }
@@ -375,23 +371,21 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
     loadEventManager();
   }, [event.id, event.eventManager, organization.id]);
 
-  // 格式化日期
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '未设置';
+  // ?澆????  const formatDate = (dateStr) => {
+    if (!dateStr) return '?芾挽蝵?;
     if (typeof dateStr === 'object' && dateStr.toDate) {
       return dateStr.toDate().toLocaleDateString('zh-CN');
     }
     return String(dateStr);
   };
 
-  // 根据消费期计算事件状态
-  const getEventStatus = () => {
+  // ?寞瘨晶?恣蝞?隞嗥??  const getEventStatus = () => {
     const endDate = event.eventInfo?.consumptionPeriod?.endDate;
     if (!endDate) return event.status || 'planning';
 
     let end = new Date(endDate);
 
-    // 处理 Firestore Timestamp 对象
+    // 憭? Firestore Timestamp 撖寡情
     if (typeof endDate === 'object' && endDate.toDate) {
       end = endDate.toDate();
     }
@@ -408,34 +402,34 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
 
   const eventStatus = getEventStatus();
 
-  // ✅ 使用 Cloud Function 删除事件
+  // ??雿輻 Cloud Function ?鈭辣
   const handleDeleteEvent = async () => {
-    // 1️⃣ 增强的确认对话框
+    // 1儭 憓撩?＆霈文笆霂?
     if (!confirm(
-      `⚠️ 确定要删除此活动吗？\n\n` +
-      `活动名称：${event.eventName?.['zh-CN']}\n` +
-      `活动代码：${event.eventCode}\n` +
-      `用户数量：${event.statistics?.totalUsers || 0} 人\n` +
-      `Event Manager：${eventManager ? eventManager.basicInfo?.englishName : '未分配'}\n\n` +
-      `此操作将删除：\n` +
-      `  • 活动文档本身\n` +
-      `  • 所有用户数据 (${event.statistics?.totalUsers || 0} 位用户)\n` +
-      `  • 所有元数据 (部门等)\n` +
-      `  • 从 admins 列表移除 Event Manager\n` +
-      `  • 更新组织统计数据\n\n` +
-      `⚠️ 此操作无法撤销！`
+      `?? 蝖桀?閬??斗迨瘣餃??\n\n` +
+      `瘣餃?妍嚗?{event.eventName?.['zh-CN']}\n` +
+      `瘣餃隞??嚗?{event.eventCode}\n` +
+      `?冽?圈?嚗?{event.statistics?.totalUsers || 0} 鈭暝n` +
+      `Event Manager嚗?{eventManager ? eventManager.basicInfo?.englishName : '?芸???}\n\n` +
+      `甇斗?雿??嚗n` +
+      `  ??瘣餃?﹝?祈澈\n` +
+      `  ?????瑟??(${event.statistics?.totalUsers || 0} 雿??\n` +
+      `  ??????唳 (?券蝑?\n` +
+      `  ??隞?admins ?”蝘駁 Event Manager\n` +
+      `  ???湔蝏?蝏恣?唳\n\n` +
+      `?? 甇斗?雿?瘜?嚗
     )) {
       return;
     }
 
     try {
       setDeleting(true);
-      console.log('[EventCard] 开始删除活动:', event.id);
+      console.log('[EventCard] 撘憪??斗暑??', event.id);
 
-      // 2️⃣ 获取当前用户的 ID Token
+      // 2儭 ?瑕?敶??冽??ID Token
       const idToken = await auth.currentUser.getIdToken();
 
-      // 3️⃣ 调用 Cloud Function
+      // 3儭 靚 Cloud Function
       const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
 
       const response = await fetch(functionUrl, {
@@ -452,36 +446,36 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || '删除失败');
+        throw new Error(errorData.error || '?憭梯揖');
       }
 
       const result = await response.json();
-      console.log('[EventCard] ✅ 删除成功:', result);
+      console.log('[EventCard] ?????:', result);
 
       alert(
-        `✅ 活动删除成功！\n\n` +
-        `已删除：\n` +
-        `  • 活动文档: 1 个\n` +
-        `  • 用户数据: ${result.deletedUsers} 位\n` +
-        `  • 元数据: ${result.deletedMetadata} 个\n` +
-        `  • Event Manager: ${result.removedAdmins} 位\n` +
-        `  • 已更新组织统计数据`
+        `??瘣餃???嚗n\n` +
+        `撌脣??歹?\n` +
+        `  ??瘣餃?﹝: 1 銝歿n` +
+        `  ???冽?唳: ${result.deletedUsers} 雿n` +
+        `  ????? ${result.deletedMetadata} 銝歿n` +
+        `  ??Event Manager: ${result.removedAdmins} 雿n` +
+        `  ??撌脫?啁?蝏?霈⊥?害
       );
 
-      // 4️⃣ 重新加载数据
+      // 4儭 ??蝸?唳
       if (onReload) {
         onReload();
       }
 
     } catch (error) {
-      console.error('[EventCard] 删除活动失败:', error);
-      alert(`❌ 删除失败：${error.message}\n\n请查看控制台了解详细信息`);
+      console.error('[EventCard] ?瘣餃憭梯揖:', error);
+      alert(`???憭梯揖嚗?{error.message}\n\n霂瑟??嗅鈭圾霂衣?靽⊥`);
     } finally {
       setDeleting(false);
     }
   };
 
-  // 生成登录网址
+  // ???餃?蝵?
   const generateLoginUrl = () => {
     const baseUrl = window.location.origin;
     return `${baseUrl}/login/${organization.orgCode}-${event.eventCode}`;
@@ -489,28 +483,28 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
 
   const loginUrl = generateLoginUrl();
 
-  // 复制登录网址
+  // 憭?餃?蝵?
   const handleCopyLoginUrl = async () => {
     try {
       await navigator.clipboard.writeText(loginUrl);
-      setCopySuccess('✓ 已复制');
+      setCopySuccess('??撌脣???);
       setTimeout(() => setCopySuccess(''), 2000);
     } catch (err) {
-      alert('复制失败，请手动复制');
+      alert('憭憭梯揖嚗窈?憭');
     }
   };
 
-  // 生成 QR Code URL
+  // ?? QR Code URL
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(loginUrl)}`;
 
-  // 打开 QR Code
+  // ?? QR Code
   const handleShowQRCode = () => {
     window.open(qrCodeUrl, '_blank', 'width=350,height=350');
   };
 
   return (
     <div style={styles.eventCard}>
-      {/* 事件头部 */}
+      {/* 鈭辣憭湧 */}
       <div style={styles.eventHeader}>
         <div>
           <h4 style={styles.eventName}>
@@ -529,55 +523,54 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
                   eventStatus === 'completed' ? '#991b1b' :
                     '#92400e'
             }}>
-              {eventStatus === 'active' ? '进行中' :
-                eventStatus === 'completed' ? '已结束' :
-                  '筹备中'}
+              {eventStatus === 'active' ? '餈?銝? :
+                eventStatus === 'completed' ? '撌脩??? :
+                  '蝑孵?銝?}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 统计数据 */}
+      {/* 蝏恣?唳 */}
       <div style={styles.eventStats}>
         <div style={styles.statItem}>
-          <div style={styles.statLabel}>用户数</div>
+          <div style={styles.statLabel}>?冽??/div>
           <div style={styles.statValue}>{event.statistics?.totalUsers || 0}</div>
         </div>
         <div style={styles.statItem}>
-          <div style={styles.statLabel}>交易数</div>
+          <div style={styles.statLabel}>鈭斗???/div>
           <div style={styles.statValue}>{event.statistics?.totalTransactions || 0}</div>
         </div>
         <div style={styles.statItem}>
-          <div style={styles.statLabel}>已发积分</div>
+          <div style={styles.statLabel}>撌脣?蝘臬?</div>
           <div style={styles.statValue}>{event.statistics?.totalPointsIssued || 0}</div>
         </div>
       </div>
 
-      {/* 活动日期 */}
+      {/* 瘣餃?交? */}
       <div style={styles.eventDates}>
         <div style={styles.dateItem}>
-          <span style={styles.dateLabel}>市集日期：</span>
+          <span style={styles.dateLabel}>撣??交?嚗?/span>
           <span>{formatDate(event.eventInfo?.fairDate)}</span>
         </div>
         <div style={styles.dateItem}>
-          <span style={styles.dateLabel}>消费期：</span>
+          <span style={styles.dateLabel}>瘨晶??</span>
           <span>
             {formatDate(event.eventInfo?.consumptionPeriod?.startDate)} - {formatDate(event.eventInfo?.consumptionPeriod?.endDate)}
           </span>
         </div>
       </div>
 
-      {/* 登录网址区域 */}
+      {/* ?餃?蝵??箏? */}
       <div style={styles.loginUrlSection}>
         <div style={styles.loginUrlHeader}>
-          <span style={styles.loginUrlLabel}>🔗 登录网址</span>
+          <span style={styles.loginUrlLabel}>?? ?餃?蝵?</span>
           <button
             style={styles.qrButton}
             onClick={handleShowQRCode}
-            title="查看二维码"
+            title="?亦?鈭輕??
           >
-            📱 二维码
-          </button>
+            ? 鈭輕??          </button>
         </div>
         <div style={styles.loginUrlBox}>
           <input
@@ -590,43 +583,42 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
             style={styles.copyButton}
             onClick={handleCopyLoginUrl}
           >
-            {copySuccess || '📋 复制'}
+            {copySuccess || '?? 憭'}
           </button>
         </div>
         <span style={styles.loginUrlHint}>
-          分享此链接给用户进行注册和登录
-        </span>
+          ?澈甇日?亦??冽餈?瘜典??敶?        </span>
       </div>
 
-      {/* Event Manager 信息 */}
+      {/* Event Manager 靽⊥ */}
       <div style={styles.managerInfo}>
-        <div style={styles.dateLabel}>Event Manager：</div>
+        <div style={styles.dateLabel}>Event Manager嚗?/div>
         {loadingManager ? (
-          <span style={styles.loadingText}>加载中...</span>
+          <span style={styles.loadingText}>?蝸銝?..</span>
         ) : eventManager ? (
           <div style={styles.managerDetails}>
             <strong>{eventManager.basicInfo?.englishName}</strong> ({eventManager.basicInfo?.chineseName})
             <br />
-            📞 {eventManager.basicInfo?.phoneNumber}
+            ?? {eventManager.basicInfo?.phoneNumber}
           </div>
         ) : (
-          <span style={styles.loadingText}>未分配</span>
+          <span style={styles.loadingText}>?芸???/span>
         )}
       </div>
 
-      {/* 操作按钮 */}
+      {/* ??? */}
       <div style={styles.eventActions}>
-        {/* 分配 Event Manager - 仅当未分配时显示 */}
+        {/* ?? Event Manager - 隞??芸???曄內 */}
         {!eventManager && (
           <button
             style={styles.assignButton}
             onClick={onAssignManager}
           >
-            👤 分配 Event Manager
+            ? ?? Event Manager
           </button>
         )}
 
-        {/* 删除按钮 */}
+        {/* ?? */}
         <button
           style={{
             ...styles.deleteButton,
@@ -635,7 +627,7 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
           onClick={handleDeleteEvent}
           disabled={deleting}
         >
-          {deleting ? '🗑️ 删除中...' : '🗑️ 删除此活动'}
+          {deleting ? '??儭??銝?..' : '??儭??甇斗暑??}
         </button>
       </div>
     </div>
@@ -643,7 +635,7 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
 };
 
 
-// ✨ 新增：编辑身份标签的 Modal 组件
+// ???啣?嚗?颲澈隞賣?蝑曄? Modal 蝏辣
 const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   const [identityTags, setIdentityTags] = useState(
     organization.identityTags || []
@@ -652,8 +644,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   const [error, setError] = useState('');
   const [checkingUsage, setCheckingUsage] = useState(false);
 
-  // 添加新标签
-  const handleAddTag = () => {
+  // 瘛餃??唳?蝑?  const handleAddTag = () => {
     const newTag = {
       id: `tag_${Date.now()}`,
       name: {
@@ -667,7 +658,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
     setIdentityTags([...identityTags, newTag]);
   };
 
-  // 更新标签
+  // ?湔?倌
   const handleUpdateTag = (tagId, field, lang, value) => {
     setIdentityTags(identityTags.map(tag => {
       if (tag.id === tagId) {
@@ -686,9 +677,8 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
     }));
   };
 
-  // 删除标签（需要检查是否有用户使用）
-  const handleDeleteTag = async (tagId) => {
-    if (!confirm('确定要删除此身份标签吗？')) {
+  // ??倌嚗?閬??交?行??冽雿輻嚗?  const handleDeleteTag = async (tagId) => {
+    if (!confirm('蝖桀?閬??斗迨頨思遢?倌??')) {
       return;
     }
 
@@ -696,30 +686,27 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
       setCheckingUsage(true);
       setError('');
 
-      // 检查是否有用户使用此标签
-      const usageCount = await checkTagUsage(organization.id, tagId);
+      // 璉?交?行??冽雿輻甇斗?蝑?      const usageCount = await checkTagUsage(organization.id, tagId);
 
       if (usageCount > 0) {
-        setError(`无法删除：目前有 ${usageCount} 个用户使用此身份标签`);
+        setError(`???嚗?? ${usageCount} 銝芰?瑚蝙?冽迨頨思遢?倌`);
         return;
       }
 
-      // 如果没有用户使用，则删除
+      // 憒?瘝⊥??冽雿輻嚗??
       setIdentityTags(identityTags.filter(tag => tag.id !== tagId));
 
     } catch (err) {
-      console.error('检查标签使用情况失败:', err);
-      setError('检查标签使用情况失败: ' + err.message);
+      console.error('璉?交?蝑曆蝙?冽??萄仃韐?', err);
+      setError('璉?交?蝑曆蝙?冽??萄仃韐? ' + err.message);
     } finally {
       setCheckingUsage(false);
     }
   };
 
-  // 检查标签使用情况
-  const checkTagUsage = async (orgId, tagId) => {
+  // 璉?交?蝑曆蝙?冽???  const checkTagUsage = async (orgId, tagId) => {
     try {
-      // 遍历所有 events，查找使用此标签的用户
-      let totalCount = 0;
+      // ?????events嚗?曆蝙?冽迨?倌???      let totalCount = 0;
 
       for (const event of organization.events) {
         const usersSnapshot = await getDocs(
@@ -736,47 +723,47 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
 
       return totalCount;
     } catch (error) {
-      console.error('检查标签使用失败:', error);
+      console.error('璉?交?蝑曆蝙?典仃韐?', error);
       throw error;
     }
   };
 
-  // 上移标签
+  // 銝宏?倌
   const handleMoveUp = (index) => {
     if (index === 0) return;
     const newTags = [...identityTags];
     [newTags[index - 1], newTags[index]] = [newTags[index], newTags[index - 1]];
-    // 更新 displayOrder
+    // ?湔 displayOrder
     newTags.forEach((tag, i) => {
       tag.displayOrder = i + 1;
     });
     setIdentityTags(newTags);
   };
 
-  // 下移标签
+  // 銝宏?倌
   const handleMoveDown = (index) => {
     if (index === identityTags.length - 1) return;
     const newTags = [...identityTags];
     [newTags[index], newTags[index + 1]] = [newTags[index + 1], newTags[index]];
-    // 更新 displayOrder
+    // ?湔 displayOrder
     newTags.forEach((tag, i) => {
       tag.displayOrder = i + 1;
     });
     setIdentityTags(newTags);
   };
 
-  // 验证表单
+  // 撉?銵典?
   const validateForm = () => {
     for (const tag of identityTags) {
       if (!tag.name['zh-CN'].trim() || !tag.name['en'].trim()) {
-        setError('所有身份标签必须填写中英文名称');
+        setError('??澈隞賣?蝑曉?憿餃‵?葉?望??妍');
         return false;
       }
     }
     return true;
   };
 
-  // 提交保存
+  // ?漱靽?
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -788,19 +775,19 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      // 更新 Organization 的 identityTags
+      // ?湔 Organization ??identityTags
       const orgRef = doc(db, 'organizations', organization.id);
       await updateDoc(orgRef, {
         identityTags: identityTags,
         updatedAt: serverTimestamp()
       });
 
-      alert('身份标签更新成功！');
+      alert('頨思遢?倌?湔??嚗?);
       onSuccess();
 
     } catch (err) {
-      console.error('更新失败:', err);
-      setError('更新失败: ' + err.message);
+      console.error('?湔憭梯揖:', err);
+      setError('?湔憭梯揖: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -814,9 +801,9 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
       >
         <div style={styles.modalHeader}>
           <div>
-            <h2 style={styles.modalTitle}>🏷️ 编辑身份标签</h2>
+            <h2 style={styles.modalTitle}>?儭?蝻?頨思遢?倌</h2>
             <p style={styles.modalSubtitle}>
-              组织：{organization.orgName['zh-CN']}
+              蝏?嚗organization.orgName['zh-CN']}
             </p>
           </div>
           <button
@@ -824,22 +811,19 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
             onClick={onClose}
             disabled={submitting}
           >
-            ✕
-          </button>
+            ??          </button>
         </div>
 
         <div style={styles.infoBox}>
           <p style={styles.infoText}>
-            💡 <strong>说明：</strong>身份标签将应用于此组织下的所有活动。
-            用户注册时需要选择一个身份标签。
-          </p>
+            ? <strong>霂湔?嚗?/strong>頨思遢?倌撠??其?甇斤?蝏????暑?具?            ?冽瘜典??園?閬銝銝芾澈隞賣?蝑整?          </p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div style={styles.tagsContainer}>
             {identityTags.length === 0 ? (
               <div style={styles.emptyTags}>
-                <p>还没有身份标签</p>
+                <p>餈瓷?澈隞賣?蝑?/p>
               </div>
             ) : (
               identityTags.map((tag, index) => (
@@ -850,42 +834,40 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                       style={styles.orderButton}
                       onClick={() => handleMoveUp(index)}
                       disabled={index === 0 || submitting}
-                      title="上移"
+                      title="銝宏"
                     >
-                      ▲
-                    </button>
+                      ??                    </button>
                     <span style={styles.orderNumber}>{index + 1}</span>
                     <button
                       type="button"
                       style={styles.orderButton}
                       onClick={() => handleMoveDown(index)}
                       disabled={index === identityTags.length - 1 || submitting}
-                      title="下移"
+                      title="銝宏"
                     >
-                      ▼
-                    </button>
+                      ??                    </button>
                   </div>
 
                   <div style={styles.tagInputs}>
                     <div style={styles.tagInputGroup}>
-                      <label style={styles.tagLabel}>中文名称</label>
+                      <label style={styles.tagLabel}>銝剜??妍</label>
                       <input
                         type="text"
                         value={tag.name['zh-CN']}
                         onChange={(e) => handleUpdateTag(tag.id, 'name', 'zh-CN', e.target.value)}
-                        placeholder="例如：职员"
+                        placeholder="靘?嚗???
                         style={styles.tagInput}
                         disabled={submitting}
                         required
                       />
                     </div>
                     <div style={styles.tagInputGroup}>
-                      <label style={styles.tagLabel}>英文名称</label>
+                      <label style={styles.tagLabel}>?望??妍</label>
                       <input
                         type="text"
                         value={tag.name['en']}
                         onChange={(e) => handleUpdateTag(tag.id, 'name', 'en', e.target.value)}
-                        placeholder="例如：Staff"
+                        placeholder="靘?嚗taff"
                         style={styles.tagInput}
                         disabled={submitting}
                         required
@@ -898,10 +880,9 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                     style={styles.deleteTagButton}
                     onClick={() => handleDeleteTag(tag.id)}
                     disabled={submitting || checkingUsage}
-                    title="删除标签"
+                    title="??倌"
                   >
-                    🗑️
-                  </button>
+                    ??儭?                  </button>
                 </div>
               ))
             )}
@@ -913,12 +894,11 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
             onClick={handleAddTag}
             disabled={submitting}
           >
-            ➕ 添加新标签
-          </button>
+            ??瘛餃??唳?蝑?          </button>
 
           {error && (
             <div style={styles.errorMessage}>
-              ⚠️ {error}
+              ?? {error}
             </div>
           )}
 
@@ -929,7 +909,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
               onClick={onClose}
               disabled={submitting}
             >
-              取消
+              ??
             </button>
             <button
               type="submit"
@@ -939,7 +919,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
               }}
               disabled={submitting}
             >
-              {submitting ? '保存中...' : '保存修改'}
+              {submitting ? '靽?銝?..' : '靽?靽格'}
             </button>
           </div>
         </form>
@@ -948,7 +928,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   );
 };
 
-// CreateOrganizationModal 组件
+// CreateOrganizationModal 蝏辣
 const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     orgCode: '',
@@ -972,7 +952,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
     e.preventDefault();
 
     if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH) {
-      setError('请填写所有必填字段');
+      setError('霂瑕‵????憛怠?畾?);
       return;
     }
 
@@ -980,24 +960,22 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      // 检查 orgCode 是否已存在
-      const orgsSnapshot = await getDocs(collection(db, 'organizations'));
+      // 璉??orgCode ?臬撌脣???      const orgsSnapshot = await getDocs(collection(db, 'organizations'));
       const existingOrg = orgsSnapshot.docs.find(
         doc => doc.data().orgCode.toLowerCase() === formData.orgCode.toLowerCase()
       );
 
       if (existingOrg) {
-        setError('此组织代码已存在，请使用其他代码');
+        setError('甇斤?蝏誨?歇摮嚗窈雿輻?嗡?隞??');
         return;
       }
 
-      // ✨ 创建默认的身份标签
-      const defaultIdentityTags = [
+      // ???遣暺恕?澈隞賣?蝑?      const defaultIdentityTags = [
         {
           id: 'staff',
           name: {
             'en': 'Staff',
-            'zh-CN': '职员'
+            'zh-CN': '??'
           },
           displayOrder: 1,
           isActive: true,
@@ -1007,7 +985,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           id: 'student',
           name: {
             'en': 'Student',
-            'zh-CN': '学生'
+            'zh-CN': '摮衣?'
           },
           displayOrder: 2,
           isActive: true,
@@ -1017,7 +995,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           id: 'teacher',
           name: {
             'en': 'Teacher',
-            'zh-CN': '教师'
+            'zh-CN': '??'
           },
           displayOrder: 3,
           isActive: true,
@@ -1031,18 +1009,18 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           'en': formData.orgNameEN,
           'zh-CN': formData.orgNameZH
         },
-        identityTags: defaultIdentityTags, // ✨ 添加默认身份标签
+        identityTags: defaultIdentityTags, // ??瘛餃?暺恕頨思遢?倌
         status: formData.status,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      alert('组织创建成功！');
+      alert('蝏??遣??嚗?);
       onSuccess();
 
     } catch (err) {
-      console.error('创建失败:', err);
-      setError('创建失败: ' + err.message);
+      console.error('?遣憭梯揖:', err);
+      setError('?遣憭梯揖: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -1051,26 +1029,26 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <h2 style={styles.modalTitle}>创建新组织</h2>
+        <h2 style={styles.modalTitle}>?遣?啁?蝏?/h2>
 
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>组织代码 *</label>
+            <label style={styles.label}>蝏?隞?? *</label>
             <input
               type="text"
               name="orgCode"
               value={formData.orgCode}
               onChange={handleChange}
-              placeholder="例如：fch"
+              placeholder="靘?嚗ch"
               style={styles.input}
               disabled={submitting}
               required
             />
-            <small style={styles.hint}>小写字母，用于 URL</small>
+            <small style={styles.hint}>撠?摮?嚗鈭?URL</small>
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（英文）*</label>
+            <label style={styles.label}>蝏??妍嚗??*</label>
             <input
               type="text"
               name="orgNameEN"
@@ -1084,13 +1062,13 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（中文）*</label>
+            <label style={styles.label}>蝏??妍嚗葉??*</label>
             <input
               type="text"
               name="orgNameZH"
               value={formData.orgNameZH}
               onChange={handleChange}
-              placeholder="组织名称"
+              placeholder="蝏??妍"
               style={styles.input}
               disabled={submitting}
               required
@@ -1098,7 +1076,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>状态</label>
+            <label style={styles.label}>?嗆?/label>
             <select
               name="status"
               value={formData.status}
@@ -1106,14 +1084,14 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               style={styles.input}
               disabled={submitting}
             >
-              <option value="active">运作中</option>
-              <option value="inactive">已停用</option>
+              <option value="active">餈?銝?/option>
+              <option value="inactive">撌脣???/option>
             </select>
           </div>
 
           {error && (
             <div style={styles.errorMessage}>
-              ⚠️ {error}
+              ?? {error}
             </div>
           )}
 
@@ -1124,7 +1102,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               onClick={onClose}
               disabled={submitting}
             >
-              取消
+              ??
             </button>
             <button
               type="submit"
@@ -1134,7 +1112,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
               }}
               disabled={submitting}
             >
-              {submitting ? '创建中...' : '创建组织'}
+              {submitting ? '?遣銝?..' : '?遣蝏?'}
             </button>
           </div>
         </form>
@@ -1143,7 +1121,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   );
 };
 
-// CreateEventModal 组件
+// CreateEventModal 蝏辣
 const CreateEventModal = ({ organization, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     eventCode: '',
@@ -1173,7 +1151,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     e.preventDefault();
 
     if (!formData.eventCode || !formData.eventNameEN || !formData.eventNameZH) {
-      setError('请填写所有必填字段');
+      setError('霂瑕‵????憛怠?畾?);
       return;
     }
 
@@ -1181,8 +1159,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      // 检查 eventCode 是否已存在
-      const eventsSnapshot = await getDocs(
+      // 璉??eventCode ?臬撌脣???      const eventsSnapshot = await getDocs(
         collection(db, 'organizations', organization.id, 'events')
       );
       const existingEvent = eventsSnapshot.docs.find(
@@ -1190,7 +1167,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       );
 
       if (existingEvent) {
-        setError('此活动代码已存在，请使用其他代码');
+        setError('甇斗暑?其誨?歇摮嚗窈雿輻?嗡?隞??');
         return;
       }
 
@@ -1222,12 +1199,12 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
         updatedAt: serverTimestamp()
       });
 
-      alert('活动创建成功！');
+      alert('瘣餃?遣??嚗?);
       onSuccess();
 
     } catch (err) {
-      console.error('创建失败:', err);
-      setError('创建失败: ' + err.message);
+      console.error('?遣憭梯揖:', err);
+      setError('?遣憭梯揖: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -1236,29 +1213,29 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <h2 style={styles.modalTitle}>创建新活动</h2>
+        <h2 style={styles.modalTitle}>?遣?唳暑??/h2>
         <div style={styles.infoBox}>
-          <p><strong>组织：</strong>{organization.orgName['zh-CN']}</p>
+          <p><strong>蝏?嚗?/strong>{organization.orgName['zh-CN']}</p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>活动代码 *</label>
+            <label style={styles.label}>瘣餃隞?? *</label>
             <input
               type="text"
               name="eventCode"
               value={formData.eventCode}
               onChange={handleChange}
-              placeholder="例如：2025"
+              placeholder="靘?嚗?025"
               style={styles.input}
               disabled={submitting}
               required
             />
-            <small style={styles.hint}>通常使用年份</small>
+            <small style={styles.hint}>?虜雿輻撟港遢</small>
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（英文）*</label>
+            <label style={styles.label}>瘣餃?妍嚗??*</label>
             <input
               type="text"
               name="eventNameEN"
@@ -1272,13 +1249,13 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（中文）*</label>
+            <label style={styles.label}>瘣餃?妍嚗葉??*</label>
             <input
               type="text"
               name="eventNameZH"
               value={formData.eventNameZH}
               onChange={handleChange}
-              placeholder="活动名称"
+              placeholder="瘣餃?妍"
               style={styles.input}
               disabled={submitting}
               required
@@ -1286,11 +1263,11 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           </div>
 
           <div style={styles.sectionDivider}>
-            <h3 style={styles.sectionTitle}>活动详情</h3>
+            <h3 style={styles.sectionTitle}>瘣餃霂行?</h3>
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>义卖会日期</label>
+            <label style={styles.label}>銋?隡??/label>
             <input
               type="date"
               name="fairDate"
@@ -1303,7 +1280,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
           <div style={styles.formRow}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>义卖会时间</label>
+              <label style={styles.label}>銋?隡??/label>
               <input
                 type="time"
                 name="fairTime"
@@ -1314,13 +1291,13 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               />
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.label}>地点</label>
+              <label style={styles.label}>?啁</label>
               <input
                 type="text"
                 name="location"
                 value={formData.location}
                 onChange={handleChange}
-                placeholder="例如：校礼堂、操场"
+                placeholder="靘?嚗蝷澆?????
                 style={styles.input}
                 disabled={submitting}
               />
@@ -1328,13 +1305,13 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>活动目的</label>
+            <label style={styles.label}>瘣餃?桃?</label>
             <input
               type="text"
               name="purpose"
               value={formData.purpose}
               onChange={handleChange}
-              placeholder="例如：筹集学校发展基金"
+              placeholder="靘?嚗食?郎?∪?撅??
               style={styles.input}
               disabled={submitting}
             />
@@ -1342,7 +1319,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
           <div style={styles.formRow}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>消费期开始</label>
+              <label style={styles.label}>瘨晶??憪?/label>
               <input
                 type="date"
                 name="consumptionStartDate"
@@ -1353,7 +1330,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               />
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.label}>消费期结束</label>
+              <label style={styles.label}>瘨晶????/label>
               <input
                 type="date"
                 name="consumptionEndDate"
@@ -1366,7 +1343,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>状态</label>
+            <label style={styles.label}>?嗆?/label>
             <select
               name="status"
               value={formData.status}
@@ -1374,15 +1351,15 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               style={styles.input}
               disabled={submitting}
             >
-              <option value="planning">筹备中</option>
-              <option value="active">进行中</option>
-              <option value="completed">已完成</option>
+              <option value="planning">蝑孵?銝?/option>
+              <option value="active">餈?銝?/option>
+              <option value="completed">撌脣???/option>
             </select>
           </div>
 
           {error && (
             <div style={styles.errorMessage}>
-              ⚠️ {error}
+              ?? {error}
             </div>
           )}
 
@@ -1393,7 +1370,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               onClick={onClose}
               disabled={submitting}
             >
-              取消
+              ??
             </button>
             <button
               type="submit"
@@ -1403,7 +1380,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
               }}
               disabled={submitting}
             >
-              {submitting ? '创建中...' : '创建活动'}
+              {submitting ? '?遣銝?..' : '?遣瘣餃'}
             </button>
           </div>
         </form>
@@ -1580,8 +1557,7 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer'
   },
-  // ✨ 新增样式：身份标签预览
-  identityTagsPreview: {
+  // ???啣??瑕?嚗澈隞賣?蝑暸?閫?  identityTagsPreview: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
@@ -1779,8 +1755,7 @@ const styles = {
     color: '#0c4a6e',
     margin: 0
   },
-  // ✨ 新增样式：编辑身份标签
-  tagsContainer: {
+  // ???啣??瑕?嚗?颲澈隞賣?蝑?  tagsContainer: {
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
@@ -2014,7 +1989,7 @@ const styles = {
     color: '#6b7280',
     fontStyle: 'italic'
   },
-  // ✨ 新增 Event Manager 信息样式
+  // ???啣? Event Manager 靽⊥?瑕?
   managerInfo: {
     display: 'flex',
     flexDirection: 'column',
@@ -2054,7 +2029,7 @@ const styles = {
   }
 };
 
-// 添加旋转动画
+// 瘛餃??蓮?函
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.textContent = `

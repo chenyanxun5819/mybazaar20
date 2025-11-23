@@ -282,11 +282,24 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     const newUserId = `usr_${crypto.randomUUID()}`;
     const now = new Date();
 
+    // ✅ 新版：構建完整 identityInfo（保持向後兼容）
+    const resolvedIdentityId = identityId && String(identityId).trim()
+      ? String(identityId).trim()
+      : `${identityTag.toUpperCase()}_${Date.now()}`;
+
+    const identityInfo = {
+      identityId: resolvedIdentityId,
+      identityTag: identityTag, // 重複放入以便前端統一讀取（架構仍保留頂層 identityTag）
+      identityName: validTag?.name?.['zh-CN'] || identityTag,
+      identityNameEn: validTag?.name?.['en'] || identityTag,
+      department: (req.body?.department && String(req.body.department).trim()) || '未分配'
+    };
+
     const userDoc = {
       userId: newUserId,
       authUid: newUserId,
       roles: ['eventManager'],
-      identityTag,
+      identityTag, // 頂層仍保留，用於既有查詢邏輯
       basicInfo: {
         phoneNumber,
         englishName,
@@ -298,7 +311,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
         pinSalt: passwordSalt,
         isPhoneVerified: false
       },
-      identityInfo: identityId ? { identityId } : {},
+      identityInfo: identityInfo,
       roleSpecificData: {
         eventManager: {
           organizationId,
@@ -319,7 +332,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       }
     };
 
-    // remove undefined keys
+    // （保留兼容處理）remove undefined keys
     if (!userDoc.identityInfo) delete userDoc.identityInfo;
 
     await usersCol.doc(newUserId).set(userDoc);
