@@ -6,11 +6,9 @@ import { doc, getDoc } from 'firebase/firestore';
  * 通用的用户创建组件
  * 根据调用者角色 (callerRole) 动态显示可选角色
  * 
- * ✨ 注意：Event Manager 已移至 organizations/{orgId}/events/{eventId}/admins 数组，不再作为用户角色
- * 
  * @param {string} organizationId - 组织 ID
  * @param {string} eventId - 活动 ID
- * @param {string} callerRole - 调用者角色 (sellerManager, merchantManager, customerManager, financeManager)
+ * @param {string} callerRole - 调用者角色 (eventManager, sellerManager, merchantManager, customerManager)
  * @param {function} onClose - 关闭回调
  * @param {function} onSuccess - 成功回调
  */
@@ -99,14 +97,13 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   
 
   // 根据 callerRole 获取可见的角色选项
-  // Event Manager 角色已移至 admins 数组，不再作为用户角色选项
   const getRoleOptions = () => {
     const allRoles = {
       sellerManager: {
         value: 'sellerManager',
         label: 'Seller Manager',
         description: '销售管理员 - 管理销售团队和资本分配',
-        icon: '🛍️'
+        icon: '💰'
       },
       merchantManager: {
         value: 'merchantManager',
@@ -120,17 +117,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
       },
-      financeManager: {
-        value: 'financeManager',
-        label: 'Finance Manager',
-        description: '财务管理员 - 管理现金收款与对账',
-        icon: '💵'
-      },
       seller: {
         value: 'seller',
         label: 'Seller',
         description: '销售员 - 销售固本给顾客',
-        icon: '🛒'
+        icon: '💳'
       },
       merchant: {
         value: 'merchant',
@@ -148,6 +139,10 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
     // 根据调用者角色返回可见的角色
     switch (callerRole) {
+      case 'eventManager':
+        // Event Manager 可以看到所有角色
+        return Object.values(allRoles);
+
       case 'sellerManager':
         // Seller Manager 只能创建 Seller 和 Customer
         return [allRoles.seller, allRoles.customer];
@@ -168,7 +163,9 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 根据 callerRole 获取默认勾选的角色
   const getDefaultRoles = () => {
       switch (callerRole) {
-      case 'sellerManager':
+        case 'eventManager':
+          // Event Manager: 预设勾选 Customer（但可取消）
+          return ['customer'];      case 'sellerManager':
         // Seller Manager: 必须勾选 Seller 和 Customer
         return ['seller', 'customer'];
 
@@ -188,7 +185,9 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 判断某个角色是否可以取消勾选
   const isRoleDisabled = (roleValue) => {
       switch (callerRole) {
-      case 'sellerManager':
+        case 'eventManager':
+          // Event Manager 可以取消所有角色（完全自由）
+          return false;      case 'sellerManager':
         // Seller Manager 创建的用户必须是 Seller 和 Customer
         return ['seller', 'customer'].includes(roleValue);
 
@@ -255,9 +254,9 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     setLoading(true);
 
     try {
-      // 调用 Cloud Function 创建用户（函数名保留历史命名，实际由 admins 调用）
+      // 使用 HTTP 调用
       const response = await fetch(
-        'https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
+        'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
         {
           method: 'POST',
           headers: {
@@ -312,73 +311,51 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     }
   };
 
-  // ✨ 加载中状态
+  const roleOptions = getRoleOptions();
+
+  // ✨ 如果还在加载身份标签，显示加载状态
   if (loadingTags) {
     return (
-      <div style={styles.overlay}>
-        <div style={styles.modal}>
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
           <div style={styles.loadingContainer}>
             <div style={styles.spinner}></div>
-            <p style={{ color: '#6b7280', fontSize: '1rem' }}>加载身份标签...</p>
+            <p>加载身份标签中...</p>
           </div>
         </div>
       </div>
     );
   }
 
-  const roleOptions = getRoleOptions();
-
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div style={styles.header}>
-          <h2 style={styles.title}>创建新用户</h2>
-          <button style={styles.closeButton} onClick={onClose}>
-            ✕
-          </button>
+          <h2 style={styles.title}>创建用户</h2>
+          <button style={styles.closeButton} onClick={onClose}>✕</button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} style={styles.form}>
           {/* 基本信息 */}
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>
-              <span>📋</span> 基本信息
-            </h3>
+            <h3 style={styles.sectionTitle}>📋 基本信息</h3>
 
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>手机号码 *</label>
-                <input
-                  type="tel"
-                  style={styles.input}
-                  value={formData.phoneNumber}
-                  onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                  placeholder="01xxxxxxxx"
-                  maxLength="10"
-                  required
-                />
-                <span style={styles.hint}>10位数字，以0开头</span>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>密码 *</label>
-                <input
-                  type="password"
-                  style={styles.input}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="至少8位，包含字母和数字"
-                  required
-                />
-                <span style={styles.hint}>至少8位，包含英文字母和数字</span>
-              </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>手机号 *</label>
+              <input
+                type="tel"
+                style={styles.input}
+                value={formData.phoneNumber}
+                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                placeholder="0123456789"
+                required
+              />
+              <small style={styles.hint}>马来西亚手机号</small>
             </div>
 
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>英文名 *</label>
+                <label style={styles.label}>英文名 / 拼音名 *</label>
                 <input
                   type="text"
                   style={styles.input}
@@ -390,21 +367,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>确认密码 *</label>
-                <input
-                  type="password"
-                  style={styles.input}
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  placeholder="再次输入密码"
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>中文名</label>
+                <label style={styles.label}>中文名（可选）</label>
                 <input
                   type="text"
                   style={styles.input}
@@ -413,28 +376,21 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                   placeholder="张三"
                 />
               </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>邮箱</label>
-                <input
-                  type="email"
-                  style={styles.input}
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="user@example.com"
-                />
-              </div>
             </div>
-          </div>
 
-          {/* 组织信息 */}
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>
-              <span>🏢</span> 组织信息
-            </h3>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>电子邮箱（可选）</label>
+              <input
+                type="email"
+                style={styles.input}
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="example@email.com"
+              />
+            </div>
 
+            {/* ✨ 身份标签：从 Organization 动态读取 */}
             <div style={styles.formRow}>
-              {/* ✨ 身份标签下拉选择 */}
               <div style={styles.formGroup}>
                 <label style={styles.label}>身份标签 *</label>
                 <select
@@ -444,60 +400,100 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                   required
                   disabled={identityTags.length === 0}
                 >
-                  {identityTags.length === 0 && (
-                    <option value="">无可用标签</option>
+                  {identityTags.length === 0 ? (
+                    <option value="">无可用身份标签</option>
+                  ) : (
+                    identityTags.map(tag => (
+                      <option key={tag.id} value={tag.id}>
+                        {tag.name['zh-CN']} ({tag.name['en']})
+                      </option>
+                    ))
                   )}
-                  {identityTags.map(tag => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.label} ({tag.id})
-                    </option>
-                  ))}
                 </select>
-                <span style={styles.hint}>由组织管理员设置的身份类别</span>
+                <small style={styles.hint}>
+                  {identityTags.length === 0
+                    ? '此组织还没有设置身份标签'
+                    : '选择用户的身份标签'}
+                </small>
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>部门 *</label>
-                <select
-                  style={styles.select}
-                  value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  required
-                >
-                  <option value="">请选择部门</option>
-                  {departments.map(dept => (
-                    <option key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </option>
-                  ))}
-                </select>
-                <span style={styles.hint}>用户所属的部门</span>
-              </div>
-            </div>
-
-            {/* ✨ 新增：学号/工号字段 */}
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>学号/工号</label>
+                <label style={styles.label}>班级 / 部门（可选）</label>
                 <input
                   type="text"
+                  list="departments-list"
                   style={styles.input}
-                  value={formData.identityId}
-                  onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
-                  placeholder="例如：2024001 或 T2024001"
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  placeholder={departments.length > 0 ? "选择或输入部门" : "例如：初一（1）班"}
                 />
-                <span style={styles.hint}>组织发放的学号、工号或其他证号（可选）</span>
+                <datalist id="departments-list">
+                  {departments.map(dept => (
+                    <option key={dept.id} value={dept.name} />
+                  ))}
+                </datalist>
+                {departments.length > 0 && (
+                  <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                    可用部门：{departments.map(d => d.name).join('、')}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* 角色选择 */}
+          {/* ✨ 新增：学号/工号输入框 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>学号 / 工号（可选）</label>
+            <input
+              type="text"
+              style={styles.input}
+              value={formData.identityId}
+              onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
+              placeholder="例如：2024001 或 T2024001"
+            />
+            <small style={styles.hint}>
+              组织发放的学号、工号或其他证号
+            </small>
+          </div>
+
+          {/* 密码设置 */}
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>
-              <span>👥</span> 角色选择
-            </h3>
+            <h3 style={styles.sectionTitle}>🔒 密码设置</h3>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>密码 *</label>
+              <input
+                type="password"
+                style={styles.input}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder="至少 8 个字符"
+                required
+                minLength="8"
+              />
+              <small style={styles.hint}>至少 8 个字符，包含英文字母和数字</small>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>确认密码 *</label>
+              <input
+                type="password"
+                style={styles.input}
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                placeholder="再次输入密码"
+                required
+              />
+            </div>
+          </div>
+
+          {/* 角色分配 */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>👥 角色分配 *</h3>
             <p style={styles.roleHint}>
-              选择用户将拥有的角色。不同角色有不同的权限和功能。
+              {(callerRole === 'eventManager')
+                ? '请选择一个或多个角色（可多选）'
+                : '以下角色为必选项（已自动勾选）'}
             </p>
 
             <div style={styles.rolesGrid}>
@@ -511,7 +507,8 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                     style={{
                       ...styles.roleCard,
                       borderColor: isChecked ? '#667eea' : '#e5e7eb',
-                      background: isChecked ? '#f5f7ff' : 'white',
+                      background: isChecked ? '#f0f4ff' : 'white',
+                      opacity: isDisabled ? 0.8 : 1,
                       cursor: isDisabled ? 'not-allowed' : 'pointer'
                     }}
                     onClick={() => !isDisabled && handleRoleToggle(role.value)}

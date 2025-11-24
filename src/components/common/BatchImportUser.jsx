@@ -23,6 +23,182 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     }))
   );
 
+  // ✅ 样式对象定义 - 使用内联样式替代 Tailwind CSS
+  const styles = {
+    // 模态框遮罩层
+    overlay: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999, // ✅ 确保在最上层
+      padding: '1rem'
+    },
+    // 模态框容器
+    modalContainer: {
+      backgroundColor: 'white',
+      borderRadius: '12px',
+      width: '100%',
+      maxWidth: '1200px',
+      maxHeight: '90vh',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+    },
+    // 头部
+    header: {
+      padding: '1.5rem',
+      borderBottom: '1px solid #e5e7eb',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    },
+    headerTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 'bold',
+      color: '#111827',
+      margin: 0
+    },
+    closeButton: {
+      background: 'none',
+      border: 'none',
+      fontSize: '1.5rem',
+      color: '#6b7280',
+      cursor: 'pointer',
+      padding: '0.25rem',
+      lineHeight: 1
+    },
+    // 内容区域
+    content: {
+      flex: 1,
+      overflowY: 'auto',
+      padding: '1.5rem'
+    },
+    // 模式选择按钮容器
+    modeContainer: {
+      display: 'flex',
+      gap: '1rem',
+      padding: '1rem',
+      backgroundColor: '#f9fafb',
+      borderRadius: '8px',
+      marginBottom: '1.5rem'
+    },
+    // 按钮基础样式
+    button: {
+      flex: 1,
+      padding: '0.75rem 1.5rem',
+      borderRadius: '8px',
+      fontWeight: '500',
+      cursor: 'pointer',
+      border: 'none',
+      transition: 'all 0.2s'
+    },
+    buttonPrimary: {
+      backgroundColor: '#3b82f6',
+      color: 'white'
+    },
+    buttonSecondary: {
+      backgroundColor: 'white',
+      color: '#374151'
+    },
+    buttonSuccess: {
+      backgroundColor: '#10b981',
+      color: 'white'
+    },
+    buttonGray: {
+      backgroundColor: '#6b7280',
+      color: 'white'
+    },
+    // 说明框
+    infoBox: {
+      backgroundColor: '#eff6ff',
+      border: '1px solid #bfdbfe',
+      borderRadius: '8px',
+      padding: '1rem',
+      marginBottom: '1.5rem'
+    },
+    infoTitle: {
+      fontWeight: '500',
+      color: '#1e3a8a',
+      marginBottom: '0.5rem'
+    },
+    infoList: {
+      fontSize: '0.875rem',
+      color: '#1e40af',
+      margin: 0,
+      paddingLeft: '1.25rem'
+    },
+    // 上传区域
+    uploadArea: {
+      border: '2px dashed #d1d5db',
+      borderRadius: '8px',
+      padding: '2rem',
+      textAlign: 'center',
+      cursor: 'pointer',
+      transition: 'border-color 0.2s'
+    },
+    // 表格
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse',
+      fontSize: '0.875rem'
+    },
+    tableHeader: {
+      backgroundColor: '#f3f4f6',
+      borderBottom: '2px solid #e5e7eb'
+    },
+    tableHeaderCell: {
+      padding: '0.75rem',
+      textAlign: 'left',
+      fontWeight: '600',
+      color: '#374151'
+    },
+    tableCell: {
+      padding: '0.75rem',
+      borderBottom: '1px solid #e5e7eb'
+    },
+    // 输入框
+    input: {
+      width: '100%',
+      padding: '0.5rem',
+      border: '1px solid #d1d5db',
+      borderRadius: '4px',
+      fontSize: '0.875rem'
+    },
+    select: {
+      width: '100%',
+      padding: '0.5rem',
+      border: '1px solid #d1d5db',
+      borderRadius: '4px',
+      fontSize: '0.875rem',
+      backgroundColor: 'white'
+    },
+    // 错误样式
+    errorRow: {
+      backgroundColor: '#fef2f2'
+    },
+    errorText: {
+      color: '#dc2626',
+      fontSize: '0.75rem',
+      marginTop: '0.25rem'
+    },
+    // 底部按钮容器
+    footer: {
+      display: 'flex',
+      gap: '1rem',
+      marginTop: '1.5rem',
+      padding: '1.5rem',
+      borderTop: '1px solid #e5e7eb',
+      backgroundColor: '#f9fafb'
+    }
+  };
+
   // ✅ 下载 Excel 模板（包含 identityId 列，但不自动生成）
   const downloadTemplate = () => {
     // 使用说明工作表
@@ -33,7 +209,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       ['字段名', '是否必填', '说明', '示例'],
       ['英文名*', '必填', '用户的英文姓名', 'John Doe'],
       ['中文名', '可选', '用户的中文姓名', '张三'],
-      ['学号/工号', '可选', '组织发放的学号、工号或其他证号', '2024001 或 T2024001'], // ✅ 说明这是组织证号
+      ['学号/工号', '可选', '组织发放的学号、工号或其他证号', '2024001 或 T2024001'],
       ['电话号码*', '必填', '10位数字，以0开头', '0123456789'],
       ['部门*', '必填', '用户所属部门', '1年A班'],
       ['邮箱', '可选', '用户的电子邮箱', 'user@example.com'],
@@ -58,7 +234,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
     // 用户数据工作表（横向格式）
     const userData = [
-      ['英文名*', '中文名', '学号/工号', '电话号码*', '部门*', '邮箱', '身份标签*'], // ✅ 第3列：学号/工号
+      ['英文名*', '中文名', '学号/工号', '电话号码*', '部门*', '邮箱', '身份标签*'],
       ['John Doe', '张三', '2024001', '0123456789', '1年A班', 'john@example.com', 'student'],
       ['Jane Smith', '李四', 'T2024001', '0987654321', '行政部', 'jane@example.com', 'teacher'],
       ['', '', '', '', '', '', ''],
@@ -68,7 +244,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     dataWS['!cols'] = [
       { wch: 15 },
       { wch: 12 },
-      { wch: 15 }, // ✅ 学号/工号列
+      { wch: 15 },
       { wch: 15 },
       { wch: 15 },
       { wch: 25 },
@@ -100,762 +276,362 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
           name.includes('用户数据') || name.includes('数据') || workbook.SheetNames[workbook.SheetNames.length - 1]
         );
         
+        if (!sheetName) {
+          alert('未找到有效的工作表');
+          return;
+        }
+
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // 解析数据
-        const parsedData = jsonData.map(row => ({
-          englishName: row['英文名*'] || row['英文名'] || '',
-          chineseName: row['中文名'] || '',
-          identityId: row['学号/工号'] || '', // ✅ 直接读取，不自动生成
-          phoneNumber: String(row['电话号码*'] || '').replace(/\s/g, ''),
-          department: row['部门*'] || row['部门'] || '',
-          email: row['邮箱'] || '',
-          identityTag: row['身份标签*'] || 'student'
-        }));
+        // 第一行表頭：建立動態映射（解決欄位順序錯位 / 舊模板差異）
+        const headers = (jsonData[0] || []).map(h => (h || '').toString().trim());
+        const headerMap = {};
+        headers.forEach((h, i) => {
+          if (/英文/.test(h)) headerMap.englishName = i;
+          else if (/中文/.test(h)) headerMap.chineseName = i;
+          else if (/(学号|工号)/.test(h)) headerMap.identityId = i;
+          else if (/电话/.test(h)) headerMap.phoneNumber = i;
+          else if (/部门/.test(h)) headerMap.department = i;
+          else if (/邮箱|email/i.test(h)) headerMap.email = i;
+          else if (/身份标签|身份|标签/.test(h)) headerMap.identityTag = i;
+        });
 
-        setPreviewData(parsedData);
+        const userData = jsonData.slice(1)
+          .filter(row => Array.isArray(row) && row.some(cell => cell))
+          .map(rawRow => {
+            const row = rawRow.map(c => (c === undefined || c === null) ? '' : String(c).trim());
+
+            const get = (key) => {
+              const idx = headerMap[key];
+              return idx !== undefined ? row[idx] : '';
+            };
+
+            let user = {
+              englishName: get('englishName'),
+              chineseName: get('chineseName'),
+              identityId: get('identityId'),
+              phoneNumber: get('phoneNumber'),
+              department: get('department'),
+              email: get('email'),
+              identityTag: get('identityTag') || 'student'
+            };
+
+            // 嘗試自動修正常見錯位：
+            // 1. 若 englishName 看起來像部門（含“组”或全中文且 phoneNumber 欄位是中文姓名）
+            const isChinese = (v) => /[\u4e00-\u9fa5]/.test(v);
+            if (user.englishName && (/(组|部)$/.test(user.englishName) || (isChinese(user.englishName) && !/[A-Za-z]/.test(user.englishName))) && isChinese(user.phoneNumber) && !/^0\d{9}$/.test(user.phoneNumber)) {
+              // 假設實際順序為：部門 -> 身份ID -> 英文名 -> 中文名 -> 電話號碼
+              // 嘗試從原始 row 重新對齊（僅在行長度 >=5 且尚未有正確電話時）
+              if (row.length >= 5) {
+                user = {
+                  department: row[0] || user.department,
+                  identityId: row[1] || user.identityId,
+                  englishName: row[2] || user.englishName,
+                  chineseName: row[3] || user.chineseName,
+                  phoneNumber: row[4] || user.phoneNumber,
+                  email: user.email,
+                  identityTag: user.identityTag
+                };
+              }
+            }
+
+            // 正規化電話：數字去除非數字，保留前導 0
+            if (user.phoneNumber) {
+              const digits = user.phoneNumber.replace(/[^0-9]/g, '');
+              if (digits.startsWith('60') && digits.length === 11) {
+                // 可能是 60 開頭未加 +，嘗試轉成本地 0XXXXXXXXX
+                const local = '0' + digits.substring(2);
+                user.phoneNumber = local;
+              } else {
+                user.phoneNumber = digits;
+              }
+            }
+
+            // 驗證
+            user.errors = [];
+            if (!user.englishName) user.errors.push('缺少英文名');
+            if (!user.phoneNumber) {
+              user.errors.push('缺少电话号码');
+            } else if (!/^0\d{9}$/.test(user.phoneNumber)) {
+              user.errors.push('电话号码格式不正确');
+            }
+            if (!user.department) user.errors.push('缺少部门');
+            if (!['student', 'teacher', 'staff', 'parent'].includes(user.identityTag)) {
+              user.errors.push('身份标签不正确');
+            }
+
+            return user;
+          });
+
         setFile(uploadedFile);
+        setPreviewData(userData);
         setShowPreview(true);
-        setErrors([]);
+        setErrors(userData.filter(u => u.errors.length > 0));
+
       } catch (error) {
-        console.error('[BatchImport] 文件解析失败:', error);
-        alert('文件解析失败：' + error.message);
+        console.error('解析文件失败:', error);
+        alert('文件解析失败，请确保使用正确的模板');
       }
     };
 
     reader.readAsArrayBuffer(uploadedFile);
   };
 
-  // 处理手动输入
-  const handleManualInputChange = (index, field, value) => {
+  // 处理手动输入的数据变更
+  const handleManualDataChange = (index, field, value) => {
     const newData = [...manualData];
-    newData[index][field] = value;
+    newData[index] = {
+      ...newData[index],
+      [field]: value
+    };
     setManualData(newData);
   };
 
-  const addMoreRows = () => {
-    setManualData([
-      ...manualData,
-      ...Array(5).fill().map(() => ({
-        englishName: '',
-        chineseName: '',
-        identityId: '', // ✅ 空字符串，等待手动输入
-        phoneNumber: '',
-        department: '',
-        email: '',
-        identityTag: 'student'
-      }))
-    ]);
+  // 添加更多手动输入行
+  const addManualRow = () => {
+    setManualData([...manualData, {
+      englishName: '',
+      chineseName: '',
+      identityId: '',
+      phoneNumber: '',
+      department: '',
+      email: '',
+      identityTag: 'student'
+    }]);
   };
 
-  const handleManualPreview = () => {
-    const filteredData = manualData.filter(row => 
-      row.englishName.trim() || row.phoneNumber.trim()
+  // 提交手动输入的数据进行预览
+  const handleManualSubmit = () => {
+    // 过滤掉空行
+    const validUsers = manualData.filter(user => 
+      user.englishName || user.phoneNumber || user.department
     );
     
-    if (filteredData.length === 0) {
-      alert('请至少填写一行数据');
+    if (validUsers.length === 0) {
+      alert('请至少填写一位用户的信息');
       return;
     }
 
-    setPreviewData(filteredData);
-    setShowPreview(true);
-    setErrors([]);
-  };
-
-  // 验证数据
-  const validateData = async () => {
-    const newErrors = [];
-    const phoneSet = new Set();
-
-    // ✅ 新增：通过 Cloud Function 检查现有用户电话号码
-    const phoneNumbers = previewData.map(u => u.phoneNumber).filter(p => p);
-    let duplicatePhones = [];
-    
-    try {
-      const checkUrl = 'https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/checkDuplicateUsers';
-      const response = await fetch(checkUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          organizationId: organizationId,
-          eventId: eventId,
-          phoneNumbers: phoneNumbers
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[BatchImport] ❌ 检查重复失败:', errorData);
-      } else {
-        const result = await response.json();
-        duplicatePhones = result.duplicates || [];
-        console.log(`[BatchImport] ✅ 检查完成: 现有用户 ${result.existingCount} 个，待导入 ${result.importCount} 个，重复 ${result.duplicates.length} 个`);
-        if (result.duplicates.length > 0) {
-          console.log(`[BatchImport] ⚠️ 重复电话号码:`, result.duplicates);
-        }
+    // 验证数据
+    const validatedUsers = validUsers.map(user => {
+      const errors = [];
+      if (!user.englishName) errors.push('缺少英文名');
+      if (!user.phoneNumber) {
+        errors.push('缺少电话号码');
+      } else if (!/^0\d{9}$/.test(user.phoneNumber)) {
+        errors.push('电话号码格式不正确');
       }
-    } catch (error) {
-      console.error('[BatchImport] ❌ 检查重复时出错:', error);
-      console.error('[BatchImport] 错误详情:', error.message);
-    }
-
-    previewData.forEach((user, index) => {
-      const rowErrors = [];
-
-      // 必填字段验证
-      if (!user.englishName?.trim()) {
-        rowErrors.push('英文名为必填');
-      }
-      if (!user.phoneNumber?.trim()) {
-        rowErrors.push('电话号码为必填');
-      }
-      if (!user.department?.trim()) {
-        rowErrors.push('部门为必填');
-      }
-      if (!user.identityTag?.trim()) {
-        rowErrors.push('身份标签为必填');
+      if (!user.department) errors.push('缺少部门');
+      if (!['student', 'teacher', 'staff', 'parent'].includes(user.identityTag)) {
+        errors.push('身份标签不正确');
       }
 
-      // 电话号码格式验证
-      if (user.phoneNumber && !/^0\d{9}$/.test(user.phoneNumber)) {
-        rowErrors.push('电话号码格式错误（需要10位，以0开头）');
-      }
-
-      // ✅ 新增：检查是否已存在于活动中（通过 Cloud Function 的结果）
-      if (user.phoneNumber && duplicatePhones.includes(user.phoneNumber)) {
-        console.log(`[BatchImport] ⚠️ 检测到重复: ${user.phoneNumber}`);
-        rowErrors.push('⚠️ 此电话号码已在活动中存在');
-      }
-
-      // 重复电话检查（同一批次内）
-      if (user.phoneNumber && phoneSet.has(user.phoneNumber)) {
-        rowErrors.push('电话号码重复');
-      }
-      phoneSet.add(user.phoneNumber);
-
-      // 身份标签验证
-      const validTags = ['student', 'teacher', 'staff', 'parent'];
-      if (user.identityTag && !validTags.includes(user.identityTag)) {
-        rowErrors.push(`身份标签无效（只能是：${validTags.join(', ')}）`);
-      }
-
-      if (rowErrors.length > 0) {
-        newErrors.push({
-          row: index + 1,
-          errors: rowErrors
-        });
-      }
+      return { ...user, errors };
     });
 
-    setErrors(newErrors);
-    return newErrors.length === 0;
+    setPreviewData(validatedUsers);
+    setShowPreview(true);
+    setErrors(validatedUsers.filter(u => u.errors.length > 0));
   };
 
-  // 批量导入用户
+  // 执行批量导入
   const handleImportUsers = async () => {
-    if (!await validateData()) {
-      alert('请修正数据错误后再导入');
-      return;
-    }
-
-    if (!confirm(`确定要导入 ${previewData.length} 位用户吗？\n所有用户将自动获得 Seller + Customer 角色。`)) {
+    if (errors.length > 0) {
+      alert('请先修正所有错误');
       return;
     }
 
     try {
       setImporting(true);
-    
-    let successCount = 0;
-    let failCount = 0;
-    const failedUsers = [];
 
-    // 準備預設密碼（orgCode + eventCode），若不可得則回退為 organizationId + eventId
-    let defaultPassword = `${organizationId}${eventId}`;
-    try {
-      const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
-      const evtSnap = await getDoc(doc(db, 'organizations', organizationId, 'events', eventId));
-      const orgCode = orgSnap.exists() ? (orgSnap.data().orgCode || orgSnap.data().organizationCode) : '';
-      const eventCode = evtSnap.exists() ? (evtSnap.data().eventCode || evtSnap.data().code) : '';
-      if (orgCode || eventCode) {
-        defaultPassword = `${orgCode || organizationId}${eventCode || eventId}`;
-      }
-    } catch (e) {
-      console.warn('[BatchImport] 無法讀取 orgCode/eventCode，使用預設 organizationId+eventId 當作密碼');
-    }
-    // 密碼強度保險：至少 8 碼，含字母與數字
-    if (defaultPassword.length < 8 || !(/[a-zA-Z]/.test(defaultPassword) && /\d/.test(defaultPassword))) {
-      defaultPassword = `${defaultPassword}Ab12`;
-    }
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-    // 一次性呼叫批量 API，效能大幅提升
-    const auth = getAuth();
-    const idToken = await auth.currentUser.getIdToken();
-    const apiUrl = '/api/batchImportUsers';
-
-    const usersPayload = previewData.map(user => ({
-      phoneNumber: String(user.phoneNumber).trim(),
-      password: defaultPassword,
-      englishName: String(user.englishName || '').trim() || `User_${Date.now()}`,
-      chineseName: String(user.chineseName || '').trim(),
-      identityId: String(user.identityId || '').trim(),
-      // 如果沒有 email 就留空，不自動生成
-      email: user.email && String(user.email).trim() ? String(user.email).trim() : '',
-      identityTag: user.identityTag || 'staff',
-      department: String(user.department || '').trim(),
-      roles: ['seller', 'customer']
-    }));
-
-    const resp = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        organizationId,
-        eventId,
-        users: usersPayload,
-        idToken,
-        skipAuth: true
-      })
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-      throw new Error(err.error || `HTTP ${resp.status}`);
-    }
-    const result = await resp.json();
-    successCount = result.imported || 0;
-    failCount = (result.errors || []).length;
-    (result.errors || []).forEach(e => failedUsers.push({ name: e.phoneNumber, phone: e.phoneNumber, error: e.reason }));
-
-    // 显示结果
-  let message = `导入完成！\n\n`;
-    message += `✅ 成功: ${successCount} 位用户\n`;
-    if (failCount > 0) {
-      message += `❌ 失败: ${failCount} 位用户\n\n`;
-      message += `失败用户:\n`;
-      failedUsers.forEach(u => {
-        message += `- ${u.name} (${u.phone}): ${u.error}\n`;
+      // 调用 Cloud Function
+      const response = await fetch('/api/batchImportUsers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          users: previewData.map(user => ({
+            englishName: user.englishName,
+            chineseName: user.chineseName || '',
+            identityId: user.identityId || '',
+            phoneNumber: user.phoneNumber,
+            department: user.department,
+            email: user.email || '',
+            identityTag: user.identityTag,
+            roles: ['seller', 'customer']
+          }))
+        })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || '导入失败');
+      }
+
+      const result = await response.json();
+      // 後端欄位為 imported (成功數) 與 errors
+      const imported = typeof result.imported === 'number' ? result.imported : (result.successCount || 0);
+      alert(`成功导入 ${imported} 位用户`);
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      onClose();
+
+    } catch (error) {
+      console.error('批量导入失败:', error);
+      alert(`导入失败: ${error.message}`);
+    } finally {
+      setImporting(false);
     }
+  };
 
-    alert(message);
+  return (
+    <div style={styles.overlay}>
+      <div style={styles.modalContainer}>
+        {/* 头部 */}
+        <div style={styles.header}>
+          <h2 style={styles.headerTitle}>批量导入用户</h2>
+          <button
+            onClick={onClose}
+            style={styles.closeButton}
+            onMouseEnter={(e) => e.target.style.color = '#111827'}
+            onMouseLeave={(e) => e.target.style.color = '#6b7280'}
+          >
+            ✕
+          </button>
+        </div>
 
-    // 成功后重置并回调
-    if (successCount > 0 && onSuccess) {
-      onSuccess();
-    }
+        {/* 主体内容 */}
+        <div style={styles.content}>
+          {!showPreview ? (
+            <div>
+              {/* 上传文件模式 */}
+              <div>
+                  <div style={styles.infoBox}>
+                    <h3 style={styles.infoTitle}>📋 使用说明</h3>
+                    <ul style={styles.infoList}>
+                      <li>下载 Excel 模板，按格式填写用户信息</li>
+                      <li>必填字段：英文名、电话号码、部门、身份标签</li>
+                      <li>电话号码必须是10位数字，以0开头</li>
+                      <li>学号/工号是可选的，如果组织有发放请填写</li>
+                      <li>所有导入的用户将自动获得 Seller + Customer 角色</li>
+                    </ul>
+                  </div>
 
-    // 重置表单
-    setPreviewData([]);
-    setFile(null);
-    setShowPreview(false);
-    setManualData(
-      Array(5).fill().map(() => ({
-        englishName: '',
-        chineseName: '',
-        identityId: '',
-        phoneNumber: '',
-        department: '',
-        email: '',
-        identityTag: 'student'
-      }))
-    );
+                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                    <button
+                      onClick={downloadTemplate}
+                      style={{ ...styles.button, ...styles.buttonSuccess }}
+                    >
+                      📥 下载 Excel 模板
+                    </button>
+                  </div>
 
-  } catch (error) {
-    console.error('[BatchImport] 批量导入失败:', error);
-    alert('批量导入失败: ' + error.message);
-  } finally {
-    setImporting(false);
-  }
-};
-
-
-
-  // 预览界面
-  if (showPreview) {
-    return (
-      <div style={styles.modalOverlay} onClick={onClose}>
-        <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-          <div style={styles.modalHeader}>
-            <h2 style={styles.modalTitle}>📋 预览导入数据</h2>
-            <button style={styles.closeButton} onClick={onClose}>✕</button>
-          </div>
-
-          {errors.length > 0 && (
-            <div style={styles.errorBox}>
-              <strong>⚠️ 发现 {errors.length} 个错误：</strong>
-              {errors.map((err, i) => (
-                <div key={i} style={styles.errorItem}>
-                  第 {err.row} 行: {err.errors.join(', ')}
+                  <div style={styles.uploadArea}>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleFileUpload}
+                      style={{ display: 'none' }}
+                      id="file-upload"
+                    />
+                    <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'block' }}>
+                      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
+                      <div style={{ fontSize: '1.125rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                        {file ? file.name : '点击选择 Excel 文件'}
+                      </div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                        支持 .xlsx 和 .xls 格式
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              ))}
+              )}
+            </div>
+          ) : (
+            <div>
+              {/* 预览数据 */}
+              <div style={{ ...styles.infoBox, backgroundColor: errors.length > 0 ? '#fef2f2' : '#f0fdf4', borderColor: errors.length > 0 ? '#fecaca' : '#86efac' }}>
+                <h3 style={{ ...styles.infoTitle, color: errors.length > 0 ? '#991b1b' : '#166534' }}>
+                  {errors.length > 0 ? `⚠️ 发现 ${errors.length} 条错误记录` : '✅ 数据验证通过'}
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: errors.length > 0 ? '#991b1b' : '#166534', margin: 0 }}>
+                  {errors.length > 0 
+                    ? '请修正下方标红的错误后再导入' 
+                    : `准备导入 ${previewData.length} 位用户`}
+                </p>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.table}>
+                  <thead style={styles.tableHeader}>
+                    <tr>
+                      <th style={styles.tableHeaderCell}>#</th>
+                      <th style={styles.tableHeaderCell}>英文名</th>
+                      <th style={styles.tableHeaderCell}>中文名</th>
+                      <th style={styles.tableHeaderCell}>学号/工号</th>
+                      <th style={styles.tableHeaderCell}>电话号码</th>
+                      <th style={styles.tableHeaderCell}>部门</th>
+                      <th style={styles.tableHeaderCell}>邮箱</th>
+                      <th style={styles.tableHeaderCell}>身份标签</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.map((user, index) => (
+                      <tr key={index} style={user.errors && user.errors.length > 0 ? styles.errorRow : {}}>
+                        <td style={styles.tableCell}>{index + 1}</td>
+                        <td style={styles.tableCell}>{user.englishName}</td>
+                        <td style={styles.tableCell}>{user.chineseName || '-'}</td>
+                        <td style={styles.tableCell}>{user.identityId || '-'}</td>
+                        <td style={styles.tableCell}>{user.phoneNumber}</td>
+                        <td style={styles.tableCell}>{user.department}</td>
+                        <td style={styles.tableCell}>{user.email || '-'}</td>
+                        <td style={styles.tableCell}>{user.identityTag}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={styles.footer}>
+                <button
+                  onClick={() => {
+                    setShowPreview(false);
+                    setErrors([]);
+                  }}
+                  style={{ ...styles.button, ...styles.buttonGray }}
+                >
+                  ⬅️ 返回修改
+                </button>
+                <button
+                  onClick={handleImportUsers}
+                  disabled={importing || errors.length > 0}
+                  style={{
+                    ...styles.button,
+                    ...(importing || errors.length > 0 
+                      ? { backgroundColor: '#d1d5db', color: '#6b7280', cursor: 'not-allowed' }
+                      : styles.buttonPrimary)
+                  }}
+                >
+                  {importing ? '⏳ 导入中...' : '✅ 确认导入'}
+                </button>
+              </div>
             </div>
           )}
-
-          <div style={styles.infoBox}>
-            <strong>📊 数据统计：</strong>
-            <div>总计: {previewData.length} 位用户</div>
-            <div>预设角色: Seller + Customer</div>
-            <div>有学号/工号: {previewData.filter(u => u.identityId?.trim()).length} 位</div>
-          </div>
-
-          <div style={styles.tableContainer}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>#</th>
-                  <th style={styles.th}>英文名</th>
-                  <th style={styles.th}>中文名</th>
-                  <th style={styles.th}>学号/工号</th>
-                  <th style={styles.th}>电话</th>
-                  <th style={styles.th}>部门</th>
-                  <th style={styles.th}>邮箱</th>
-                  <th style={styles.th}>身份标签</th>
-                </tr>
-              </thead>
-              <tbody>
-                {previewData.map((user, index) => (
-                  <tr key={index}>
-                    <td style={styles.td}>{index + 1}</td>
-                    <td style={styles.td}>{user.englishName}</td>
-                    <td style={styles.td}>{user.chineseName || '-'}</td>
-                    <td style={styles.td}>{user.identityId || '-'}</td>
-                    <td style={styles.td}>{user.phoneNumber}</td>
-                    <td style={styles.td}>{user.department}</td>
-                    <td style={styles.td}>{user.email || '-'}</td>
-                    <td style={styles.td}>{user.identityTag}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={styles.modalActions}>
-            <button
-              style={styles.cancelButton}
-              onClick={() => setShowPreview(false)}
-              disabled={importing}
-            >
-              ← 返回修改
-            </button>
-            <button
-              style={{
-                ...styles.submitButton,
-                ...(importing || errors.length > 0 ? styles.submitButtonDisabled : {})
-              }}
-              onClick={handleImportUsers}
-              disabled={importing || errors.length > 0}
-            >
-              {importing ? '导入中...' : `✅ 确认导入 ${previewData.length} 位用户`}
-            </button>
-          </div>
         </div>
-      </div>
-    );
-  }
-
-  // 主界面
-  return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>📥 批量导入用户</h2>
-          <button style={styles.closeButton} onClick={onClose}>✕</button>
-        </div>
-
-        {/* 导入方式选择 */}
-        <div style={styles.modeSelection}>
-          <label style={styles.radioLabel}>
-            <input
-              type="radio"
-              name="mode"
-              value="upload"
-              checked={importMode === 'upload'}
-              onChange={() => setImportMode('upload')}
-            />
-            <span>📤 上传 Excel/CSV 文件</span>
-          </label>
-          <label style={styles.radioLabel}>
-            <input
-              type="radio"
-              name="mode"
-              value="manual"
-              checked={importMode === 'manual'}
-              onChange={() => setImportMode('manual')}
-            />
-            <span>✍️ 手动输入</span>
-          </label>
-        </div>
-
-        {/* 上传模式 */}
-        {importMode === 'upload' && (
-          <>
-            <div style={styles.infoBox}>
-              <strong>📋 首次使用？请先下载模板文件</strong>
-              <button
-                style={styles.downloadButton}
-                onClick={downloadTemplate}
-              >
-                📥 下载 Excel 模板
-              </button>
-            </div>
-
-            <div style={styles.uploadArea}>
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileUpload}
-                style={{ display: 'none' }}
-                id="fileInput"
-              />
-              <label htmlFor="fileInput" style={styles.uploadLabel}>
-                <div style={styles.uploadIcon}>📄</div>
-                <div style={styles.uploadText}>
-                  {file ? file.name : '拖拽文件到这里或点击选择文件'}
-                </div>
-                <div style={styles.uploadHint}>
-                  支持格式：.xlsx, .xls, .csv
-                </div>
-              </label>
-            </div>
-          </>
-        )}
-
-        {/* 手动输入模式 */}
-        {importMode === 'manual' && (
-          <>
-            <div style={styles.tableContainer}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>#</th>
-                    <th style={styles.th}>英文名*</th>
-                    <th style={styles.th}>中文名</th>
-                    <th style={styles.th}>学号/工号</th>
-                    <th style={styles.th}>电话号码*</th>
-                    <th style={styles.th}>部门*</th>
-                    <th style={styles.th}>邮箱</th>
-                    <th style={styles.th}>身份标签*</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {manualData.map((row, index) => (
-                    <tr key={index}>
-                      <td style={styles.td}>{index + 1}</td>
-                      <td style={styles.td}>
-                        <input
-                          type="text"
-                          value={row.englishName}
-                          onChange={(e) => handleManualInputChange(index, 'englishName', e.target.value)}
-                          style={styles.input}
-                          placeholder="John Doe"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="text"
-                          value={row.chineseName}
-                          onChange={(e) => handleManualInputChange(index, 'chineseName', e.target.value)}
-                          style={styles.input}
-                          placeholder="张三"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="text"
-                          value={row.identityId}
-                          onChange={(e) => handleManualInputChange(index, 'identityId', e.target.value)}
-                          style={styles.input}
-                          placeholder="2024001"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="tel"
-                          value={row.phoneNumber}
-                          onChange={(e) => handleManualInputChange(index, 'phoneNumber', e.target.value)}
-                          style={styles.input}
-                          placeholder="0123456789"
-                          maxLength="10"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="text"
-                          value={row.department}
-                          onChange={(e) => handleManualInputChange(index, 'department', e.target.value)}
-                          style={styles.input}
-                          placeholder="1年A班"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="email"
-                          value={row.email}
-                          onChange={(e) => handleManualInputChange(index, 'email', e.target.value)}
-                          style={styles.input}
-                          placeholder="user@email.com"
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <select
-                          value={row.identityTag}
-                          onChange={(e) => handleManualInputChange(index, 'identityTag', e.target.value)}
-                          style={styles.select}
-                        >
-                          <option value="student">Student</option>
-                          <option value="teacher">Teacher</option>
-                          <option value="staff">Staff</option>
-                          <option value="parent">Parent</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={styles.manualActions}>
-              <button
-                style={styles.addRowButton}
-                onClick={addMoreRows}
-              >
-                ➕ 添加更多行
-              </button>
-              <button
-                style={styles.previewButton}
-                onClick={handleManualPreview}
-              >
-                👁️ 预览数据
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
-};
-
-const styles = {
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    padding: '1rem'
-  },
-  modalContent: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '2rem',
-    maxWidth: '1200px',
-    width: '100%',
-    maxHeight: '90vh',
-    overflowY: 'auto'
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1.5rem'
-  },
-  modalTitle: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    margin: 0
-  },
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '1.5rem',
-    color: '#6b7280',
-    cursor: 'pointer',
-    padding: '0.25rem',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '4px'
-  },
-  modeSelection: {
-    display: 'flex',
-    gap: '2rem',
-    marginBottom: '1.5rem',
-    padding: '1rem',
-    background: '#f9fafb',
-    borderRadius: '8px'
-  },
-  radioLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    cursor: 'pointer',
-    fontSize: '1rem'
-  },
-  infoBox: {
-    background: '#eff6ff',
-    border: '1px solid #3b82f6',
-    padding: '1rem',
-    borderRadius: '8px',
-    marginBottom: '1.5rem',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  downloadButton: {
-    padding: '0.5rem 1rem',
-    background: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: '500',
-    fontSize: '0.875rem'
-  },
-  uploadArea: {
-    border: '2px dashed #d1d5db',
-    borderRadius: '12px',
-    padding: '3rem',
-    textAlign: 'center',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    background: '#f9fafb'
-  },
-  uploadLabel: {
-    cursor: 'pointer',
-    display: 'block'
-  },
-  uploadIcon: {
-    fontSize: '3rem',
-    marginBottom: '1rem'
-  },
-  uploadText: {
-    fontSize: '1rem',
-    color: '#374151',
-    marginBottom: '0.5rem'
-  },
-  uploadHint: {
-    fontSize: '0.875rem',
-    color: '#6b7280'
-  },
-  tableContainer: {
-    overflowX: 'auto',
-    maxHeight: '500px',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px',
-    marginBottom: '1rem'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '0.875rem'
-  },
-  th: {
-    background: '#f3f4f6',
-    padding: '0.75rem',
-    textAlign: 'left',
-    fontWeight: '600',
-    color: '#374151',
-    borderBottom: '2px solid #e5e7eb',
-    position: 'sticky',
-    top: 0,
-    zIndex: 1
-  },
-  td: {
-    padding: '0.75rem',
-    borderBottom: '1px solid #e5e7eb'
-  },
-  input: {
-    width: '100%',
-    padding: '0.5rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '4px',
-    fontSize: '0.875rem',
-    boxSizing: 'border-box'
-  },
-  select: {
-    width: '100%',
-    padding: '0.5rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '4px',
-    fontSize: '0.875rem',
-    boxSizing: 'border-box',
-    background: 'white'
-  },
-  manualActions: {
-    display: 'flex',
-    gap: '1rem',
-    justifyContent: 'flex-end'
-  },
-  addRowButton: {
-    padding: '0.75rem 1.5rem',
-    background: '#f3f4f6',
-    color: '#374151',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: '500'
-  },
-  previewButton: {
-    padding: '0.75rem 1.5rem',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: '600'
-  },
-  errorBox: {
-    background: '#fee2e2',
-    border: '1px solid #fecaca',
-    color: '#991b1b',
-    padding: '1rem',
-    borderRadius: '8px',
-    marginBottom: '1rem'
-  },
-  errorItem: {
-    marginTop: '0.5rem',
-    fontSize: '0.875rem'
-  },
-  modalActions: {
-    display: 'flex',
-    gap: '1rem',
-    justifyContent: 'flex-end',
-    marginTop: '1.5rem'
-  },
-  cancelButton: {
-    padding: '0.75rem 1.5rem',
-    background: '#f3f4f6',
-    color: '#374151',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: '500'
-  },
-  submitButton: {
-    padding: '0.75rem 1.5rem',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: '600'
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed'
-  }
 };
 
 export default BatchImportUser;
