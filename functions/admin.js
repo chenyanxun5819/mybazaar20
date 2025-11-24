@@ -2485,16 +2485,45 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
     if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
 
     // 權限：確認 callerUid 在任一 event.users 中擁有 eventManager 角色
+    console.log('[batchImportUsersHttp] callerUid:', callerUid);
     const eventsSnapshot = await orgRef.collection('events').get();
     let hasPermission = false;
     for (const ev of eventsSnapshot.docs) {
       const userSnap = await ev.ref.collection('users').where('authUid', '==', callerUid).limit(1).get();
       if (!userSnap.empty) {
         const r = userSnap.docs[0].data().roles || [];
+        console.log('[batchImportUsersHttp] Found user in event.users with roles:', r);
         if (r.includes('eventManager')) { hasPermission = true; break; }
       }
     }
-    if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 权限' });
+    if (!hasPermission) {
+      console.log('[batchImportUsersHttp] Not found in users, checking event.admins fallback');
+      // Fallback: 某些舊活動僅在 eventDoc.admins 陣列中記錄 Event Manager，未建立 users 子集合
+      const eventData = eventSnap.data() || {};
+      const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+      console.log('[batchImportUsersHttp] event.admins:', admins);
+      const normalizePhone = (p) => {
+        if (!p) return '';
+        let digits = String(p).replace(/[^0-9]/g, '');
+        if (digits.startsWith('60')) digits = digits.substring(2); // 馬來西亞國碼
+        if (digits.startsWith('0')) digits = digits.substring(1);
+        return digits; // 去掉前導 0 與國碼後的實際號碼
+      };
+      for (const adm of admins) {
+        const admPhone = adm && (adm.phone || adm.phoneNumber);
+        const core = normalizePhone(admPhone);
+        if (core) {
+          const expectedAuthUid = `phone_60${core}`;
+          console.log('[batchImportUsersHttp] Checking admin expectedUid:', expectedAuthUid, 'vs callerUid:', callerUid);
+          if (expectedAuthUid === callerUid) { hasPermission = true; break; }
+        }
+      }
+    }
+    if (!hasPermission) {
+      console.error('[batchImportUsersHttp] Permission denied for callerUid:', callerUid);
+      return res.status(403).json({ error: '需要 Event Manager 权限' });
+    }
+    console.log('[batchImportUsersHttp] Permission granted');
 
     // 讀取現有手機號集合（加速重複檢查）
     const usersCol = eventRef.collection('users');
