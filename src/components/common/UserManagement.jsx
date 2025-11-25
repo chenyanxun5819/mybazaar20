@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
+import { getAuth } from 'firebase/auth';
 import { 
   collection, 
   getDocs, 
@@ -281,68 +282,40 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     
     try {
       setIsProcessing(true);
-      
-      const newRoles = [];
-      if (selectedRoles.sellerManager) newRoles.push('sellerManager');
-      if (selectedRoles.merchantManager) newRoles.push('merchantManager');
-      if (selectedRoles.customerManager) newRoles.push('customerManager');
-      if (selectedRoles.financeManager) newRoles.push('financeManager');
-      if (selectedRoles.seller) newRoles.push('seller');
-      if (selectedRoles.merchant) newRoles.push('merchant');
-      if (selectedRoles.customer) newRoles.push('customer');
-      
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
-      
-      const updateData = {
-        roles: newRoles,
-        'accountStatus.lastUpdated': new Date()
-      };
-      
-      // 如果勾选了 sellerManager，保存管理部门
-      if (selectedRoles.sellerManager) {
-        updateData['sellerManager.managedDepartments'] = managedDepartments;
-        
-        // 如果是新添加的 sellerManager，初始化其他字段
-        if (!selectedUser.roles?.includes('sellerManager')) {
-          updateData['sellerManager.allocatedPoints'] = 0;
-          updateData['sellerManager.returnedPoints'] = 0;
-          updateData['sellerManager.totalPoints'] = 0;
-          updateData['sellerManager.transactions'] = [];
-        }
+
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
+
+      // 通过 Cloud Function 更新用户角色
+      const response = await fetch('/api/updateUserRoles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: selectedUser.id,
+          roles: {
+            sellerManager: selectedRoles.sellerManager,
+            merchantManager: selectedRoles.merchantManager,
+            customerManager: selectedRoles.customerManager,
+            financeManager: selectedRoles.financeManager,
+            seller: selectedRoles.seller,
+            merchant: selectedRoles.merchant,
+            customer: selectedRoles.customer
+          },
+          managedDepartments: selectedRoles.sellerManager ? managedDepartments : [],
+          previousRoles: selectedUser.roles || []
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || '角色分配失败');
       }
-      
-      await updateDoc(userRef, updateData);
-      
-      // 初始化点数账户
-      const additionalUpdateData = {};
-      
-      if (selectedRoles.seller && !selectedUser.roles?.includes('seller')) {
-        additionalUpdateData['seller.availablePoints'] = 0;
-        additionalUpdateData['seller.totalPointsSold'] = 0;
-        additionalUpdateData['seller.transactions'] = [];
-      }
-      
-      if (selectedRoles.merchant && !selectedUser.roles?.includes('merchant')) {
-        additionalUpdateData['merchant.availablePoints'] = 0;
-        additionalUpdateData['merchant.totalPointsSold'] = 0;
-        additionalUpdateData['merchant.transactions'] = [];
-      }
-      
-      if (selectedRoles.customer && !selectedUser.roles?.includes('customer')) {
-        additionalUpdateData['customer.availablePoints'] = 0;
-        additionalUpdateData['customer.totalPointsSpent'] = 0;
-        additionalUpdateData['customer.transactions'] = [];
-      }
-      
-      if (Object.keys(additionalUpdateData).length > 0) {
-        await updateDoc(userRef, additionalUpdateData);
-      }
-      
+
       alert('角色分配成功！');
       setShowRoleModal(false);
       fetchData();
