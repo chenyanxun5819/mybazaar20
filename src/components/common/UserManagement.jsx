@@ -351,15 +351,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       return;
     }
     
-    const totalCapital = eventData?.settings?.totalCapital || 0;
-    const allocatedCapital = eventData?.settings?.allocatedCapital || 0;
-    const remainingCapital = totalCapital - allocatedCapital;
-    
-    if (points > remainingCapital) {
-      alert(`超出可分配资本！\n总资本: RM ${totalCapital.toLocaleString()}\n已分配: RM ${allocatedCapital.toLocaleString()}\n剩余: RM ${remainingCapital.toLocaleString()}`);
-      return;
-    }
-    
     try {
       setIsProcessing(true);
       
@@ -396,9 +387,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         'accountStatus.lastUpdated': new Date()
       });
       
-      await updateDoc(eventRef, {
-        'settings.allocatedCapital': increment(points)
-      });
+      // ✅ 移除 allocatedCapital 更新（已取消总量限制，不再需要追踪）
       
       alert(`成功分配 ${points.toLocaleString()} 点数！`);
       setShowPointsModal(false);
@@ -470,9 +459,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         'accountStatus.lastUpdated': new Date()
       });
       
-      await updateDoc(eventRef, {
-        'settings.allocatedCapital': increment(-points)
-      });
+      // ✅ 移除 allocatedCapital 更新（已取消总量限制，不再需要追踪）
       
       alert(`成功回收 ${points.toLocaleString()} 点数！`);
       setShowRecallModal(false);
@@ -513,14 +500,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     }
     
     const totalPoints = points * deptUsers.length;
-    const totalCapital = eventData?.settings?.totalCapital || 0;
-    const allocatedCapital = eventData?.settings?.allocatedCapital || 0;
-    const remainingCapital = totalCapital - allocatedCapital;
-    
-    if (totalPoints > remainingCapital) {
-      alert(`超出可分配资本！\n需要总点数: RM ${totalPoints.toLocaleString()}\n剩余资本: RM ${remainingCapital.toLocaleString()}`);
-      return;
-    }
     
     if (!confirm(`确认为 ${deptUsers.length} 个用户各分配 ${points.toLocaleString()} 点数？\n总计: ${totalPoints.toLocaleString()} 点数`)) {
       return;
@@ -560,11 +539,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         }
       });
       
-      // 更新活动已分配资本
-      const eventRef = doc(db, 'organizations', organizationId, 'events', eventId);
-      batch.update(eventRef, {
-        'settings.allocatedCapital': increment(totalPoints)
-      });
+      // ✅ 移除 allocatedCapital 更新（已取消总量限制，不再需要追踪）
       
       await batch.commit();
       
@@ -931,14 +906,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                 </div>
               </div>
 
-              {eventData && (
-                <div style={styles.availableCapital}>
-                  可分配资本: <span style={styles.availableCapitalValue}>
-                    RM {((eventData.settings?.totalCapital || 0) - (eventData.settings?.allocatedCapital || 0)).toLocaleString()}
-                  </span>
-                </div>
-              )}
-
               <div style={styles.formGroup}>
                 <label style={styles.label}>分配点数 *</label>
                 <input
@@ -1059,14 +1026,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
             </h3>
 
             <div style={styles.pointsForm}>
-              {eventData && (
-                <div style={styles.availableCapital}>
-                  可分配资本: <span style={styles.availableCapitalValue}>
-                    RM {((eventData.settings?.totalCapital || 0) - (eventData.settings?.allocatedCapital || 0)).toLocaleString()}
-                  </span>
-                </div>
-              )}
-
               <div style={styles.formGroup}>
                 <label style={styles.label}>选择部门 *</label>
                 <select

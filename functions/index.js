@@ -9,9 +9,10 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp} = require('./admin');
+  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles} = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
-const { sendOtpHttp, verifyOtpHttp, generateTestOtp } = require('./twilio');
+// 切換至 otpVerify.js (取代舊 twilio.js)
+const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -30,6 +31,7 @@ exports.deleteDepartment = deleteDepartment;
 exports.reorderDepartments = reorderDepartments;
 exports.departmentsHttp = departmentsHttp;
 exports.batchImportUsersHttp = batchImportUsersHttp;
+exports.updateUserRoles = updateUserRoles;
 exports.loginUniversalHttp = loginUniversalHttp;
 
 // SMS OTP 函式
@@ -305,195 +307,7 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
   });
 });
 
-// Event Manager HTTP 登录端点
-exports.loginEventManagerHttp = functions.https.onRequest((req, res) => {
-  corsHandler(req, res, async () => {
-    const startTime = Date.now();
-    const requestId = Math.random().toString(36).substring(7);
-    
-    console.log(`[${requestId}] ===== EVENT MANAGER LOGIN START =====`);
-    
-    try {
-      if (req.method !== 'POST') {
-        return res.status(405).json({ 
-          error: { code: 'method-not-allowed', message: '只支持 POST 请求' }
-        });
-      }
 
-      // 支援兩種呼叫方式：可直接用 organizationId/eventId（document id），
-      // 或用 orgCode/eventCode（人可讀代碼）由 server 端查找對應 id。
-      let { organizationId, eventId, phoneNumber, password, orgCode, eventCode } = req.body || {};
-
-      console.log(`[${requestId}] 📥 Received data (raw):`, {
-        organizationId,
-        eventId,
-        orgCode,
-        eventCode,
-        phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 3)}***` : 'missing',
-        hasPassword: !!password
-      });
-
-      // 如果沒有提供 document id，但有提供 orgCode/eventCode，則查出對應的 ids
-      if ((!organizationId || !eventId) && orgCode && eventCode) {
-        console.log(`[${requestId}] 🔎 Looking up organizationId/eventId from orgCode/eventCode`);
-
-        // 查 orgCode -> organizationId
-        const orgsSnap = await admin.firestore()
-          .collection('organizations')
-          .where('orgCode', '==', String(orgCode).toLowerCase())
-          .limit(1)
-          .get();
-
-        if (orgsSnap.empty) {
-          return res.status(404).json({ error: { code: 'not-found', message: '找不到该组织' } });
-        }
-
-        const orgDoc = orgsSnap.docs[0];
-        organizationId = orgDoc.id;
-        console.log(`[${requestId}] ✅ Resolved organizationId: ${organizationId}`);
-
-        // 查 eventCode -> eventId
-        const eventsSnap = await admin.firestore()
-          .collection('organizations').doc(organizationId)
-          .collection('events')
-          .where('eventCode', '==', String(eventCode))
-          .limit(1)
-          .get();
-
-        if (eventsSnap.empty) {
-          return res.status(404).json({ error: { code: 'not-found', message: '找不到该活动' } });
-        }
-
-        eventId = eventsSnap.docs[0].id;
-        console.log(`[${requestId}] ✅ Resolved eventId: ${eventId}`);
-      }
-
-      // 最終檢查必填欄位
-      if (!organizationId || !eventId || !phoneNumber || !password) {
-        return res.status(400).json({ 
-          error: { code: 'invalid-argument', message: '请提供所有必填字段' }
-        });
-      }
-
-      const normalizedPhone = normalizePhoneNumber(phoneNumber);
-      const collectionPath = `organizations/${organizationId}/events/${eventId}/users`;
-
-      const phoneVariants = [
-        normalizedPhone,
-        `0${normalizedPhone}`,
-        `60${normalizedPhone}`,
-        `+60${normalizedPhone}`,
-        phoneNumber
-      ];
-
-      let userDoc = null;
-      
-      for (const variant of phoneVariants) {
-        const usersSnap = await admin.firestore()
-          .collection(collectionPath)
-          .where("basicInfo.phoneNumber", "==", variant)
-          .limit(1)
-          .get();
-        
-        if (!usersSnap.empty) {
-          userDoc = usersSnap.docs[0];
-          break;
-        }
-      }
-
-      if (!userDoc) {
-        return res.status(404).json({ 
-          error: { code: 'not-found', message: '查无此用户' }
-        });
-      }
-
-      const userData = userDoc.data();
-
-      if (!userData.roles || !(userData.roles.includes('eventManager'))) {
-        return res.status(403).json({ 
-          error: { code: 'permission-denied', message: '您不是此活动的 Event Manager' }
-        });
-      }
-
-      const passwordSalt = userData.basicInfo?.passwordSalt;
-      const storedHash = userData.basicInfo?.passwordHash;
-
-      if (!passwordSalt || !storedHash) {
-        return res.status(412).json({ 
-          error: { code: 'failed-precondition', message: '密码数据缺失' }
-        });
-      }
-
-      const passwordHash = crypto.createHash("sha256")
-        .update(password + passwordSalt)
-        .digest("hex");
-
-      if (passwordHash !== storedHash) {
-        return res.status(403).json({ 
-          error: { code: 'permission-denied', message: '密码错误' }
-        });
-      }
-
-      const authUid = userData.authUid || userDoc.id;
-
-      try {
-        await admin.auth().getUser(authUid);
-      } catch (error) {
-        if (error.code === 'auth/user-not-found') {
-          await admin.auth().createUser({
-            uid: authUid,
-            displayName: userData.basicInfo?.englishName || 'Event Manager',
-            disabled: false
-          });
-        }
-      }
-
-      const customToken = await admin.auth().createCustomToken(authUid);
-      const userId = userDoc.id;
-
-      await admin.firestore()
-        .collection(collectionPath)
-        .doc(userId)
-        .update({ 'activityData.lastActiveAt': new Date() });
-
-      // 可選：若存在組織層 users 彙總文件，才更新其 lastActiveAt，避免 NOT_FOUND 造成 500
-      try {
-        const orgUserRef = admin.firestore()
-          .collection('organizations').doc(organizationId)
-          .collection('users').doc(userId);
-        const orgUserSnap = await orgUserRef.get();
-        if (orgUserSnap.exists) {
-          await orgUserRef.update({ 'activityData.lastActiveAt': new Date() });
-        } else {
-          console.log(`[${requestId}] Org-level user doc missing, skip update`);
-        }
-      } catch (orgUpdateErr) {
-        console.warn(`[${requestId}] Skip org-level users update due to error:`, orgUpdateErr?.message);
-      }
-
-      const duration = Date.now() - startTime;
-      return res.status(200).json({
-        success: true,
-        customToken,
-        userId,
-        organizationId,
-        eventId,
-        englishName: userData.basicInfo?.englishName || '',
-        chineseName: userData.basicInfo?.chineseName || '',
-        message: '登录成功',
-        elapsedMs: duration
-      });
-    } catch (error) {
-      console.error('[loginEventManagerHttp] Error:', error);
-      return res.status(500).json({
-        error: {
-          code: error.code || 'internal',
-          message: error.message || '登录失败'
-        }
-      });
-    }
-  });
-});
 
 // changePassword 函数
 exports.changePassword = functions.https.onCall(async (data, context) => {

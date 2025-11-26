@@ -32,7 +32,8 @@ const EventManagerDashboard = () => {
     totalFinanceManagers: 0,
     totalSellers: 0,
     totalMerchants: 0,
-    totalCustomers: 0
+    totalCustomers: 0,
+    totalAllocatedPoints: 0  // 🆕 新增
   });
   const [showUserList, setShowUserList] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 用户管理
@@ -69,7 +70,7 @@ const EventManagerDashboard = () => {
       if (!storedInfo) {
         alert('请先登录');
         if (orgEventCode) {
-          navigate(`/login/${orgEventCode}`);
+          navigate(`/event-admin/${orgEventCode}/login`);
         }
         return;
       }
@@ -109,11 +110,13 @@ const EventManagerDashboard = () => {
           totalFinanceManagers: 0,
           totalSellers: 0,
           totalMerchants: 0,
-          totalCustomers: 0
+          totalCustomers: 0,
+          totalAllocatedPoints: 0  // 🆕 新增：已分配的总点数
         };
 
         // 加载用户列表数据（用于表格显示）
         const userList = [];
+        let totalAllocated = 0;  // 🆕 累计已分配点数
 
         usersSnapshot.forEach(doc => {
           const userData = doc.data();
@@ -122,14 +125,29 @@ const EventManagerDashboard = () => {
             ...userData
           });
 
-          if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
+          // ❌ 移除：Event Manager 不再在 users 子集合的 roles 中
+          // if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
           if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
           if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
           if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
           if (userData.roles?.includes('seller')) stats.totalSellers++;
           if (userData.roles?.includes('merchant')) stats.totalMerchants++;
           if (userData.roles?.includes('customer')) stats.totalCustomers++;
+          
+          // 🆕 累加所有用户的可用点数（已分配但未使用）
+          if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
+          if (userData.merchant?.availablePoints) totalAllocated += userData.merchant.availablePoints;
+          if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
+          
+          // 🆕 累加所有用户的已销售点数（已分配且已使用）
+          if (userData.seller?.totalPointsSold) totalAllocated += userData.seller.totalPointsSold;
+          if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
         });
+
+        // ✅ 新增：从 event.admins 数组获取 Event Manager 数量
+        // 使用 eventInfo（刚加载的数据）而不是 eventData（状态可能未更新）
+        stats.totalEventManagers = eventInfo?.admins?.length || 0;
+        stats.totalAllocatedPoints = totalAllocated;  // 🆕 设置已分配总点数
 
         setStatistics(stats);
         setUsers(userList); // 保存用户列表
@@ -226,7 +244,7 @@ const EventManagerDashboard = () => {
       await signOut(auth);
       localStorage.removeItem('eventManagerInfo');
       localStorage.removeItem('eventManagerLogin');
-      navigate(`/login/${orgEventCode}`);
+      navigate(`/event-admin/${orgEventCode}/login`);
     } catch (error) {
       console.error('[Logout] 错误:', error);
       alert('退出登录失败');
@@ -317,6 +335,12 @@ const EventManagerDashboard = () => {
           value={statistics.totalFinanceManagers || 0}
           icon="💵"
           color="#3b82f6"
+        />
+        <StatCard
+          title="已分配总点数"
+          value={statistics.totalAllocatedPoints?.toLocaleString() || '0'}
+          icon="🎁"
+          color="#16a34a"
         />
 
       </div>

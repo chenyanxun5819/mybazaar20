@@ -11,6 +11,61 @@ function sha256(str) {
 }
 
 /**
+ * 检查调用者是否是 Event Manager
+ * @param {string} callerUid - 调用者的 UID
+ * @param {FirebaseFirestore.DocumentReference} orgRef - 组织文档引用
+ * @returns {Promise<boolean>}
+ */
+async function checkEventManagerPermission(callerUid, orgRef) {
+  if (!callerUid) return false;
+
+  // 解析 UID 中的电话号码
+  let phoneFromUid = null;
+  if (callerUid.startsWith('eventManager_')) {
+    phoneFromUid = callerUid.replace('eventManager_', '');
+  } else if (callerUid.startsWith('phone_')) {
+    phoneFromUid = callerUid.replace('phone_', '');
+  }
+
+  if (!phoneFromUid) return false;
+
+  // 标准化电话号码
+  const normalizePhone = (p) => {
+    if (!p) return '';
+    let digits = String(p).replace(/[^0-9]/g, '');
+    if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
+    if (digits.startsWith('0')) digits = digits.substring(1);
+    return digits;
+  };
+
+  const coreCaller = normalizePhone(phoneFromUid);
+
+  // 检查所有活动的 admins 数组
+  try {
+    const eventsSnapshot = await orgRef.collection('events').get();
+    for (const eventDoc of eventsSnapshot.docs) {
+      const eventData = eventDoc.data();
+      const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+
+      for (const admin of admins) {
+        const adminPhone = admin.phone || admin.phoneNumber;
+        if (!adminPhone) continue;
+
+        const coreAdmin = normalizePhone(adminPhone);
+        if (coreCaller === coreAdmin) {
+          return true;
+        }
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error('[checkEventManagerPermission] Error:', error);
+    return false;
+  }
+}
+
+
+/**
  * Callable function to create/assign an Event Manager under a specific organization + event.
  * - Auth: requires caller to be a platform admin (presence in admin_uids/{uid})
  * - Data required: organizationId, eventId, phoneNumber, password, englishName
@@ -37,7 +92,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('unauthenticated', '需要登录');
     }
     const callerUid = context.auth.uid;
-    
+
     // Verify caller is platform admin
     const adminCheck = await getDb().collection('admin_uids').doc(callerUid).get();
     if (!adminCheck.exists) {
@@ -58,25 +113,25 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('invalid-argument', '英文名为必填');
     }
 
-// Locate organization and event
+    // Locate organization and event
     const orgRef = getDb().collection('organizations').doc(organizationId);
     const orgSnap = await orgRef.get();
     if (!orgSnap.exists) {
       throw new functions.https.HttpsError('not-found', '组织不存在');
     }
-    
+
     const orgData = orgSnap.data();
-    
+
     // ✨ 验证 identityTag 是否存在于组织的 identityTags 中
     const identityTags = orgData.identityTags || [];
     const validTag = identityTags.find(tag => tag.id === identityTag && tag.isActive);
     if (!validTag) {
       throw new functions.https.HttpsError(
-        'invalid-argument', 
+        'invalid-argument',
         `身份标签 "${identityTag}" 不存在或已停用，请在组织设置中检查可用的身份标签`
       );
     }
-    
+
     const eventRef = orgRef.collection('events').doc(eventId);
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) {
@@ -164,7 +219,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
       addedAt: now,
       addedBy: callerUid
     };
-    
+
     await orgRef.update({
       admins: admin.firestore.FieldValue.arrayUnion(adminEntry),
       updatedAt: now
@@ -264,7 +319,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
     }
     const eventData = eventSnap.data() || {};
-    
+
     // 检查活动是否已有 Event Manager
     if (eventData.eventManager) {
       return res.status(409).json({ error: { code: 'already-exists', message: '此活动已指派 Event Manager' } });
@@ -336,7 +391,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
     if (!userDoc.identityInfo) delete userDoc.identityInfo;
 
     await usersCol.doc(newUserId).set(userDoc);
-    
+
     // 更新事件统计
     const eventUpdateData = {
       eventManager: newUserId,
@@ -344,7 +399,7 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
       'statistics.totalUsers': admin.firestore.FieldValue.increment(1),
       'statistics.totalManagers': admin.firestore.FieldValue.increment(1)
     };
-    
+
     await eventRef.update(eventUpdateData);
 
     const adminEntry = {
@@ -443,28 +498,28 @@ exports.checkAdminExists = functions.https.onCall(async (data, context) => {
 
 exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
   const actualData = data.data || data;
-  const { 
-    phoneNumber, 
-    englishName, 
-    chineseName, 
+  const {
+    phoneNumber,
+    englishName,
+    chineseName,
     email,
     identityTag,
     department,
     password,
     includeMerchant,
-    projectInfo 
+    projectInfo
   } = actualData;
 
-  console.log('[createInitialAdmin] Received data:', { 
-    phoneNumber, 
-    englishName, 
-    chineseName, 
+  console.log('[createInitialAdmin] Received data:', {
+    phoneNumber,
+    englishName,
+    chineseName,
     email,
     identityTag,
     department,
     hasPassword: !!password,
     includeMerchant,
-    hasProjectInfo: !!projectInfo 
+    hasProjectInfo: !!projectInfo
   });
 
   // 验证必填字段
@@ -483,7 +538,7 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
     .where('roles', 'array-contains', 'super_admin')
     .limit(1)
     .get();
-  
+
   if (!check.empty) {
     throw new functions.https.HttpsError('already-exists', '已有管理员,无法重复初始化');
   }
@@ -514,7 +569,7 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
 
   // 生成文档ID
   const docId = `usr_${crypto.randomUUID()}`;
-  
+
   // 生成密码 hash 和 salt
   const passwordSalt = crypto.randomBytes(16).toString('hex');
   const passwordHash = sha256(password + passwordSalt);
@@ -536,7 +591,7 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
   // 构建 identityInfo 基于 identityTag
   let identityInfo = {};
   let superAdminId = 'SA001';
-  
+
   switch (identityTag) {
     case 'staff':
       identityInfo = {
@@ -756,20 +811,20 @@ exports.setProjectInfo = functions.https.onCall(async (data, context) => {
 exports.getTotalCapital = functions.https.onCall(async (data, context) => {
   try {
     const projectInfoDoc = await getDb().collection('system_config').doc('project_info').get();
-    
+
     if (!projectInfoDoc.exists) {
       throw new functions.https.HttpsError('not-found', '找不到专案配置');
     }
-    
+
     const projectInfo = projectInfoDoc.data();
     const totalCapital = projectInfo.settings?.totalCapital || 0;
     const statistics = projectInfo.statistics || {};
     const assignedCapital = statistics.assignedCapital || 0;
     const availableCapital = statistics.availableCapital || totalCapital;
-    
+
     console.log('[getTotalCapital] Capital info:', { totalCapital, assignedCapital, availableCapital });
-    
-    return { 
+
+    return {
       totalCapital,
       assignedCapital,
       availableCapital
@@ -785,13 +840,13 @@ exports.getAssignedCapitalSum = functions.https.onCall(async (data, context) => 
     const managersSnap = await getDb().collection('users')
       .where('roles', 'array-contains', 'manager')
       .get();
-    
+
     let assignedSum = 0;
     managersSnap.forEach(doc => {
       const managerData = doc.data();
       assignedSum += managerData.roleSpecificData?.manager?.assignedCapital || 0;
     });
-    
+
     console.log('[getAssignedCapitalSum] Assigned sum:', assignedSum);
     return { assignedSum };
   } catch (error) {
@@ -804,49 +859,49 @@ exports.getAssignedCapitalSum = functions.https.onCall(async (data, context) => 
 
 exports.createManager = functions.https.onCall(async (data, context) => {
   console.log('[createManager] Received request, context.auth:', context.auth ? context.auth.uid : 'null');
-  
+
   const actualData = data.data || data;
   const callerUid = context.auth ? context.auth.uid : actualData.callerUid;
-  
+
   console.log('[createManager] Caller UID:', callerUid);
-  
+
   if (!callerUid) {
     throw new functions.https.HttpsError('unauthenticated', '必须登入才能执行此操作');
   }
-  
+
   // 验证权限
   try {
     const userQuery = await getDb().collection('users')
       .where('authUid', '==', callerUid)
       .limit(1)
       .get();
-    
+
     let hasPermission = false;
-    
+
     if (!userQuery.empty) {
       const userData = userQuery.docs[0].data();
-      console.log('[createManager] Found user by authUid:', { 
-        docId: userQuery.docs[0].id, 
-        roles: userData.roles 
+      console.log('[createManager] Found user by authUid:', {
+        docId: userQuery.docs[0].id,
+        roles: userData.roles
       });
       hasPermission = userData.roles && userData.roles.includes('super_admin');
     } else {
       const directDoc = await getDb().collection('users').doc(callerUid).get();
       if (directDoc.exists) {
         const userData = directDoc.data();
-        console.log('[createManager] Found user by docId:', { 
-          docId: directDoc.id, 
-          roles: userData.roles 
+        console.log('[createManager] Found user by docId:', {
+          docId: directDoc.id,
+          roles: userData.roles
         });
         hasPermission = userData.roles && userData.roles.includes('super_admin');
       }
     }
-    
+
     if (!hasPermission) {
       console.log('[createManager] Permission denied: User is not super_admin');
       throw new functions.https.HttpsError('permission-denied', '只有超级管理员可以建立 Manager');
     }
-    
+
     console.log('[createManager] Permission check passed');
   } catch (error) {
     if (error instanceof functions.https.HttpsError) {
@@ -855,79 +910,79 @@ exports.createManager = functions.https.onCall(async (data, context) => {
     console.error('[createManager] Permission check error:', error);
     throw new functions.https.HttpsError('internal', '权限验证失败: ' + error.message);
   }
-  
+
   const { phoneNumber, password, englishName, chineseName, identityTag, assignedCapital } = actualData;
-  
-  console.log('[createManager] Creating manager:', { 
-    phoneNumber, 
-    englishName, 
-    chineseName, 
+
+  console.log('[createManager] Creating manager:', {
+    phoneNumber,
+    englishName,
+    chineseName,
     identityTag,
-    assignedCapital 
+    assignedCapital
   });
-  
+
   // 验证必要栏位
   if (!phoneNumber || !password || !englishName || assignedCapital === undefined) {
     throw new functions.https.HttpsError('invalid-argument', '缺少必要栏位');
   }
-  
+
   // 验证密码强度
   if (password.length < 8) {
     throw new functions.https.HttpsError('invalid-argument', '密码至少需要8个字符');
   }
-  
+
   if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
     throw new functions.https.HttpsError('invalid-argument', '密码必须包含英文字母和数字');
   }
-  
+
   // 验证身份标签 (manager 必须有身份标签)
   const validIdentityTags = ['staff', 'teacher'];
   if (!identityTag || !validIdentityTags.includes(identityTag)) {
     throw new functions.https.HttpsError('invalid-argument', 'Manager 必须选择有效的身份标签 (staff 或 teacher)');
   }
-  
+
   try {
     // 检查手机号码是否已存在
     const existingUserSnap = await getDb().collection('users')
       .where('basicInfo.phoneNumber', '==', phoneNumber)
       .limit(1)
       .get();
-    
+
     if (!existingUserSnap.empty) {
       throw new functions.https.HttpsError('already-exists', '此手机号码已被使用');
     }
-    
+
     // 验证分配额度是否超过可用额度
     const projectInfoRef = getDb().collection('system_config').doc('project_info');
     const projectInfoDoc = await projectInfoRef.get();
     const projectInfo = projectInfoDoc.data();
     const totalCapital = projectInfo.settings?.totalCapital || 0;
-    
+
     const managersSnap = await getDb().collection('users')
       .where('roles', 'array-contains', 'manager')
       .get();
-    
+
     let assignedSum = 0;
     managersSnap.forEach(doc => {
       const managerData = doc.data();
       assignedSum += managerData.roleSpecificData?.manager?.assignedCapital || 0;
     });
-    
+
     if (assignedCapital + assignedSum > totalCapital) {
       throw new functions.https.HttpsError(
-        'failed-precondition', 
+        'failed-precondition',
         `分配额度超过可用额度,可用: ${totalCapital - assignedSum}`
       );
     }
-    
+
     // 生成 password hash 和 salt
     const passwordSalt = crypto.randomBytes(16).toString('hex');
     const passwordHash = sha256(password + passwordSalt);
-    
+
     // 建立 Auth 用户
     const authUid = `phone_60${phoneNumber.replace(/^0/, "")}`;
     let userRecord;
-    
+
     try {
       userRecord = await admin.auth().createUser({
         uid: authUid,
@@ -941,11 +996,11 @@ exports.createManager = functions.https.onCall(async (data, context) => {
         throw authError;
       }
     }
-    
+
     // 生成 Manager ID
     const managerIdNum = managersSnap.size + 1;
     const managerId = `M${managerIdNum.toString().padStart(3, '0')}`;
-    
+
     // 构建 identityInfo
     let identityInfo = {};
     switch (identityTag) {
@@ -962,7 +1017,7 @@ exports.createManager = functions.https.onCall(async (data, context) => {
         };
         break;
     }
-    
+
     // 建立 Firestore 文档 - 完全符合新架构
     const docId = `usr_${crypto.randomUUID()}`;
     await getDb().collection('users').doc(docId).set({
@@ -1022,24 +1077,24 @@ exports.createManager = functions.https.onCall(async (data, context) => {
         createdBy: callerUid
       }
     });
-    
+
     // 更新统计资料
     const newAssignedSum = assignedSum + assignedCapital;
     const newManagerCount = managersSnap.size + 1;
-    
+
     await projectInfoRef.update({
       'statistics.totalManagers': newManagerCount,
       'statistics.assignedCapital': newAssignedSum,
       'statistics.availableCapital': totalCapital - newAssignedSum
     });
-    
+
     console.log('[createManager] Manager created successfully:', docId);
-    console.log('[createManager] Updated statistics:', { 
-      totalManagers: newManagerCount, 
+    console.log('[createManager] Updated statistics:', {
+      totalManagers: newManagerCount,
       assignedCapital: newAssignedSum,
       availableCapital: totalCapital - newAssignedSum
     });
-    
+
     return {
       success: true,
       userId: docId,
@@ -1057,133 +1112,7 @@ exports.createManager = functions.https.onCall(async (data, context) => {
 });
 
 
-// Consolidated Event Manager login callable function
-// Accepts either organizationId/eventId (document ids) or orgCode/eventCode (human codes)
-// Returns a custom token and metadata for the event manager
-exports.loginEventManager = functions.https.onCall(async (data, context) => {
-  try {
-    console.log('[loginEventManager] Login attempt');
 
-    const actual = data && data.data ? data.data : data || {};
-    let { organizationId, eventId, orgCode, eventCode, phoneNumber, password } = actual;
-
-    console.log('[loginEventManager] Received:', { organizationId, eventId, orgCode, eventCode, phoneNumber: phoneNumber ? `${phoneNumber.substring(0,3)}***` : 'missing' });
-
-    // If IDs not provided but codes are, resolve them
-    if ((!organizationId || !eventId) && orgCode && eventCode) {
-      console.log('[loginEventManager] Resolving organizationId/eventId from codes');
-      const orgsSnap = await getDb().collection('organizations')
-        .where('orgCode', '==', String(orgCode).toLowerCase())
-        .limit(1)
-        .get();
-      if (orgsSnap.empty) {
-        console.log('[loginEventManager] Organization not found for code:', orgCode);
-        throw new functions.https.HttpsError('not-found', '找不到该组织');
-      }
-      organizationId = orgsSnap.docs[0].id;
-      console.log('[loginEventManager] Resolved organizationId:', organizationId);
-
-      const eventsSnap = await getDb().collection('organizations').doc(organizationId)
-        .collection('events')
-        .where('eventCode', '==', String(eventCode))
-        .limit(1)
-        .get();
-      if (eventsSnap.empty) {
-        console.log('[loginEventManager] Event not found for code:', eventCode);
-        throw new functions.https.HttpsError('not-found', '找不到该活动');
-      }
-      eventId = eventsSnap.docs[0].id;
-      console.log('[loginEventManager] Resolved eventId:', eventId);
-    }
-
-    // Validate inputs
-    if (!organizationId || !eventId || !phoneNumber || !password) {
-      console.log('[loginEventManager] Missing required fields');
-      throw new functions.https.HttpsError('invalid-argument', '请填写所有必填字段');
-    }
-
-    // find user under the event
-    const usersSnap = await getDb().collection('organizations').doc(organizationId)
-      .collection('events').doc(eventId)
-      .collection('users')
-      .where('basicInfo.phoneNumber', '==', phoneNumber)
-      .limit(1)
-      .get();
-
-    if (usersSnap.empty) {
-      console.log('[loginEventManager] User not found for phone:', phoneNumber);
-      throw new functions.https.HttpsError('permission-denied', '手机号或密码错误');
-    }
-
-    const userDoc = usersSnap.docs[0];
-    const userData = userDoc.data();
-    const userId = userDoc.id;
-
-    console.log('[loginEventManager] User found:', { userId, roles: userData.roles });
-
-    if (!userData.roles || !(userData.roles.includes('eventManager'))) {
-      console.log('[loginEventManager] User is not an eventManager');
-      throw new functions.https.HttpsError('permission-denied', '您不是此活动的 Event Manager');
-    }
-
-    const passwordSalt = userData.basicInfo?.passwordSalt;
-    const storedHash = userData.basicInfo?.passwordHash;
-    if (!passwordSalt || !storedHash) {
-      console.log('[loginEventManager] Password data missing');
-      throw new functions.https.HttpsError('failed-precondition', '密码数据缺失，请联系管理员');
-    }
-
-    const inputHash = sha256(password + passwordSalt);
-    if (inputHash !== storedHash) {
-      console.log('[loginEventManager] Password mismatch');
-      throw new functions.https.HttpsError('permission-denied', '手机号或密码错误');
-    }
-
-    console.log('[loginEventManager] Password verified');
-
-    let authUid = userData.authUid || userId;
-    try {
-      await admin.auth().getUser(authUid);
-      console.log('[loginEventManager] Auth user exists:', authUid);
-    } catch (err) {
-      if (err.code === 'auth/user-not-found') {
-        await admin.auth().createUser({ uid: authUid, displayName: userData.basicInfo?.englishName || 'Event Manager' });
-        console.log('[loginEventManager] Auth user created:', authUid);
-        await getDb().collection('organizations').doc(organizationId)
-          .collection('events').doc(eventId)
-          .collection('users').doc(userId)
-          .update({ authUid: authUid, 'accountStatus.updatedAt': new Date() });
-      } else {
-        console.error('[loginEventManager] Auth getUser error:', err);
-        throw err;
-      }
-    }
-
-    const customToken = await admin.auth().createCustomToken(authUid);
-    console.log('[loginEventManager] Custom token created');
-
-    await getDb().collection('organizations').doc(organizationId)
-      .collection('events').doc(eventId)
-      .collection('users').doc(userId)
-      .update({ 'activityData.lastActiveAt': new Date() });
-
-    return {
-      success: true,
-      customToken,
-      userId,
-      organizationId,
-      eventId,
-      englishName: userData.basicInfo?.englishName || '',
-      chineseName: userData.basicInfo?.chineseName || '',
-      message: '登录成功'
-    };
-
-  } catch (error) {
-    if (error instanceof functions.https.HttpsError) throw error;
-    console.error('[loginEventManager] Error:', error);
-    throw new functions.https.HttpsError('internal', error.message || '登录失败');
-  }
-});
 exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res) => {
   // 设置 CORS
   res.set('Access-Control-Allow-Origin', '*');
@@ -1204,7 +1133,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
 
   try {
     console.log('[createUserByEventManagerHttp] Request received');
-    
+
     const {
       organizationId,
       eventId,
@@ -1250,7 +1179,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       return;
     }
 
-// 1. 验证组织和活动是否存在
+    // 1. 验证组织和活动是否存在
     const orgDoc = await getDb().collection('organizations').doc(organizationId).get();
     if (!orgDoc.exists) {
       res.status(404).json({ error: '组织不存在' });
@@ -1262,8 +1191,8 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     const identityTags = orgData.identityTags || [];
     const validTag = identityTags.find(tag => tag.id === identityTag && tag.isActive);
     if (!validTag) {
-      res.status(400).json({ 
-        error: `身份标签 "${identityTag}" 不存在或已停用，请在组织设置中检查可用的身份标签` 
+      res.status(400).json({
+        error: `身份标签 "${identityTag}" 不存在或已停用，请在组织设置中检查可用的身份标签`
       });
       return;
     }
@@ -1325,11 +1254,11 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       }
     }
 
-// 6. 构建 identityInfo（通用方式，支持任意身份标签）
+    // 6. 构建 identityInfo（通用方式，支持任意身份标签）
     // ✅ 使用前端传入的 identityId（学号/工号），如果没有则自动生成
     const identityInfo = {
-      identityId: identityId && String(identityId).trim() 
-        ? String(identityId).trim() 
+      identityId: identityId && String(identityId).trim()
+        ? String(identityId).trim()
         : `${identityTag.toUpperCase()}_${Date.now()}`,
       identityName: validTag.name['zh-CN'],
       identityNameEn: validTag.name['en'],
@@ -1338,7 +1267,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
 
     // 7. 构建 roleSpecificData
     const roleSpecificData = {};
-    
+
     if (roles.includes('sellerManager')) {
       roleSpecificData.sellerManager = {
         managerId: `SM${Date.now()}`,
@@ -1348,14 +1277,14 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         totalSellersManaged: 0
       };
     }
-    
+
     if (roles.includes('merchantManager')) {
       roleSpecificData.merchantManager = {
         managerId: `MM${Date.now()}`,
         totalMerchantsManaged: 0
       };
     }
-    
+
     if (roles.includes('customerManager')) {
       roleSpecificData.customerManager = {
         managerId: `CM${Date.now()}`,
@@ -1363,7 +1292,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         totalSalesAmount: 0
       };
     }
-    
+
     if (roles.includes('seller')) {
       roleSpecificData.seller = {
         sellerId: `SL${Date.now()}`,
@@ -1372,7 +1301,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         totalPointsSold: 0
       };
     }
-    
+
     if (roles.includes('merchant')) {
       roleSpecificData.merchant = {
         merchantId: `MR${Date.now()}`,
@@ -1380,7 +1309,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         totalReceivedPoints: 0
       };
     }
-    
+
     if (roles.includes('customer')) {
       roleSpecificData.customer = {
         customerId: `CS${Date.now()}`,
@@ -1531,8 +1460,8 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
 
     // Validate required fields
     if (!organizationId || !eventId || !idToken) {
-      res.status(400).json({ 
-        error: '缺少必需参数：organizationId, eventId, idToken' 
+      res.status(400).json({
+        error: '缺少必需参数：organizationId, eventId, idToken'
       });
       return;
     }
@@ -1560,8 +1489,8 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
 
     const db = getDb();
     const eventRef = db.collection('organizations').doc(organizationId)
-                      .collection('events').doc(eventId);
-    
+      .collection('events').doc(eventId);
+
     // Get event data before deletion
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) {
@@ -1573,22 +1502,22 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     const usersToDelete = eventData.statistics?.totalUsers || 0;
     const isActive = eventData.status === 'active';
 
-    console.log('[deleteEventHttp] Event data:', { 
-      usersToDelete, 
+    console.log('[deleteEventHttp] Event data:', {
+      usersToDelete,
       isActive,
-      eventManager: eventData.eventManager 
+      eventManager: eventData.eventManager
     });
 
     // Get organization data (for admins array)
     const orgRef = db.collection('organizations').doc(organizationId);
     const orgSnap = await orgRef.get();
-    
+
     if (!orgSnap.exists) {
       res.status(404).json({ error: '组织不存在' });
       return;
     }
 
-  const currentAdmins = orgSnap.data()?.admins || [];
+    const currentAdmins = orgSnap.data()?.admins || [];
 
     // 先聚合本活動中各部門使用人數，刪除後要回沖（減少） organization.departments 的 userCount，避免累積過多
     const departmentUsageCounter = new Map(); // key: normalized lower-case name, value: { name, count }
@@ -1814,8 +1743,8 @@ exports.checkDuplicateUsers = functions.https.onRequest(async (req, res) => {
 
     // Validate required fields
     if (!organizationId || !eventId || !Array.isArray(phoneNumbers)) {
-      res.status(400).json({ 
-        error: '缺少必需参数：organizationId, eventId, phoneNumbers' 
+      res.status(400).json({
+        error: '缺少必需参数：organizationId, eventId, phoneNumbers'
       });
       return;
     }
@@ -1824,8 +1753,8 @@ exports.checkDuplicateUsers = functions.https.onRequest(async (req, res) => {
 
     const db = getDb();
     const usersRef = db.collection('organizations').doc(organizationId)
-                       .collection('events').doc(eventId)
-                       .collection('users');
+      .collection('events').doc(eventId)
+      .collection('users');
 
     // Get all users in the event
     const usersSnapshot = await usersRef.get();
@@ -1849,7 +1778,7 @@ exports.checkDuplicateUsers = functions.https.onRequest(async (req, res) => {
       existingCount: existingPhones.size,
       importCount: phoneNumbers.length,
       hasDuplicates: duplicates.length > 0,
-      message: duplicates.length > 0 
+      message: duplicates.length > 0
         ? `发现 ${duplicates.length} 个重复电话号码`
         : '没有找到重复'
     });
@@ -1974,23 +1903,9 @@ exports.addDepartment = functions.https.onRequest(async (req, res) => {
     const db = getDb();
     const orgRef = db.collection('organizations').doc(organizationId);
     const eventsSnapshot = await orgRef.collection('events').get();
-    
-    let hasPermission = false;
-    for (const eventDoc of eventsSnapshot.docs) {
-      // 避免複合索引需求：先用 authUid 單欄位查詢，再在記憶體檢查角色
-      const usersSnapshot = await eventDoc.ref.collection('users')
-        .where('authUid', '==', callerUid)
-        .limit(1)
-        .get();
-      if (!usersSnapshot.empty) {
-        const u = usersSnapshot.docs[0].data();
-        const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager')) {
-          hasPermission = true;
-          break;
-        }
-      }
-    }
+
+    // ✅ 使用通用权限检查函数
+    const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
 
     if (!hasPermission) {
       res.status(403).json({ error: '需要 Event Manager 权限' });
@@ -2088,22 +2003,9 @@ exports.deleteDepartment = functions.https.onRequest(async (req, res) => {
     const db = getDb();
     const orgRef = db.collection('organizations').doc(organizationId);
     const eventsSnapshot = await orgRef.collection('events').get();
-    
-    let hasPermission = false;
-    for (const eventDoc of eventsSnapshot.docs) {
-      const usersSnapshot = await eventDoc.ref.collection('users')
-        .where('authUid', '==', callerUid)
-        .limit(1)
-        .get();
-      if (!usersSnapshot.empty) {
-        const u = usersSnapshot.docs[0].data();
-        const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager')) {
-          hasPermission = true;
-          break;
-        }
-      }
-    }
+
+    // ✅ 使用通用权限检查函数
+    const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
 
     if (!hasPermission) {
       res.status(403).json({ error: '需要 Event Manager 权限' });
@@ -2116,9 +2018,9 @@ exports.deleteDepartment = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-  const orgData = orgSnap.data() || {};
-  const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
-  const deptToDelete = departments.find(d => d.id === departmentId);
+    const orgData = orgSnap.data() || {};
+    const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
+    const deptToDelete = departments.find(d => d.id === departmentId);
 
     if (!deptToDelete) {
       res.status(404).json({ error: '部门不存在' });
@@ -2144,7 +2046,7 @@ exports.deleteDepartment = functions.https.onRequest(async (req, res) => {
       }
     }
 
-  const updatedDepts = departments.filter(d => d.id !== departmentId);
+    const updatedDepts = departments.filter(d => d.id !== departmentId);
     await orgRef.update({
       departments: updatedDepts,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -2186,7 +2088,7 @@ exports.reorderDepartments = functions.https.onRequest(async (req, res) => {
       ? authHeader.substring('Bearer '.length)
       : null;
     const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-  const { organizationId, reorderedDepartments } = body;
+    const { organizationId, reorderedDepartments } = body;
     const idToken = body.idToken || tokenFromHeader;
 
     if (!organizationId || !Array.isArray(reorderedDepartments) || !idToken) {
@@ -2206,22 +2108,9 @@ exports.reorderDepartments = functions.https.onRequest(async (req, res) => {
     const db = getDb();
     const orgRef = db.collection('organizations').doc(organizationId);
     const eventsSnapshot = await orgRef.collection('events').get();
-    
-    let hasPermission = false;
-    for (const eventDoc of eventsSnapshot.docs) {
-      const usersSnapshot = await eventDoc.ref.collection('users')
-        .where('authUid', '==', callerUid)
-        .limit(1)
-        .get();
-      if (!usersSnapshot.empty) {
-        const u = usersSnapshot.docs[0].data();
-        const roles = Array.isArray(u.roles) ? u.roles : [];
-        if (roles.includes('eventManager')) {
-          hasPermission = true;
-          break;
-        }
-      }
-    }
+
+    // ✅ 使用通用权限检查函数
+    const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
 
     if (!hasPermission) {
       res.status(403).json({ error: '需要 Event Manager 权限' });
@@ -2292,20 +2181,55 @@ exports.departmentsHttp = functions.https.onRequest(async (req, res) => {
     const orgSnap = await orgRef.get();
     if (!orgSnap.exists) return res.status(404).json({ error: '组织不存在' });
 
+    // ============================================
+    // admin.js - departmentsHttp 函数修复
+    // 位置：第 2295-2310 行
+    // ============================================
+
+    // ✅ 新的 ensurePermission 函数（替换旧版本）
     const ensurePermission = async () => {
       if (!callerUid) return false;
+
+      // ✅ 解析 callerUid 中的电话号码
+      let phoneFromUid = null;
+      if (callerUid.startsWith('eventManager_')) {
+        phoneFromUid = callerUid.replace('eventManager_', '');
+      } else if (callerUid.startsWith('phone_')) {
+        phoneFromUid = callerUid.replace('phone_', '');
+      }
+
+      if (!phoneFromUid) return false;
+
+      // ✅ 标准化电话号码（去掉前导 0）
+      const normalizePhone = (p) => {
+        if (!p) return '';
+        let digits = String(p).replace(/[^0-9]/g, '');
+        if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
+        if (digits.startsWith('0')) digits = digits.substring(1);
+        return digits;
+      };
+
+      const coreCaller = normalizePhone(phoneFromUid);
+
+      // ✅ 检查所有活动的 admins 数组
       const eventsSnapshot = await orgRef.collection('events').get();
       for (const eventDoc of eventsSnapshot.docs) {
-        const usersSnapshot = await eventDoc.ref.collection('users')
-          .where('authUid', '==', callerUid)
-          .limit(1)
-          .get();
-        if (!usersSnapshot.empty) {
-          const u = usersSnapshot.docs[0].data();
-          const roles = Array.isArray(u.roles) ? u.roles : [];
-          if (roles.includes('eventManager')) return true;
+        const eventData = eventDoc.data();
+        const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+
+        for (const admin of admins) {
+          const adminPhone = admin.phone || admin.phoneNumber;
+          if (!adminPhone) continue;
+
+          const coreAdmin = normalizePhone(adminPhone);
+          if (coreCaller === coreAdmin) {
+            console.log('[departmentsHttp] Permission granted for Event Manager:', phoneFromUid);
+            return true;  // ✅ 找到匹配的 Event Manager
+          }
         }
       }
+
+      console.log('[departmentsHttp] Permission denied for:', callerUid);
       return false;
     };
 
@@ -2484,41 +2408,62 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
 
-    // 權限：確認 callerUid 在任一 event.users 中擁有 eventManager 角色
+    // 權限：確認 callerUid 對應的用戶在 event.admins 中
     console.log('[batchImportUsersHttp] callerUid:', callerUid);
-    const eventsSnapshot = await orgRef.collection('events').get();
-    let hasPermission = false;
-    for (const ev of eventsSnapshot.docs) {
-      const userSnap = await ev.ref.collection('users').where('authUid', '==', callerUid).limit(1).get();
-      if (!userSnap.empty) {
-        const r = userSnap.docs[0].data().roles || [];
-        console.log('[batchImportUsersHttp] Found user in event.users with roles:', r);
-        if (r.includes('eventManager')) { hasPermission = true; break; }
-      }
+
+    // 解析 callerUid 中的電話號碼 (如果是 eventManager_ 開頭)
+    let phoneFromUid = null;
+    if (callerUid.startsWith('eventManager_')) {
+      phoneFromUid = callerUid.replace('eventManager_', '');
+    } else if (callerUid.startsWith('phone_')) {
+      // 兼容舊版 authUid 格式
+      phoneFromUid = callerUid.replace('phone_', '');
     }
-    if (!hasPermission) {
-      console.log('[batchImportUsersHttp] Not found in users, checking event.admins fallback');
-      // Fallback: 某些舊活動僅在 eventDoc.admins 陣列中記錄 Event Manager，未建立 users 子集合
-      const eventData = eventSnap.data() || {};
-      const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
-      console.log('[batchImportUsersHttp] event.admins:', admins);
-      const normalizePhone = (p) => {
-        if (!p) return '';
-        let digits = String(p).replace(/[^0-9]/g, '');
-        if (digits.startsWith('60')) digits = digits.substring(2); // 馬來西亞國碼
-        if (digits.startsWith('0')) digits = digits.substring(1);
-        return digits; // 去掉前導 0 與國碼後的實際號碼
-      };
+
+    let hasPermission = false;
+    const eventData = eventSnap.data() || {};
+    const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+
+    console.log('[batchImportUsersHttp] Checking permissions against event.admins:', admins.map(a => a.phone || a.phoneNumber));
+
+    const normalizePhone = (p) => {
+      if (!p) return '';
+      let digits = String(p).replace(/[^0-9]/g, '');
+      // 統一移除 60 開頭 (如果長度足夠) 或 0 開頭，保留核心號碼
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
+      if (digits.startsWith('0')) digits = digits.substring(1);
+      return digits;
+    };
+
+    // 1. 檢查 event.admins
+    if (phoneFromUid) {
+      const coreCaller = normalizePhone(phoneFromUid);
+
       for (const adm of admins) {
         const admPhone = adm && (adm.phone || adm.phoneNumber);
-        const core = normalizePhone(admPhone);
-        if (core) {
-          const expectedAuthUid = `phone_60${core}`;
-          console.log('[batchImportUsersHttp] Checking admin expectedUid:', expectedAuthUid, 'vs callerUid:', callerUid);
-          if (expectedAuthUid === callerUid) { hasPermission = true; break; }
+        if (!admPhone) continue;
+
+        const coreAdmin = normalizePhone(admPhone);
+
+        // 比較核心號碼
+        if (coreCaller === coreAdmin) {
+          hasPermission = true;
+          console.log('[batchImportUsersHttp] Permission granted via event.admins (phone match)');
+          break;
         }
       }
     }
+
+    // 2. (可選) 檢查是否為平台管理員 (admin_uids) - 如果需要支持平台管理員導入
+    if (!hasPermission) {
+      const adminRef = db.collection('admin_uids').doc(callerUid);
+      const adminSnap = await adminRef.get();
+      if (adminSnap.exists) {
+        hasPermission = true;
+        console.log('[batchImportUsersHttp] Permission granted via admin_uids');
+      }
+    }
+
     if (!hasPermission) {
       console.error('[batchImportUsersHttp] Permission denied for callerUid:', callerUid);
       return res.status(403).json({ error: '需要 Event Manager 权限' });
@@ -2557,14 +2502,14 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
     const errors = [];
     let successCount = 0;
 
-  for (const raw of users) {
+    for (const raw of users) {
       // 基本欄位解析
       const {
         phoneNumber,
         password,
         englishName,
         chineseName = '',
-  email = '',
+        email = '',
         identityTag = 'staff',
         department = '',
         roles = [],
@@ -2725,10 +2670,173 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
       statIncrements,
       departmentIncrements: Array.from(departmentIncrements.values()),
       elapsedMs: elapsed,
-      message: `批量匯入完成 (${successCount} 成功 / ${errors.length} 失败)`
+      message: `批量匯入完成 (${successCount} 成功 / ${errors.length} 失敗)`
     });
   } catch (e) {
     console.error('[batchImportUsersHttp] Error:', e);
     return res.status(500).json({ error: e && e.message ? e.message : '内部错误' });
+  }
+});
+
+// ========== 更新用戶角色 ==========
+// POST /api/updateUserRoles
+// Body: { organizationId, eventId, userId, roles: {...}, managedDepartments: [...], previousRoles: [...], idToken }
+exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST' });
+
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring('Bearer '.length) : null;
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const { organizationId, eventId, userId, roles, managedDepartments, previousRoles, idToken } = body;
+    const effectiveToken = idToken || tokenFromHeader;
+
+    if (!organizationId || !eventId || !userId || !roles) {
+      return res.status(400).json({ error: '缺少必要参数' });
+    }
+    if (!effectiveToken) return res.status(401).json({ error: '需要登录' });
+
+    let decoded;
+    try { 
+      decoded = await admin.auth().verifyIdToken(effectiveToken); 
+    } catch (e) { 
+      return res.status(401).json({ error: '身份验证失败' }); 
+    }
+    const callerUid = decoded.uid;
+
+    const db = getDb();
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const eventRef = orgRef.collection('events').doc(eventId);
+    const eventSnap = await eventRef.get();
+    
+    if (!eventSnap.exists) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    // 權限檢查：確認 callerUid 在 event.admins 中
+    console.log('[updateUserRoles] callerUid:', callerUid);
+    
+    let phoneFromUid = null;
+    if (callerUid.startsWith('eventManager_')) {
+      phoneFromUid = callerUid.replace('eventManager_', '');
+    } else if (callerUid.startsWith('phone_')) {
+      phoneFromUid = callerUid.replace('phone_', '');
+    }
+
+    let hasPermission = false;
+    const eventData = eventSnap.data() || {};
+    const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+    
+    const normalizePhone = (p) => {
+      if (!p) return '';
+      let digits = String(p).replace(/[^0-9]/g, '');
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
+      if (digits.startsWith('0')) digits = digits.substring(1);
+      return digits; 
+    };
+
+    // 檢查 event.admins
+    if (phoneFromUid) {
+      const coreCaller = normalizePhone(phoneFromUid);
+      
+      for (const adm of admins) {
+        const admPhone = adm && (adm.phone || adm.phoneNumber);
+        if (!admPhone) continue;
+
+        const coreAdmin = normalizePhone(admPhone);
+        if (coreCaller === coreAdmin) {
+          hasPermission = true;
+          console.log('[updateUserRoles] Permission granted via event.admins (phone match)');
+          break;
+        }
+      }
+    }
+
+    // 檢查平台管理員
+    if (!hasPermission) {
+      const adminRef = db.collection('admin_uids').doc(callerUid);
+      const adminSnap = await adminRef.get();
+      if (adminSnap.exists) {
+        hasPermission = true;
+        console.log('[updateUserRoles] Permission granted via admin_uids');
+      }
+    }
+
+    if (!hasPermission) {
+      console.error('[updateUserRoles] Permission denied for callerUid:', callerUid);
+      return res.status(403).json({ error: '需要 Event Manager 权限' });
+    }
+
+    // 構建新角色列表
+    const newRoles = [];
+    if (roles.sellerManager) newRoles.push('sellerManager');
+    if (roles.merchantManager) newRoles.push('merchantManager');
+    if (roles.customerManager) newRoles.push('customerManager');
+    if (roles.financeManager) newRoles.push('financeManager');
+    if (roles.seller) newRoles.push('seller');
+    if (roles.merchant) newRoles.push('merchant');
+    if (roles.customer) newRoles.push('customer');
+
+    const userRef = eventRef.collection('users').doc(userId);
+    const updateData = {
+      roles: newRoles,
+      'accountStatus.updatedAt': new Date()
+    };
+
+    // 如果勾選了 sellerManager，保存管理部門
+    if (roles.sellerManager) {
+      updateData['sellerManager.managedDepartments'] = managedDepartments;
+      
+      // 如果是新添加的 sellerManager，初始化其他欄位
+      if (!previousRoles?.includes('sellerManager')) {
+        updateData['sellerManager.allocatedPoints'] = 0;
+        updateData['sellerManager.returnedPoints'] = 0;
+        updateData['sellerManager.totalPoints'] = 0;
+        updateData['sellerManager.transactions'] = [];
+      }
+    }
+
+    // 初始化新角色的點數賬戶
+    const additionalUpdateData = {};
+
+    if (roles.seller && !previousRoles?.includes('seller')) {
+      additionalUpdateData['seller.availablePoints'] = 0;
+      additionalUpdateData['seller.totalPointsSold'] = 0;
+      additionalUpdateData['seller.transactions'] = [];
+    }
+
+    if (roles.merchant && !previousRoles?.includes('merchant')) {
+      additionalUpdateData['merchant.availablePoints'] = 0;
+      additionalUpdateData['merchant.totalPointsSold'] = 0;
+      additionalUpdateData['merchant.transactions'] = [];
+    }
+
+    if (roles.customer && !previousRoles?.includes('customer')) {
+      additionalUpdateData['customer.availablePoints'] = 0;
+      additionalUpdateData['customer.totalPointsSpent'] = 0;
+      additionalUpdateData['customer.transactions'] = [];
+    }
+
+    // 合併更新數據
+    const finalUpdateData = { ...updateData, ...additionalUpdateData };
+
+    await userRef.update(finalUpdateData);
+
+    console.log('[updateUserRoles] User roles updated:', userId, newRoles);
+    return res.status(200).json({
+      success: true,
+      message: '角色分配成功',
+      userId,
+      roles: newRoles
+    });
+  } catch (error) {
+    console.error('[updateUserRoles] Error:', error);
+    return res.status(500).json({
+      error: error.message || '更新角色失败'
+    });
   }
 });

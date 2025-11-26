@@ -360,6 +360,54 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       return res.status(403).json({ error: { code: 'permission-denied', message: '驗證碼錯誤' } });
     }
 
+    // ✅ 驗證用戶是否為該活動的 Event Manager
+    // 1. 查找組織
+    const orgQuery = await db.collection('organizations').where('orgCode', '==', orgCode).limit(1).get();
+    if (orgQuery.empty) {
+      return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
+    }
+    const orgDoc = orgQuery.docs[0];
+    
+    // 2. 查找活動
+    const eventQuery = await orgDoc.ref.collection('events').where('eventCode', '==', eventCode).limit(1).get();
+    if (eventQuery.empty) {
+      return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
+    }
+    const eventDoc = eventQuery.docs[0];
+    const eventData = eventDoc.data();
+
+    // 3. 檢查手機號是否在 admins 列表中
+    const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
+    
+    const normalizePhone = (p) => {
+      if (!p) return '';
+      let digits = String(p).replace(/[^0-9]/g, '');
+      // 統一移除 60 開頭 (如果長度足夠) 或 0 開頭，保留核心號碼
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
+      if (digits.startsWith('0')) digits = digits.substring(1);
+      return digits; 
+    };
+
+    const targetPhone = normalizePhone(phoneNumber);
+    const isEventManager = admins.some(adm => {
+      const admPhone = adm.phone || adm.phoneNumber;
+      return admPhone && normalizePhone(admPhone) === targetPhone;
+    });
+
+    if (!isEventManager) {
+      return res.status(403).json({ error: { code: 'permission-denied', message: '您不是此活动的管理员' } });
+    }
+
+    // ✅ OTP 驗證成功且權限確認，創建 Custom Token
+    const uid = `eventManager_${phoneNumber}`;
+    
+    const customToken = await admin.auth().createCustomToken(uid, {
+      role: 'eventManager',
+      orgCode: orgCode,
+      eventCode: eventCode,
+      phone: phoneNumber
+    });
+
     // 刪除已使用的 OTP
     await otpDoc.ref.delete();
 
@@ -368,6 +416,7 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       message: '驗證成功',
       phoneNumber,
       verified: true,
+      customToken: customToken,
       devMode: otpData.devMode || false
     });
   } catch (error) {

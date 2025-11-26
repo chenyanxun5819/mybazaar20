@@ -448,6 +448,21 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
+      // 获取组织和活动的 code 用于生成默认密码
+      const orgDoc = await getDoc(doc(db, 'organizations', organizationId));
+      const eventDoc = await getDoc(doc(db, 'organizations', organizationId, 'events', eventId));
+      
+      const orgCode = orgDoc.exists() ? (orgDoc.data().orgCode || orgDoc.data().organizationCode || organizationId) : organizationId;
+      const eventCode = eventDoc.exists() ? (eventDoc.data().eventCode || eventDoc.data().code || eventId) : eventId;
+      
+      // 生成默认密码：orgCode + eventCode，确保至少8位且包含字母和数字
+      let defaultPassword = `${orgCode}${eventCode}`;
+      if (defaultPassword.length < 8 || !(/[a-zA-Z]/.test(defaultPassword) && /\d/.test(defaultPassword))) {
+        defaultPassword = `${defaultPassword}Ab12`;
+      }
+
+      console.log('[BatchImportUser] 默认密码:', defaultPassword);
+
       // 调用 Cloud Function
       const response = await fetch('/api/batchImportUsers', {
         method: 'POST',
@@ -463,6 +478,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
             chineseName: user.chineseName || '',
             identityId: user.identityId || '',
             phoneNumber: user.phoneNumber,
+            password: defaultPassword,  // ✅ 添加默认密码
             department: user.department,
             email: user.email || '',
             identityTag: user.identityTag,
@@ -516,47 +532,44 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
           {!showPreview ? (
             <div>
               {/* 上传文件模式 */}
-              <div>
-                  <div style={styles.infoBox}>
-                    <h3 style={styles.infoTitle}>📋 使用说明</h3>
-                    <ul style={styles.infoList}>
-                      <li>下载 Excel 模板，按格式填写用户信息</li>
-                      <li>必填字段：英文名、电话号码、部门、身份标签</li>
-                      <li>电话号码必须是10位数字，以0开头</li>
-                      <li>学号/工号是可选的，如果组织有发放请填写</li>
-                      <li>所有导入的用户将自动获得 Seller + Customer 角色</li>
-                    </ul>
-                  </div>
+              <div style={styles.infoBox}>
+                <h3 style={styles.infoTitle}>📋 使用说明</h3>
+                <ul style={styles.infoList}>
+                  <li>下载 Excel 模板，按格式填写用户信息</li>
+                  <li>必填字段：英文名、电话号码、部门、身份标签</li>
+                  <li>电话号码必须是10位数字，以0开头</li>
+                  <li>学号/工号是可选的，如果组织有发放请填写</li>
+                  <li>所有导入的用户将自动获得 Seller + Customer 角色</li>
+                </ul>
+              </div>
 
-                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-                    <button
-                      onClick={downloadTemplate}
-                      style={{ ...styles.button, ...styles.buttonSuccess }}
-                    >
-                      📥 下载 Excel 模板
-                    </button>
-                  </div>
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                <button
+                  onClick={downloadTemplate}
+                  style={{ ...styles.button, ...styles.buttonSuccess }}
+                >
+                  📥 下载 Excel 模板
+                </button>
+              </div>
 
-                  <div style={styles.uploadArea}>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleFileUpload}
-                      style={{ display: 'none' }}
-                      id="file-upload"
-                    />
-                    <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'block' }}>
-                      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                        {file ? file.name : '点击选择 Excel 文件'}
-                      </div>
-                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                        支持 .xlsx 和 .xls 格式
-                      </div>
-                    </label>
+              <div style={styles.uploadArea}>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  id="file-upload"
+                />
+                <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'block' }}>
+                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                    {file ? file.name : '点击选择 Excel 文件'}
                   </div>
-                </div>
-              )}
+                  <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                    支持 .xlsx 和 .xls 格式
+                  </div>
+                </label>
+              </div>
             </div>
           ) : (
             <div>

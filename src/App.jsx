@@ -10,6 +10,7 @@ import PlatformAuthGuard from './components/guards/PlatformAuthGuard';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
+import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 
 // Placeholder 組件（之後實現）
@@ -33,8 +34,12 @@ function App() {
 
   return (
     <Routes>
-      {/* 🆕 统一登录路由 */}
+      {/* 🆕 统一登录路由（普通用户：Seller, Customer 等）*/}
       <Route path="/login/:orgEventCode" element={<UniversalLogin />} />
+
+      {/* ✅ Event Manager 专用登录路由 */}
+      <Route path="/event-admin/:combinedCode/login" element={<EventManagerLogin />} />
+      <Route path="/event-manager/:combinedCode/login" element={<EventManagerLogin />} />
 
       {/* 🆕 Platform Admin 登录页面 */}
       <Route path="/platform/login" element={<PlatformLogin />} />
@@ -92,8 +97,17 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 🆕 Event Manager 儀表板 */}
+      {/* 🆕 Event Manager 儀表板 - 新路径 */}
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
+      
+      {/* ✅ 向后兼容：旧的 event-admin 路径 */}
+      <Route path="/event-admin/:orgEventCode" element={<EventManagerDashboard />} />
+
+      {/* 🆕 Seller Manager Dashboard */}
+      <Route
+        path="/seller-manager/:orgEventCode/dashboard"
+        element={<SellerManagerDashboard />}
+      />
 
       {/* 預設路由 - 重定向到 Platform Admin 登录 */}
       <Route path="/" element={<Navigate to="/platform/login" replace />} />
@@ -126,13 +140,6 @@ function App() {
           </a>
         </div>
       } />
-      {/* 🆕 Seller Manager Dashboard */}
-      <Route
-        path="/seller-manager/:orgEventCode/dashboard"
-        element={<SellerManagerDashboard />}
-      />
-
-
     </Routes>
   );
 }

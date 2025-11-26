@@ -55,6 +55,12 @@
             "invoker": ["public"]
           },
           "region": "us-central1"
+        },
+        "updateUserRoles": {
+          "httpsOptions": {
+            "invoker": ["public"]
+          },
+          "region": "us-central1"
         }
       },
       "ignore": [
@@ -141,6 +147,13 @@
         "source": "/api/batchImportUsers",
         "function": {
           "functionId": "batchImportUsersHttp",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/updateUserRoles",
+        "function": {
+          "functionId": "updateUserRoles",
           "region": "us-central1"
         }
       },

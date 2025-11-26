@@ -12,6 +12,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [showFullPhone, setShowFullPhone] = useState({}); // 🆕 控制电话号码显示
 
   // 角色过滤器配置
   const roleFilters = [
@@ -106,6 +107,63 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     }
   };
 
+  // 🆕 电话号码遮罩函数
+  const maskPhone = (phone) => {
+    if (!phone) return '-';
+    if (phone.length < 6) return phone; // 号码太短，直接显示
+    
+    const first3 = phone.substring(0, 3);
+    const last3 = phone.substring(phone.length - 3);
+    const middle = '*'.repeat(phone.length - 6);
+    
+    return `${first3}${middle}${last3}`;
+  };
+
+  // 🆕 切换电话号码显示
+  const togglePhoneDisplay = (userId) => {
+    setShowFullPhone(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
+
+  // 🆕 计算用户的点数信息
+  const getUserPointsInfo = (user) => {
+    let availablePoints = 0;
+    let totalPointsSold = 0;
+    let totalCashCollected = 0;
+    
+    // 累加所有角色的点数
+    if (user.seller) {
+      availablePoints += user.seller.availablePoints || 0;
+      totalPointsSold += user.seller.totalPointsSold || 0;
+      totalCashCollected += user.seller.totalCashCollected || 0;
+    }
+    if (user.merchant) {
+      availablePoints += user.merchant.availablePoints || 0;
+      totalPointsSold += user.merchant.totalPointsSold || 0;
+      totalCashCollected += user.merchant.totalCashCollected || 0;
+    }
+    if (user.customer) {
+      availablePoints += user.customer.availablePoints || 0;
+      totalPointsSold += user.customer.totalPointsSold || 0;
+      totalCashCollected += user.customer.totalCashCollected || 0;
+    }
+    
+    const outstandingCash = totalPointsSold - totalCashCollected;
+    const collectionRate = totalPointsSold > 0 
+      ? Math.round((totalCashCollected / totalPointsSold) * 100) 
+      : 0;
+    
+    return {
+      availablePoints,
+      totalPointsSold,
+      totalCashCollected,
+      outstandingCash,
+      collectionRate
+    };
+  };
+
   // 过滤和排序用户
   const filterAndSortUsers = () => {
     let filtered = users;
@@ -123,7 +181,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
       filtered = filtered.filter(user =>
         user.basicInfo?.englishName?.toLowerCase().includes(search) ||
         user.basicInfo?.chineseName?.toLowerCase().includes(search) ||
-        user.basicInfo?.phoneNumber?.includes(search) ||
+        user.basicInfo?.phoneNumber?.includes(search) ||  // ✅ 用完整号码搜索
         user.basicInfo?.email?.toLowerCase().includes(search) ||
         user.identityInfo?.identityId?.toLowerCase().includes(search) ||
         user.identityInfo?.department?.toLowerCase().includes(search)
@@ -150,6 +208,26 @@ const UserList = ({ organizationId, eventId, onClose }) => {
         case 'identityId':
           aValue = a.identityInfo?.identityId || '';
           bValue = b.identityInfo?.identityId || '';
+          break;
+        case 'availablePoints':  // 🆕 按可用点数排序
+          aValue = getUserPointsInfo(a).availablePoints;
+          bValue = getUserPointsInfo(b).availablePoints;
+          break;
+        case 'totalPointsSold':  // 🆕 按销售点数排序
+          aValue = getUserPointsInfo(a).totalPointsSold;
+          bValue = getUserPointsInfo(b).totalPointsSold;
+          break;
+        case 'totalCashCollected':  // 🆕 按已收款排序
+          aValue = getUserPointsInfo(a).totalCashCollected;
+          bValue = getUserPointsInfo(b).totalCashCollected;
+          break;
+        case 'outstandingCash':  // 🆕 按未收款排序
+          aValue = getUserPointsInfo(a).outstandingCash;
+          bValue = getUserPointsInfo(b).outstandingCash;
+          break;
+        case 'collectionRate':  // 🆕 按回收率排序
+          aValue = getUserPointsInfo(a).collectionRate;
+          bValue = getUserPointsInfo(b).collectionRate;
           break;
         case 'createdAt':
         default:
@@ -321,6 +399,22 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                     <th style={styles.th} onClick={() => toggleSort('phone')}>
                       手机号 <SortIcon field="phone" />
                     </th>
+                    {/* 🆕 点数相关列 */}
+                    <th style={styles.th} onClick={() => toggleSort('availablePoints')}>
+                      已有点数 <SortIcon field="availablePoints" />
+                    </th>
+                    <th style={styles.th} onClick={() => toggleSort('totalPointsSold')}>
+                      销售点数 <SortIcon field="totalPointsSold" />
+                    </th>
+                    <th style={styles.th} onClick={() => toggleSort('totalCashCollected')}>
+                      已收款 <SortIcon field="totalCashCollected" />
+                    </th>
+                    <th style={styles.th} onClick={() => toggleSort('outstandingCash')}>
+                      未收款 <SortIcon field="outstandingCash" />
+                    </th>
+                    <th style={styles.th} onClick={() => toggleSort('collectionRate')}>
+                      回收率 <SortIcon field="collectionRate" />
+                    </th>
                     <th style={styles.th}>邮箱</th>
                     <th style={styles.th} onClick={() => toggleSort('department')}>
                       部门 <SortIcon field="department" />
@@ -337,84 +431,153 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                   </tr>
                 </thead>
                 <tbody style={styles.tbody}>
-                  {filteredUsers.map(user => (
-                    <tr key={user.id} style={styles.tr}>
-                      {/* 姓名 */}
-                      <td style={styles.td}>
-                        <div style={styles.nameCell}>
-                          <div style={styles.namePrimary}>
-                            {user.basicInfo?.englishName || '未知'}
-                          </div>
-                          {user.basicInfo?.chineseName && (
-                            <div style={styles.nameSecondary}>
-                              {user.basicInfo.chineseName}
+                  {filteredUsers.map(user => {
+                    const pointsInfo = getUserPointsInfo(user);
+                    
+                    return (
+                      <tr key={user.id} style={styles.tr}>
+                        {/* 姓名 */}
+                        <td style={styles.td}>
+                          <div style={styles.nameCell}>
+                            <div style={styles.namePrimary}>
+                              {user.basicInfo?.englishName || '未知'}
                             </div>
-                          )}
-                        </div>
-                      </td>
+                            {user.basicInfo?.chineseName && (
+                              <div style={styles.nameSecondary}>
+                                {user.basicInfo.chineseName}
+                              </div>
+                            )}
+                          </div>
+                        </td>
 
-                      {/* 手机号 */}
-                      <td style={styles.td}>
-                        <span style={styles.phoneText}>
-                          {user.basicInfo?.phoneNumber || '-'}
-                        </span>
-                      </td>
+                        {/* 🆕 手机号（带隐私保护） */}
+                        <td style={styles.td}>
+                          <div style={styles.phoneCell}>
+                            <span style={styles.phoneText}>
+                              {showFullPhone[user.id]
+                                ? user.basicInfo?.phoneNumber || '-'
+                                : maskPhone(user.basicInfo?.phoneNumber)
+                              }
+                            </span>
+                            {user.basicInfo?.phoneNumber && (
+                              <button
+                                onClick={() => togglePhoneDisplay(user.id)}
+                                style={styles.phoneToggleButton}
+                                title={showFullPhone[user.id] ? '隐藏号码' : '显示完整号码'}
+                              >
+                                {showFullPhone[user.id] ? '🔒' : '👁️'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
 
-                      {/* 邮箱 */}
-                      <td style={styles.td}>
-                        <span style={styles.emailText}>
-                          {user.basicInfo?.email || '-'}
-                        </span>
-                      </td>
-
-                      {/* 部门 */}
-                      <td style={styles.td}>
-                        {user.identityInfo?.department || '-'}
-                      </td>
-
-                      {/* 学号/工号 */}
-                      <td style={styles.td}>
-                        <span style={styles.identityIdText}>
-                          {user.identityInfo?.identityId || '-'}
-                        </span>
-                      </td>
-
-                      {/* 身份 */}
-                      <td style={styles.td}>
-                        <IdentityBadge identityTag={user.identityTag || 'student'} />
-                      </td>
-
-                      {/* 角色 */}
-                      <td style={styles.td}>
-                        <div style={styles.rolesCell}>
-                          {user.roles && user.roles.length > 0 ? (
-                            user.roles.map(role => (
-                              <RoleBadge key={role} role={role} />
-                            ))
-                          ) : (
-                            <span style={styles.noRoles}>-</span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 状态 */}
-                      <td style={styles.td}>
-                        <div style={styles.statusCell}>
-                          <StatusDot status={user.accountStatus?.status || 'inactive'} />
-                          <span style={styles.statusText}>
-                            {statusLabels[user.accountStatus?.status] || '未知'}
+                        {/* 🆕 已有点数 */}
+                        <td style={styles.td}>
+                          <span style={styles.pointsAvailable}>
+                            {pointsInfo.availablePoints.toLocaleString()}
                           </span>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* 创建时间 */}
-                      <td style={styles.td}>
-                        <span style={styles.dateText}>
-                          {formatDate(user.accountStatus?.createdAt)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                        {/* 🆕 销售点数 */}
+                        <td style={styles.td}>
+                          <span style={styles.pointsSold}>
+                            {pointsInfo.totalPointsSold.toLocaleString()}
+                          </span>
+                        </td>
+
+                        {/* 🆕 已收款 */}
+                        <td style={styles.td}>
+                          <span style={styles.cashCollected}>
+                            💰 RM {pointsInfo.totalCashCollected.toLocaleString()}
+                          </span>
+                        </td>
+
+                        {/* 🆕 未收款 */}
+                        <td style={styles.td}>
+                          {pointsInfo.outstandingCash > 0 ? (
+                            <span style={styles.cashOutstandingWarning}>
+                              ⚠️ RM {pointsInfo.outstandingCash.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span style={styles.cashOutstandingOk}>
+                              ✅ 已付清
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 🆕 回收率 */}
+                        <td style={styles.td}>
+                          <div style={styles.rateContainer}>
+                            <div style={{
+                              ...styles.rateBar,
+                              width: `${pointsInfo.collectionRate}%`,
+                              backgroundColor:
+                                pointsInfo.collectionRate === 100 ? '#10b981' :
+                                pointsInfo.collectionRate >= 50 ? '#f59e0b' : '#ef4444'
+                            }}>
+                              <span style={styles.rateText}>
+                                {pointsInfo.collectionRate}%
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 邮箱 */}
+                        <td style={styles.td}>
+                          <span style={styles.emailText}>
+                            {user.basicInfo?.email || '-'}
+                          </span>
+                        </td>
+
+                        {/* 部门 */}
+                        <td style={styles.td}>
+                          {user.identityInfo?.department || '-'}
+                        </td>
+
+                        {/* 学号/工号 */}
+                        <td style={styles.td}>
+                          <span style={styles.identityIdText}>
+                            {user.identityInfo?.identityId || '-'}
+                          </span>
+                        </td>
+
+                        {/* 身份 */}
+                        <td style={styles.td}>
+                          <IdentityBadge identityTag={user.identityTag || 'student'} />
+                        </td>
+
+                        {/* 角色 */}
+                        <td style={styles.td}>
+                          <div style={styles.rolesCell}>
+                            {user.roles && user.roles.length > 0 ? (
+                              user.roles.map(role => (
+                                <RoleBadge key={role} role={role} />
+                              ))
+                            ) : (
+                              <span style={styles.noRoles}>-</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 状态 */}
+                        <td style={styles.td}>
+                          <div style={styles.statusCell}>
+                            <StatusDot status={user.accountStatus?.status || 'inactive'} />
+                            <span style={styles.statusText}>
+                              {statusLabels[user.accountStatus?.status] || '未知'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 创建时间 */}
+                        <td style={styles.td}>
+                          <span style={styles.dateText}>
+                            {formatDate(user.accountStatus?.createdAt)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -444,7 +607,7 @@ const styles = {
     backgroundColor: 'white',
     borderRadius: '12px',
     width: '100%',
-    maxWidth: '1600px',
+    maxWidth: '1800px', // 增加宽度以容纳更多列
     maxHeight: '90vh',
     display: 'flex',
     flexDirection: 'column',
@@ -596,9 +759,75 @@ const styles = {
     fontSize: '0.75rem',
     color: '#6b7280'
   },
+  // 🆕 电话号码相关样式
+  phoneCell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
+  },
   phoneText: {
     fontFamily: 'monospace',
     fontSize: '0.875rem'
+  },
+  phoneToggleButton: {
+    padding: '0.25rem 0.5rem',
+    backgroundColor: 'transparent',
+    border: '1px solid #d1d5db',
+    borderRadius: '4px',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    lineHeight: 1
+  },
+  // 🆕 点数相关样式
+  pointsAvailable: {
+    color: '#10b981',
+    fontWeight: '600',
+    fontFamily: 'monospace'
+  },
+  pointsSold: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontFamily: 'monospace'
+  },
+  // 🆕 收款相关样式
+  cashCollected: {
+    color: '#f59e0b',
+    fontWeight: '600',
+    fontFamily: 'monospace'
+  },
+  cashOutstandingWarning: {
+    color: '#ef4444',
+    fontWeight: '600',
+    fontFamily: 'monospace'
+  },
+  cashOutstandingOk: {
+    color: '#10b981',
+    fontWeight: '500',
+    fontSize: '0.75rem'
+  },
+  // 🆕 回收率样式
+  rateContainer: {
+    width: '100px',
+    height: '24px',
+    backgroundColor: '#f3f4f6',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    position: 'relative'
+  },
+  rateBar: {
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'width 0.3s ease',
+    minWidth: '24px'
+  },
+  rateText: {
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    color: 'white',
+    textShadow: '0 1px 2px rgba(0,0,0,0.3)'
   },
   emailText: {
     fontSize: '0.875rem',
@@ -731,6 +960,10 @@ styleSheet.textContent = `
   
   th:hover {
     background-color: #f3f4f6;
+  }
+  
+  button:hover {
+    opacity: 0.8;
   }
   
   /* 滚动条样式 */
