@@ -1,40 +1,44 @@
 import { useState } from 'react';
+import { db } from '../../../config/firebase';
+import { doc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
- * Allocate Points Modal
+ * Allocate Points Modal (重构版)
  * 
  * @description
- * Seller Manager 分配固本给 Seller 的弹窗组件
+ * Seller Manager 分配点数给 Seller 的弹窗组件
  * 
- * @param {Object} seller - 要分配固本的 Seller
- * @param {Object} sellerManager - 当前 Seller Manager 信息
- * @param {number} availableCapital - SM 的可用资本
- * @param {string} organizationId - 组织 ID
+ * 新架构：
+ * - 写入路径：Event/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}
+ * - Cloud Function 会自动处理统计更新
+ * - 支持额度限制和收款警示
+ * 
+ * @param {Object} seller - 要分配点数的 Seller
+ * @param {string} sellerManagerId - Seller Manager 的 userId
  * @param {string} eventId - 活动 ID
+ * @param {number} maxPerAllocation - 每次分配上限
+ * @param {number} warningThreshold - 收款警示阈值
  * @param {Function} onClose - 关闭回调
- * @param {Function} onSuccess - 成功后回调
  */
 const AllocatePoints = ({
   seller,
-  sellerManager,
-  availableCapital,
-  organizationId,
+  sellerManagerId,
   eventId,
-  onClose,
-  onSuccess
+  maxPerAllocation,
+  warningThreshold,
+  onClose
 }) => {
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const sellerData = seller.roleSpecificData?.seller || {};
-  const sellerName = seller.basicInfo?.englishName || 'N/A';
+  const pointsStats = seller.pointsStats || {};
+  const collectionAlert = seller.collectionAlert || {};
+  const sellerName = seller.displayName || 'N/A';
 
-  /**
-   * 快速金额选择
-   */
-  const quickAmounts = [100, 500, 1000, 2000, 5000];
+  // 快速金额选择
+  const quickAmounts = [50, 100, 200, 500];
 
   /**
    * 处理提交
@@ -50,66 +54,101 @@ const AllocatePoints = ({
       return;
     }
 
-    if (allocateAmount > availableCapital) {
-      setError(`金额超过您的可用资本 (RM ${availableCapital.toLocaleString()})`);
+    // 验证是否超过上限
+    if (allocateAmount > maxPerAllocation) {
+      setError(`金额超过单次分配上限 (RM ${maxPerAllocation.toLocaleString()})`);
       return;
     }
 
-    // 确认
-    if (!confirm(
-      `确定要分配 RM ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
-      `您的剩余可用资本将变为: RM ${(availableCapital - allocateAmount).toLocaleString()}`
-    )) {
-      return;
+    // 收款警示检查
+    if (collectionAlert.hasWarning) {
+      const confirmMsg = 
+        `⚠️ 警告：该用户有待收款 RM ${(collectionAlert.pendingAmount || 0).toLocaleString()}\n\n` +
+        `收款率: ${Math.round((pointsStats.collectionRate || 0) * 100)}%\n` +
+        `建议先收款再分配新点数。\n\n` +
+        `确定要继续分配 RM ${allocateAmount.toLocaleString()} 吗？`;
+      
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+    } else {
+      // 正常确认
+      if (!confirm(
+        `确定要分配 RM ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
+        `对方当前余额: RM ${(pointsStats.currentBalance || 0).toLocaleString()}\n` +
+        `分配后余额: RM ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}`
+      )) {
+        return;
+      }
     }
 
     setLoading(true);
 
     try {
-      console.log('[AllocatePoints] 开始分配固本', {
-        seller: seller.id,
+      console.log('[AllocatePoints] 开始分配点数', {
+        eventId,
+        sellerManagerId,
+        sellerId: seller.userId,
         amount: allocateAmount,
         notes
       });
 
-      // 🔑 调用 Cloud Function
-      const response = await fetch('/api/allocatePointsToSeller', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          organizationId,
-          eventId,
-          sellerUserId: seller.id,
-          amount: allocateAmount,
-          operatorUid: sellerManager.userId,
-          notes: notes || undefined
-        })
-      });
+      // 🔑 写入 Firestore
+      // 路径：Event/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}
+      const allocationRef = collection(
+        db,
+        'Event',
+        eventId,
+        'users',
+        sellerManagerId,
+        'pointAllocations'
+      );
 
-      const data = await response.json();
+      const allocationData = {
+        recipientId: seller.userId,
+        recipientName: sellerName,
+        recipientDepartment: seller.department || '',
+        points: allocateAmount,
+        allocatedBy: sellerManagerId,
+        allocatedByName: seller.displayName || 'Seller Manager', // 需要从当前用户获取
+        allocatedByRole: 'sellerManager',
+        allocatedAt: serverTimestamp(),
+        status: 'completed', // 立即生效
+        notes: notes || '',
+        
+        // 接收者统计快照
+        recipientStatsSnapshot: {
+          balanceAfter: (pointsStats.currentBalance || 0) + allocateAmount,
+          pendingCollectionAfter: pointsStats.pendingCollection || 0
+        }
+      };
 
-      if (!response.ok) {
-        throw new Error(data.error?.message || '分配固本失败');
-      }
+      const docRef = await addDoc(allocationRef, allocationData);
 
-      console.log('[AllocatePoints] ✅ 分配成功', data);
+      console.log('[AllocatePoints] ✅ 分配记录创建成功:', docRef.id);
+
+      // Cloud Function 会自动处理：
+      // 1. 更新 Seller 的 pointsStats
+      // 2. 更新部门的 departmentStats
+      // 3. 更新 SellerManager 的 sellerManagerStats
+      // 4. 更新 Event 的 globalPointsStats
+      // 5. 检查收款警示
 
       // 成功提示
       alert(
-        `✅ 成功分配！\n\n` +
-        `学生: ${sellerName}\n` +
+        `✅ 分配成功！\n\n` +
+        `Seller: ${sellerName}\n` +
         `金额: RM ${allocateAmount.toLocaleString()}\n` +
-        `新余额: RM ${data.newSellerBalance?.toLocaleString() || 'N/A'}`
+        `预计新余额: RM ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}\n\n` +
+        `统计数据将在几秒内自动更新`
       );
 
-      // 调用成功回调
-      onSuccess();
+      // 关闭弹窗
+      onClose();
 
     } catch (err) {
       console.error('[AllocatePoints] ❌ 分配失败:', err);
-      setError(err.message || '分配固本失败，请重试');
+      setError(err.message || '分配点数失败，请重试');
     } finally {
       setLoading(false);
     }
@@ -119,19 +158,35 @@ const AllocatePoints = ({
    * 快速金额点击
    */
   const handleQuickAmount = (quickAmount) => {
-    if (quickAmount <= availableCapital) {
+    if (quickAmount <= maxPerAllocation) {
       setAmount(quickAmount.toString());
+      setError('');
     } else {
-      setError(`金额超过您的可用资本 (RM ${availableCapital.toLocaleString()})`);
+      setError(`该金额超过单次分配上限 (RM ${maxPerAllocation.toLocaleString()})`);
     }
   };
+
+  // identityTag 显示
+  const getTagInfo = (tag) => {
+    const tagMap = {
+      student: { icon: '🎓', label: '学生' },
+      teacher: { icon: '👨‍🏫', label: '老师' },
+      staff: { icon: '👔', label: '职员' },
+      parent: { icon: '👨‍👩‍👧', label: '家长' },
+      volunteer: { icon: '🤝', label: '义工' },
+      external: { icon: '🌐', label: '外部' }
+    };
+    return tagMap[tag] || { icon: '❓', label: '未知' };
+  };
+
+  const tagInfo = getTagInfo(seller.identityTag);
 
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
-          <h2 style={styles.title}>💰 分配固本</h2>
+          <h2 style={styles.title}>💰 分配点数</h2>
           <button style={styles.closeButton} onClick={onClose}>
             ✕
           </button>
@@ -142,31 +197,55 @@ const AllocatePoints = ({
           <div style={styles.sellerAvatar}>
             {sellerName[0].toUpperCase()}
           </div>
-          <div>
+          <div style={styles.sellerDetails}>
             <div style={styles.sellerName}>{sellerName}</div>
-            {seller.basicInfo?.chineseName && (
-              <div style={styles.sellerChineseName}>
-                {seller.basicInfo.chineseName}
-              </div>
-            )}
-            <div style={styles.sellerClass}>
-              {seller.basicInfo?.className || '未分配班级'}
+            <div style={styles.sellerMeta}>
+              <span style={styles.tagBadge}>
+                {tagInfo.icon} {tagInfo.label}
+              </span>
+              <span style={styles.department}>
+                📍 {seller.department || '无部门'}
+              </span>
             </div>
           </div>
         </div>
 
+        {/* 收款警示（如果有）*/}
+        {collectionAlert.hasWarning && (
+          <div style={styles.warningBanner}>
+            <div style={styles.warningTitle}>⚠️ 收款警示</div>
+            <div style={styles.warningContent}>
+              待收款: RM {(collectionAlert.pendingAmount || 0).toLocaleString()}
+              <br />
+              收款率: {Math.round((pointsStats.collectionRate || 0) * 100)}%
+              <br />
+              <strong>建议先收款再分配新点数</strong>
+            </div>
+          </div>
+        )}
+
         {/* Current Balance Info */}
         <div style={styles.balanceSection}>
           <div style={styles.balanceRow}>
-            <span style={styles.balanceLabel}>您的可用资本:</span>
+            <span style={styles.balanceLabel}>当前持有点数:</span>
             <span style={styles.balanceValue}>
-              RM {availableCapital.toLocaleString()}
+              RM {(pointsStats.currentBalance || 0).toLocaleString()}
             </span>
           </div>
           <div style={styles.balanceRow}>
-            <span style={styles.balanceLabel}>学生当前固本:</span>
+            <span style={styles.balanceLabel}>累计销售额:</span>
             <span style={styles.balanceValue}>
-              RM {(sellerData.availablePoints || 0).toLocaleString()}
+              RM {(pointsStats.totalRevenue || 0).toLocaleString()}
+            </span>
+          </div>
+          <div style={styles.balanceRow}>
+            <span style={styles.balanceLabel}>收款率:</span>
+            <span style={{
+              ...styles.balanceValue,
+              color: pointsStats.collectionRate >= 0.8 ? '#10b981' :
+                     pointsStats.collectionRate >= 0.5 ? '#f59e0b' : '#ef4444'
+            }}>
+              {Math.round((pointsStats.collectionRate || 0) * 100)}%
             </span>
           </div>
         </div>
@@ -175,7 +254,12 @@ const AllocatePoints = ({
         <form onSubmit={handleSubmit} style={styles.form}>
           {/* Amount Input */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>分配金额 (RM) *</label>
+            <label style={styles.label}>
+              分配金额 (RM) * 
+              <span style={styles.limitHint}>
+                (上限: RM {maxPerAllocation.toLocaleString()})
+              </span>
+            </label>
             <input
               type="number"
               value={amount}
@@ -185,7 +269,7 @@ const AllocatePoints = ({
               }}
               placeholder="输入金额"
               min="1"
-              max={availableCapital}
+              max={maxPerAllocation}
               step="1"
               required
               disabled={loading}
@@ -202,11 +286,11 @@ const AllocatePoints = ({
                   key={qa}
                   type="button"
                   onClick={() => handleQuickAmount(qa)}
-                  disabled={loading || qa > availableCapital}
+                  disabled={loading || qa > maxPerAllocation}
                   style={{
                     ...styles.quickButton,
-                    opacity: qa > availableCapital ? 0.5 : 1,
-                    cursor: qa > availableCapital ? 'not-allowed' : 'pointer'
+                    opacity: qa > maxPerAllocation ? 0.5 : 1,
+                    cursor: qa > maxPerAllocation ? 'not-allowed' : 'pointer'
                   }}
                 >
                   RM {qa.toLocaleString()}
@@ -214,8 +298,8 @@ const AllocatePoints = ({
               ))}
               <button
                 type="button"
-                onClick={() => handleQuickAmount(availableCapital)}
-                disabled={loading || availableCapital <= 0}
+                onClick={() => handleQuickAmount(maxPerAllocation)}
+                disabled={loading}
                 style={{
                   ...styles.quickButton,
                   background: '#fef3c7',
@@ -223,7 +307,7 @@ const AllocatePoints = ({
                   border: '2px solid #fbbf24'
                 }}
               >
-                全部
+                上限 (RM {maxPerAllocation})
               </button>
             </div>
           </div>
@@ -234,7 +318,7 @@ const AllocatePoints = ({
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="例如：班级活动启动资金"
+              placeholder="例如：月度销售奖励、活动启动资金"
               rows="3"
               disabled={loading}
               style={styles.textarea}
@@ -252,19 +336,9 @@ const AllocatePoints = ({
                 </span>
               </div>
               <div style={styles.previewRow}>
-                <span>学生新余额:</span>
+                <span>Seller 新余额:</span>
                 <span style={styles.previewValue}>
-                  RM {((sellerData.availablePoints || 0) + parseFloat(amount)).toLocaleString()}
-                </span>
-              </div>
-              <div style={styles.previewDivider}></div>
-              <div style={styles.previewRow}>
-                <span>您的剩余资本:</span>
-                <span style={{
-                  ...styles.previewValue,
-                  color: (availableCapital - parseFloat(amount)) < 100 ? '#dc2626' : '#10b981'
-                }}>
-                  RM {(availableCapital - parseFloat(amount)).toLocaleString()}
+                  RM {((pointsStats.currentBalance || 0) + parseFloat(amount)).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -289,11 +363,11 @@ const AllocatePoints = ({
             </button>
             <button
               type="submit"
-              disabled={loading || !amount || parseFloat(amount) <= 0}
+              disabled={loading || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > maxPerAllocation}
               style={{
                 ...styles.submitButton,
-                opacity: loading || !amount ? 0.6 : 1,
-                cursor: loading || !amount ? 'not-allowed' : 'pointer'
+                opacity: loading || !amount || parseFloat(amount) > maxPerAllocation ? 0.6 : 1,
+                cursor: loading || !amount || parseFloat(amount) > maxPerAllocation ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? '分配中...' : '确认分配'}
@@ -303,7 +377,7 @@ const AllocatePoints = ({
 
         {/* Help Text */}
         <div style={styles.helpText}>
-          💡 提示：分配后学生可以立即使用这些固本进行销售
+          💡 提示：分配后 Cloud Functions 会自动更新所有统计数据
         </div>
       </div>
     </div>
@@ -375,21 +449,47 @@ const styles = {
     fontSize: '1.5rem',
     fontWeight: 'bold'
   },
+  sellerDetails: {
+    flex: 1
+  },
   sellerName: {
     fontSize: '1.125rem',
     fontWeight: '600',
     color: '#1f2937',
-    marginBottom: '0.25rem'
+    marginBottom: '0.5rem'
   },
-  sellerChineseName: {
-    fontSize: '0.875rem',
-    color: '#6b7280',
-    marginBottom: '0.25rem'
+  sellerMeta: {
+    display: 'flex',
+    gap: '0.5rem',
+    alignItems: 'center'
   },
-  sellerClass: {
+  tagBadge: {
+    padding: '0.25rem 0.5rem',
+    background: '#92400e',
+    color: 'white',
+    borderRadius: '6px',
     fontSize: '0.75rem',
-    color: '#92400e',
-    fontWeight: '500'
+    fontWeight: '600'
+  },
+  department: {
+    fontSize: '0.75rem',
+    color: '#92400e'
+  },
+  warningBanner: {
+    background: '#fee2e2',
+    border: '2px solid #fecaca',
+    padding: '1rem',
+    borderBottom: '2px solid #fecaca'
+  },
+  warningTitle: {
+    fontSize: '0.875rem',
+    fontWeight: 'bold',
+    color: '#991b1b',
+    marginBottom: '0.5rem'
+  },
+  warningContent: {
+    fontSize: '0.875rem',
+    color: '#991b1b'
   },
   balanceSection: {
     padding: '1.5rem',
@@ -407,7 +507,7 @@ const styles = {
     color: '#6b7280'
   },
   balanceValue: {
-    fontSize: '1.125rem',
+    fontSize: '1rem',
     fontWeight: '600',
     color: '#1f2937'
   },
@@ -423,6 +523,11 @@ const styles = {
     fontWeight: '500',
     color: '#374151',
     marginBottom: '0.5rem'
+  },
+  limitHint: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+    fontWeight: 'normal'
   },
   input: {
     width: '100%',
@@ -495,11 +600,6 @@ const styles = {
   previewValue: {
     fontWeight: '600',
     fontSize: '1rem'
-  },
-  previewDivider: {
-    height: '1px',
-    background: '#86efac',
-    margin: '0.75rem 0'
   },
   errorBox: {
     background: '#fee2e2',

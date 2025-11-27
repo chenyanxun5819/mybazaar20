@@ -5,269 +5,332 @@ import {
   doc, 
   getDoc, 
   collection, 
-  getDocs,
   query,
   where,
-  orderBy 
+  onSnapshot,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import AddUser from '../../components/common/AddUser';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
-import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
+import OverviewStats from './components/OverviewStats';
+import DepartmentList from './components/DepartmentList';
 
 /**
- * Seller Manager Dashboard
+ * Seller Manager Dashboard (重构版)
  * 
  * @description
- * Seller Manager（班级老师）的主控制台
- * 功能：
- * 1. 查看分配的资本统计
- * 2. 创建 Seller（学生）
- * 3. 分配固本给 Seller
- * 4. 查看和管理所有 Sellers
+ * Seller Manager 的主控制台
  * 
- * @route /seller-manager/:orgEventCode/dashboard
+ * 功能：
+ * 1. 查看个人统计（从 sellerManagerStats 读取）
+ * 2. 查看管理的部门统计（从 departmentStats 读取）
+ * 3. 管理所有 managedDepartments 内的 Seller（不限 identityTag）
+ * 4. 分配点数给 Seller（受 maxPerAllocation 限制）
+ * 5. 监控收款警示
+ * 
+ * 新架构路径：
+ * - Event/{eventId}
+ * - Event/{eventId}/users/{userId}
+ * - Event/{eventId}/sellerManagerStats/{sellerManagerId}
+ * - Event/{eventId}/departmentStats/{departmentCode}
+ * 
+ * @route /:orgCode-:eventCode/phone/seller-manager-dashboard
  */
 const SellerManagerDashboard = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
   
-  // 基础数据状态
+  // === 基础数据状态 ===
   const [loading, setLoading] = useState(true);
-  const [userInfo, setUserInfo] = useState(null);
-  const [orgData, setOrgData] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null); // Seller Manager 用户信息
   const [eventData, setEventData] = useState(null);
-  const [sellerManagerData, setSellerManagerData] = useState(null);
+  const [eventId, setEventId] = useState(null);
   
-  // Sellers 数据
+  // === 统计数据 ===
+  const [smStats, setSmStats] = useState(null); // Seller Manager 统计
+  const [departmentStats, setDepartmentStats] = useState([]); // 管理的部门统计
+  
+  // === Sellers 数据 ===
   const [sellers, setSellers] = useState([]);
   const [loadingSellers, setLoadingSellers] = useState(false);
   
-  // UI 状态
-  const [showAddUser, setShowAddUser] = useState(false);
+  // === UI 状态 ===
+  const [activeTab, setActiveTab] = useState('overview'); // overview | departments | sellers | allocate
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
-  
-  // 统计数据
-  const [statistics, setStatistics] = useState({
-    assignedCapital: 0,      // 分配的总资本
-    availableCapital: 0,     // 可用资本
-    allocatedToSellers: 0,   // 已分配给 Sellers
-    totalSellersManaged: 0   // 管理的 Sellers 数量
-  });
 
+  // === 初始化：加载用户和活动数据 ===
   useEffect(() => {
-    loadDashboardData();
+    initializeDashboard();
   }, []);
 
+  // === 监听统计数据 ===
   useEffect(() => {
-    if (userInfo) {
+    if (currentUser && eventId) {
+      subscribeToStats();
       loadSellers();
     }
-  }, [userInfo]);
+  }, [currentUser, eventId]);
 
   /**
-   * 加载 Dashboard 数据
+   * 初始化 Dashboard
    */
-  const loadDashboardData = async () => {
+  const initializeDashboard = async () => {
     try {
       setLoading(true);
 
+      console.log('[SM Dashboard] 初始化开始');
+      console.log('[SM Dashboard] orgEventCode:', orgEventCode);
+
       // 🔐 从 localStorage 获取登录信息
-      const storedInfo = localStorage.getItem('sellerManagerInfo');
+      const storedInfo = localStorage.getItem('sellerManagerInfo'); // ✅ 修复：使用正确的 key
+      console.log('[SM Dashboard] localStorage key: sellerManagerInfo');
+      console.log('[SM Dashboard] localStorage 数据:', storedInfo ? '存在' : '不存在');
+      
       if (!storedInfo) {
-        console.warn('[Dashboard] 未找到登录信息，跳转到登录页');
+        console.warn('[SM Dashboard] 未找到登录信息');
         navigate(`/login/${orgEventCode}`);
         return;
       }
 
-      const info = JSON.parse(storedInfo);
-      console.log('[Dashboard] 加载用户信息:', info);
-      
-      // 验证角色（检查 availableRoles，这是已转换为驼峰式的）
-      if (!info.availableRoles?.includes('sellerManager')) {
-        console.warn('[Dashboard] 没有 Seller Manager 权限，availableRoles:', info.availableRoles);
+      const userInfo = JSON.parse(storedInfo);
+      console.log('[SM Dashboard] 用户信息:', userInfo);
+
+      // 🎯 验证是否有 sellerManager 角色
+      if (!userInfo.roles?.includes('sellerManager')) {
+        console.error('[SM Dashboard] 用户没有 sellerManager 角色');
         alert('您没有 Seller Manager 权限');
         navigate(`/login/${orgEventCode}`);
         return;
       }
-      
-      setUserInfo(info);
 
-      // 📋 加载组织信息
-      const orgDoc = await getDoc(doc(db, 'organizations', info.organizationId));
-      if (orgDoc.exists()) {
-        setOrgData(orgDoc.data());
-        console.log('[Dashboard] 组织数据加载成功');
+      // 🎯 验证是否有 managedDepartments（可选检查，如果没有则警告但继续）
+      if (!userInfo.managedDepartments || userInfo.managedDepartments.length === 0) {
+        console.warn('[SM Dashboard] 用户没有 managedDepartments');
+        // 不阻止登录，因为可能还没有分配部门
+        // alert('您还没有被分配管理任何部门');
+        // navigate(`/login/${orgEventCode}`);
+        // return;
       }
+
+      setCurrentUser(userInfo);
+      setEventId(userInfo.eventId);
+
+      console.log('[SM Dashboard] 用户状态设置完成');
+      console.log('[SM Dashboard] eventId:', userInfo.eventId);
 
       // 📋 加载活动信息
-      const eventDoc = await getDoc(
-        doc(db, 'organizations', info.organizationId, 'events', info.eventId)
-      );
-      
+      const eventDoc = await getDoc(doc(db, 'Event', userInfo.eventId));
       if (eventDoc.exists()) {
         setEventData(eventDoc.data());
-        console.log('[Dashboard] 活动数据加载成功');
-      }
-
-      // 📋 加载 Seller Manager 用户文档
-      const userDoc = await getDoc(
-        doc(db, 'organizations', info.organizationId, 'events', info.eventId, 'users', info.userId)
-      );
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        setSellerManagerData(userData);
-        
-        // 🎯 计算统计数据
-        const capital = userData.capital || {};
-        const stats = {
-          assignedCapital: capital.assignedCapital || 0,
-          availableCapital: capital.availableCapital || 0,
-          allocatedToSellers: capital.allocatedToSellers || 0,
-          totalSellersManaged: 0 // 稍后从 sellers 加载
-        };
-        setStatistics(stats);
-        
-        console.log('[Dashboard] Seller Manager 数据加载成功:', {
-          capital: stats
-        });
+        console.log('[SM Dashboard] 活动数据加载成功');
+      } else {
+        throw new Error('活动不存在');
       }
 
     } catch (error) {
-      console.error('[Dashboard] 加载失败:', error);
+      console.error('[SM Dashboard] 初始化失败:', error);
       alert(`加载失败: ${error.message}`);
+      navigate(`/login/${orgEventCode}`);
     } finally {
       setLoading(false);
     }
   };
 
   /**
-   * 加载该 Seller Manager 管理的所有 Sellers
+   * 订阅统计数据（实时监听）
+   */
+  const subscribeToStats = () => {
+    // 🔔 监听 Seller Manager 统计
+    const smStatsRef = doc(db, 'Event', eventId, 'sellerManagerStats', currentUser.userId);
+    const unsubscribeSM = onSnapshot(
+      smStatsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setSmStats(snapshot.data());
+          console.log('[SM Dashboard] SM 统计更新:', snapshot.data());
+        } else {
+          console.warn('[SM Dashboard] SM 统计文档不存在，可能尚未创建');
+          // 设置默认值
+          setSmStats({
+            managedUsersStats: {
+              totalUsers: 0,
+              activeUsers: 0,
+              totalPointsReceived: 0,
+              currentBalance: 0,
+              totalSold: 0,
+              totalRevenue: 0,
+              totalCollected: 0,
+              pendingCollection: 0,
+              collectionRate: 0
+            },
+            allocationStats: {
+              totalAllocations: 0,
+              totalPointsAllocated: 0,
+              averagePerAllocation: 0
+            },
+            collectionManagement: {
+              usersWithWarnings: 0,
+              highRiskUsers: 0
+            }
+          });
+        }
+      },
+      (error) => {
+        console.error('[SM Dashboard] SM 统计监听错误:', error);
+      }
+    );
+
+    // 🔔 监听部门统计
+    const deptStatsQuery = query(
+      collection(db, 'Event', eventId, 'departmentStats'),
+      where('managedBy', 'array-contains', currentUser.userId)
+    );
+    
+    const unsubscribeDept = onSnapshot(
+      deptStatsQuery,
+      (snapshot) => {
+        const depts = [];
+        snapshot.forEach(doc => {
+          depts.push({
+            id: doc.id,
+            departmentCode: doc.id,
+            ...doc.data()
+          });
+        });
+        setDepartmentStats(depts);
+        console.log('[SM Dashboard] 部门统计更新:', depts.length);
+      },
+      (error) => {
+        console.error('[SM Dashboard] 部门统计监听错误:', error);
+      }
+    );
+
+    // 返回清理函数
+    return () => {
+      unsubscribeSM();
+      unsubscribeDept();
+    };
+  };
+
+  /**
+   * 加载管理的 Sellers
+   * 
+   * 查询逻辑：
+   * 1. 查询 roles 包含 'seller'
+   * 2. department 在 managedDepartments 数组中
+   * 3. 不限制 identityTag（可以是 student, teacher, staff 等）
    */
   const loadSellers = async () => {
     try {
       setLoadingSellers(true);
-      console.log('[Dashboard] 开始加载 Sellers...');
+      console.log('[SM Dashboard] 开始加载 Sellers...');
+      console.log('[SM Dashboard] 管理的部门:', currentUser.managedDepartments);
 
-      const usersRef = collection(
-        db, 
-        'organizations', 
-        userInfo.organizationId, 
-        'events', 
-        userInfo.eventId, 
-        'users'
+      // ✅ 检查 managedDepartments 是否存在
+      if (!currentUser.managedDepartments || currentUser.managedDepartments.length === 0) {
+        console.warn('[SM Dashboard] 用户没有 managedDepartments，无法加载 Sellers');
+        setSellers([]);
+        setLoadingSellers(false);
+        return;
+      }
+
+      const usersRef = collection(db, 'Event', eventId, 'users');
+      
+      // 🔍 策略：使用 where-in 查询（限制最多10个部门）
+      if (currentUser.managedDepartments.length > 10) {
+        console.warn('[SM Dashboard] 管理的部门超过10个，使用备选查询方案');
+        // 备选方案：分批查询或使用其他策略
+        // 这里简化处理，只查前10个
+        alert('您管理的部门超过10个，系统只会显示前10个部门的数据');
+      }
+
+      const deptToQuery = currentUser.managedDepartments.slice(0, 10);
+
+      const q = query(
+        usersRef,
+        where('roles', 'array-contains', 'seller'),
+        where('department', 'in', deptToQuery),
+        orderBy('createdAt', 'desc')
       );
 
-      let sellersList = [];
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const sellersList = [];
+          snapshot.forEach(doc => {
+            sellersList.push({
+              id: doc.id,
+              userId: doc.id,
+              ...doc.data()
+            });
+          });
+          
+          setSellers(sellersList);
+          console.log('[SM Dashboard] Sellers 更新:', sellersList.length);
+        },
+        (error) => {
+          console.error('[SM Dashboard] Sellers 监听错误:', error);
+          
+          // 如果索引不存在，尝试简化查询
+          if (error.code === 'failed-precondition') {
+            console.warn('[SM Dashboard] 复合索引不存在，尝试简化查询');
+            loadSellersFallback();
+          }
+        }
+      );
 
-      try {
-        // 🔍 策略1：尝试使用复合查询（需要 Firestore 索引）
-        console.log('[Dashboard] 尝试复合查询 (roles + managedBy + orderBy)...');
-        const q = query(
-          usersRef,
-          where('roles', 'array-contains', 'seller'),
-          where('managedBy', '==', userInfo.userId),
-          orderBy('createdAt', 'desc')
-        );
+      return unsubscribe;
 
-        const snapshot = await getDocs(q);
+    } catch (error) {
+      console.error('[SM Dashboard] 加载 Sellers 失败:', error);
+      setSellers([]);
+    } finally {
+      setLoadingSellers(false);
+    }
+  };
+
+  /**
+   * 备选方案：内存过滤
+   */
+  const loadSellersFallback = async () => {
+    try {
+      console.log('[SM Dashboard] 使用备选方案：内存过滤');
+      
+      const usersRef = collection(db, 'Event', eventId, 'users');
+      const q = query(
+        usersRef,
+        where('roles', 'array-contains', 'seller'),
+        orderBy('createdAt', 'desc'),
+        limit(500) // 限制数量防止过载
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const allSellers = [];
         snapshot.forEach(doc => {
-          sellersList.push({
+          allSellers.push({
             id: doc.id,
+            userId: doc.id,
             ...doc.data()
           });
         });
 
-        console.log('[Dashboard] ✅ 复合查询成功，Sellers:', sellersList.length);
+        // 在内存中过滤出管理范围内的 Sellers
+        const filteredSellers = allSellers.filter(seller =>
+          currentUser.managedDepartments.includes(seller.department)
+        );
 
-      } catch (indexError) {
-        console.warn('[Dashboard] ⚠️ 复合查询失败，尝试备选方案 1...');
-        
-        try {
-          // 🔍 策略2：查询 managedBy，再在内存中过滤 seller 角色
-          console.log('[Dashboard] 尝试查询 (managedBy only)...');
-          const q = query(
-            usersRef,
-            where('managedBy', '==', userInfo.userId)
-          );
+        setSellers(filteredSellers);
+        console.log('[SM Dashboard] 备选方案 Sellers 更新:', filteredSellers.length);
+      });
 
-          const snapshot = await getDocs(q);
-          const tempList = [];
-          snapshot.forEach(doc => {
-            const data = doc.data();
-            tempList.push({
-              id: doc.id,
-              ...data
-            });
-          });
-
-          // 在内存中过滤出 seller 角色，并按 createdAt 排序
-          sellersList = tempList
-            .filter(item => item.roles?.includes('seller'))
-            .sort((a, b) => {
-              const timeA = a.createdAt?.getTime?.() || 0;
-              const timeB = b.createdAt?.getTime?.() || 0;
-              return timeB - timeA;
-            });
-
-          console.log('[Dashboard] ✅ 备选方案 1 成功，Sellers:', sellersList.length);
-
-        } catch (fallback1Error) {
-          console.warn('[Dashboard] ⚠️ 备选方案 1 失败，尝试备选方案 2...');
-          
-          try {
-            // 🔍 策略3：获取所有用户，在内存中过滤（最后的手段）
-            console.log('[Dashboard] 尝试查询所有用户并在内存过滤...');
-            const snapshot = await getDocs(usersRef);
-            const tempList = [];
-            snapshot.forEach(doc => {
-              const data = doc.data();
-              tempList.push({
-                id: doc.id,
-                ...data
-              });
-            });
-
-            // 在内存中过滤：seller 角色 + 由当前 Seller Manager 管理
-            sellersList = tempList
-              .filter(item => 
-                item.roles?.includes('seller') && 
-                item.managedBy === userInfo.userId
-              )
-              .sort((a, b) => {
-                const timeA = a.createdAt?.getTime?.() || 0;
-                const timeB = b.createdAt?.getTime?.() || 0;
-                return timeB - timeA;
-              });
-
-            console.log('[Dashboard] ✅ 备选方案 2 成功，Sellers:', sellersList.length);
-
-          } catch (fallback2Error) {
-            console.error('[Dashboard] ❌ 所有查询方案都失败:', fallback2Error.message);
-            alert('加载 Sellers 失败，请稍后重试');
-            throw fallback2Error;
-          }
-        }
-      }
-
-      setSellers(sellersList);
-      
-      // 更新统计中的 Sellers 数量
-      setStatistics(prev => ({
-        ...prev,
-        totalSellersManaged: sellersList.length
-      }));
-
-      console.log('[Dashboard] ✅ Sellers 加载成功:', sellersList.length);
+      return unsubscribe;
 
     } catch (error) {
-      console.error('[Dashboard] ❌ 加载 Sellers 失败:', error);
+      console.error('[SM Dashboard] 备选方案也失败:', error);
       setSellers([]);
-    } finally {
-      setLoadingSellers(false);
     }
   };
 
@@ -281,14 +344,14 @@ const SellerManagerDashboard = () => {
         localStorage.removeItem('sellerManagerInfo');
         navigate(`/login/${orgEventCode}`);
       } catch (error) {
-        console.error('[Dashboard] 登出失败:', error);
+        console.error('[SM Dashboard] 登出失败:', error);
         alert('退出登录失败');
       }
     }
   };
 
   /**
-   * 打开分配固本弹窗
+   * 打开分配点数弹窗
    */
   const handleAllocatePoints = (seller) => {
     setSelectedSeller(seller);
@@ -296,13 +359,14 @@ const SellerManagerDashboard = () => {
   };
 
   /**
-   * 刷新数据（在创建用户或分配固本后调用）
+   * 刷新数据
    */
   const handleRefresh = () => {
-    loadDashboardData();
-    loadSellers();
+    // 实时监听会自动刷新，这里可以显示提示
+    console.log('[SM Dashboard] 数据通过实时监听自动更新');
   };
 
+  // === 渲染：加载中 ===
   if (loading) {
     return (
       <div style={styles.container}>
@@ -314,155 +378,125 @@ const SellerManagerDashboard = () => {
     );
   }
 
+  // === 渲染：主界面 ===
   return (
     <div style={styles.container}>
-      {/* Header with Role Switcher */}
+      {/* 🎯 顶部导航栏 */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div>
-            <h1 style={styles.title}>
-              💰 Seller Manager Dashboard
-            </h1>
+            <h1 style={styles.title}>Seller Manager</h1>
             <p style={styles.subtitle}>
-              {orgData?.orgName?.['zh-CN'] || '组织'} - {eventData?.eventName?.['zh-CN'] || '活动'}
+              {currentUser.displayName || '管理员'}
             </p>
-            <p style={styles.roleLabel}>班级老师管理系统</p>
+            <p style={styles.roleLabel}>
+              管理部门: {currentUser.managedDepartments?.join(', ') || '无'}
+            </p>
           </div>
-          {/* 🆕 角色切换器 */}
-          {userInfo?.availableRoles && userInfo.availableRoles.length > 1 && (
-            <div style={styles.roleSwitcherWrapper}>
-              <RoleSwitcher
-                currentRole={userInfo.currentRole || 'sellerManager'}
-                availableRoles={userInfo.availableRoles}
-                orgEventCode={orgEventCode}
-                userInfo={userInfo}
-              />
-            </div>
-          )}
         </div>
         <div style={styles.headerActions}>
           <div style={styles.userInfo}>
-            <span style={styles.userName}>
-              👤 {sellerManagerData?.basicInfo?.englishName || '用户'}
-            </span>
+            <div style={styles.userName}>
+              {eventData?.eventName || '义卖活动'}
+            </div>
           </div>
-          <button style={styles.logoutButton} onClick={handleLogout}>
+          <button 
+            style={styles.logoutButton}
+            onClick={handleLogout}
+          >
             退出登录
           </button>
         </div>
       </div>
 
-      {/* 📊 Statistics Cards */}
-      <div style={styles.statsGrid}>
-        <StatCard
-          title="分配资本"
-          value={`RM ${statistics.assignedCapital.toLocaleString()}`}
-          icon="💵"
-          color="#667eea"
-          description="Event Manager 分配的总资本"
-        />
-        <StatCard
-          title="可用资本"
-          value={`RM ${statistics.availableCapital.toLocaleString()}`}
-          icon="💰"
-          color="#10b981"
-          description="可以分配给学生的资本"
-        />
-        <StatCard
-          title="已分配"
-          value={`RM ${statistics.allocatedToSellers.toLocaleString()}`}
-          icon="📤"
-          color="#f59e0b"
-          description="已分配给学生的固本"
-        />
-        <StatCard
-          title="管理学生"
-          value={statistics.totalSellersManaged}
-          icon="🛍️"
-          color="#ec4899"
-          description="您管理的学生 (Sellers)"
-        />
-      </div>
-
-      {/* 🚀 Quick Actions */}
-      <div style={styles.actionsBar}>
-        <button 
-          style={styles.primaryButton}
-          onClick={() => setShowAddUser(true)}
+      {/* 📊 Tab 导航 */}
+      <div style={styles.tabBar}>
+        <button
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'overview' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('overview')}
         >
-          ➕ 创建新学生 (Seller)
+          📊 概览
         </button>
-        <button 
-          style={styles.secondaryButton}
-          onClick={handleRefresh}
-          disabled={loadingSellers}
+        <button
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'departments' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('departments')}
         >
-          🔄 刷新数据
+          🏫 部门
+        </button>
+        <button
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'sellers' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('sellers')}
+        >
+          👥 Sellers ({sellers.length})
         </button>
       </div>
 
-      {/* 📋 Sellers List */}
-      <div style={styles.sellersSection}>
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>
-            我管理的学生 (Sellers)
-          </h2>
-          <div style={styles.sellerCount}>
-            共 <strong>{sellers.length}</strong> 个学生
-          </div>
-        </div>
-
-        {loadingSellers ? (
-          <div style={styles.loadingCard}>
-            <div style={styles.spinner}></div>
-            <p>加载学生列表...</p>
-          </div>
-        ) : sellers.length > 0 ? (
-          <SellerList
-            sellers={sellers}
-            onAllocatePoints={handleAllocatePoints}
-            onRefresh={handleRefresh}
+      {/* 📄 Tab 内容 */}
+      <div style={styles.tabContent}>
+        {activeTab === 'overview' && (
+          <OverviewStats
+            smStats={smStats}
+            departmentStats={departmentStats}
+            eventData={eventData}
           />
-        ) : (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>🛍️</div>
-            <p style={styles.emptyText}>还没有创建任何学生</p>
-            <button 
-              style={styles.primaryButton}
-              onClick={() => setShowAddUser(true)}
-            >
-              创建第一个学生
-            </button>
-          </div>
+        )}
+
+        {activeTab === 'departments' && (
+          <DepartmentList
+            departmentStats={departmentStats}
+            onSelectDepartment={(dept) => {
+              console.log('[SM Dashboard] 选中部门:', dept);
+              setActiveTab('sellers');
+            }}
+          />
+        )}
+
+        {activeTab === 'sellers' && (
+          <>
+            <div style={styles.actionsBar}>
+              <button
+                style={styles.refreshButton}
+                onClick={handleRefresh}
+              >
+                🔄 数据实时更新中
+              </button>
+            </div>
+            {loadingSellers ? (
+              <div style={styles.loadingCard}>
+                <div style={styles.spinner}></div>
+                <p>加载 Sellers...</p>
+              </div>
+            ) : (
+              <SellerList
+                sellers={sellers}
+                onAllocatePoints={handleAllocatePoints}
+                maxPerAllocation={eventData?.pointAllocationRules?.sellerManager?.maxPerAllocation || 100}
+              />
+            )}
+          </>
         )}
       </div>
 
-      {/* 🎭 Modals */}
-      {showAddUser && (
-        <AddUser
-          organizationId={userInfo.organizationId}
-          eventId={userInfo.eventId}
-          onClose={() => {
-            setShowAddUser(false);
-            handleRefresh();
-          }}
-          currentUserRole="sellerManager"
-          managedBy={userInfo.userId}
-          presetRoles={['seller']}
-          departmentId={sellerManagerData?.departmentInfo?.departmentId}
-        />
-      )}
-
+      {/* 🎭 分配点数弹窗 */}
       {showAllocatePoints && selectedSeller && (
         <AllocatePoints
           seller={selectedSeller}
-          sellerManager={sellerManagerData}
-          organizationId={userInfo.organizationId}
-          eventId={userInfo.eventId}
+          sellerManagerId={currentUser.userId}
+          eventId={eventId}
+          maxPerAllocation={eventData?.pointAllocationRules?.sellerManager?.maxPerAllocation || 100}
+          warningThreshold={eventData?.pointAllocationRules?.sellerManager?.warningThreshold || 0.3}
           onClose={() => {
             setShowAllocatePoints(false);
             setSelectedSeller(null);
-            handleRefresh();
           }}
         />
       )}
@@ -470,25 +504,12 @@ const SellerManagerDashboard = () => {
   );
 };
 
-// 📊 Statistics Card Component
-const StatCard = ({ title, value, icon, color, description }) => (
-  <div style={{ ...styles.statCard, borderLeftColor: color }}>
-    <div style={styles.statIcon}>{icon}</div>
-    <div style={styles.statContent}>
-      <div style={styles.statValue}>{value}</div>
-      <div style={styles.statLabel}>{title}</div>
-      {description && (
-        <div style={styles.statDescription}>{description}</div>
-      )}
-    </div>
-  </div>
-);
-
+// === 样式 ===
 const styles = {
   container: {
     minHeight: '100vh',
     background: '#f3f4f6',
-    padding: '2rem'
+    padding: '1rem'
   },
   loadingCard: {
     display: 'flex',
@@ -504,7 +525,7 @@ const styles = {
     width: '3rem',
     height: '3rem',
     border: '4px solid #e5e7eb',
-    borderTopColor: '#667eea',
+    borderTopColor: '#f59e0b',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
     marginBottom: '1rem'
@@ -513,7 +534,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '2rem',
+    marginBottom: '1rem',
     background: 'white',
     padding: '1.5rem',
     borderRadius: '12px',
@@ -521,16 +542,10 @@ const styles = {
   },
   headerLeft: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '2rem'
-  },
-  roleSwitcherWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    paddingTop: '0.5rem'
+    alignItems: 'flex-start'
   },
   title: {
-    fontSize: '2rem',
+    fontSize: '1.75rem',
     fontWeight: 'bold',
     color: '#1f2937',
     margin: '0 0 0.5rem 0'
@@ -553,13 +568,13 @@ const styles = {
   },
   userInfo: {
     padding: '0.5rem 1rem',
-    background: '#f3f4f6',
+    background: '#fef3c7',
     borderRadius: '8px'
   },
   userName: {
     fontSize: '0.875rem',
-    fontWeight: '500',
-    color: '#374151'
+    fontWeight: '600',
+    color: '#92400e'
   },
   logoutButton: {
     padding: '0.5rem 1rem',
@@ -572,116 +587,70 @@ const styles = {
     fontWeight: '500',
     transition: 'all 0.2s'
   },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '1.5rem',
-    marginBottom: '2rem'
-  },
-  statCard: {
+  tabBar: {
+    display: 'flex',
+    gap: '0.5rem',
+    marginBottom: '1rem',
     background: 'white',
-    padding: '1.5rem',
+    padding: '0.5rem',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '1rem',
-    borderLeft: '4px solid'
+    overflowX: 'auto'
   },
-  statIcon: {
-    fontSize: '2.5rem'
-  },
-  statContent: {
-    flex: 1
-  },
-  statValue: {
-    fontSize: '1.75rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: '0.25rem'
-  },
-  statLabel: {
+  tabButton: {
+    flex: 1,
+    minWidth: '120px',
+    padding: '0.75rem 1rem',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
     fontSize: '0.875rem',
-    color: '#6b7280',
     fontWeight: '600',
-    marginBottom: '0.25rem'
+    color: '#6b7280',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap'
   },
-  statDescription: {
-    fontSize: '0.75rem',
-    color: '#9ca3af',
-    marginTop: '0.25rem'
+  tabButtonActive: {
+    background: '#fef3c7',
+    color: '#92400e'
+  },
+  tabContent: {
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    padding: '1.5rem',
+    minHeight: '400px'
   },
   actionsBar: {
     display: 'flex',
     gap: '1rem',
-    marginBottom: '2rem',
-    flexWrap: 'wrap'
+    marginBottom: '1.5rem'
   },
-  primaryButton: {
+  refreshButton: {
     padding: '0.75rem 1.5rem',
-    background: '#667eea',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '1rem',
-    fontWeight: '600',
-    transition: 'all 0.2s'
-  },
-  secondaryButton: {
-    padding: '0.75rem 1.5rem',
-    background: 'white',
-    color: '#374151',
+    background: '#f3f4f6',
+    color: '#6b7280',
     border: '2px solid #e5e7eb',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '1rem',
-    fontWeight: '600',
-    transition: 'all 0.2s'
-  },
-  sellersSection: {
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    padding: '1.5rem'
-  },
-  sectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1.5rem'
-  },
-  sectionTitle: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    margin: 0
-  },
-  sellerCount: {
     fontSize: '0.875rem',
-    color: '#6b7280'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '3rem',
-    color: '#6b7280'
-  },
-  emptyIcon: {
-    fontSize: '4rem',
-    marginBottom: '1rem'
-  },
-  emptyText: {
-    fontSize: '1rem',
-    marginBottom: '1.5rem'
+    fontWeight: '600'
   }
 };
 
-// 🎨 CSS Animation for spinner
+// 🎨 CSS Animation
 const styleSheet = document.styleSheets[0];
-styleSheet.insertRule(`
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+if (styleSheet) {
+  try {
+    styleSheet.insertRule(`
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    `, styleSheet.cssRules.length);
+  } catch (e) {
+    console.warn('无法插入动画规则');
   }
-`, styleSheet.cssRules.length);
+}
 
 export default SellerManagerDashboard;

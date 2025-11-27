@@ -103,11 +103,15 @@ function App() {
       {/* ✅ 向后兼容：旧的 event-admin 路径 */}
       <Route path="/event-admin/:orgEventCode" element={<EventManagerDashboard />} />
 
-      {/* 🆕 Seller Manager Dashboard */}
-      <Route
-        path="/seller-manager/:orgEventCode/dashboard"
-        element={<SellerManagerDashboard />}
-      />
+      {/* 🆕 Manager Dashboards - Desktop 版本 */}
+      <Route path="/seller-manager/:orgEventCode/dashboard" element={<SellerManagerDashboard />} />
+      <Route path="/merchant-manager/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Merchant Manager Dashboard</h2><p>功能开发中...</p></div>} />
+      <Route path="/customer-manager/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Customer Manager Dashboard</h2><p>功能开发中...</p></div>} />
+
+      {/* 🆕 普通用户 Dashboards - Mobile 版本 */}
+      <Route path="/seller/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Seller Dashboard</h2><p>功能开发中...</p></div>} />
+      <Route path="/merchant/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Merchant Dashboard</h2><p>功能开发中...</p></div>} />
+      <Route path="/customer/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Customer Dashboard</h2><p>功能开发中...</p></div>} />
 
       {/* 預設路由 - 重定向到 Platform Admin 登录 */}
       <Route path="/" element={<Navigate to="/platform/login" replace />} />

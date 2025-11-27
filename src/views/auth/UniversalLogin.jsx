@@ -43,8 +43,10 @@ const UniversalLogin = () => {
   useEffect(() => {
     const checkDeviceType = () => {
       const width = window.innerWidth;
-      // 768px 以下认为是 phone
-      setIsMobile(width < 768);
+      // 480px 以下认为是 phone（降低阈值，原来是 768px）
+      // 这样普通的平板和小笔记本也会被识别为 Desktop
+      setIsMobile(width < 480);
+      console.log('[UniversalLogin] 🖥️ 设备检测 - 窗口宽度:', width, 'px, 设备类型:', width < 480 ? 'Mobile 📱' : 'Desktop 💻');
     };
     
     checkDeviceType();
@@ -219,40 +221,59 @@ const UniversalLogin = () => {
 
   /**
    * 根据设备类型过滤角色
+   * Desktop 模式：只显示 Manager 角色
+   * Mobile 模式：只显示普通用户角色
    */
   const filterRolesByDevice = (roles) => {
+    console.log('[UniversalLogin] filterRolesByDevice - 输入角色:', roles);
+    console.log('[UniversalLogin] filterRolesByDevice - 设备类型:', isMobile ? 'Mobile' : 'Desktop');
+    console.log('[UniversalLogin] filterRolesByDevice - 窗口宽度:', window.innerWidth);
+    
     if (isMobile) {
       // Phone: 只显示 customer, seller, merchant
       const phoneRoles = ['customer', 'seller', 'merchant'];
-      return roles.filter(role => phoneRoles.includes(role));
+      const filtered = roles.filter(role => phoneRoles.includes(role));
+      console.log('[UniversalLogin] filterRolesByDevice - Mobile 过滤结果:', filtered);
+      return filtered;
     } else {
-      // Desktop: 只显示 eventManager, sellerManager, merchantManager, customerManager
-      const desktopRoles = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager'];
-      return roles.filter(role => desktopRoles.includes(role));
+      // Desktop: 只显示 Manager 角色（移除 eventManager 和 platformAdmin）
+      const desktopRoles = ['sellerManager', 'merchantManager', 'customerManager'];
+      const filtered = roles.filter(role => desktopRoles.includes(role));
+      console.log('[UniversalLogin] filterRolesByDevice - Desktop 过滤结果:', filtered);
+      return filtered;
     }
   };
 
   /**
    * 获取优先级最高的角色
+   * Desktop 优先级: sellerManager > merchantManager > customerManager
+   * Mobile 优先级: seller > merchant > customer
    */
   const getPriorityRole = (roles) => {
+    console.log('[UniversalLogin] getPriorityRole - 输入角色:', roles);
+    console.log('[UniversalLogin] getPriorityRole - 设备类型:', isMobile ? 'Mobile' : 'Desktop');
+    
     if (isMobile) {
-      // Phone 优先级: customer > seller > merchant
-      const priority = ['customer', 'seller', 'merchant'];
+      // Phone 优先级: seller > merchant > customer
+      const priority = ['seller', 'merchant', 'customer'];
       for (const role of priority) {
         if (roles.includes(role)) {
+          console.log('[UniversalLogin] getPriorityRole - Mobile 选中角色:', role);
           return role;
         }
       }
     } else {
-      // Desktop 优先级: eventManager > sellerManager > merchantManager > customerManager
-      const priority = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager'];
+      // Desktop 优先级: sellerManager > merchantManager > customerManager
+      const priority = ['sellerManager', 'merchantManager', 'customerManager'];
       for (const role of priority) {
         if (roles.includes(role)) {
+          console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);
           return role;
         }
       }
     }
+    
+    console.warn('[UniversalLogin] getPriorityRole - 未找到匹配的角色');
     return null;
   };
 
@@ -302,12 +323,17 @@ const UniversalLogin = () => {
 
       console.log('[UniversalLogin] OTP 验证成功');
 
-      // ✅ OTP 验证通过，使用 Custom Token 登录 Firebase Auth
-      if (userData?.customToken) {
-        await signInWithCustomToken(auth, userData.customToken);
+      // ✅ OTP 验证通过，使用 verifyOtp 返回的新 customToken 登录 Firebase Auth
+      if (data?.customToken) {
+        console.log('[UniversalLogin] 使用 verifyOtp 返回的 customToken 登录 Firebase');
+        await signInWithCustomToken(auth, data.customToken);
+        console.log('[UniversalLogin] Firebase Auth 登录成功');
 
         // 根据设备类型过滤角色
         const filteredRoles = filterRolesByDevice(userData.roles);
+        console.log('[UniversalLogin] 原始角色:', userData.roles);
+        console.log('[UniversalLogin] 过滤后角色:', filteredRoles);
+        console.log('[UniversalLogin] 设备类型:', isMobile ? 'Mobile' : 'Desktop');
         
         if (filteredRoles.length === 0) {
           throw new Error(`您在当前设备（${isMobile ? '手机' : '电脑'}）上没有可用的角色`);
@@ -315,6 +341,7 @@ const UniversalLogin = () => {
 
         // 获取优先级最高的角色
         const priorityRole = getPriorityRole(filteredRoles);
+        console.log('[UniversalLogin] 优先级角色:', priorityRole);
         
         if (!priorityRole) {
           throw new Error('无法确定要进入的角色');
@@ -328,8 +355,12 @@ const UniversalLogin = () => {
           currentRole: priorityRole
         };
 
+        console.log('[UniversalLogin] 准备跳转，用户信息:', baseInfo);
+
         // 🎯 直接跳转到优先级最高的角色
         handleRoleNavigation(priorityRole, baseInfo);
+      } else {
+        throw new Error('未收到 customToken');
       }
     } catch (error) {
       console.error('[UniversalLogin] OTP 验证错误:', error);
@@ -355,6 +386,12 @@ const UniversalLogin = () => {
    * 根据角色跳转到对应的 Dashboard
    */
   const handleRoleNavigation = (role, userInfo) => {
+    console.log('[UniversalLogin] ========== handleRoleNavigation 开始 ==========');
+    console.log('[UniversalLogin] 角色:', role);
+    console.log('[UniversalLogin] orgEventCode:', orgEventCode);
+    console.log('[UniversalLogin] isMobile:', isMobile);
+    console.log('[UniversalLogin] userInfo:', userInfo);
+    
     // 角色到路由的映射（统一使用驼峰式）
     const roleRoutes = {
       'platformAdmin': '/platform-admin/dashboard',
@@ -382,15 +419,34 @@ const UniversalLogin = () => {
     // 保存当前角色信息到 localStorage
     const storageKey = storageKeys[role];
     if (storageKey) {
+      console.log('[UniversalLogin] 保存到 localStorage, key:', storageKey);
       localStorage.setItem(storageKey, JSON.stringify(userInfo));
+      console.log('[UniversalLogin] localStorage 保存成功');
+    } else {
+      console.warn('[UniversalLogin] 未找到 storageKey for role:', role);
     }
 
     // 跳转到对应的 Dashboard
     const route = roleRoutes[role];
     if (route) {
-      console.log('[UniversalLogin] 跳转到:', route, '角色:', role, '设备类型:', isMobile ? 'Mobile' : 'Desktop');
+      console.log('[UniversalLogin] ========================================');
+      console.log('[UniversalLogin] 🚀 准备跳转到:', route);
+      console.log('[UniversalLogin] 🎭 角色:', role);
+      console.log('[UniversalLogin] 📱 设备类型:', isMobile ? 'Mobile' : 'Desktop');
+      console.log('[UniversalLogin] ========================================');
+      
+      // 执行跳转
       navigate(route);
+      
+      // 验证跳转是否成功（延迟检查）
+      setTimeout(() => {
+        console.log('[UniversalLogin] 跳转后检查 - 当前路径:', window.location.pathname);
+        console.log('[UniversalLogin] 预期路径:', route);
+        console.log('[UniversalLogin] 路径匹配:', window.location.pathname === route);
+      }, 100);
     } else {
+      console.error('[UniversalLogin] ❌ 未找到路由映射 for role:', role);
+      console.error('[UniversalLogin] 可用的角色路由:', Object.keys(roleRoutes));
       setError(`未知角色: ${role}`);
     }
   };

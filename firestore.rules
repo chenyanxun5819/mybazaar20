@@ -8,62 +8,117 @@ service cloud.firestore {
              exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
     }
     
-    // ✅ 新增：检查是否为已认证用户（简化版）
-    // 注意：Firestore Rules 无法有效检查 admins 数组中的电话号码匹配
-    // 所以使用简化版本，依赖前端和 Cloud Functions 的访问控制
-    function isEventManager() {
+    function isAuthenticated() {
       return request.auth != null;
     }
     
-    // ========== 组织集合 ==========
+    // ========== Event 集合（新架构 - 顶级） ==========
+    match /Event/{eventId} {
+      // 所有已认证用户可读
+      allow read: if isAuthenticated();
+      allow write: if false;
+      
+      // ========== users 子集合 ==========
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+        
+        // users 的子集合
+        match /{document=**} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated();
+        }
+      }
+      
+      // ========== sellerManagerStats 子集合 ==========
+      match /sellerManagerStats/{smId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== departmentStats 子集合 ==========
+      match /departmentStats/{deptCode} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== pointAllocations 子集合 ==========
+      match /pointAllocations/{allocationId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+      
+      // ========== transactions 子集合 ==========
+      match /transactions/{transactionId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== 其他子集合 ==========
+      match /{document=**} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+    
+    // ========== organizations 集合（旧架构兼容） ==========
     match /organizations/{orgId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
       
-      // ========== 活动子集合 ==========
+      // ========== events 子集合 ==========
       match /events/{eventId} {
-        allow read: if true;
+        allow read: if isAuthenticated();
         allow create, delete: if isAdmin();
-        // ✅ 修改：允许 Admin 或已认证用户（Event Manager）更新
-        allow update: if isAdmin() || isEventManager();
+        allow update: if isAdmin() || isAuthenticated();
         
-        // ========== 活动用户子集合 ==========
+        // ========== events 的 users 子集合 ==========
         match /users/{userId} {
-          allow read: if true;
-          // ✅ 关键修改：允许 Admin 或已认证用户（Event Manager）操作用户
-          // 这样 Event Manager 才能分配点数、管理用户
-          allow create, update, delete: if isAdmin() || isEventManager();
+          allow read: if isAuthenticated();
+          allow create, update, delete: if isAdmin() || isAuthenticated();
         }
         
-        // ========== 元数据子集合 ==========
-        match /metadata/{docId} {
-          allow read: if true;
-          allow write: if isAdmin();
+        // ========== events 的其他子集合 ==========
+        match /{document=**} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated();
         }
+      }
+      
+      // ========== organizations 的其他子集合 ==========
+      match /{document=**} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
       }
     }
     
     // ========== OTP Sessions（登录验证码） ==========
     match /otp_sessions/{sessionId} {
-      allow read, write: if false;
+      allow read, write: if isAuthenticated();
     }
     
-    // ========== 系统配置 ==========
+    // ========== GlobalUsers 集合 ==========
+    match /GlobalUsers/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+    
+    // ========== system_config 配置 ==========
     match /system_config/{docId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
     
-    // ========== 用户集合 ==========
+    // ========== users 集合（通用用户） ==========
     match /users/{userId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && request.auth.uid == userId;
     }
     
-    // ========== 管理员白名单 ==========
+    // ========== admin_uids 白名单 ==========
     match /admin_uids/{uid} {
-      allow read: if request.auth != null;
+      allow read: if isAuthenticated();
       allow write: if false;
     }
     

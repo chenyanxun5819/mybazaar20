@@ -92,25 +92,9 @@ const EventManagerLogin = () => {
 
       console.log('[EventManagerLogin] 开始验证密码...', { orgCode, eventCode });
 
-      // Step 1: 查找组织
-      const orgsQuery = query(
-        collection(db, 'organizations'),
-        where('orgCode', '==', orgCode),
-        limit(1)
-      );
-      const orgsSnapshot = await getDocs(orgsQuery);
-
-      if (orgsSnapshot.empty) {
-        throw new Error('组织代码不存在');
-      }
-
-      const orgDoc = orgsSnapshot.docs[0];
-      const foundOrgId = orgDoc.id;
-      setOrgId(foundOrgId); // 保存到 state
-
-      // Step 2: 查找活动
+      // Step 1: 查找活动（从顶级 Event 集合）
       const eventsQuery = query(
-        collection(db, 'organizations', foundOrgId, 'events'),
+        collection(db, 'Event'),
         where('eventCode', '==', eventCode),
         limit(1)
       );
@@ -125,6 +109,13 @@ const EventManagerLogin = () => {
       setEventId(foundEventId); // 保存到 state
       const eventData = eventDoc.data();
 
+      // Step 2: 获取组织信息
+      const foundOrgId = eventData.organizationId;
+      if (!foundOrgId) {
+        throw new Error('活动缺少 organizationId');
+      }
+      setOrgId(foundOrgId); // 保存到 state
+
       console.log('[EventManagerLogin] 找到活动:', foundEventId);
 
       // Step 3: 验证 admins 数组
@@ -134,16 +125,21 @@ const EventManagerLogin = () => {
         throw new Error('此活动没有指派 Event Manager');
       }
 
-      // 查找匹配的管理员
-      const admin = admins.find(a => a.phone === formData.phoneNumber);
+      // 查找匹配的管理员（从 admins 数组中查找）
+      const admin = admins.find(a => a.phoneNumber === formData.phoneNumber);
       
       if (!admin) {
         throw new Error('手机号不正确或您不是此活动的 Event Manager');
       }
 
-      console.log('[EventManagerLogin] 找到管理员:', admin.name);
+      console.log('[EventManagerLogin] 找到管理员:', admin.chineseName || admin.englishName);
 
       // Step 4: 验证密码
+      // 检查 admin 是否有密码相关字段
+      if (!admin.passwordSalt || !admin.passwordHash) {
+        throw new Error('Event Manager 信息不完整，缺少密码验证数据');
+      }
+
       const passwordHash = await sha256(formData.password + admin.passwordSalt);
       
       if (passwordHash !== admin.passwordHash) {
@@ -286,21 +282,10 @@ const EventManagerLogin = () => {
       setSendingOtp(true);
       setError('');
 
-      const orgsQuery = query(
-        collection(db, 'organizations'),
-        where('orgCode', '==', orgCode),
-        limit(1)
-      );
-      const orgsSnapshot = await getDocs(orgsQuery);
-      const orgId = orgsSnapshot.docs[0].id;
-
-      const eventsQuery = query(
-        collection(db, 'organizations', orgId, 'events'),
-        where('eventCode', '==', eventCode),
-        limit(1)
-      );
-      const eventsSnapshot = await getDocs(eventsQuery);
-      const eventId = eventsSnapshot.docs[0].id;
+      // 直接从已保存的 eventId 发送 OTP（无需重新查询）
+      if (!eventId) {
+        throw new Error('缺少 eventId，请先完成初始登录步骤');
+      }
 
       const otpResp = await fetch('/api/sendOtp', {
         method: 'POST',

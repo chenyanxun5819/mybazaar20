@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 }
 
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, loginEventManager , createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles} = require('./admin');
+  createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 // 切換至 otpVerify.js (取代舊 twilio.js)
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
@@ -20,9 +20,7 @@ exports.setProjectInfo = setProjectInfo;
 exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
-exports.createEventManager = createEventManager; 
-exports.createEventManagerHttp = createEventManagerHttp; 
-exports.loginEventManager = loginEventManager; 
+exports.createEventManagerHttp = createEventManagerHttp;
 exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
 exports.deleteEventHttp = deleteEventHttp;
 exports.checkDuplicateUsers = checkDuplicateUsers;
@@ -66,19 +64,19 @@ exports.pingHttp = functions.https.onRequest((req, res) => {
 // 标准化手机号码格式
 function normalizePhoneNumber(phoneNumber) {
   if (!phoneNumber) return null;
-  
+
   let cleaned = phoneNumber.replace(/[\s\-\(\)]/g, '');
-  
+
   if (cleaned.startsWith('+60')) {
     cleaned = cleaned.substring(3);
   } else if (cleaned.startsWith('60')) {
     cleaned = cleaned.substring(2);
   }
-  
+
   if (cleaned.startsWith('0')) {
     cleaned = cleaned.substring(1);
   }
-  
+
   return cleaned;
 }
 
@@ -86,18 +84,18 @@ function normalizePhoneNumber(phoneNumber) {
 function getRedirectUrl(roles) {
   console.log(`[getRedirectUrl] Checking roles:`, JSON.stringify(roles));
   if (!roles || !Array.isArray(roles)) return "../home/index.html";
-  
-  if (roles.includes("super_admin") || roles.includes("super admin")) 
+
+  if (roles.includes("super_admin") || roles.includes("super admin"))
     return "../admin/admin-dashboard.html";
-  if (roles.includes("manager")) 
+  if (roles.includes("manager"))
     return "../manager/admin-manage-users.html";
-  if (roles.includes("merchant")) 
+  if (roles.includes("merchant"))
     return "../merchant/merchant-dashboard.html";
-  if (roles.includes("seller")) 
+  if (roles.includes("seller"))
     return "../seller/seller-dashboard.html";
-  if (roles.includes("customer")) 
+  if (roles.includes("customer"))
     return "../customer/consume.html";
-  
+
   console.log(`[getRedirectUrl] No role matched, returning default`);
   return "../home/index.html";
 }
@@ -107,48 +105,48 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     const startTime = Date.now();
     const requestId = Math.random().toString(36).substring(7);
-    
+
     console.log(`[${requestId}] ===== LOGIN REQUEST START =====`);
     console.log(`[${requestId}] Method: ${req.method}`);
-    
+
     try {
       if (req.method !== 'POST') {
         console.log(`[${requestId}] ❌ Invalid method: ${req.method}`);
-        return res.status(405).json({ 
+        return res.status(405).json({
           error: { code: 'method-not-allowed', message: '只支持 POST 请求' }
         });
       }
 
       const { phoneNumber, pin, organizationId, eventId } = req.body;
-    
-      console.log(`[${requestId}] 📥 Received data:`, { 
+
+      console.log(`[${requestId}] 📥 Received data:`, {
         phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 3)}***` : 'missing',
         hasPin: !!pin,
         pinLength: pin ? pin.length : 0,
         organizationId,
         eventId
       });
-    
+
       if (!phoneNumber || !pin) {
         console.log(`[${requestId}] ❌ Missing phone or pin`);
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: { code: 'invalid-argument', message: '请提供手机号码与密码' }
         });
       }
-      
+
       if (!organizationId || !eventId) {
         console.log(`[${requestId}] ❌ Missing organizationId or eventId`);
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: { code: 'invalid-argument', message: '请提供组织与活动信息' }
         });
       }
-    
+
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
       console.log(`[${requestId}] 📱 Normalized phone: ${normalizedPhone}`);
-    
+
       const collectionPath = `organizations/${organizationId}/events/${eventId}/users`;
       console.log(`[${requestId}] 📂 Collection path: ${collectionPath}`);
-    
+
       const phoneVariants = [
         normalizedPhone,
         `0${normalizedPhone}`,
@@ -156,24 +154,24 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
         `+60${normalizedPhone}`,
         phoneNumber
       ];
-    
+
       console.log(`[${requestId}] 🔍 Trying phone variants:`, phoneVariants);
-    
+
       let userDoc = null;
       let usedVariant = null;
-      
+
       for (const variant of phoneVariants) {
         console.log(`[${requestId}] 🔎 Querying with variant: ${variant}`);
-        
+
         try {
           const usersSnap = await admin.firestore()
             .collection(collectionPath)
             .where("basicInfo.phoneNumber", "==", variant)
             .limit(1)
             .get();
-          
+
           console.log(`[${requestId}] Query result for ${variant}: ${usersSnap.size} documents`);
-          
+
           if (!usersSnap.empty) {
             userDoc = usersSnap.docs[0];
             usedVariant = variant;
@@ -184,14 +182,14 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
           console.error(`[${requestId}] ❌ Query error for ${variant}:`, queryError);
         }
       }
-    
+
       if (!userDoc) {
         console.log(`[${requestId}] ❌ User not found for any phone variant`);
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: { code: 'not-found', message: '查无此手机号码' }
         });
       }
-    
+
       const userData = userDoc.data();
       console.log(`[${requestId}] 📄 User data structure:`, {
         id: userDoc.id,
@@ -204,34 +202,34 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
         roles: userData.roles,
         topLevelKeys: Object.keys(userData)
       });
-    
+
       const passwordSalt = userData.basicInfo?.passwordSalt || userData.basicInfo?.pinSalt;
       const storedHash = userData.basicInfo?.passwordHash || userData.basicInfo?.pinHash;
-    
+
       if (!passwordSalt || !storedHash) {
         console.error(`[${requestId}] ❌ Missing password data`);
-        return res.status(412).json({ 
+        return res.status(412).json({
           error: { code: 'failed-precondition', message: '用户密码资料不完整，请联系管理员' }
         });
       }
-      
+
       console.log(`[${requestId}] 🔒 Computing password hash...`);
       const passwordHash = crypto.createHash("sha256")
         .update(pin + passwordSalt)
         .digest("hex");
-    
+
       if (passwordHash !== storedHash) {
         console.log(`[${requestId}] ❌ Password mismatch`);
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: { code: 'permission-denied', message: '密码错误' }
         });
       }
-      
+
       console.log(`[${requestId}] ✅ Password verified`);
-    
+
       const authUid = `phone_60${normalizedPhone}`;
       console.log(`[${requestId}] 🔑 AuthUid: ${authUid}`);
-    
+
       let userRecord;
       let skipAuthUserOps = false;
       try {
@@ -244,9 +242,9 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
           try {
             userRecord = await admin.auth().createUser({
               uid: authUid,
-              displayName: userData.basicInfo?.englishName || 
-                          userData.basicInfo?.chineseName || 
-                          phoneNumber
+              displayName: userData.basicInfo?.englishName ||
+                userData.basicInfo?.chineseName ||
+                phoneNumber
             });
             console.log(`[${requestId}] ✅ Auth user created`);
           } catch (createError) {
@@ -261,7 +259,7 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
           throw error;
         }
       }
-      
+
       console.log(`[${requestId}] 🎫 Generating custom token...`);
       let customToken;
       try {
@@ -271,19 +269,19 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
         console.error(`[${requestId}] ❌ Token generation failed:`, tokenError);
         throw tokenError;
       }
-    
+
       const userId = userDoc.id;
       console.log(`[${requestId}] 🔄 Updating last active time...`);
-      
+
       await admin.firestore()
         .collection(collectionPath)
         .doc(userId)
         .update({ 'activityData.lastActiveAt': new Date() });
-    
+
       const duration = Date.now() - startTime;
       console.log(`[${requestId}] ✅ Login successful in ${duration}ms`);
       console.log(`[${requestId}] ===== LOGIN REQUEST END =====`);
-    
+
       return res.status(200).json({
         success: true,
         customToken,
@@ -312,22 +310,22 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
 // changePassword 函数
 exports.changePassword = functions.https.onCall(async (data, context) => {
   const { phoneNumber, currentPassword, newPassword } = data;
-  
+
   if (!phoneNumber || !currentPassword || !newPassword) {
     throw new functions.https.HttpsError("invalid-argument", "请提供手机号码、当前密码和新密码");
   }
-  
+
   if (newPassword.length < 8) {
     throw new functions.https.HttpsError("invalid-argument", "新密码长度至少需要8个字符");
   }
-  
+
   const hasLetter = /[a-zA-Z]/.test(newPassword);
   const hasNumber = /[0-9]/.test(newPassword);
-  
+
   if (!hasLetter || !hasNumber) {
     throw new functions.https.HttpsError("invalid-argument", "新密码必须包含英文字母和数字");
   }
-  
+
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     const phoneVariants = [
@@ -336,51 +334,51 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
       `60${normalizedPhone}`,
       phoneNumber
     ];
-    
+
     let userDoc = null;
-    
+
     for (const variant of phoneVariants) {
       const usersSnap = await admin.firestore().collection("users")
         .where("basicInfo.phoneNumber", "==", variant)
         .limit(1)
         .get();
-      
+
       if (!usersSnap.empty) {
         userDoc = usersSnap.docs[0];
         break;
       }
     }
-    
+
     if (!userDoc) {
       throw new functions.https.HttpsError("not-found", "查无此手机号码");
     }
-    
+
     const userData = userDoc.data();
-    
+
     const passwordSalt = userData.basicInfo.passwordSalt || userData.basicInfo.pinSalt;
     const currentPasswordHash = crypto.createHash("sha256")
       .update(currentPassword + passwordSalt)
       .digest("hex");
-    
+
     const storedHash = userData.basicInfo.passwordHash || userData.basicInfo.pinHash;
     if (currentPasswordHash !== storedHash) {
       throw new functions.https.HttpsError("permission-denied", "当前密码错误");
     }
-    
+
     const newPasswordHash = crypto.createHash("sha256")
       .update(newPassword + passwordSalt)
       .digest("hex");
-    
+
     await userDoc.ref.update({
       "basicInfo.passwordHash": newPasswordHash,
       "basicInfo.pinHash": newPasswordHash,
       "basicInfo.passwordSalt": passwordSalt,
       "basicInfo.pinSalt": passwordSalt
     });
-    
+
     console.log(`[changePassword] Password changed for ${phoneNumber}`);
     return { success: true, message: "密码修改成功" };
-    
+
   } catch (error) {
     console.error("[changePassword] Error:", error);
     if (error instanceof functions.https.HttpsError) {
@@ -393,9 +391,9 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
 exports.loginAndRedirect = functions.https.onCall(async (data, context) => {
   const userUid = context.auth ? context.auth.uid : null;
   console.log(`[loginAndRedirect] User UID from context: ${userUid}`);
-  
+
   const { phoneNumber } = data;
-  
+
   let userSnap;
   if (userUid) {
     userSnap = await admin.firestore().collection("users")
@@ -403,7 +401,7 @@ exports.loginAndRedirect = functions.https.onCall(async (data, context) => {
       .limit(1)
       .get();
   }
-  
+
   if ((!userSnap || userSnap.empty) && phoneNumber) {
     console.log(`[loginAndRedirect] Fallback to phoneNumber query: ${phoneNumber}`);
     userSnap = await admin.firestore().collection("users")
@@ -411,12 +409,12 @@ exports.loginAndRedirect = functions.https.onCall(async (data, context) => {
       .limit(1)
       .get();
   }
-  
+
   console.log(`[loginAndRedirect] Query result: ${userSnap && !userSnap.empty ? 'found' : 'empty'}`);
   if (!userSnap || userSnap.empty) {
     throw new functions.https.HttpsError("not-found", "找不到使用者资料。");
   }
-  
+
   const userData = userSnap.docs[0].data();
   return {
     redirectUrl: getRedirectUrl(userData.roles),
@@ -449,17 +447,17 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
 exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
   try {
     const db = admin.firestore();
-    
+
     // 获取所有 Organizations
     const orgsSnapshot = await db.collection('organizations').get();
-    
+
     const batch = db.batch();
     let updateCount = 0;
     const now = new Date().toISOString(); // ✅ 使用固定的时间戳字符串
-    
+
     for (const orgDoc of orgsSnapshot.docs) {
       const orgData = orgDoc.data();
-      
+
       // 检查是否已有 identityTags
       if (!orgData.identityTags) {
         // 添加默认的身份标签
@@ -495,25 +493,25 @@ exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
             createdAt: now
           }
         ];
-        
+
         batch.update(orgDoc.ref, {
           identityTags: defaultIdentityTags,
           updatedAt: admin.firestore.FieldValue.serverTimestamp() // ✅ 这里可以用 serverTimestamp
         });
-        
+
         updateCount++;
       }
     }
-    
+
     await batch.commit();
-    
+
     res.json({
       success: true,
       message: `成功更新 ${updateCount} 个组织的身份标签`,
       totalOrgs: orgsSnapshot.size,
       timestamp: now
     });
-    
+
   } catch (error) {
     console.error('迁移失败:', error);
     res.status(500).json({
