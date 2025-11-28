@@ -122,37 +122,34 @@ const EventManagerLogin = () => {
 
       console.log('[EventManagerLogin] 找到活动:', foundEventId, '组织:', foundOrgId);
 
-      // Step 3: 验证 admins 数组
-      const admins = eventData.admins || [];
+      // ✅ Step 3: 从新架构读取 Event Manager 对象（而非 admins 数组）
+      const eventManager = eventData.eventManager;
       
-      if (admins.length === 0) {
+      if (!eventManager) {
         throw new Error('此活动没有指派 Event Manager');
       }
 
-      // 查找匹配的管理员（从 admins 数组中查找）
-      const admin = admins.find(a => a.phoneNumber === formData.phoneNumber);
-      
-      if (!admin) {
+      // 验证手机号是否匹配
+      if (eventManager.phoneNumber !== formData.phoneNumber) {
         throw new Error('手机号不正确或您不是此活动的 Event Manager');
       }
 
-      console.log('[EventManagerLogin] 找到管理员:', admin.chineseName || admin.englishName);
+      console.log('[EventManagerLogin] 找到 Event Manager:', eventManager.englishName || eventManager.chineseName);
 
-      // Step 4: 验证密码
-      // 检查 admin 是否有密码相关字段
-      if (!admin.passwordSalt || !admin.passwordHash) {
+      // ✅ Step 4: 验证密码
+      if (!eventManager.passwordSalt || !eventManager.password) {
         throw new Error('Event Manager 信息不完整，缺少密码验证数据');
       }
 
-      const passwordHash = await sha256(formData.password + admin.passwordSalt);
+      const passwordHash = await sha256(formData.password + eventManager.passwordSalt);
       
-      if (passwordHash !== admin.passwordHash) {
+      if (passwordHash !== eventManager.password) {
         throw new Error('密码错误');
       }
 
       console.log('[EventManagerLogin] 密码验证成功，准备发送 OTP');
 
-      // Step 5: 发送 OTP
+      // ✅ Step 5: 发送 OTP
       setSendingOtp(true);
       const otpResp = await fetch('/api/sendOtp', {
         method: 'POST',
