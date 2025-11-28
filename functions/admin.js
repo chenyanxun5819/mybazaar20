@@ -267,7 +267,7 @@ exports.sendOtpToPhone = functions.https.onCall(async (data, context) => {
   const sessionId = crypto.randomUUID();
   const expiresAt = Date.now() + 5 * 60 * 1000;
 
-  await getDb().collection("otp_collection").doc(sessionId).set({
+  await getDb().collection("otp_sessions").doc(sessionId).set({
     sessionId,
     phoneNumber,
     otpCodeHash,
@@ -284,7 +284,7 @@ exports.verifyOtpCode = functions.https.onCall(async (data, context) => {
   const { sessionId, otpCode } = data;
   if (!sessionId || !otpCode) throw new functions.https.HttpsError("invalid-argument", "缺少参数");
 
-  const otpDocRef = getDb().collection("otp_collection").doc(sessionId);
+  const otpDocRef = getDb().collection("otp_sessions").doc(sessionId);
   const otpDocSnap = await otpDocRef.get();
   if (!otpDocSnap.exists) throw new functions.https.HttpsError("not-found", "OTP session 不存在");
   const otpData = otpDocSnap.data();
