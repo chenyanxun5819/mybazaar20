@@ -36,6 +36,12 @@ exports.loginUniversalHttp = loginUniversalHttp;
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
 
+// ❌ 已废弃的导出（保留作为历史记录，但已被新函数取代）
+// exports.changePassword - 已废弃，不符合新架构
+// exports.loginAndRedirect - 已废弃，已被 loginUniversalHttp 取代
+// exports.getManagers - 已废弃，新架构中无此集合
+// exports.migrateIdentityTags - 已废弃，一次性迁移脚本
+
 // CORS 中间件配置
 const allowedOrigins = [
   'http://localhost:5173',
@@ -307,7 +313,11 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
 
 
 
-// changePassword 函数
+// ❌ 已废弃：changePassword 函数
+// 注意：新架构中用户存储在 organizations/{orgId}/events/{eventId}/users 子集合中
+// 此函数查询的全局 "users" 集合已不存在，新架构中不支持此操作
+// DO NOT USE
+/*
 exports.changePassword = functions.https.onCall(async (data, context) => {
   const { phoneNumber, currentPassword, newPassword } = data;
 
@@ -338,6 +348,7 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
     let userDoc = null;
 
     for (const variant of phoneVariants) {
+      // ❌ 错误：全局 "users" 集合已不存在于新架构
       const usersSnap = await admin.firestore().collection("users")
         .where("basicInfo.phoneNumber", "==", variant)
         .limit(1)
@@ -387,7 +398,13 @@ exports.changePassword = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("internal", `修改密码失败：${error.message}`);
   }
 });
+*/
 
+// ❌ 已废弃：loginAndRedirect 函数
+// 注意：新架构中用户存储在 organizations/{orgId}/events/{eventId}/users 子集合中
+// 此函数已被 loginUniversalHttp（auth/loginUniversalHttp.js）取代
+// DO NOT USE
+/*
 exports.loginAndRedirect = functions.https.onCall(async (data, context) => {
   const userUid = context.auth ? context.auth.uid : null;
   console.log(`[loginAndRedirect] User UID from context: ${userUid}`);
@@ -423,7 +440,13 @@ exports.loginAndRedirect = functions.https.onCall(async (data, context) => {
     identityTag: userData.identityTag || "",
   };
 });
+*/
 
+// ❌ 已废弃：getManagers 函数
+// 注意：新架构中没有全局 managers 集合
+// Event Managers 存储在 organizations/{orgId}/events/{eventId}.eventManager 中
+// DO NOT USE
+/*
 exports.getManagers = functions.https.onCall(async (data, context) => {
   try {
     const managersSnap = await admin.firestore().collection("managers").get();
@@ -442,7 +465,13 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("internal", "Unable to fetch managers.");
   }
 });
+*/
 
+// ❌ 已废弃：migrateIdentityTags 函数
+// 注意：这是一个一次性的迁移脚本，应该在迁移完成后删除
+// DO NOT EXPOSE IN PRODUCTION
+// 如需再次运行迁移，请手动从此文件复制代码
+/*
 // functions/migrateIdentityTags.js
 exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
   try {
@@ -520,3 +549,4 @@ exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
     });
   }
 });
+*/

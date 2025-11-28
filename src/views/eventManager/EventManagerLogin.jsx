@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, auth } from '../../config/firebase';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, collectionGroup, query, where, getDocs, limit } from 'firebase/firestore';
 import { signInWithCustomToken } from 'firebase/auth';
 
 const EventManagerLogin = () => {
@@ -92,10 +92,11 @@ const EventManagerLogin = () => {
 
       console.log('[EventManagerLogin] 开始验证密码...', { orgCode, eventCode });
 
-      // Step 1: 查找活动（从顶级 Event 集合）
+      // ✅ Step 1: 使用 collectionGroup 查找活动（在所有 organizations 的 events 子集合中查找）
       const eventsQuery = query(
-        collection(db, 'Event'),
+        collectionGroup(db, 'events'),  // 查询所有 events 子集合
         where('eventCode', '==', eventCode),
+        where('orgCode', '==', orgCode),  // 组合条件确保唯一性
         limit(1)
       );
       const eventsSnapshot = await getDocs(eventsQuery);
@@ -109,38 +110,43 @@ const EventManagerLogin = () => {
       setEventId(foundEventId); // 保存到 state
       const eventData = eventDoc.data();
 
-      // Step 2: 获取组织信息
-      const foundOrgId = eventData.organizationId;
+      // ✅ Step 2: 从 Event 文档的路径中提取 organizationId
+      // eventDoc.ref.path 格式: "organizations/{orgId}/events/{eventId}"
+      const pathParts = eventDoc.ref.path.split('/');
+      const foundOrgId = pathParts[1];  // organizations/{orgId}/events/{eventId}
+      
       if (!foundOrgId) {
-        throw new Error('活动缺少 organizationId');
+        throw new Error('无法获取组织信息');
       }
       setOrgId(foundOrgId); // 保存到 state
 
-      console.log('[EventManagerLogin] 找到活动:', foundEventId);
+      console.log('[EventManagerLogin] 找到活动:', foundEventId, '组织:', foundOrgId);
 
-      // ✅ Step 3: 验证 eventManager 对象
-      const eventManager = eventData.eventManager;
+      // Step 3: 验证 admins 数组
+      const admins = eventData.admins || [];
       
-      if (!eventManager) {
+      if (admins.length === 0) {
         throw new Error('此活动没有指派 Event Manager');
       }
 
-      // 验证手机号是否匹配
-      if (eventManager.phoneNumber !== formData.phoneNumber) {
+      // 查找匹配的管理员（从 admins 数组中查找）
+      const admin = admins.find(a => a.phoneNumber === formData.phoneNumber);
+      
+      if (!admin) {
         throw new Error('手机号不正确或您不是此活动的 Event Manager');
       }
 
-      console.log('[EventManagerLogin] 找到管理员:', eventManager.chineseName || eventManager.englishName);
+      console.log('[EventManagerLogin] 找到管理员:', admin.chineseName || admin.englishName);
 
-      // ✅ Step 4: 验证密码
-      // 检查 eventManager 是否有密码相关字段
-      if (!eventManager.passwordSalt || !eventManager.password) {
+      // Step 4: 验证密码
+      // 检查 admin 是否有密码相关字段
+      if (!admin.passwordSalt || !admin.passwordHash) {
         throw new Error('Event Manager 信息不完整，缺少密码验证数据');
       }
 
-      const passwordHash = await sha256(formData.password + eventManager.passwordSalt);
+      const passwordHash = await sha256(formData.password + admin.passwordSalt);
       
-      if (passwordHash !== eventManager.password) {
+      if (passwordHash !== admin.passwordHash) {
         throw new Error('密码错误');
       }
 
