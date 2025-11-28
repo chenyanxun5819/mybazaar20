@@ -144,9 +144,9 @@ const EventManagerDashboard = () => {
           if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
         });
 
-        // ✅ 新增：从 event.admins 数组获取 Event Manager 数量
-        // 使用 eventInfo（刚加载的数据）而不是 eventData（状态可能未更新）
-        stats.totalEventManagers = eventInfo?.admins?.length || 0;
+        // ✅ 新架构：eventManager 是单个对象，不是数组
+        // Event Manager 数量固定为 1（如果存在）或 0（如果不存在）
+        stats.totalEventManagers = eventInfo?.eventManager ? 1 : 0;
         stats.totalAllocatedPoints = totalAllocated;  // 🆕 设置已分配总点数
 
         setStatistics(stats);

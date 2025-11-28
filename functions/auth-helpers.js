@@ -34,15 +34,17 @@ async function verifyEventManagerAuth(idToken, organizationId, eventId) {
       return { success: false, error: '活动不存在' };
     }
 
-    // 3️⃣ 检查用户是否在 admins 列表中
+    // 3️⃣ 检查用户是否是 Event Manager（从 eventManager 对象）
     const eventData = eventDoc.data();
-    const admins = eventData.admins || [];
+    const eventManager = eventData.eventManager;
     
-    const isEventManager = admins.some(admin => {
-      // admins 数组中存储的是 phone（如 "60123456789"）
-      // 而 UID 是 "phone_60123456789"
-      return admin.phone && `phone_${admin.phone}` === uid;
-    });
+    if (!eventManager) {
+      console.log('[Auth] ❌ 此活动没有指派 Event Manager');
+      return { success: false, error: '此活动没有指派 Event Manager' };
+    }
+
+    // 检查 UID 是否匹配
+    const isEventManager = eventManager.authUid === uid;
 
     if (!isEventManager) {
       console.log('[Auth] ❌ 权限不足，用户不是 Event Manager');

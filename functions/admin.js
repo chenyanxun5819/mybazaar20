@@ -11,53 +11,45 @@ function sha256(str) {
 }
 
 /**
- * 检查调用者是否是 Event Manager
+ * 检查调用者是否是指定 Event 的 Event Manager
  * @param {string} callerUid - 调用者的 UID
+ * @param {string} eventId - Event ID
  * @param {FirebaseFirestore.DocumentReference} orgRef - 组织文档引用
  * @returns {Promise<boolean>}
  */
-async function checkEventManagerPermission(callerUid, orgRef) {
-  if (!callerUid) return false;
-
-  // 解析 UID 中的电话号码
-  let phoneFromUid = null;
-  if (callerUid.startsWith('eventManager_')) {
-    phoneFromUid = callerUid.replace('eventManager_', '');
-  } else if (callerUid.startsWith('phone_')) {
-    phoneFromUid = callerUid.replace('phone_', '');
+async function checkEventManagerPermission(callerUid, eventId, orgRef) {
+  if (!callerUid || !eventId) {
+    console.log('[checkEventManagerPermission] Missing callerUid or eventId');
+    return false;
   }
 
-  if (!phoneFromUid) return false;
-
-  // 标准化电话号码
-  const normalizePhone = (p) => {
-    if (!p) return '';
-    let digits = String(p).replace(/[^0-9]/g, '');
-    if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
-    if (digits.startsWith('0')) digits = digits.substring(1);
-    return digits;
-  };
-
-  const coreCaller = normalizePhone(phoneFromUid);
-
-  // 检查所有活动的 admins 数组
   try {
-    const eventsSnapshot = await orgRef.collection('events').get();
-    for (const eventDoc of eventsSnapshot.docs) {
-      const eventData = eventDoc.data();
-      const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
-
-      for (const admin of admins) {
-        const adminPhone = admin.phone || admin.phoneNumber;
-        if (!adminPhone) continue;
-
-        const coreAdmin = normalizePhone(adminPhone);
-        if (coreCaller === coreAdmin) {
-          return true;
-        }
-      }
+    // ✅ 读取指定的 Event 文档
+    const eventRef = orgRef.collection('events').doc(eventId);
+    const eventDoc = await eventRef.get();
+    
+    if (!eventDoc.exists) {
+      console.log('[checkEventManagerPermission] Event not found');
+      return false;
     }
+
+    const eventData = eventDoc.data();
+    const eventManager = eventData.eventManager;
+
+    if (!eventManager) {
+      console.log('[checkEventManagerPermission] No Event Manager assigned');
+      return false;
+    }
+
+    // ✅ 检查 callerUid 是否与 Event Manager 的 authUid 匹配
+    if (eventManager.authUid === callerUid) {
+      console.log('[checkEventManagerPermission] ✅ Permission granted');
+      return true;
+    }
+
+    console.log('[checkEventManagerPermission] ❌ Permission denied');
     return false;
+
   } catch (error) {
     console.error('[checkEventManagerPermission] Error:', error);
     return false;
@@ -218,9 +210,20 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
 
     await usersCol.doc(newUserId).set(userDoc);
 
-    // 更新事件统计
+    // ✅ 更新 Event 文档 - 将 Event Manager 详细信息存储在 eventManager 对象中
     const eventUpdateData = {
-      eventManager: newUserId,
+      eventManager: {
+        authUid: newUserId,
+        displayName: englishName,
+        chineseName: chineseName || '',
+        englishName: englishName,
+        email: email || '',
+        phoneNumber: phoneNumber,
+        password: passwordHash,      // 加密后的密码
+        passwordSalt: passwordSalt,   // 密码盐值
+        addedAt: now,
+        addedBy: callerUid           // Platform Admin UID
+      },
       updatedAt: now,
       'statistics.totalUsers': admin.firestore.FieldValue.increment(1),
       'statistics.totalManagers': admin.firestore.FieldValue.increment(1)
@@ -228,23 +231,12 @@ exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
 
     await eventRef.update(eventUpdateData);
 
-    const adminEntry = {
-      userId: newUserId,
-      authUid: newUserId,
-      phoneNumber,
-      englishName,
-      chineseName,
-      role: 'eventManager',
-      eventId,
-      addedAt: now,
-      addedBy: callerUid
-    };
-    await orgRef.update({
-      admins: admin.firestore.FieldValue.arrayUnion(adminEntry),
-      updatedAt: now
+    console.log('[createEventManagerHttp] ✅ Event Manager 创建成功:', newUserId);
+    return res.status(200).json({ 
+      success: true, 
+      userId: newUserId, 
+      message: 'Event Manager 创建成功' 
     });
-
-    return res.status(200).json({ success: true, userId: newUserId, message: 'Event Manager 创建成功' });
   } catch (error) {
     console.error('[createEventManagerHttp] Error:', error);
     const code = error.code || 'internal';
@@ -2543,58 +2535,32 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       return res.status(404).json({ error: '活动不存在' });
     }
 
-    // 權限檢查：確認 callerUid 在 event.admins 中
+    // ✅ 权限检查：确认 callerUid 是该 Event 的 Event Manager 或 Platform Admin
     console.log('[updateUserRoles] callerUid:', callerUid);
     
-    let phoneFromUid = null;
-    if (callerUid.startsWith('eventManager_')) {
-      phoneFromUid = callerUid.replace('eventManager_', '');
-    } else if (callerUid.startsWith('phone_')) {
-      phoneFromUid = callerUid.replace('phone_', '');
-    }
-
     let hasPermission = false;
     const eventData = eventSnap.data() || {};
-    const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
-    
-    const normalizePhone = (p) => {
-      if (!p) return '';
-      let digits = String(p).replace(/[^0-9]/g, '');
-      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
-      if (digits.startsWith('0')) digits = digits.substring(1);
-      return digits; 
-    };
 
-    // 檢查 event.admins
-    if (phoneFromUid) {
-      const coreCaller = normalizePhone(phoneFromUid);
-      
-      for (const adm of admins) {
-        const admPhone = adm && (adm.phone || adm.phoneNumber);
-        if (!admPhone) continue;
-
-        const coreAdmin = normalizePhone(admPhone);
-        if (coreCaller === coreAdmin) {
-          hasPermission = true;
-          console.log('[updateUserRoles] Permission granted via event.admins (phone match)');
-          break;
-        }
-      }
+    // 1. 检查是否为 Event Manager
+    const eventManager = eventData.eventManager;
+    if (eventManager && eventManager.authUid === callerUid) {
+      hasPermission = true;
+      console.log('[updateUserRoles] ✅ Permission granted - Event Manager');
     }
 
-    // 檢查平台管理員
+    // 2. 检查是否为 Platform Admin
     if (!hasPermission) {
       const adminRef = db.collection('admin_uids').doc(callerUid);
       const adminSnap = await adminRef.get();
       if (adminSnap.exists) {
         hasPermission = true;
-        console.log('[updateUserRoles] Permission granted via admin_uids');
+        console.log('[updateUserRoles] ✅ Permission granted - Platform Admin');
       }
     }
 
     if (!hasPermission) {
-      console.error('[updateUserRoles] Permission denied for callerUid:', callerUid);
-      return res.status(403).json({ error: '需要 Event Manager 权限' });
+      console.error('[updateUserRoles] ❌ Permission denied for callerUid:', callerUid);
+      return res.status(403).json({ error: '需要 Event Manager 或 Platform Admin 权限' });
     }
 
     // 構建新角色列表

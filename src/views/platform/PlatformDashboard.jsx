@@ -341,39 +341,17 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // 加载 Event Manager 信息
+  // ✅ 新架构：直接使用 Event.eventManager 对象
   useEffect(() => {
-    const loadEventManager = async () => {
-      try {
-        setLoadingManager(true);
-        if (!event.eventManager) {
-          setEventManager(null);
-          return;
-        }
-
-        const managerRef = doc(
-          db,
-          'organizations',
-          organization.id,
-          'events',
-          event.id,
-          'users',
-          event.eventManager
-        );
-
-        const managerSnap = await getDoc(managerRef);
-        if (managerSnap.exists()) {
-          setEventManager(managerSnap.data());
-        }
-      } catch (error) {
-        console.error('[EventCard] 加载 Event Manager 失败:', error);
-      } finally {
-        setLoadingManager(false);
-      }
-    };
-
-    loadEventManager();
-  }, [event.id, event.eventManager, organization.id]);
+    // event.eventManager 现在是一个完整的对象，不需要再去 users 集合读取
+    if (event.eventManager) {
+      setEventManager(event.eventManager);
+      setLoadingManager(false);
+    } else {
+      setEventManager(null);
+      setLoadingManager(false);
+    }
+  }, [event.eventManager]);
 
   // 格式化日期
   const formatDate = (dateStr) => {
@@ -416,12 +394,12 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
       `活动名称：${event.eventName?.['zh-CN']}\n` +
       `活动代码：${event.eventCode}\n` +
       `用户数量：${event.statistics?.totalUsers || 0} 人\n` +
-      `Event Manager：${eventManager ? eventManager.basicInfo?.englishName : '未分配'}\n\n` +
+      `Event Manager：${eventManager ? eventManager.englishName : '未分配'}\n\n` +
       `此操作将删除：\n` +
       `  • 活动文档本身\n` +
       `  • 所有用户数据 (${event.statistics?.totalUsers || 0} 位用户)\n` +
       `  • 所有元数据 (部门等)\n` +
-      `  • 从 admins 列表移除 Event Manager\n` +
+      `  • Event Manager 信息\n` +
       `  • 更新组织统计数据\n\n` +
       `⚠️ 此操作无法撤销！`
     )) {
@@ -605,9 +583,10 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
           <span style={styles.loadingText}>加载中...</span>
         ) : eventManager ? (
           <div style={styles.managerDetails}>
-            <strong>{eventManager.basicInfo?.englishName}</strong> ({eventManager.basicInfo?.chineseName})
+            <strong>{eventManager.englishName}</strong>
+            {eventManager.chineseName && ` (${eventManager.chineseName})`}
             <br />
-            📞 {eventManager.basicInfo?.phoneNumber}
+            📞 {eventManager.phoneNumber}
           </div>
         ) : (
           <span style={styles.loadingText}>未分配</span>
