@@ -414,9 +414,43 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     // 這裡只需要創建 Custom Token 即可
     
     try {
-      // 使用歸一化的手機號作為 UID 的一部分
-      const normalizedPhone = normalizePhone(phoneNumber);
-      const uid = `user_${normalizedPhone}_${orgCode}_${eventCode}`;
+      // 查詢組織和活動，找出 Event Manager 的真實 authUid
+      const organizationSnapshot = await db.collection('organizations')
+        .where('orgCode', '==', orgCode)
+        .limit(1)
+        .get();
+
+      if (organizationSnapshot.empty) {
+        return res.status(404).json({ error: { code: 'not-found', message: '組織代碼不存在' } });
+      }
+
+      const organizationId = organizationSnapshot.docs[0].id;
+      const eventSnapshot = await db.collection('organizations')
+        .doc(organizationId)
+        .collection('events')
+        .where('eventCode', '==', eventCode)
+        .limit(1)
+        .get();
+
+      if (eventSnapshot.empty) {
+        return res.status(404).json({ error: { code: 'not-found', message: '活動代碼不存在' } });
+      }
+
+      const eventId = eventSnapshot.docs[0].id;
+      const eventData = eventSnapshot.docs[0].data() || {};
+      const eventManager = eventData.eventManager;
+
+      if (!eventManager || !eventManager.authUid) {
+        return res.status(404).json({ error: { code: 'not-found', message: '此活動未指派 Event Manager' } });
+      }
+
+      // 驗證登入者的手機號是否與 Event Manager 的手機號一致
+      if (eventManager.phoneNumber !== phoneNumber) {
+        return res.status(403).json({ error: { code: 'permission-denied', message: '手機號不匹配此活動的 Event Manager' } });
+      }
+
+      // 使用 Event Manager 的實際 authUid
+      const uid = eventManager.authUid;
       
       console.log('[verifyOtpHttp] Creating custom token for UID:', uid);
       
