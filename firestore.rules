@@ -15,12 +15,13 @@ service cloud.firestore {
 
     // ========== organizations 集合（旧架构兼容） ==========
     match /organizations/{orgId} {
-      allow read: if isAuthenticated();
+      // 開放未登入讀取組織基本資訊（供登入頁顯示校名/驗證 orgCode）
+      allow read: if true;
       allow create, update, delete: if isAdmin();
       
       // ========== events 子集合 ==========
       match /events/{eventId} {
-        allow read: if isAuthenticated();
+        allow read: if true; // 允许未登录用户读取活动信息（用于登录查找）
         allow create, delete: if isAdmin();
         allow update: if isAdmin() || isAuthenticated();
         
