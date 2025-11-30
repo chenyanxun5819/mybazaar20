@@ -1,25 +1,26 @@
 import { useState } from 'react';
+import { doc, updateDoc, addDoc, collection, increment, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../../config/firebase'; // 修正路徑：由組件目錄返回到 src/config/firebase
 
 /**
- * Seller List Component (架构修正版 v5)
- * Step 1.2: 数据渲染优化完成 ✅ (已根据正确架构修正)
+ * Seller List Component (带收款功能版 v6)
  * 
- * 根据 Firestore 架构正确渲染 Seller 数据
- * 路径: organizations/{orgId}/events/{eventId}/users/{userId}
+ * 新增功能：
+ * - 记录收款：Seller从Customer收到现金
+ * - 现金上交：Seller向Manager上交现金（简化为全款一次性上交）
  * 
- * 数据结构：
- * - basicInfo: { phoneNumber, englishName, chineseName, email, ... }
- * - identityInfo: { identityId, identityTag, identityName, department }
- * - pointsStats: { totalReceived, currentBalance, totalSold, totalRevenue, ... }
- * - seller: { availablePoints, totalPointsSold, totalRevenue, collectionAlert, ... }
- * 
- * 注意：pointsStats 是主要统计对象，seller 对象是角色专用数据
+ * 收款流程（简化）：
+ * 1. Seller点击"记录收款"
+ * 2. 系统自动将全部待收款标记为已收款
+ * 3. 更新 seller.totalCollected 和 seller.pendingCollection
+ * 4. 更新 pointsStats（如果需要）
  */
-const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordCollection }) => {
+const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgId }) => {
   const [sortBy, setSortBy] = useState('name');
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'active' | 'warning' | 'highRisk'
+  const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSeller, setExpandedSeller] = useState(null);
+  const [recordingCollection, setRecordingCollection] = useState(null); // 正在记录收款的seller
 
   // 确保输入是安全的
   const safeSellers = Array.isArray(sellers) ? sellers : [];
@@ -28,7 +29,6 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
   const getFilteredSellers = () => {
     let filtered = [...safeSellers];
 
-    // 1. 部门筛选
     if (selectedDepartment) {
       filtered = filtered.filter(seller => {
         const dept = seller.identityInfo?.department || '';
@@ -36,7 +36,6 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
       });
     }
 
-    // 2. 状态筛选
     if (filterStatus !== 'all') {
       filtered = filtered.filter(seller => {
         const sellerData = seller.seller || {};
@@ -50,10 +49,8 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
           case 'active':
             return totalSold > 0;
           case 'warning':
-            // 有警示但不是高风险（待收款比例 < 50%）
             return hasAlert && pendingRatio < 0.5;
           case 'highRisk':
-            // 高风险：待收款比例 >= 50%
             return hasAlert && pendingRatio >= 0.5;
           default:
             return true;
@@ -61,7 +58,6 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
       });
     }
 
-    // 3. 搜索筛选
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(seller => {
@@ -106,6 +102,110 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
     });
   };
 
+  /**
+   * 记录收款功能（简化版：全款收取）
+   * 当 Seller 从 Customer 收到现金时调用
+   */
+  const handleRecordCollection = async (seller) => {
+    const pendingCollection = seller.pointsStats?.pendingCollection || 0;
+    
+    if (pendingCollection <= 0) {
+      alert('该用户没有待收款项');
+      return;
+    }
+
+    const confirmMessage = `确认记录收款？\n\n用户: ${seller.basicInfo?.chineseName}\n待收款: RM ${pendingCollection.toLocaleString()}\n\n此操作将标记全部待收款为已收款。`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setRecordingCollection(seller.userId);
+
+    try {
+      const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
+      
+      // 更新用户的收款统计
+      await updateDoc(userRef, {
+        // 更新 pointsStats
+        'pointsStats.totalCollected': increment(pendingCollection),
+        'pointsStats.pendingCollection': increment(-pendingCollection),
+        'pointsStats.collectionRate': (seller.pointsStats?.totalCollected || 0) + pendingCollection / (seller.pointsStats?.totalRevenue || 1),
+        'pointsStats.lastCollected': serverTimestamp(),
+        
+        // 更新 seller 对象
+        'seller.totalCollected': increment(pendingCollection),
+        'seller.pendingCollection': increment(-pendingCollection),
+        'seller.collectionRate': (seller.seller?.totalCollected || 0) + pendingCollection / (seller.seller?.totalRevenue || 1),
+        
+        // 更新 pendingCashSubmission（增加待上交现金）
+        'seller.pendingCashSubmission': increment(pendingCollection),
+        
+        // 更新时间戳
+        'activityData.updatedAt': serverTimestamp()
+      });
+
+      alert(`收款记录成功！\n已收款: RM ${pendingCollection.toLocaleString()}`);
+      
+      // 刷新数据（这里假设父组件会重新获取数据）
+      // 如果需要，可以调用回调函数通知父组件刷新
+      
+    } catch (error) {
+      console.error('记录收款失败:', error);
+      alert('记录收款失败: ' + error.message);
+    } finally {
+      setRecordingCollection(null);
+    }
+  };
+
+  /**
+   * 现金上交功能（简化版：全款上交）
+   * 当 Seller 向 Manager 上交现金时调用
+   */
+  const handleCashSubmission = async (seller, managerId, managerType = 'sellerManager') => {
+    const pendingCash = seller.seller?.pendingCashSubmission || 0;
+    
+    if (pendingCash <= 0) {
+      alert('该用户没有待上交的现金');
+      return;
+    }
+
+    const confirmMessage = `确认现金上交？\n\n上交人: ${seller.basicInfo?.chineseName}\n上交金额: RM ${pendingCash.toLocaleString()}\n接收人: ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'}\n\n此操作将记录全部待上交现金。`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
+      const submissionsRef = collection(userRef, 'cashSubmissions');
+      
+      // 创建现金上交记录
+      await addDoc(submissionsRef, {
+        amount: pendingCash,
+        submittedBy: seller.userId,
+        submittedTo: managerType,
+        submittedToUserId: managerId,
+        note: `全额上交待收现金 RM ${pendingCash}`,
+        timestamp: serverTimestamp(),
+        status: 'pending' // 等待验证
+      });
+
+      // 更新用户的现金统计
+      await updateDoc(userRef, {
+        'seller.cashSubmitted': increment(pendingCash),
+        'seller.pendingCashSubmission': increment(-pendingCash),
+        'activityData.updatedAt': serverTimestamp()
+      });
+
+      alert(`现金上交记录成功！\n上交金额: RM ${pendingCash.toLocaleString()}\n\n等待 ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'} 验证。`);
+      
+    } catch (error) {
+      console.error('现金上交失败:', error);
+      alert('现金上交失败: ' + error.message);
+    }
+  };
+
   const filteredSellers = getFilteredSellers();
   const sortedSellers = getSortedSellers(filteredSellers);
 
@@ -114,7 +214,6 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
     const total = filteredSellers.length;
     const active = filteredSellers.filter(s => (s.pointsStats?.totalSold || 0) > 0).length;
     
-    // 计算有警示和高风险的数量
     const withWarning = filteredSellers.filter(s => {
       const sellerData = s.seller || {};
       const hasAlert = sellerData.collectionAlert === true;
@@ -254,7 +353,9 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
                     expandedSeller === (seller.id || seller.userId) ? null : (seller.id || seller.userId)
                   )}
                   onSelect={onSelectSeller}
-                  onRecordCollection={onRecordCollection}
+                  onRecordCollection={handleRecordCollection}
+                  onCashSubmission={handleCashSubmission}
+                  isRecording={recordingCollection === seller.userId}
                 />
               ))}
             </tbody>
@@ -267,44 +368,36 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordColle
 
 /**
  * Seller Row Component
- * 渲染单个 Seller 的数据行（根据正确的Firestore架构）
  */
-const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection }) => {
+const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection, onCashSubmission, isRecording }) => {
   if (!seller || typeof seller !== 'object') return null;
 
-  // 安全读取数据 - 根据正确的架构
   const basicInfo = seller.basicInfo || {};
   const identityInfo = seller.identityInfo || {};
   const pointsStats = seller.pointsStats || {};
   const sellerData = seller.seller || {};
   
-  // 基础信息
   const displayName = basicInfo.chineseName || '未命名';
   const englishName = basicInfo.englishName || '';
   const department = identityInfo.department || '-';
   const phoneNumber = basicInfo.phoneNumber || '-';
   
-  // 点数统计（使用 pointsStats，这是主要的统计对象）
   const currentBalance = pointsStats.currentBalance || 0;
   const totalRevenue = pointsStats.totalRevenue || 0;
   const collectionRate = pointsStats.collectionRate || 0;
   const pendingCollection = pointsStats.pendingCollection || 0;
   const totalSold = pointsStats.totalSold || 0;
   
-  // 收款警示（seller 对象中的 collectionAlert 是布尔值）
   const hasCollectionAlert = sellerData.collectionAlert === true;
   const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
 
-  // 收款率颜色
   const getRateColor = (rate) => {
     if (rate >= 0.8) return '#10b981';
     if (rate >= 0.5) return '#f59e0b';
     return '#ef4444';
   };
 
-  // 状态标签
   const getStatusBadge = () => {
-    // 高风险：有警示且待收款比例 >= 50%
     if (hasCollectionAlert && pendingRatio >= 0.5) {
       return (
         <span style={{ ...styles.badge, ...styles.badgeHighRisk }}>
@@ -312,7 +405,6 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
         </span>
       );
     }
-    // 警示：有警示但待收款比例 < 50%
     if (hasCollectionAlert) {
       return (
         <span style={{ ...styles.badge, ...styles.badgeWarning }}>
@@ -320,7 +412,6 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
         </span>
       );
     }
-    // 活跃：有销售记录
     if (totalSold > 0) {
       return (
         <span style={{ ...styles.badge, ...styles.badgeActive }}>
@@ -328,7 +419,6 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
         </span>
       );
     }
-    // 未活跃
     return (
       <span style={{ ...styles.badge, ...styles.badgeInactive }}>
         ⏸️ 未活跃
@@ -390,20 +480,20 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
             >
               {isExpanded ? '▲' : '▼'}
             </button>
-            {onRecordCollection && pendingCollection > 0 && (
+            {pendingCollection > 0 && (
               <button
                 onClick={() => onRecordCollection(seller)}
                 style={{ ...styles.actionButton, ...styles.collectionButton }}
                 title="记录收款"
+                disabled={isRecording}
               >
-                💰
+                {isRecording ? '⏳' : '💰'}
               </button>
             )}
           </div>
         </td>
       </tr>
 
-      {/* 展开的详细信息 */}
       {isExpanded && (
         <tr>
           <td colSpan="8" style={styles.expandedCell}>
@@ -411,6 +501,7 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
               seller={seller} 
               onSelect={onSelect}
               onRecordCollection={onRecordCollection}
+              onCashSubmission={onCashSubmission}
             />
           </td>
         </tr>
@@ -421,9 +512,8 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection 
 
 /**
  * Seller Details Component
- * 展开后显示的详细信息（根据正确的Firestore架构）
  */
-const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
+const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission }) => {
   const pointsStats = seller.pointsStats || {};
   const sellerData = seller.seller || {};
   const basicInfo = seller.basicInfo || {};
@@ -433,8 +523,11 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
   const pendingCollection = pointsStats.pendingCollection || 0;
   const totalRevenue = pointsStats.totalRevenue || 0;
   const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
+  
+  // 现金相关
+  const cashSubmitted = sellerData.cashSubmitted || 0;
+  const pendingCashSubmission = sellerData.pendingCashSubmission || 0;
 
-  // 将 Firestore Timestamp 转换为日期字符串
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '从未';
     if (timestamp.seconds) {
@@ -485,7 +578,7 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
             <div style={styles.detailRow}>
               <span>待收款:</span>
               <strong style={{ color: '#ef4444' }}>
-                RM {(pointsStats.pendingCollection || 0).toLocaleString()}
+                RM {pendingCollection.toLocaleString()}
               </strong>
             </div>
             <div style={styles.detailRow}>
@@ -499,6 +592,34 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
               <span style={styles.timestampText}>
                 {formatTimestamp(pointsStats.lastCollected)}
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 现金上交统计 */}
+        <div style={styles.detailCard}>
+          <div style={styles.detailCardTitle}>💵 现金上交</div>
+          <div style={styles.detailRows}>
+            <div style={styles.detailRow}>
+              <span>已上交现金:</span>
+              <strong style={{ color: '#10b981' }}>
+                RM {cashSubmitted.toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>待上交现金:</span>
+              <strong style={{ color: '#f59e0b' }}>
+                RM {pendingCashSubmission.toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>上交率:</span>
+              <strong>
+                {totalRevenue > 0 
+                  ? `${Math.round((cashSubmitted / totalRevenue) * 100)}%`
+                  : '0%'
+                }
+              </strong>
             </div>
           </div>
         </div>
@@ -523,12 +644,6 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
               <span>最后分配时间:</span>
               <span style={styles.timestampText}>
                 {formatTimestamp(pointsStats.lastReceived)}
-              </span>
-            </div>
-            <div style={styles.detailRow}>
-              <span>最后销售时间:</span>
-              <span style={styles.timestampText}>
-                {formatTimestamp(pointsStats.lastSold)}
               </span>
             </div>
           </div>
@@ -568,39 +683,28 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
             </div>
           </div>
         )}
-
-        {/* 用户身份信息 */}
-        <div style={styles.detailCard}>
-          <div style={styles.detailCardTitle}>👤 身份信息</div>
-          <div style={styles.detailRows}>
-            <div style={styles.detailRow}>
-              <span>中文名:</span>
-              <strong>{basicInfo.chineseName || '-'}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>英文名:</span>
-              <strong>{basicInfo.englishName || '-'}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>身份标签:</span>
-              <strong>{identityInfo.identityTag || '-'}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>身份编号:</span>
-              <strong>{identityInfo.identityId || '-'}</strong>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* 操作按钮 */}
       <div style={styles.detailActions}>
-        {onRecordCollection && (pointsStats.pendingCollection || 0) > 0 && (
+        {pendingCollection > 0 && (
           <button
             onClick={() => onRecordCollection(seller)}
             style={styles.detailActionButton}
           >
-            💰 记录收款 (待收: RM {(pointsStats.pendingCollection || 0).toLocaleString()})
+            💰 记录收款 (待收: RM {pendingCollection.toLocaleString()})
+          </button>
+        )}
+        {pendingCashSubmission > 0 && onCashSubmission && (
+          <button
+            onClick={() => {
+              // 这里需要传入 managerId，实际使用时从context或props获取
+              const managerId = 'MANAGER_ID_HERE'; // TODO: 从context获取当前登录的manager ID
+              onCashSubmission(seller, managerId, 'sellerManager');
+            }}
+            style={{ ...styles.detailActionButton, ...styles.cashButton }}
+          >
+            💵 上交现金 (待交: RM {pendingCashSubmission.toLocaleString()})
           </button>
         )}
         {onSelect && (
@@ -874,10 +978,12 @@ const styles = {
     display: 'flex',
     gap: '1rem',
     paddingTop: '1rem',
-    borderTop: '2px solid #e5e7eb'
+    borderTop: '2px solid #e5e7eb',
+    flexWrap: 'wrap'
   },
   detailActionButton: {
     flex: 1,
+    minWidth: '200px',
     padding: '0.75rem',
     background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
     color: 'white',
@@ -886,6 +992,9 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600'
+  },
+  cashButton: {
+    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
   },
   secondaryButton: {
     background: 'white',
