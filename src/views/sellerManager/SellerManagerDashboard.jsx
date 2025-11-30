@@ -13,13 +13,42 @@ import { signOut } from 'firebase/auth';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
-import DepartmentList from './components/DepartmentList';
 
 /**
- * Seller Manager Dashboard (超级安全版 v3)
- * 
- * 修复: React Error #31 - 完全重写所有对象访问
+ * Seller Manager Dashboard (简化版)
+ * 移除部门过滤，直接显示所有 Sellers
  */
+
+// 全域輔助：根據活動資料取得每次最高可分配點數（提供穩定 fallback）
+const resolveMaxPerAllocation = (eventData) => {
+  if (!eventData || typeof eventData !== 'object') return 100;
+  try {
+    const rule = eventData.pointAllocationRules?.sellerManager;
+    if (rule && typeof rule.maxPerAllocation === 'number') return rule.maxPerAllocation;
+    return 100;
+  } catch { return 100; }
+};
+
+// 全域輔助：警示門檻
+const resolveWarningThreshold = (eventData) => {
+  if (!eventData || typeof eventData !== 'object') return 0.3;
+  try {
+    const rule = eventData.pointAllocationRules?.sellerManager;
+    if (rule && typeof rule.warningThreshold === 'number') return rule.warningThreshold;
+    return 0.3;
+  } catch { return 0.3; }
+};
+
+// 將可能的本地化物件轉為字串（優先 zh-TW/zh-CN，其次 en）
+const getLocalizedText = (val) => {
+  if (val == null) return '';
+  if (typeof val === 'string' || typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    return val['zh-TW'] || val['zh-CN'] || val['en'] || val['zh'] || val['cn'] || '';
+  }
+  return '';
+};
+
 const SellerManagerDashboard = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
@@ -35,31 +64,8 @@ const SellerManagerDashboard = () => {
   const [sellers, setSellers] = useState([]);
   const [loadingSellers, setLoadingSellers] = useState(false);
   
-  const [activeTab, setActiveTab] = useState('overview');
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
-
-  // 將可能為多語物件的文字安全轉為字串
-  const getLocalizedText = (val) => {
-    if (!val) return '';
-    if (typeof val === 'string') return val;
-    if (typeof val === 'object') {
-      const lang = (navigator.language || 'zh-CN').toLowerCase();
-      // 常見鍵優先順序
-      const candidates = [
-        lang,
-        lang.startsWith('zh') ? 'zh-CN' : 'en',
-        'zh-TW', 'zh-CN', 'zh', 'en-US', 'en'
-      ];
-      for (const key of candidates) {
-        if (val[key]) return String(val[key]);
-      }
-      // 退而求其次：取第一個值
-      const first = Object.values(val)[0];
-      if (first != null) return String(first);
-    }
-    return String(val);
-  };
 
   useEffect(() => {
     initializeDashboard();
@@ -199,13 +205,10 @@ const SellerManagerDashboard = () => {
           (snapshot) => {
             const depts = [];
             snapshot.forEach(doc => {
-              const data = doc.data() || {};
               depts.push({
                 id: doc.id,
                 departmentCode: doc.id,
-                ...data,
-                // 避免多語物件直接渲染
-                departmentName: getLocalizedText(data.departmentName)
+                ...(doc.data() || {})
               });
             });
             setDepartmentStats(depts);
@@ -267,11 +270,11 @@ const SellerManagerDashboard = () => {
           });
           
           setSellers(list);
-          console.log('[SM Dashboard] Sellers 更新:', list.length);
           setLoadingSellers(false);
+          console.log('[SM Dashboard] Sellers 列表更新:', list.length);
         },
         (error) => {
-          console.error('[SM Dashboard] Sellers 错误:', error);
+          console.error('[SM Dashboard] Sellers 查询错误:', error);
           setSellers([]);
           setLoadingSellers(false);
         }
@@ -286,75 +289,44 @@ const SellerManagerDashboard = () => {
     }
   };
 
+  const getDefaultStats = () => ({
+    totalSellers: 0,
+    activeSellers: 0,
+    totalPointsAllocated: 0,
+    totalPointsSold: 0,
+    totalCashCollected: 0,
+    pendingReconciliation: 0
+  });
+
   const handleAllocatePoints = (seller) => {
-    console.log('[SM Dashboard] 分配点数给:', seller);
+    if (!seller || typeof seller !== 'object') {
+      console.error('[SM Dashboard] 无效的 seller 对象');
+      return;
+    }
+    
+    console.log('[SM Dashboard] 准备为 Seller 分配点数:', seller.userId);
     setSelectedSeller(seller);
     setShowAllocatePoints(true);
   };
 
   const handleLogout = async () => {
     try {
+      await signOut(auth);
       localStorage.removeItem('sellerManagerInfo');
-      if (auth.currentUser) {
-        await signOut(auth);
-      }
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
-      console.error('[SM Dashboard] 登出失败:', error);
-      navigate(`/login/${orgEventCode}`);
+      console.error('[SM Dashboard] 退出登录失败:', error);
+      alert('退出登录失败');
     }
   };
 
-  const getMaxPerAllocation = () => {
-    if (!eventData) return 100;
-    
-    try {
-      if (eventData.pointAllocationRules && 
-          eventData.pointAllocationRules.sellerManager &&
-          typeof eventData.pointAllocationRules.sellerManager.maxPerAllocation === 'number') {
-        return eventData.pointAllocationRules.sellerManager.maxPerAllocation;
-      }
-      return 100;
-    } catch (e) {
-      return 100;
-    }
-  };
+  const safeCurrentUser = currentUser || {};
+  const safeEventData = eventData || {};
+  const safeSellers = Array.isArray(sellers) ? sellers : [];
+  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
 
-  const getWarningThreshold = () => {
-    if (!eventData) return 0.3;
-    
-    try {
-      if (eventData.pointAllocationRules && 
-          eventData.pointAllocationRules.sellerManager &&
-          typeof eventData.pointAllocationRules.sellerManager.warningThreshold === 'number') {
-        return eventData.pointAllocationRules.sellerManager.warningThreshold;
-      }
-      return 0.3;
-    } catch (e) {
-      return 0.3;
-    }
-  };
-
-  const getDefaultStats = () => ({
-    managedUsersStats: {
-      totalUsers: 0,
-      activeUsers: 0,
-      currentBalance: 0,
-      totalRevenue: 0,
-      totalCollected: 0,
-      pendingCollection: 0,
-      collectionRate: 0
-    },
-    allocationStats: {
-      totalAllocations: 0,
-      totalPointsAllocated: 0,
-      averagePerAllocation: 0
-    },
-    collectionManagement: {
-      usersWithWarnings: 0,
-      highRiskUsers: 0
-    }
-  });
+  const maxPerAllocation = resolveMaxPerAllocation(eventData);
+  const warningThreshold = resolveWarningThreshold(eventData);
 
   if (loading) {
     return (
@@ -367,20 +339,14 @@ const SellerManagerDashboard = () => {
     );
   }
 
-  // 确保所有数据都是有效的
-  const safeCurrentUser = currentUser || {};
-  const safeEventData = eventData || {};
-  const safeSellers = Array.isArray(sellers) ? sellers : [];
-  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
-
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div>
-            <h1 style={styles.title}>Seller Manager</h1>
+            <h1 style={styles.title}>Seller Manager 仪表板</h1>
             <p style={styles.subtitle}>
-              {safeCurrentUser.chineseName || safeCurrentUser.englishName || '管理员'}
+              欢迎, {safeCurrentUser.displayName || safeCurrentUser.phoneNumber || '未知用户'}
             </p>
             <p style={styles.roleLabel}>
               管理部门: {Array.isArray(safeCurrentUser.managedDepartments) ? safeCurrentUser.managedDepartments.join(', ') : '无'}
@@ -393,7 +359,7 @@ const SellerManagerDashboard = () => {
               {getLocalizedText(safeEventData.eventName) || '义卖活动'}
             </div>
             <div style={styles.allocationLimit}>
-              每次最高分配: RM {getMaxPerAllocation()}
+              每次最高分配: RM {maxPerAllocation}
             </div>
           </div>
           <div style={styles.versionBadge} title="目前載入的前端版本戳記">
@@ -405,66 +371,40 @@ const SellerManagerDashboard = () => {
         </div>
       </div>
 
-      <div style={styles.tabBar}>
-        <button
-          style={activeTab === 'overview' ? {...styles.tabButton, ...styles.tabButtonActive} : styles.tabButton}
-          onClick={() => setActiveTab('overview')}
-        >
-          📊 概览
-        </button>
-        <button
-          style={activeTab === 'departments' ? {...styles.tabButton, ...styles.tabButtonActive} : styles.tabButton}
-          onClick={() => setActiveTab('departments')}
-        >
-          🏫 部门 ({safeDepartmentStats.length})
-        </button>
-        <button
-          style={activeTab === 'sellers' ? {...styles.tabButton, ...styles.tabButtonActive} : styles.tabButton}
-          onClick={() => setActiveTab('sellers')}
-        >
-          👥 Sellers ({safeSellers.length})
-        </button>
+      {/* 概览统计 */}
+      <div style={styles.section}>
+        <OverviewStats
+          smStats={smStats || getDefaultStats()}
+          departmentStats={safeDepartmentStats}
+          eventData={safeEventData}
+        />
       </div>
 
-      <div style={styles.tabContent}>
-        {activeTab === 'overview' && (
-          <OverviewStats
-            smStats={smStats || getDefaultStats()}
-            departmentStats={safeDepartmentStats}
-            eventData={safeEventData}
-          />
-        )}
-
-        {activeTab === 'departments' && (
-          <DepartmentList
-            departmentStats={safeDepartmentStats}
-            onSelectDepartment={() => setActiveTab('sellers')}
-          />
-        )}
-
-        {activeTab === 'sellers' && (
-          <>
-            <div style={styles.actionsBar}>
-              <button style={styles.refreshButton}>
-                🔄 数据实时更新中
-              </button>
-              <div style={styles.allocationInfo}>
-                💡 每次最高分配: <strong>RM {getMaxPerAllocation()}</strong>
-              </div>
+      {/* Sellers 列表 */}
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <h2 style={styles.sectionTitle}>👥 Sellers ({safeSellers.length})</h2>
+          <div style={styles.actionsBar}>
+            <button style={styles.refreshButton}>
+              🔄 数据实时更新中
+            </button>
+            <div style={styles.allocationInfo}>
+              💡 每次最高分配: <strong>RM {maxPerAllocation}</strong>
             </div>
-            {loadingSellers ? (
-              <div style={styles.loadingCard}>
-                <div style={styles.spinner}></div>
-                <p>加载 Sellers...</p>
-              </div>
-            ) : (
-              <SellerList
-                sellers={safeSellers}
-                onAllocatePoints={handleAllocatePoints}
-                maxPerAllocation={getMaxPerAllocation()}
-              />
-            )}
-          </>
+          </div>
+        </div>
+        
+        {loadingSellers ? (
+          <div style={styles.loadingCard}>
+            <div style={styles.spinner}></div>
+            <p>加载 Sellers...</p>
+          </div>
+        ) : (
+          <SellerList
+            sellers={safeSellers}
+            onAllocatePoints={handleAllocatePoints}
+            maxPerAllocation={maxPerAllocation}
+          />
         )}
       </div>
 
@@ -473,8 +413,8 @@ const SellerManagerDashboard = () => {
           seller={selectedSeller}
           sellerManagerId={safeCurrentUser.userId}
           eventId={eventId}
-          maxPerAllocation={getMaxPerAllocation()}
-          warningThreshold={getWarningThreshold()}
+          maxPerAllocation={maxPerAllocation}
+          warningThreshold={warningThreshold}
           onClose={() => {
             setShowAllocatePoints(false);
             setSelectedSeller(null);
@@ -575,45 +515,36 @@ const styles = {
     fontSize: '0.875rem',
     fontWeight: '500'
   },
-  tabBar: {
-    display: 'flex',
-    gap: '0.5rem',
-    marginBottom: '1rem',
-    background: 'white',
-    padding: '0.5rem',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    overflowX: 'auto'
-  },
-  tabButton: {
-    flex: 1,
-    minWidth: '120px',
-    padding: '0.75rem 1rem',
-    background: 'transparent',
-    border: 'none',
+  versionBadge: {
+    padding: '0.5rem 0.75rem',
+    background: '#e5e7eb',
+    color: '#374151',
     borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
+    fontSize: '0.625rem',
     fontWeight: '600',
-    color: '#6b7280'
+    letterSpacing: '0.5px'
   },
-  tabButtonActive: {
-    background: '#fef3c7',
-    color: '#92400e'
-  },
-  tabContent: {
+  section: {
     background: 'white',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     padding: '1.5rem',
-    minHeight: '400px'
+    marginBottom: '1rem'
+  },
+  sectionHeader: {
+    marginBottom: '1.5rem'
+  },
+  sectionTitle: {
+    fontSize: '1.25rem',
+    fontWeight: 'bold',
+    color: '#1f2937',
+    margin: '0 0 1rem 0'
   },
   actionsBar: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '1rem',
-    marginBottom: '1.5rem',
     flexWrap: 'wrap'
   },
   refreshButton: {
@@ -633,15 +564,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '0.875rem',
     fontWeight: '500'
-  }
-  ,versionBadge: {
-    padding: '0.5rem 0.75rem',
-    background: '#e5e7eb',
-    color: '#374151',
-    borderRadius: '8px',
-    fontSize: '0.625rem',
-    fontWeight: '600',
-    letterSpacing: '0.5px'
   }
 };
 

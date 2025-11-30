@@ -1,420 +1,677 @@
 import { useState } from 'react';
 
 /**
- * Seller List Component (重构版)
+ * Seller List Component (架构修正版 v5)
+ * Step 1.2: 数据渲染优化完成 ✅ (已根据正确架构修正)
  * 
- * @description
- * 显示 Seller Manager 管理的所有 Sellers
+ * 根据 Firestore 架构正确渲染 Seller 数据
+ * 路径: organizations/{orgId}/events/{eventId}/users/{userId}
  * 
- * 新特性：
- * 1. 支持所有 identityTag（student, teacher, parent, staff, volunteer, external）
- * 2. 使用新的 pointsStats 字段
- * 3. 显示收款警示
- * 4. 显示点数来源（从 EM 还是 SM）
+ * 数据结构：
+ * - basicInfo: { phoneNumber, englishName, chineseName, email, ... }
+ * - identityInfo: { identityId, identityTag, identityName, department }
+ * - pointsStats: { totalReceived, currentBalance, totalSold, totalRevenue, ... }
+ * - seller: { availablePoints, totalPointsSold, totalRevenue, collectionAlert, ... }
  * 
- * @param {Array} sellers - Sellers 列表
- * @param {Function} onAllocatePoints - 分配点数回调
- * @param {number} maxPerAllocation - 每次分配上限
+ * 注意：pointsStats 是主要统计对象，seller 对象是角色专用数据
  */
-const SellerList = ({ sellers, onAllocatePoints, maxPerAllocation }) => {
+const SellerList = ({ sellers, selectedDepartment, onSelectSeller, onRecordCollection }) => {
+  const [sortBy, setSortBy] = useState('name');
+  const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'active' | 'warning' | 'highRisk'
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name'); // name | balance | revenue | collectionRate | alert
-  const [filterTag, setFilterTag] = useState('all'); // all | student | teacher | staff | parent | volunteer | external
-  const [filterAlert, setFilterAlert] = useState('all'); // all | warning | none
+  const [expandedSeller, setExpandedSeller] = useState(null);
 
-  /**
-   * 过滤和排序 Sellers
-   */
-  const getFilteredAndSortedSellers = () => {
-    let filtered = sellers;
+  // 确保输入是安全的
+  const safeSellers = Array.isArray(sellers) ? sellers : [];
 
-    // 🔍 搜索过滤
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      filtered = sellers.filter(seller => {
-        const displayName = seller.displayName?.toLowerCase() || '';
-        const department = seller.department?.toLowerCase() || '';
-        const email = seller.email?.toLowerCase() || '';
-        
-        return displayName.includes(search) || 
-               department.includes(search) || 
-               email.includes(search);
+  // 筛选逻辑
+  const getFilteredSellers = () => {
+    let filtered = [...safeSellers];
+
+    // 1. 部门筛选
+    if (selectedDepartment) {
+      filtered = filtered.filter(seller => {
+        const dept = seller.identityInfo?.department || '';
+        return dept === selectedDepartment.departmentCode;
       });
     }
 
-    // 🏷️ identityTag 过滤
-    if (filterTag !== 'all') {
-      filtered = filtered.filter(seller => seller.identityTag === filterTag);
+    // 2. 状态筛选
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(seller => {
+        const sellerData = seller.seller || {};
+        const hasAlert = sellerData.collectionAlert === true;
+        const totalSold = seller.pointsStats?.totalSold || 0;
+        const pendingCollection = seller.pointsStats?.pendingCollection || 0;
+        const totalRevenue = seller.pointsStats?.totalRevenue || 1;
+        const pendingRatio = pendingCollection / totalRevenue;
+        
+        switch(filterStatus) {
+          case 'active':
+            return totalSold > 0;
+          case 'warning':
+            // 有警示但不是高风险（待收款比例 < 50%）
+            return hasAlert && pendingRatio < 0.5;
+          case 'highRisk':
+            // 高风险：待收款比例 >= 50%
+            return hasAlert && pendingRatio >= 0.5;
+          default:
+            return true;
+        }
+      });
     }
 
-    // ⚠️ 警示过滤
-    if (filterAlert !== 'all') {
-      if (filterAlert === 'warning') {
-        filtered = filtered.filter(seller => seller.collectionAlert?.hasWarning === true);
-      } else {
-        filtered = filtered.filter(seller => !seller.collectionAlert?.hasWarning);
-      }
+    // 3. 搜索筛选
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(seller => {
+        const name = (seller.basicInfo?.chineseName || '').toLowerCase();
+        const phone = (seller.basicInfo?.phoneNumber || '').toLowerCase();
+        const dept = (seller.identityInfo?.department || '').toLowerCase();
+        return name.includes(term) || phone.includes(term) || dept.includes(term);
+      });
     }
 
-    // 📊 排序
-    const sorted = [...filtered].sort((a, b) => {
+    return filtered;
+  };
+
+  // 排序逻辑
+  const getSortedSellers = (filtered) => {
+    return [...filtered].sort((a, b) => {
       const aStats = a.pointsStats || {};
       const bStats = b.pointsStats || {};
 
-      switch (sortBy) {
+      switch(sortBy) {
+        case 'name':
+          const aName = a.basicInfo?.chineseName || '';
+          const bName = b.basicInfo?.chineseName || '';
+          return aName.localeCompare(bName);
+        case 'department':
+          const aDept = a.identityInfo?.department || '';
+          const bDept = b.identityInfo?.department || '';
+          return aDept.localeCompare(bDept);
         case 'balance':
           return (bStats.currentBalance || 0) - (aStats.currentBalance || 0);
         case 'revenue':
           return (bStats.totalRevenue || 0) - (aStats.totalRevenue || 0);
         case 'collectionRate':
-          return (bStats.collectionRate || 0) - (aStats.collectionRate || 0);
-        case 'alert':
-          // 有警示的排在前面
-          const aHasAlert = a.collectionAlert?.hasWarning ? 1 : 0;
-          const bHasAlert = b.collectionAlert?.hasWarning ? 1 : 0;
-          return bHasAlert - aHasAlert;
-        case 'name':
+          const aRate = aStats.collectionRate || 0;
+          const bRate = bStats.collectionRate || 0;
+          return bRate - aRate;
+        case 'pendingCollection':
+          return (bStats.pendingCollection || 0) - (aStats.pendingCollection || 0);
         default:
-          return (a.displayName || '').localeCompare(b.displayName || '');
+          return 0;
       }
     });
-
-    return sorted;
   };
 
-  const filteredSellers = getFilteredAndSortedSellers();
+  const filteredSellers = getFilteredSellers();
+  const sortedSellers = getSortedSellers(filteredSellers);
 
-  // 统计各 identityTag 数量
-  const tagCounts = sellers.reduce((acc, seller) => {
-    const tag = seller.identityTag || 'unknown';
-    acc[tag] = (acc[tag] || 0) + 1;
-    return acc;
-  }, {});
+  // 统计摘要
+  const getStatsSummary = () => {
+    const total = filteredSellers.length;
+    const active = filteredSellers.filter(s => (s.pointsStats?.totalSold || 0) > 0).length;
+    
+    // 计算有警示和高风险的数量
+    const withWarning = filteredSellers.filter(s => {
+      const sellerData = s.seller || {};
+      const hasAlert = sellerData.collectionAlert === true;
+      const pendingRatio = (s.pointsStats?.pendingCollection || 0) / (s.pointsStats?.totalRevenue || 1);
+      return hasAlert && pendingRatio < 0.5;
+    }).length;
+    
+    const highRisk = filteredSellers.filter(s => {
+      const sellerData = s.seller || {};
+      const hasAlert = sellerData.collectionAlert === true;
+      const pendingRatio = (s.pointsStats?.pendingCollection || 0) / (s.pointsStats?.totalRevenue || 1);
+      return hasAlert && pendingRatio >= 0.5;
+    }).length;
 
-  // 统计警示数量
-  const alertCount = sellers.filter(s => s.collectionAlert?.hasWarning).length;
+    return { total, active, withWarning, highRisk };
+  };
+
+  const summary = getStatsSummary();
+
+  if (safeSellers.length === 0) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.emptyState}>
+          <div style={styles.emptyIcon}>👥</div>
+          <h3>还没有 Sellers 数据</h3>
+          <p>系统正在加载用户信息，请稍候</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
-      {/* 🔍 搜索栏 */}
-      <div style={styles.searchBox}>
-        <span style={styles.searchIcon}>🔍</span>
-        <input
-          type="text"
-          placeholder="搜索姓名、部门、邮箱..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={styles.searchInput}
-        />
-        {searchTerm && (
-          <button
-            style={styles.clearButton}
-            onClick={() => setSearchTerm('')}
-          >
-            ✕
-          </button>
-        )}
+      {/* 标题栏 */}
+      <div style={styles.header}>
+        <div>
+          <h2 style={styles.title}>
+            👥 {selectedDepartment ? `${selectedDepartment.departmentCode} - ` : ''}Sellers 列表
+          </h2>
+          <div style={styles.subtitle}>
+            共 {summary.total} 人
+            {summary.active > 0 && ` · 活跃 ${summary.active} 人`}
+            {summary.withWarning > 0 && (
+              <span style={{ color: '#f59e0b' }}> · ⚠️ {summary.withWarning} 人有警示</span>
+            )}
+            {summary.highRisk > 0 && (
+              <span style={{ color: '#ef4444' }}> · 🚨 {summary.highRisk} 人高风险</span>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* 🏷️ 筛选和排序栏 */}
-      <div style={styles.toolbar}>
-        {/* identityTag 筛选 */}
-        <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>身份:</label>
-          <select
-            value={filterTag}
-            onChange={(e) => setFilterTag(e.target.value)}
-            style={styles.filterSelect}
-          >
-            <option value="all">全部 ({sellers.length})</option>
-            <option value="student">学生 ({tagCounts.student || 0})</option>
-            <option value="teacher">老师 ({tagCounts.teacher || 0})</option>
-            <option value="staff">职员 ({tagCounts.staff || 0})</option>
-            <option value="parent">家长 ({tagCounts.parent || 0})</option>
-            <option value="volunteer">义工 ({tagCounts.volunteer || 0})</option>
-            <option value="external">外部 ({tagCounts.external || 0})</option>
-          </select>
+      {/* 控制栏 */}
+      <div style={styles.controls}>
+        {/* 搜索框 */}
+        <div style={styles.searchBox}>
+          <span style={styles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            placeholder="搜索姓名、电话或部门..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={styles.searchInput}
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              style={styles.clearButton}
+            >
+              ✕
+            </button>
+          )}
         </div>
 
-        {/* 警示筛选 */}
+        {/* 状态筛选 */}
         <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>警示:</label>
+          <label style={styles.filterLabel}>状态：</label>
           <select
-            value={filterAlert}
-            onChange={(e) => setFilterAlert(e.target.value)}
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
             style={styles.filterSelect}
           >
             <option value="all">全部</option>
-            <option value="warning">有警示 ({alertCount})</option>
-            <option value="none">无警示</option>
+            <option value="active">有销售活动</option>
+            <option value="warning">收款警示</option>
+            <option value="highRisk">高风险</option>
           </select>
         </div>
 
         {/* 排序 */}
         <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>排序:</label>
+          <label style={styles.filterLabel}>排序：</label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
             style={styles.filterSelect}
           >
             <option value="name">姓名 A-Z</option>
-            <option value="balance">持有点数（高到低）</option>
+            <option value="department">部门 A-Z</option>
+            <option value="balance">余额（高到低）</option>
             <option value="revenue">销售额（高到低）</option>
             <option value="collectionRate">收款率（高到低）</option>
-            <option value="alert">警示优先</option>
+            <option value="pendingCollection">待收款（高到低）</option>
           </select>
         </div>
       </div>
 
-      {/* 📊 Sellers Grid */}
-      {filteredSellers.length === 0 ? (
+      {/* Sellers 表格 */}
+      {sortedSellers.length === 0 ? (
         <div style={styles.emptyState}>
-          {searchTerm || filterTag !== 'all' || filterAlert !== 'all' ? (
-            <>
-              <div style={styles.emptyIcon}>🔍</div>
-              <h3>找不到匹配的 Seller</h3>
-              <p>试试调整筛选条件</p>
-            </>
-          ) : (
-            <>
-              <div style={styles.emptyIcon}>📝</div>
-              <h3>还没有 Seller</h3>
-              <p>请先创建 Seller 用户</p>
-            </>
-          )}
+          <div style={styles.emptyIcon}>🔍</div>
+          <h3>没有找到符合条件的 Sellers</h3>
+          <p>试试调整筛选条件或搜索关键词</p>
         </div>
       ) : (
-        <>
-          <div style={styles.grid}>
-            {filteredSellers.map(seller => (
-              <SellerCard
-                key={seller.id}
-                seller={seller}
-                onAllocatePoints={onAllocatePoints}
-                maxPerAllocation={maxPerAllocation}
-              />
-            ))}
-          </div>
-          <div style={styles.resultStats}>
-            显示 {filteredSellers.length} / {sellers.length} 位 Seller
-          </div>
-        </>
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr style={styles.tableHeader}>
+                <th style={styles.th}>姓名</th>
+                <th style={styles.th}>部门</th>
+                <th style={styles.th}>电话</th>
+                <th style={styles.th}>当前余额</th>
+                <th style={styles.th}>累计销售</th>
+                <th style={styles.th}>收款率</th>
+                <th style={styles.th}>状态</th>
+                <th style={styles.th}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedSellers.map((seller) => (
+                <SellerRow
+                  key={seller.id || seller.userId}
+                  seller={seller}
+                  isExpanded={expandedSeller === (seller.id || seller.userId)}
+                  onToggle={() => setExpandedSeller(
+                    expandedSeller === (seller.id || seller.userId) ? null : (seller.id || seller.userId)
+                  )}
+                  onSelect={onSelectSeller}
+                  onRecordCollection={onRecordCollection}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 };
 
 /**
- * 单个 Seller 卡片组件
+ * Seller Row Component
+ * 渲染单个 Seller 的数据行（根据正确的Firestore架构）
  */
-const SellerCard = ({ seller, onAllocatePoints, maxPerAllocation }) => {
+const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection }) => {
+  if (!seller || typeof seller !== 'object') return null;
+
+  // 安全读取数据 - 根据正确的架构
+  const basicInfo = seller.basicInfo || {};
+  const identityInfo = seller.identityInfo || {};
   const pointsStats = seller.pointsStats || {};
-  const collectionAlert = seller.collectionAlert || {};
-
-  // identityTag 图标和颜色
-  const getTagInfo = (tag) => {
-    const tagMap = {
-      student: { icon: '🎓', label: '学生', color: '#3b82f6' },
-      teacher: { icon: '👨‍🏫', label: '老师', color: '#8b5cf6' },
-      staff: { icon: '👔', label: '职员', color: '#06b6d4' },
-      parent: { icon: '👨‍👩‍👧', label: '家长', color: '#10b981' },
-      volunteer: { icon: '🤝', label: '义工', color: '#f59e0b' },
-      external: { icon: '🌐', label: '外部', color: '#6b7280' }
-    };
-    return tagMap[tag] || { icon: '❓', label: '未知', color: '#9ca3af' };
-  };
-
-  const tagInfo = getTagInfo(seller.identityTag);
+  const sellerData = seller.seller || {};
+  
+  // 基础信息
+  const displayName = basicInfo.chineseName || '未命名';
+  const englishName = basicInfo.englishName || '';
+  const department = identityInfo.department || '-';
+  const phoneNumber = basicInfo.phoneNumber || '-';
+  
+  // 点数统计（使用 pointsStats，这是主要的统计对象）
+  const currentBalance = pointsStats.currentBalance || 0;
+  const totalRevenue = pointsStats.totalRevenue || 0;
+  const collectionRate = pointsStats.collectionRate || 0;
+  const pendingCollection = pointsStats.pendingCollection || 0;
+  const totalSold = pointsStats.totalSold || 0;
+  
+  // 收款警示（seller 对象中的 collectionAlert 是布尔值）
+  const hasCollectionAlert = sellerData.collectionAlert === true;
+  const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
 
   // 收款率颜色
-  const collectionRate = pointsStats.collectionRate || 0;
   const getRateColor = (rate) => {
     if (rate >= 0.8) return '#10b981';
     if (rate >= 0.5) return '#f59e0b';
     return '#ef4444';
   };
 
-  // 警示等级样式
-  const getAlertStyle = (level) => {
-    const levelMap = {
-      high: { bg: '#fee2e2', color: '#991b1b', label: '⚠️ 高风险' },
-      medium: { bg: '#fed7aa', color: '#9a3412', label: '⚠️ 中等' },
-      low: { bg: '#fef3c7', color: '#92400e', label: '⚠️ 注意' },
-      none: { bg: '#d1fae5', color: '#065f46', label: '✓ 正常' }
-    };
-    return levelMap[level] || levelMap.none;
+  // 状态标签
+  const getStatusBadge = () => {
+    // 高风险：有警示且待收款比例 >= 50%
+    if (hasCollectionAlert && pendingRatio >= 0.5) {
+      return (
+        <span style={{ ...styles.badge, ...styles.badgeHighRisk }}>
+          🚨 高风险
+        </span>
+      );
+    }
+    // 警示：有警示但待收款比例 < 50%
+    if (hasCollectionAlert) {
+      return (
+        <span style={{ ...styles.badge, ...styles.badgeWarning }}>
+          ⚠️ 警示
+        </span>
+      );
+    }
+    // 活跃：有销售记录
+    if (totalSold > 0) {
+      return (
+        <span style={{ ...styles.badge, ...styles.badgeActive }}>
+          ✅ 活跃
+        </span>
+      );
+    }
+    // 未活跃
+    return (
+      <span style={{ ...styles.badge, ...styles.badgeInactive }}>
+        ⏸️ 未活跃
+      </span>
+    );
   };
 
-  const alertStyle = getAlertStyle(collectionAlert.warningLevel || 'none');
+  return (
+    <>
+      <tr style={styles.tableRow}>
+        <td style={styles.td}>
+          <div style={styles.nameCell}>
+            <div style={styles.nameText}>{displayName}</div>
+            {englishName && (
+              <div style={styles.englishName}>{englishName}</div>
+            )}
+          </div>
+        </td>
+        <td style={styles.td}>{department}</td>
+        <td style={styles.td}>
+          <span style={styles.phoneText}>{phoneNumber}</span>
+        </td>
+        <td style={styles.td}>
+          <span style={styles.balanceText}>
+            RM {currentBalance.toLocaleString()}
+          </span>
+        </td>
+        <td style={styles.td}>
+          <span style={styles.revenueText}>
+            RM {totalRevenue.toLocaleString()}
+          </span>
+        </td>
+        <td style={styles.td}>
+          <div style={styles.rateCell}>
+            <span style={{ 
+              ...styles.rateText,
+              color: getRateColor(collectionRate)
+            }}>
+              {Math.round(collectionRate * 100)}%
+            </span>
+            <div style={styles.rateBar}>
+              <div style={{
+                ...styles.rateBarFill,
+                width: `${Math.min(100, collectionRate * 100)}%`,
+                background: getRateColor(collectionRate)
+              }}></div>
+            </div>
+          </div>
+        </td>
+        <td style={styles.td}>
+          {getStatusBadge()}
+        </td>
+        <td style={styles.td}>
+          <div style={styles.actionButtons}>
+            <button
+              onClick={onToggle}
+              style={styles.actionButton}
+              title="查看详情"
+            >
+              {isExpanded ? '▲' : '▼'}
+            </button>
+            {onRecordCollection && pendingCollection > 0 && (
+              <button
+                onClick={() => onRecordCollection(seller)}
+                style={{ ...styles.actionButton, ...styles.collectionButton }}
+                title="记录收款"
+              >
+                💰
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* 展开的详细信息 */}
+      {isExpanded && (
+        <tr>
+          <td colSpan="8" style={styles.expandedCell}>
+            <SellerDetails 
+              seller={seller} 
+              onSelect={onSelect}
+              onRecordCollection={onRecordCollection}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+};
+
+/**
+ * Seller Details Component
+ * 展开后显示的详细信息（根据正确的Firestore架构）
+ */
+const SellerDetails = ({ seller, onSelect, onRecordCollection }) => {
+  const pointsStats = seller.pointsStats || {};
+  const sellerData = seller.seller || {};
+  const basicInfo = seller.basicInfo || {};
+  const identityInfo = seller.identityInfo || {};
+  
+  const hasCollectionAlert = sellerData.collectionAlert === true;
+  const pendingCollection = pointsStats.pendingCollection || 0;
+  const totalRevenue = pointsStats.totalRevenue || 0;
+  const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
+
+  // 将 Firestore Timestamp 转换为日期字符串
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '从未';
+    if (timestamp.seconds) {
+      return new Date(timestamp.seconds * 1000).toLocaleDateString('zh-CN');
+    }
+    if (timestamp.toDate) {
+      return timestamp.toDate().toLocaleDateString('zh-CN');
+    }
+    return '无效日期';
+  };
 
   return (
-    <div
-      style={styles.card}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-4px)';
-        e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.15)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-      }}
-    >
-      {/* 用户头部信息 */}
-      <div style={styles.cardHeader}>
-        <div style={{
-          ...styles.avatar,
-          background: tagInfo.color
-        }}>
-          {(seller.displayName || '?')[0].toUpperCase()}
-        </div>
-        <div style={styles.cardHeaderInfo}>
-          <h3 style={styles.sellerName}>
-            {seller.displayName || 'N/A'}
-          </h3>
-          <div style={styles.sellerMeta}>
-            <span style={{
-              ...styles.tagBadge,
-              background: tagInfo.color
-            }}>
-              {tagInfo.icon} {tagInfo.label}
-            </span>
-            <span style={styles.department}>
-              📍 {seller.department || '无部门'}
-            </span>
+    <div style={styles.detailsContainer}>
+      <div style={styles.detailsGrid}>
+        {/* 点数统计 */}
+        <div style={styles.detailCard}>
+          <div style={styles.detailCardTitle}>💰 点数流动</div>
+          <div style={styles.detailRows}>
+            <div style={styles.detailRow}>
+              <span>累计收到点数:</span>
+              <strong>RM {(pointsStats.totalReceived || 0).toLocaleString()}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>当前持有:</span>
+              <strong>RM {(pointsStats.currentBalance || 0).toLocaleString()}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>累计售出:</span>
+              <strong>RM {(pointsStats.totalSold || 0).toLocaleString()}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>销售额 (=售出):</span>
+              <strong>RM {(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
+            </div>
           </div>
         </div>
-        
-        {/* 警示状态 */}
-        <div style={{
-          ...styles.alertBadge,
-          background: alertStyle.bg,
-          color: alertStyle.color
-        }}>
-          {alertStyle.label}
-        </div>
-      </div>
 
-      {/* 统计信息 */}
-      <div style={styles.statsRow}>
-        <div style={styles.stat}>
-          <div style={styles.statLabel}>持有点数</div>
-          <div style={styles.statValue}>
-            RM {(pointsStats.currentBalance || 0).toLocaleString()}
+        {/* 收款统计 */}
+        <div style={styles.detailCard}>
+          <div style={styles.detailCardTitle}>📊 收款情况</div>
+          <div style={styles.detailRows}>
+            <div style={styles.detailRow}>
+              <span>已收款:</span>
+              <strong style={{ color: '#10b981' }}>
+                RM {(pointsStats.totalCollected || 0).toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>待收款:</span>
+              <strong style={{ color: '#ef4444' }}>
+                RM {(pointsStats.pendingCollection || 0).toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>收款率:</span>
+              <strong>
+                {Math.round((pointsStats.collectionRate || 0) * 100)}%
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>最后收款:</span>
+              <span style={styles.timestampText}>
+                {formatTimestamp(pointsStats.lastCollected)}
+              </span>
+            </div>
           </div>
         </div>
-        <div style={styles.statDivider}></div>
-        <div style={styles.stat}>
-          <div style={styles.statLabel}>累计销售</div>
-          <div style={styles.statValue}>
-            RM {(pointsStats.totalRevenue || 0).toLocaleString()}
-          </div>
-        </div>
-        <div style={styles.statDivider}></div>
-        <div style={styles.stat}>
-          <div style={styles.statLabel}>收款率</div>
-          <div style={{
-            ...styles.statValue,
-            color: getRateColor(collectionRate)
-          }}>
-            {Math.round(collectionRate * 100)}%
-          </div>
-        </div>
-      </div>
 
-      {/* 收款详情 */}
-      <div style={styles.collectionRow}>
-        <div style={styles.collectionItem}>
-          <span style={styles.collectionLabel}>已收款:</span>
-          <span style={{ ...styles.collectionValue, color: '#10b981' }}>
-            RM {(pointsStats.totalCollected || 0).toLocaleString()}
-          </span>
+        {/* 分配来源 */}
+        <div style={styles.detailCard}>
+          <div style={styles.detailCardTitle}>📦 点数来源</div>
+          <div style={styles.detailRows}>
+            <div style={styles.detailRow}>
+              <span>来自 Event Manager:</span>
+              <strong>
+                RM {(pointsStats.receivedFromEventManager || 0).toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>来自 Seller Manager:</span>
+              <strong>
+                RM {(pointsStats.receivedFromSellerManager || 0).toLocaleString()}
+              </strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>最后分配时间:</span>
+              <span style={styles.timestampText}>
+                {formatTimestamp(pointsStats.lastReceived)}
+              </span>
+            </div>
+            <div style={styles.detailRow}>
+              <span>最后销售时间:</span>
+              <span style={styles.timestampText}>
+                {formatTimestamp(pointsStats.lastSold)}
+              </span>
+            </div>
+          </div>
         </div>
-        <div style={styles.collectionItem}>
-          <span style={styles.collectionLabel}>待收款:</span>
-          <span style={{ ...styles.collectionValue, color: '#ef4444' }}>
-            RM {(pointsStats.pendingCollection || 0).toLocaleString()}
-          </span>
-        </div>
-      </div>
 
-      {/* 点数来源 */}
-      <div style={styles.sourceRow}>
-        <div style={styles.sourceItem}>
-          <span style={styles.sourceLabel}>来自 EM:</span>
-          <span style={styles.sourceValue}>
-            RM {(pointsStats.receivedFromEventManager || 0).toLocaleString()}
-          </span>
-        </div>
-        <div style={styles.sourceItem}>
-          <span style={styles.sourceLabel}>来自 SM:</span>
-          <span style={styles.sourceValue}>
-            RM {(pointsStats.receivedFromSellerManager || 0).toLocaleString()}
-          </span>
+        {/* 收款警示信息 */}
+        {hasCollectionAlert && (
+          <div style={styles.detailCard}>
+            <div style={styles.detailCardTitle}>⚠️ 收款警示</div>
+            <div style={styles.detailRows}>
+              <div style={styles.detailRow}>
+                <span>风险等级:</span>
+                <strong style={{ 
+                  color: pendingRatio >= 0.5 ? '#dc2626' : '#f59e0b' 
+                }}>
+                  {pendingRatio >= 0.5 ? '🚨 高风险' : '⚠️ 中等'}
+                </strong>
+              </div>
+              <div style={styles.detailRow}>
+                <span>待收款比例:</span>
+                <strong style={{ color: '#ef4444' }}>
+                  {Math.round(pendingRatio * 100)}%
+                </strong>
+              </div>
+              <div style={styles.detailRow}>
+                <span>待收款金额:</span>
+                <strong style={{ color: '#ef4444' }}>
+                  RM {pendingCollection.toLocaleString()}
+                </strong>
+              </div>
+              <div style={styles.alertMessage}>
+                {pendingRatio >= 0.5 
+                  ? `待收款金额过高（${Math.round(pendingRatio * 100)}%），请尽快收款`
+                  : `有待收款项（${Math.round(pendingRatio * 100)}%），请注意跟进`
+                }
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 用户身份信息 */}
+        <div style={styles.detailCard}>
+          <div style={styles.detailCardTitle}>👤 身份信息</div>
+          <div style={styles.detailRows}>
+            <div style={styles.detailRow}>
+              <span>中文名:</span>
+              <strong>{basicInfo.chineseName || '-'}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>英文名:</span>
+              <strong>{basicInfo.englishName || '-'}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>身份标签:</span>
+              <strong>{identityInfo.identityTag || '-'}</strong>
+            </div>
+            <div style={styles.detailRow}>
+              <span>身份编号:</span>
+              <strong>{identityInfo.identityId || '-'}</strong>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 操作按钮 */}
-      <div style={styles.actions}>
-        <button
-          style={styles.primaryActionButton}
-          onClick={() => onAllocatePoints(seller)}
-        >
-          💰 分配点数 (上限: RM {maxPerAllocation})
-        </button>
+      <div style={styles.detailActions}>
+        {onRecordCollection && (pointsStats.pendingCollection || 0) > 0 && (
+          <button
+            onClick={() => onRecordCollection(seller)}
+            style={styles.detailActionButton}
+          >
+            💰 记录收款 (待收: RM {(pointsStats.pendingCollection || 0).toLocaleString()})
+          </button>
+        )}
+        {onSelect && (
+          <button
+            onClick={() => onSelect(seller)}
+            style={{ ...styles.detailActionButton, ...styles.secondaryButton }}
+          >
+            👁️ 查看完整信息
+          </button>
+        )}
       </div>
-
-      {/* 警示提示 */}
-      {collectionAlert.hasWarning && (
-        <div style={styles.warningTip}>
-          ⚠️ 待收款: RM {collectionAlert.pendingAmount?.toLocaleString() || 0}
-          <br />
-          <small>建议先收款再分配新点数</small>
-        </div>
-      )}
     </div>
   );
 };
 
 const styles = {
-  container: {
-    width: '100%'
+  container: { width: '100%' },
+  
+  header: {
+    marginBottom: '1.5rem'
   },
+  title: {
+    fontSize: '1.5rem',
+    fontWeight: 'bold',
+    color: '#1f2937',
+    margin: '0 0 0.5rem 0'
+  },
+  subtitle: {
+    fontSize: '0.875rem',
+    color: '#6b7280'
+  },
+
+  controls: {
+    display: 'flex',
+    gap: '1rem',
+    marginBottom: '1.5rem',
+    flexWrap: 'wrap',
+    alignItems: 'center'
+  },
+
   searchBox: {
+    flex: '1 1 300px',
     position: 'relative',
     display: 'flex',
-    alignItems: 'center',
-    background: '#f9fafb',
-    borderRadius: '8px',
-    padding: '0 1rem',
-    marginBottom: '1rem'
+    alignItems: 'center'
   },
   searchIcon: {
-    fontSize: '1.25rem',
-    marginRight: '0.5rem'
+    position: 'absolute',
+    left: '0.75rem',
+    fontSize: '1.25rem'
   },
   searchInput: {
-    flex: 1,
-    border: 'none',
-    background: 'transparent',
-    padding: '0.75rem 0',
+    width: '100%',
+    padding: '0.75rem 2.5rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
     fontSize: '0.875rem',
     outline: 'none'
   },
   clearButton: {
-    background: 'none',
+    position: 'absolute',
+    right: '0.5rem',
+    padding: '0.25rem 0.5rem',
+    background: '#ef4444',
+    color: 'white',
     border: 'none',
-    color: '#6b7280',
+    borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '1.25rem',
-    padding: '0.25rem'
+    fontSize: '0.875rem'
   },
-  toolbar: {
-    display: 'flex',
-    gap: '1rem',
-    marginBottom: '1.5rem',
-    flexWrap: 'wrap'
-  },
+
   filterGroup: {
     display: 'flex',
     alignItems: 'center',
@@ -433,186 +690,217 @@ const styles = {
     cursor: 'pointer',
     background: 'white'
   },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    gap: '1.5rem',
-    marginBottom: '1.5rem'
+
+  tableWrapper: {
+    overflowX: 'auto',
+    background: 'white',
+    borderRadius: '12px',
+    border: '2px solid #e5e7eb'
   },
-  card: {
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  tableHeader: {
+    background: '#f9fafb',
+    borderBottom: '2px solid #e5e7eb'
+  },
+  th: {
+    padding: '1rem',
+    textAlign: 'left',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151',
+    whiteSpace: 'nowrap'
+  },
+  tableRow: {
+    borderBottom: '1px solid #e5e7eb',
+    transition: 'background 0.2s'
+  },
+  td: {
+    padding: '1rem',
+    fontSize: '0.875rem',
+    color: '#1f2937'
+  },
+
+  nameCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  nameText: {
+    fontWeight: '600',
+    color: '#1f2937'
+  },
+  englishName: {
+    fontSize: '0.75rem',
+    color: '#9ca3af'
+  },
+
+  phoneText: {
+    fontFamily: 'monospace',
+    color: '#6b7280'
+  },
+
+  balanceText: {
+    fontWeight: '600',
+    color: '#10b981'
+  },
+  revenueText: {
+    fontWeight: '600',
+    color: '#6366f1'
+  },
+
+  rateCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  rateText: {
+    fontWeight: 'bold',
+    fontSize: '0.875rem'
+  },
+  rateBar: {
+    width: '60px',
+    height: '4px',
+    background: '#e5e7eb',
+    borderRadius: '2px',
+    overflow: 'hidden'
+  },
+  rateBarFill: {
+    height: '100%',
+    borderRadius: '2px'
+  },
+
+  badge: {
+    display: 'inline-block',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    whiteSpace: 'nowrap'
+  },
+  badgeActive: {
+    background: '#d1fae5',
+    color: '#065f46'
+  },
+  badgeWarning: {
+    background: '#fef3c7',
+    color: '#92400e'
+  },
+  badgeHighRisk: {
+    background: '#fee2e2',
+    color: '#991b1b'
+  },
+  badgeInactive: {
+    background: '#f3f4f6',
+    color: '#6b7280'
+  },
+
+  actionButtons: {
+    display: 'flex',
+    gap: '0.5rem'
+  },
+  actionButton: {
+    padding: '0.5rem 0.75rem',
+    background: '#f3f4f6',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    transition: 'all 0.2s'
+  },
+  collectionButton: {
+    background: '#fef3c7',
+    borderColor: '#fbbf24'
+  },
+
+  expandedCell: {
+    padding: '0',
+    background: '#f9fafb'
+  },
+
+  detailsContainer: {
+    padding: '1.5rem',
+    background: '#ffffff'
+  },
+  detailsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '1rem',
+    marginBottom: '1rem'
+  },
+
+  detailCard: {
     background: '#fafafa',
     border: '2px solid #e5e7eb',
-    borderRadius: '12px',
-    padding: '1.5rem',
-    transition: 'all 0.2s',
-    position: 'relative'
+    borderRadius: '8px',
+    padding: '1rem'
   },
-  cardHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '1rem',
-    marginBottom: '1.5rem'
-  },
-  avatar: {
-    width: '60px',
-    height: '60px',
-    borderRadius: '12px',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    flexShrink: 0
-  },
-  cardHeaderInfo: {
-    flex: 1
-  },
-  sellerName: {
-    margin: '0 0 0.5rem 0',
-    fontSize: '1.125rem',
-    fontWeight: '600',
-    color: '#1f2937'
-  },
-  sellerMeta: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '0.5rem',
-    alignItems: 'center'
-  },
-  tagBadge: {
-    padding: '0.25rem 0.5rem',
-    borderRadius: '6px',
-    fontSize: '0.75rem',
-    fontWeight: '600',
-    color: 'white'
-  },
-  department: {
-    fontSize: '0.75rem',
-    color: '#6b7280'
-  },
-  alertBadge: {
-    position: 'absolute',
-    top: '1rem',
-    right: '1rem',
-    padding: '0.25rem 0.75rem',
-    borderRadius: '12px',
-    fontSize: '0.75rem',
-    fontWeight: '600'
-  },
-  statsRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    marginBottom: '1rem',
-    padding: '1rem',
-    background: 'white',
-    borderRadius: '8px'
-  },
-  stat: {
-    flex: 1,
-    textAlign: 'center'
-  },
-  statLabel: {
-    fontSize: '0.75rem',
-    color: '#6b7280',
-    marginBottom: '0.25rem'
-  },
-  statValue: {
-    fontSize: '1rem',
-    fontWeight: '600',
-    color: '#1f2937'
-  },
-  statDivider: {
-    width: '1px',
-    height: '40px',
-    background: '#e5e7eb'
-  },
-  collectionRow: {
-    display: 'flex',
-    gap: '1rem',
-    marginBottom: '0.75rem',
-    padding: '0.75rem',
-    background: 'white',
-    borderRadius: '8px'
-  },
-  collectionItem: {
-    flex: 1,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  collectionLabel: {
-    fontSize: '0.75rem',
-    color: '#6b7280'
-  },
-  collectionValue: {
-    fontSize: '0.875rem',
-    fontWeight: '600'
-  },
-  sourceRow: {
-    display: 'flex',
-    gap: '1rem',
-    marginBottom: '1rem',
-    padding: '0.75rem',
-    background: '#f3f4f6',
-    borderRadius: '8px'
-  },
-  sourceItem: {
-    flex: 1,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  sourceLabel: {
-    fontSize: '0.75rem',
-    color: '#6b7280'
-  },
-  sourceValue: {
+  detailCardTitle: {
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#374151'
-  },
-  actions: {
-    display: 'flex',
-    gap: '0.5rem',
+    color: '#374151',
     marginBottom: '0.75rem'
   },
-  primaryActionButton: {
+  detailRows: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  detailRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '0.875rem',
+    color: '#6b7280'
+  },
+  timestampText: {
+    fontSize: '0.75rem',
+    color: '#9ca3af'
+  },
+
+  alertMessage: {
+    marginTop: '0.5rem',
+    padding: '0.5rem',
+    background: '#fef3c7',
+    border: '1px solid #fbbf24',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    color: '#92400e'
+  },
+
+  detailActions: {
+    display: 'flex',
+    gap: '1rem',
+    paddingTop: '1rem',
+    borderTop: '2px solid #e5e7eb'
+  },
+  detailActionButton: {
     flex: 1,
     padding: '0.75rem',
     background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
-    fontSize: '0.875rem',
-    fontWeight: '600',
     cursor: 'pointer',
-    transition: 'transform 0.2s'
+    fontSize: '0.875rem',
+    fontWeight: '600'
   },
-  warningTip: {
-    background: '#fef3c7',
-    border: '2px solid #fbbf24',
-    color: '#92400e',
-    padding: '0.75rem',
-    borderRadius: '8px',
-    fontSize: '0.75rem',
-    textAlign: 'center'
+  secondaryButton: {
+    background: 'white',
+    color: '#374151',
+    border: '2px solid #e5e7eb'
   },
+
   emptyState: {
     textAlign: 'center',
-    padding: '3rem 1rem',
+    padding: '3rem',
     color: '#6b7280'
   },
   emptyIcon: {
     fontSize: '4rem',
     marginBottom: '1rem'
-  },
-  resultStats: {
-    textAlign: 'center',
-    fontSize: '0.875rem',
-    color: '#6b7280',
-    padding: '1rem'
   }
 };
 
