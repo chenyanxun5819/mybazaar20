@@ -12,53 +12,67 @@
       "runtime": "nodejs22",
       "region": "asia-southeast1",
       "endpoints": {
-        "loginEventManager": {
-          "httpsOptions": {
-            "invoker": [
-              "hosting-invoker@mybazaar-c4881.iam.gserviceaccount.com"
-            ]
-          },
-          "region": "us-central1"
-        },
-        "loginEventManagerHttp": {
-          "httpsOptions": {
-            "invoker": ["public"]
-          },
-          "region": "us-central1"
-        },
         "pingHttp": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         },
         "loginUniversalHttp": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
+          },
+          "region": "us-central1"
+        },
+        "eventManagerLoginHttp": {
+          "httpsOptions": {
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         },
         "sendOtpHttp": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         },
         "verifyOtpHttp": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         },
         "generateTestOtp": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         },
         "updateUserRoles": {
           "httpsOptions": {
-            "invoker": ["public"]
+            "invoker": [
+              "public"
+            ]
+          },
+          "region": "us-central1"
+        },
+        "batchImportUsersHttp": {
+          "httpsOptions": {
+            "invoker": [
+              "public"
+            ]
           },
           "region": "us-central1"
         }
@@ -81,95 +95,52 @@
     ],
     "rewrites": [
       {
-        "source": "/api/loginEventManager",
-        "function": {
-          "functionId": "loginEventManager",
-          "region": "us-central1"
-        }
+        "source": "/api/sendOtpHttp",
+        "function": "sendOtpHttp"
       },
       {
-        "source": "/api/createEventManager",
-        "function": {
-          "functionId": "createEventManagerHttp",
-          "region": "us-central1"
-        }
+        "source": "/api/verifyOtpHttp",
+        "function": "verifyOtpHttp"
       },
       {
-        "source": "/api/loginEventManagerHttp",
-        "function": {
-          "functionId": "loginEventManagerHttp",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/ping",
-        "function": {
-          "functionId": "pingHttp",
-          "region": "us-central1"
-        }
+        "source": "/api/eventManagerLoginHttp",
+        "function": "eventManagerLoginHttp"
       },
       {
         "source": "/api/loginUniversalHttp",
-        "function": {
-          "functionId": "loginUniversalHttp",
-          "region": "us-central1"
-        }
+        "function": "loginUniversalHttp"
       },
       {
-        "source": "/api/addDepartment",
-        "function": {
-          "functionId": "addDepartment",
-          "region": "us-central1"
-        }
+        "source": "/api/createEventManagerHttp",
+        "function": "createEventManagerHttp"
       },
       {
-        "source": "/api/deleteDepartment",
-        "function": {
-          "functionId": "deleteDepartment",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/reorderDepartments",
-        "function": {
-          "functionId": "reorderDepartments",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/departments",
-        "function": {
-          "functionId": "departmentsHttp",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/batchImportUsers",
-        "function": {
-          "functionId": "batchImportUsersHttp",
-          "region": "us-central1"
-        }
+        "source": "/api/batchImportUsersHttp",
+        "function": "batchImportUsersHttp"
       },
       {
         "source": "/api/updateUserRoles",
-        "function": {
-          "functionId": "updateUserRoles",
-          "region": "us-central1"
-        }
+        "function": "updateUserRoles"
       },
       {
-        "source": "/api/sendOtp",
-        "function": {
-          "functionId": "sendOtpHttp",
-          "region": "us-central1"
-        }
+        "source": "/api/createUserByEventManagerHttp",
+        "function": "createUserByEventManagerHttp"
       },
       {
-        "source": "/api/verifyOtp",
-        "function": {
-          "functionId": "verifyOtpHttp",
-          "region": "us-central1"
-        }
+        "source": "/api/departmentsHttp",
+        "function": "departmentsHttp"
+      },
+      {
+        "source": "/api/deleteEventHttp",
+        "function": "deleteEventHttp"
+      },
+      {
+        "source": "/api/checkDuplicateUsers",
+        "function": "checkDuplicateUsers"
+      },
+      {
+        "source": "/api/loginWithPin",
+        "function": "loginWithPin"
       },
       {
         "source": "**",

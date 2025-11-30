@@ -12,16 +12,63 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-
+    // ========== Event 集合（新架构 - 顶级） ==========
+    match /Event/{eventId} {
+      // 所有已认证用户可读
+      allow read: if isAuthenticated();
+      allow write: if false;
+      
+      // ========== users 子集合 ==========
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+        
+        // users 的子集合
+        match /{document=**} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated();
+        }
+      }
+      
+      // ========== sellerManagerStats 子集合 ==========
+      match /sellerManagerStats/{smId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== departmentStats 子集合 ==========
+      match /departmentStats/{deptCode} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== pointAllocations 子集合 ==========
+      match /pointAllocations/{allocationId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+      
+      // ========== transactions 子集合 ==========
+      match /transactions/{transactionId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      // ========== 其他子集合 ==========
+      match /{document=**} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+    
     // ========== organizations 集合（旧架构兼容） ==========
     match /organizations/{orgId} {
-      // 開放未登入讀取組織基本資訊（供登入頁顯示校名/驗證 orgCode）
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
       
       // ========== events 子集合 ==========
       match /events/{eventId} {
-        allow read: if true; // 允许未登录用户读取活动信息（用于登录查找）
+        allow read: if isAuthenticated();
         allow create, delete: if isAdmin();
         allow update: if isAdmin() || isAuthenticated();
         
@@ -46,12 +93,8 @@ service cloud.firestore {
     }
     
     // ========== OTP Sessions（登录验证码） ==========
-    // 特殊情况：OTP 会话在登录前创建（用户未认证），所以需要允许未认证请求
-    // 但应该通过 Cloud Functions sendOtpHttp 创建（使用 Admin SDK），客户端不应直接写入
     match /otp_sessions/{sessionId} {
-      allow read: if true;  // 允许任何人读取 OTP 会话（进行验证）
-      allow write: if false;  // 禁止直接写入 OTP 会话
-      // Cloud Functions 通过 Admin SDK 创建 OTP 会话，不受此规则限制
+      allow read, write: if isAuthenticated();
     }
     
     // ========== GlobalUsers 集合 ==========

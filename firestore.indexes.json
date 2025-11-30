@@ -4,19 +4,54 @@
       "collectionGroup": "otp_sessions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "phoneNumber", "order": "ASCENDING" },
-        { "fieldPath": "orgCode", "order": "ASCENDING" },
-        { "fieldPath": "eventCode", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "phoneNumber",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "orgCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "eventCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "roles", "order": "ASCENDING" },
-        { "fieldPath": "managedBy", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "roles",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "managedBy",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "eventCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "orgCode",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

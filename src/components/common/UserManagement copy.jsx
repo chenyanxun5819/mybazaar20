@@ -53,8 +53,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   });
 
 
-  // 🆕 规则设定模态框
-  const [showRulesModal, setShowRulesModal] = useState(false);
 
   // 角色分配状态
   const [selectedRoles, setSelectedRoles] = useState({

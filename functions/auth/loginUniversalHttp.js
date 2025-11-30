@@ -230,6 +230,9 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       englishName: userData.basicInfo?.englishName || '',
       chineseName: userData.basicInfo?.chineseName || '',
       roles: roles, // 返回所有角色
+      managedDepartments: (userData.sellerManager?.managedDepartments || userData.roleSpecificData?.sellerManager?.managedDepartments || []),
+      department: userData.identityInfo?.department || '',
+      identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
       roleSpecificData: userData.roleSpecificData || {} // 返回角色特定数据（可选）
     });
 

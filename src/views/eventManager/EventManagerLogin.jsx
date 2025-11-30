@@ -1,516 +1,419 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db, auth } from '../../config/firebase';
-import { collection, collectionGroup, query, where, getDocs, limit } from 'firebase/firestore';
+import { auth } from '../../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
 
+/**
+ * Event Manager 專用登錄頁面
+ * 
+ * @route /event-manager/:orgEventCode/login
+ * @example /event-manager/fch-2025/login
+ * 
+ * @description
+ * 1. 從 URL 獲取 orgEventCode (格式: orgCode-eventCode)
+ * 2. Event Manager 輸入手機號和密碼進行驗證
+ * 3. 驗證通過後發送 SMS OTP 到手機
+ * 4. 輸入 OTP 驗證成功後自動跳轉到 Event Manager Dashboard
+ * 
+ * @architecture
+ * - Event Manager 存儲在: organizations/{orgId}/events/{eventId}/eventManager (物件)
+ * - 不在 users 集合中
+ */
 const EventManagerLogin = () => {
   const navigate = useNavigate();
-  const { combinedCode } = useParams(); // 获取 "chhsban-2025" 格式的参数
+  const { orgEventCode } = useParams(); // 例如: "fch-2025"
+  
+  // 解析 orgEventCode
+  const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
+  const isValidOrgEventCode = !!orgCode && !!eventCode;
   
   const [formData, setFormData] = useState({
     phoneNumber: '',
     password: ''
   });
   
-  const [orgCode, setOrgCode] = useState('');
-  const [eventCode, setEventCode] = useState('');
-  const [orgId, setOrgId] = useState(''); // 保存组织 ID
-  const [eventId, setEventId] = useState(''); // 保存活动 ID
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [eventManagerData, setEventManagerData] = useState(null);
   
-  // OTP 相关状态
-  const [showOtpInput, setShowOtpInput] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [sessionId, setSessionId] = useState('');
-  const [sendingOtp, setSendingOtp] = useState(false);
+  // SMS OTP 相關狀態
+  const [otpStep, setOtpStep] = useState(false); // false: 密碼登錄, true: OTP 驗證
+  const [otp, setOtp] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0); // OTP 倒計時
 
-  // 解析 URL 参数
+  // OTP 倒計時
   useEffect(() => {
-    if (combinedCode) {
-      const parts = combinedCode.split('-');
-      if (parts.length >= 2) {
-        const org = parts[0];
-        const event = parts.slice(1).join('-');
-        setOrgCode(org);
-        setEventCode(event);
-        console.log('[EventManagerLogin] 解析 URL:', { org, event });
-      } else {
-        setError('URL 格式不正确，应为: /event-admin/{orgCode}-{eventCode}');
-      }
-    }
-  }, [combinedCode]);
+    if (otpTimer <= 0) return;
+    const timer = setTimeout(() => setOtpTimer((t) => t - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [otpTimer]);
 
-  // SHA256 哈希函数（与后端一致）
-  const sha256 = async (message) => {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    if (error) setError('');
-  };
-
-  const validateForm = () => {
-    if (!orgCode || !eventCode) {
-      setError('URL 格式不正确');
-      return false;
-    }
-
-    if (!formData.phoneNumber || !formData.password) {
-      setError('请填写手机号和密码');
-      return false;
-    }
-
-    // 验证手机号格式（马来西亚格式）
-    if (!/^01\d{8,9}$/.test(formData.phoneNumber)) {
-      setError('手机号格式不正确，请输入01开头的10-11位数字');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-
+  /**
+   * 發送 OTP
+   */
+  const sendOtp = async (phoneNumber) => {
     try {
-      setLoading(true);
-      setError('');
-
-      console.log('[EventManagerLogin] 开始验证密码...', { orgCode, eventCode });
-
-      // ✅ Step 1: 使用 collectionGroup 查找活动（在所有 organizations 的 events 子集合中查找）
-      const eventsQuery = query(
-        collectionGroup(db, 'events'),  // 查询所有 events 子集合
-        where('eventCode', '==', eventCode),
-        where('orgCode', '==', orgCode),  // 组合条件确保唯一性
-        limit(1)
-      );
-      const eventsSnapshot = await getDocs(eventsQuery);
-
-      if (eventsSnapshot.empty) {
-        throw new Error('活动代码不存在');
-      }
-
-      const eventDoc = eventsSnapshot.docs[0];
-      const foundEventId = eventDoc.id;
-      setEventId(foundEventId); // 保存到 state
-      const eventData = eventDoc.data();
-
-      // ✅ Step 2: 从 Event 文档的路径中提取 organizationId
-      // eventDoc.ref.path 格式: "organizations/{orgId}/events/{eventId}"
-      const pathParts = eventDoc.ref.path.split('/');
-      const foundOrgId = pathParts[1];  // organizations/{orgId}/events/{eventId}
+      console.log('[EventManagerLogin] 發送 OTP 到:', phoneNumber);
       
-      if (!foundOrgId) {
-        throw new Error('无法获取组织信息');
-      }
-      setOrgId(foundOrgId); // 保存到 state
-
-      console.log('[EventManagerLogin] 找到活动:', foundEventId, '组织:', foundOrgId);
-
-      // ✅ Step 3: 从新架构读取 Event Manager 对象（而非 admins 数组）
-      const eventManager = eventData.eventManager;
-      
-      if (!eventManager) {
-        throw new Error('此活动没有指派 Event Manager');
-      }
-
-      // 验证手机号是否匹配
-      if (eventManager.phoneNumber !== formData.phoneNumber) {
-        throw new Error('手机号不正确或您不是此活动的 Event Manager');
-      }
-
-      console.log('[EventManagerLogin] 找到 Event Manager:', eventManager.englishName || eventManager.chineseName);
-
-      // ✅ Step 4: 验证密码
-      if (!eventManager.passwordSalt || !eventManager.password) {
-        throw new Error('Event Manager 信息不完整，缺少密码验证数据');
-      }
-
-      const passwordHash = await sha256(formData.password + eventManager.passwordSalt);
-      
-      if (passwordHash !== eventManager.password) {
-        throw new Error('密码错误');
-      }
-
-      console.log('[EventManagerLogin] 密码验证成功，准备发送 OTP');
-
-      // ✅ Step 5: 发送 OTP
-      setSendingOtp(true);
-      const otpResp = await fetch('/api/sendOtp', {
+      const resp = await fetch('/api/sendOtpHttp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          phoneNumber: formData.phoneNumber,
-          orgCode: orgCode,
-          eventCode: eventCode
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber, orgCode, eventCode })
       });
 
-      if (!otpResp.ok) {
-        const errorData = await otpResp.json();
-        throw new Error(errorData.error?.message || '发送 OTP 失败');
+      const data = await resp.json();
+      
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error?.message || 'OTP 發送失敗');
       }
 
-      const otpData = await otpResp.json();
-      setSessionId(otpData.sessionId);
-      setShowOtpInput(true);
+      console.log('[EventManagerLogin] OTP 發送成功');
+      setOtpTimer(120); // 2分鐘倒計時
       
-      console.log('[EventManagerLogin] OTP 已发送，sessionId:', otpData.sessionId);
-
     } catch (err) {
-      console.error('[EventManagerLogin] 错误:', err);
-      setError(err.message || '登录失败，请检查输入信息');
-    } finally {
-      setLoading(false);
-      setSendingOtp(false);
+      console.error('[EventManagerLogin] OTP 發送錯誤:', err);
+      throw err;
     }
   };
 
-  const handleVerifyOtp = async (e) => {
+  /**
+   * 處理密碼登錄提交 - 第一步
+   */
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     
-    if (!otpCode || otpCode.length !== 6) {
-      setError('请输入6位 OTP 验证码');
+    if (!isValidOrgEventCode) {
+      setError('無效的活動連結，請檢查網址是否正確');
       return;
     }
+    
+    setLoading(true);
 
     try {
-      setLoading(true);
-      setError('');
-
-      console.log('[EventManagerLogin] 验证 OTP...');
-
-      // 验证 OTP
-      const verifyResp = await fetch('/api/verifyOtp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          phoneNumber: formData.phoneNumber,
-          otp: otpCode,
-          orgCode: orgCode,
-          eventCode: eventCode
-        })
+      console.log('[EventManagerLogin] 密碼驗證請求:', { 
+        orgCode, 
+        eventCode, 
+        phoneNumber: formData.phoneNumber 
       });
 
-      if (!verifyResp.ok) {
-        const errorData = await verifyResp.json();
-        throw new Error(errorData.error?.message || 'OTP 验证失败');
-      }
-
-      const { customToken } = await verifyResp.json();
-      if (!customToken || typeof customToken !== 'string') {
-        throw new Error('后端未返回有效 customToken');
-      }
-
-      console.log('[EventManagerLogin] 收到 customToken 長度:', customToken.length);
-      // 簡單解析 JWT 結構（若格式正確應有三段）
-      const parts = customToken.split('.');
-      if (parts.length === 3) {
-        try {
-          const headerJson = JSON.parse(atob(parts[0]));
-          console.log('[EventManagerLogin] Token header:', headerJson);
-        } catch (_) {}
-      } else {
-        console.warn('[EventManagerLogin] customToken 不是標準 JWT 三段格式');
-      }
-
-      try {
-        await signInWithCustomToken(auth, customToken);
-      } catch (authErr) {
-        console.error('[EventManagerLogin] signInWithCustomToken 失敗', {
-          code: authErr.code,
-          message: authErr.message,
-          serverResponse: authErr?.customData?.serverResponse || null
-        });
-        throw authErr; // 交給外層 catch 顯示
-      }
-
-      console.log('[EventManagerLogin] 登录成功');
-
-      // 保存登录信息到 localStorage（包含 organizationId 和 eventId）
-      localStorage.setItem('eventManagerInfo', JSON.stringify({
-        organizationId: orgId,
-        eventId: eventId,
-        orgCode: orgCode,
+      // 調用 Event Manager 專用登錄端點
+      const url = '/api/eventManagerLoginHttp';
+      
+      const payload = {
+        orgCode: orgCode.toLowerCase(),
         eventCode: eventCode,
-        phone: formData.phoneNumber,
-        role: 'eventManager',
-        loginAt: new Date().toISOString()
-      }));
+        phoneNumber: formData.phoneNumber,
+        password: formData.password
+      };
 
-      // 跳转到 EventManagerDashboard
-      navigate(`/event-manager/${orgCode}-${eventCode}/dashboard`);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await resp.text();
+      let data = null;
+      
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (parseError) {
+        console.warn('[EventManagerLogin] 非 JSON 響應, status:', resp.status);
+        if (resp.ok) {
+          throw new Error('伺服器回傳非 JSON，請稍後重試或聯絡管理員');
+        }
+        throw new Error(`HTTP ${resp.status}: ${text?.substring(0, 200) || '非 JSON 響應'}`);
+      }
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || `請求失敗 (HTTP ${resp.status})`);
+      }
+
+      console.log('[EventManagerLogin] 密碼驗證成功');
+
+      // 保存 Event Manager 數據和 Custom Token
+      const eventManagerInfo = {
+        phoneNumber: formData.phoneNumber,
+        orgCode,
+        eventCode,
+        orgEventCode,
+        customToken: data.customToken,
+        organizationId: data.organizationId,
+        eventId: data.eventId
+      };
+      
+      setEventManagerData(eventManagerInfo);
+
+      // 發送 OTP
+      await sendOtp(formData.phoneNumber);
+
+      // 切換到 OTP 驗證步驟
+      setOtpStep(true);
+      setOtp('');
 
     } catch (err) {
-      console.error('[EventManagerLogin] OTP 或登入流程失败:', err);
-      // 若是 Firebase Auth 錯誤，嘗試輸出更底層 serverResponse
-      const serverResp = err?.customData?.serverResponse;
-      if (serverResp) {
-        try {
-          const parsed = typeof serverResp === 'string' ? JSON.parse(serverResp) : serverResp;
-          console.error('[EventManagerLogin] Firebase serverResponse:', parsed);
-        } catch (_) {
-          console.error('[EventManagerLogin] serverResponse(raw):', serverResp);
-        }
+      console.error('[EventManagerLogin] 錯誤:', err);
+      const msg = err?.message || '登錄失敗，請重試';
+      
+      if (/組織|活動|not[- ]?found/i.test(msg)) {
+        setError('找不到該組織或活動');
+      } else if (/手機號|密碼|不正確|incorrect|invalid/i.test(msg)) {
+        setError('手機號或密碼不正確');
+      } else if (/OTP|驗證碼/i.test(msg)) {
+        setError('驗證碼發送失敗，請重試');
+      } else {
+        setError(msg);
       }
-      setError(err.message || 'OTP 验证/登录失败');
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * 處理 OTP 驗證提交 - 第二步
+   */
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    
+    if (otp.length !== 6) {
+      setError('請輸入 6 位驗證碼');
+      return;
+    }
+    
+    setOtpLoading(true);
+
+    try {
+      console.log('[EventManagerLogin] OTP 驗證請求');
+
+      // 驗證 OTP
+      const verifyResp = await fetch('/api/verifyOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: eventManagerData.phoneNumber,
+          otp: otp,
+          orgCode: eventManagerData.orgCode,
+          eventCode: eventManagerData.eventCode
+        })
+      });
+
+      const verifyData = await verifyResp.json();
+      
+      if (!verifyResp.ok || !verifyData.success) {
+        throw new Error(verifyData.error?.message || 'OTP 驗證失敗');
+      }
+
+      console.log('[EventManagerLogin] OTP 驗證成功');
+
+      // 使用 Custom Token 登錄 Firebase Auth
+      const userCredential = await signInWithCustomToken(auth, eventManagerData.customToken);
+      console.log('[EventManagerLogin] Firebase Auth 登錄成功:', userCredential.user.uid);
+
+      // 保存 Event Manager 信息到 localStorage（Dashboard 需要）
+      localStorage.setItem('eventManagerInfo', JSON.stringify(eventManagerData));
+      console.log('[EventManagerLogin] 已保存 eventManagerInfo 到 localStorage');
+
+      // 跳轉到 Event Manager Dashboard
+      const dashboardPath = `/event-manager/${eventManagerData.orgEventCode}/dashboard`;
+      console.log('[EventManagerLogin] 跳轉到:', dashboardPath);
+      navigate(dashboardPath);
+
+    } catch (err) {
+      console.error('[EventManagerLogin] OTP 驗證錯誤:', err);
+      const msg = err?.message || 'OTP 驗證失敗';
+      
+      if (/過期|expired/i.test(msg)) {
+        setError('驗證碼已過期，請重新發送');
+      } else if (/錯誤|incorrect|invalid/i.test(msg)) {
+        setError('驗證碼不正確，請重試');
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  /**
+   * 重新發送 OTP
+   */
   const handleResendOtp = async () => {
     try {
-      setSendingOtp(true);
+      await sendOtp(eventManagerData.phoneNumber);
       setError('');
-
-      // 直接从已保存的 eventId 发送 OTP（无需重新查询）
-      if (!eventId) {
-        throw new Error('缺少 eventId，请先完成初始登录步骤');
-      }
-
-      const otpResp = await fetch('/api/sendOtp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          phoneNumber: formData.phoneNumber,
-          orgCode: orgCode,
-          eventCode: eventCode
-        })
-      });
-
-      if (!otpResp.ok) {
-        throw new Error('重新发送 OTP 失败');
-      }
-
-      const otpData = await otpResp.json();
-      setSessionId(otpData.sessionId);
-      
-      alert('OTP 已重新发送到您的手机');
-
+      console.log('[EventManagerLogin] 驗證碼已重新發送');
     } catch (err) {
-      console.error('[EventManagerLogin] 重新发送 OTP 失败:', err);
-      setError(err.message || '重新发送失败');
-    } finally {
-      setSendingOtp(false);
+      setError('驗證碼發送失敗，請重試');
     }
   };
 
-  // 如果没有解析到 orgCode 和 eventCode，显示错误
-  if (!combinedCode) {
+  /**
+   * 返回密碼輸入界面
+   */
+  const handleBackToPassword = () => {
+    setOtpStep(false);
+    setOtp('');
+    setError('');
+    setEventManagerData(null);
+  };
+
+  // OTP 畫面
+  if (otpStep) {
     return (
       <div style={styles.container}>
-        <div style={styles.loginBox}>
-          <div style={styles.errorBox}>
-            ⚠️ URL 格式错误
-            <p style={styles.errorText}>
-              请使用正确的格式访问：
-              <br />
-              <code>/event-admin/{'{orgCode}-{eventCode}'}</code>
-            </p>
+        <div style={styles.loginCard}>
+          <div style={styles.header}>
+            <div style={styles.logo}>📱</div>
+            <h1 style={styles.title}>短信驗證</h1>
+            <p style={styles.subtitle}>驗證碼已發送到 {eventManagerData?.phoneNumber}</p>
+            {isValidOrgEventCode && (
+              <div style={styles.eventBadge}>
+                <span style={styles.eventBadgeIcon}>🏷️</span>
+                <span>{orgCode.toUpperCase()}-{eventCode}</span>
+              </div>
+            )}
           </div>
+
+          <form onSubmit={handleOtpSubmit} style={styles.form}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>驗證碼 (6位數字) *</label>
+              <input
+                type="text"
+                maxLength="6"
+                style={styles.otpInput}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                required
+              />
+              <small style={styles.hint}>請輸入收到的 6 位驗證碼</small>
+            </div>
+
+            {error && (
+              <div style={styles.errorBox}>⚠️ {error}</div>
+            )}
+
+            <button
+              type="submit"
+              style={{
+                ...styles.submitButton,
+                opacity: otpLoading ? 0.6 : 1,
+                cursor: otpLoading ? 'not-allowed' : 'pointer'
+              }}
+              disabled={otpLoading}
+            >
+              {otpLoading ? '驗證中...' : '確認驗證'}
+            </button>
+
+            {otpTimer <= 0 ? (
+              <button 
+                type="button" 
+                style={styles.resendButton} 
+                onClick={handleResendOtp}
+              >
+                重新發送驗證碼
+              </button>
+            ) : (
+              <div style={styles.timerInfo}>
+                重新發送倒數: {Math.floor(otpTimer / 60)}:{String(otpTimer % 60).padStart(2, '0')}
+              </div>
+            )}
+          </form>
+
+          <button 
+            style={styles.backToLoginButton} 
+            onClick={handleBackToPassword}
+          >
+            ← 返回登入
+          </button>
         </div>
       </div>
     );
   }
 
+  // 密碼畫面
   return (
     <div style={styles.container}>
-      <div style={styles.loginBox}>
-        {/* Logo 和标题 */}
+      <div style={styles.loginCard}>
         <div style={styles.header}>
-          <div style={styles.logo}>
-            <span style={styles.logoIcon}>🎪</span>
-          </div>
-          <h1 style={styles.title}>Event Manager 登录</h1>
-          <p style={styles.subtitle}>义卖会管理系统</p>
+          <div style={styles.logo}>🎪</div>
+          <h1 style={styles.title}>活動主任登入</h1>
+          <p style={styles.subtitle}>Event Manager Login</p>
+          {isValidOrgEventCode && (
+            <div style={styles.eventBadge}>
+              <span style={styles.eventBadgeIcon}>🏷️</span>
+              <span>{orgCode.toUpperCase()}-{eventCode}</span>
+            </div>
+          )}
         </div>
 
-        {/* 活动信息显示 */}
-        <div style={styles.infoBox}>
-          <strong>📌 管理员登录</strong>
-          <div style={styles.eventInfo}>
-            <div style={styles.eventInfoRow}>
-              <span style={styles.label}>组织代码:</span>
-              <span style={styles.value}>{orgCode}</span>
-            </div>
-            <div style={styles.eventInfoRow}>
-              <span style={styles.label}>活动代码:</span>
-              <span style={styles.value}>{eventCode}</span>
+        {!isValidOrgEventCode && (
+          <div style={styles.errorBox}>
+            ⚠️ 無效的活動連結
+            <div style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+              正確格式: /event-manager/組織碼-活動碼/login（例如: /event-manager/fch-2025/login）
             </div>
           </div>
-        </div>
-
-        {/* 登录表单 或 OTP 验证表单 */}
-        {!showOtpInput ? (
-          // 密码登录表单
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                手机号 <span style={styles.required}>*</span>
-              </label>
-              <input
-                type="tel"
-                name="phoneNumber"
-                value={formData.phoneNumber}
-                onChange={handleChange}
-                placeholder="01xxxxxxxx"
-                style={styles.input}
-                disabled={loading}
-                maxLength="11"
-                autoComplete="tel"
-              />
-            </div>
-
-            <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                密码 <span style={styles.required}>*</span>
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                placeholder="请输入密码"
-                style={styles.input}
-                disabled={loading}
-                autoComplete="current-password"
-              />
-            </div>
-
-            {error && (
-              <div style={styles.errorMessage}>
-                ⚠️ {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              style={{
-                ...styles.submitButton,
-                ...(loading ? styles.submitButtonDisabled : {})
-              }}
-              disabled={loading || sendingOtp}
-            >
-              {sendingOtp ? '发送 OTP 中...' : loading ? '验证中...' : '下一步'}
-            </button>
-          </form>
-        ) : (
-          // OTP 验证表单
-          <form onSubmit={handleVerifyOtp} style={styles.form}>
-            <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                OTP 验证码 <span style={styles.required}>*</span>
-              </label>
-              <input
-                type="text"
-                value={otpCode}
-                onChange={(e) => {
-                  setOtpCode(e.target.value.replace(/\D/g, ''));
-                  if (error) setError('');
-                }}
-                placeholder="请输入6位验证码"
-                style={styles.input}
-                disabled={loading}
-                maxLength="6"
-                autoComplete="one-time-code"
-              />
-            </div>
-
-            {error && (
-              <div style={styles.errorMessage}>
-                ⚠️ {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              style={{
-                ...styles.submitButton,
-                ...(loading ? styles.submitButtonDisabled : {})
-              }}
-              disabled={loading}
-            >
-              {loading ? '验证中...' : '验证并登录'}
-            </button>
-
-            <div style={styles.otpActions}>
-              <button
-                type="button"
-                onClick={handleResendOtp}
-                style={styles.resendButton}
-                disabled={sendingOtp}
-              >
-                {sendingOtp ? '发送中...' : '重新发送 OTP'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOtpInput(false);
-                  setOtpCode('');
-                  setSessionId('');
-                  setError('');
-                }}
-                style={styles.backButton}
-              >
-                返回
-              </button>
-            </div>
-          </form>
         )}
 
-        {/* 底部说明 */}
-        <div style={styles.footer}>
-          <p style={styles.footerText}>
-            💡 <strong>提示：</strong>这是管理员专用登录入口
-          </p>
-          <p style={styles.footerText}>
-            如需作为参与者（Seller/Customer）登录，请使用
-            <a 
-              href={`/login/${orgCode}-${eventCode}`}
-              style={styles.link}
-              onClick={(e) => {
-                e.preventDefault();
-                navigate(`/login/${orgCode}-${eventCode}`);
-              }}
-            >
-              普通登录入口
-            </a>
-          </p>
-        </div>
-      </div>
+        <form onSubmit={handlePasswordSubmit} style={styles.form}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>手機號 *</label>
+            <input
+              type="tel"
+              style={styles.input}
+              value={formData.phoneNumber}
+              onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+              placeholder="60123456789"
+              required
+              disabled={!isValidOrgEventCode}
+            />
+            <small style={styles.hint}>馬來西亞手機號（含國碼 60）</small>
+          </div>
 
-      {/* 装饰背景 */}
-      <div style={styles.backgroundDecoration}>
-        <div style={styles.circle1}></div>
-        <div style={styles.circle2}></div>
-        <div style={styles.circle3}></div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>密碼 *</label>
+            <input
+              type="password"
+              style={styles.input}
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="••••••••"
+              required
+              disabled={!isValidOrgEventCode}
+            />
+          </div>
+
+          {error && (
+            <div style={styles.errorBox}>⚠️ {error}</div>
+          )}
+
+          <button
+            type="submit"
+            style={{
+              ...styles.submitButton,
+              opacity: loading || !isValidOrgEventCode ? 0.6 : 1,
+              cursor: loading || !isValidOrgEventCode ? 'not-allowed' : 'pointer'
+            }}
+            disabled={loading || !isValidOrgEventCode}
+          >
+            {loading ? '驗證中...' : '下一步'}
+          </button>
+        </form>
+
+        <div style={styles.footer}>
+          <p style={styles.helpText}>忘記密碼？請聯絡平台管理員</p>
+          <p style={styles.helpText}>沒有登入連結？請向平台管理員索取</p>
+        </div>
       </div>
     </div>
   );
 };
 
+// 樣式定義（與 UniversalLogin 一致）
 const styles = {
   container: {
     minHeight: '100vh',
@@ -518,30 +421,23 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    padding: '2rem',
-    position: 'relative',
-    overflow: 'hidden'
+    padding: '1rem'
   },
-  loginBox: {
+  loginCard: {
     background: 'white',
-    borderRadius: '20px',
-    padding: '3rem',
-    maxWidth: '480px',
+    borderRadius: '16px',
+    padding: '2.5rem',
     width: '100%',
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-    position: 'relative',
-    zIndex: 1
+    maxWidth: '420px',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
   },
   header: {
     textAlign: 'center',
     marginBottom: '2rem'
   },
   logo: {
-    marginBottom: '1rem'
-  },
-  logoIcon: {
     fontSize: '4rem',
-    display: 'inline-block'
+    marginBottom: '1rem'
   },
   title: {
     fontSize: '2rem',
@@ -550,196 +446,127 @@ const styles = {
     margin: '0 0 0.5rem 0'
   },
   subtitle: {
-    fontSize: '1rem',
     color: '#6b7280',
-    margin: 0
+    margin: '0 0 1rem 0'
   },
-  infoBox: {
-    background: '#e0f2fe',
-    border: '1px solid #0284c7',
-    borderRadius: '12px',
-    padding: '1rem',
-    marginBottom: '2rem',
-    color: '#075985'
-  },
-  eventInfo: {
-    marginTop: '0.75rem'
-  },
-  eventInfoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
+  eventBadge: {
+    display: 'inline-flex',
     alignItems: 'center',
-    padding: '0.5rem 0',
-    borderBottom: '1px solid #bae6fd'
-  },
-  label: {
-    fontSize: '0.875rem',
-    color: '#0c4a6e'
-  },
-  value: {
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#0369a1'
-  },
-  errorBox: {
-    background: '#fee2e2',
-    border: '1px solid #fecaca',
-    borderRadius: '12px',
-    padding: '2rem',
-    textAlign: 'center',
-    color: '#991b1b'
-  },
-  errorText: {
-    marginTop: '1rem',
-    fontSize: '0.875rem',
-    lineHeight: '1.5'
-  },
-  form: {
-    marginBottom: '1.5rem'
-  },
-  formGroup: {
-    marginBottom: '1.5rem'
-  },
-  formLabel: {
-    display: 'block',
+    gap: '0.5rem',
+    background: '#f3f4f6',
+    padding: '0.5rem 1rem',
+    borderRadius: '20px',
     fontSize: '0.875rem',
     fontWeight: '600',
     color: '#374151',
+    marginTop: '1rem'
+  },
+  eventBadgeIcon: {
+    fontSize: '1.25rem'
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.5rem'
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  label: {
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: '#374151',
     marginBottom: '0.5rem'
   },
-  required: {
-    color: '#ef4444'
-  },
   input: {
-    width: '100%',
-    padding: '0.875rem',
+    padding: '0.75rem',
     border: '2px solid #e5e7eb',
-    borderRadius: '10px',
+    borderRadius: '8px',
     fontSize: '1rem',
     outline: 'none',
-    transition: 'all 0.3s',
-    boxSizing: 'border-box'
+    transition: 'border-color 0.2s'
   },
-  errorMessage: {
-    padding: '1rem',
+  otpInput: {
+    padding: '1.5rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '2rem',
+    textAlign: 'center',
+    letterSpacing: '0.5rem',
+    fontFamily: 'monospace',
+    outline: 'none',
+    transition: 'border-color 0.2s'
+  },
+  hint: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+    marginTop: '0.25rem'
+  },
+  errorBox: {
     background: '#fee2e2',
     color: '#991b1b',
-    borderRadius: '10px',
+    padding: '0.75rem',
+    borderRadius: '8px',
     fontSize: '0.875rem',
-    border: '1px solid #fecaca',
-    marginBottom: '1rem',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem'
+    border: '1px solid #fecaca'
   },
   submitButton: {
-    width: '100%',
     padding: '1rem',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     color: 'white',
     border: 'none',
-    borderRadius: '10px',
-    fontSize: '1.1rem',
+    borderRadius: '8px',
+    fontSize: '1rem',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'transform 0.2s',
-    boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed'
-  },
-  otpNotice: {
-    background: '#f0fdf4',
-    border: '1px solid #86efac',
-    borderRadius: '10px',
-    padding: '1rem',
-    marginBottom: '1.5rem'
-  },
-  otpNoticeText: {
-    fontSize: '0.875rem',
-    color: '#166534',
-    margin: 0,
-    lineHeight: '1.5'
-  },
-  otpActions: {
-    display: 'flex',
-    gap: '0.5rem',
-    marginTop: '1rem'
-  },
-  resendButton: {
-    flex: 1,
-    padding: '0.75rem',
-    background: '#f3f4f6',
-    color: '#374151',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-    fontWeight: '500'
-  },
-  backButton: {
-    flex: 1,
-    padding: '0.75rem',
-    background: 'white',
-    color: '#6b7280',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    cursor: 'pointer'
+    marginTop: '1rem',
+    transition: 'all 0.2s'
   },
   footer: {
-    textAlign: 'center',
-    paddingTop: '1.5rem',
-    borderTop: '1px solid #e5e7eb'
+    marginTop: '2rem',
+    textAlign: 'center'
   },
-  footerText: {
+  helpText: {
     fontSize: '0.875rem',
     color: '#6b7280',
     margin: '0.5rem 0'
   },
-  link: {
-    color: '#667eea',
-    textDecoration: 'none',
-    fontWeight: '600',
-    marginLeft: '0.25rem',
-    cursor: 'pointer'
+  backToLoginButton: {
+    width: '100%',
+    padding: '0.75rem',
+    background: '#f3f4f6',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    marginTop: '1rem'
   },
-  backgroundDecoration: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 0,
-    overflow: 'hidden'
+  resendButton: {
+    width: '100%',
+    padding: '0.75rem',
+    marginTop: '1rem',
+    background: '#f3f4f6',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   },
-  circle1: {
-    position: 'absolute',
-    width: '300px',
-    height: '300px',
-    borderRadius: '50%',
-    background: 'rgba(255, 255, 255, 0.1)',
-    top: '-150px',
-    left: '-150px'
-  },
-  circle2: {
-    position: 'absolute',
-    width: '400px',
-    height: '400px',
-    borderRadius: '50%',
-    background: 'rgba(255, 255, 255, 0.1)',
-    bottom: '-200px',
-    right: '-200px'
-  },
-  circle3: {
-    position: 'absolute',
-    width: '200px',
-    height: '200px',
-    borderRadius: '50%',
-    background: 'rgba(255, 255, 255, 0.1)',
-    top: '50%',
-    right: '10%'
+  timerInfo: {
+    width: '100%',
+    textAlign: 'center',
+    marginTop: '1rem',
+    padding: '0.75rem',
+    background: '#f0f4ff',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: '#667eea'
   }
 };
 

@@ -1175,6 +1175,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
       await addDoc(collection(db, 'organizations', organization.id, 'events'), {
         eventCode: formData.eventCode,
+        orgCode: organization.orgCode,
         eventName: {
           'en': formData.eventNameEN,
           'zh-CN': formData.eventNameZH

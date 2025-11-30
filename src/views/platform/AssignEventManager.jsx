@@ -12,9 +12,9 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
     identityId: '',
     department: ''
   });
-    // 部門選項（根據 organization.departments）
-    const availableDepartments = organization.departments?.filter(dep => dep.isActive) || [];
-  
+  // 部門選項（根據 organization.departments）
+  const availableDepartments = organization.departments?.filter(dep => dep.isActive) || [];
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -64,7 +64,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
@@ -73,14 +73,14 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      console.log('[AssignEventManager] Calling /api/createEventManager via HTTP...');
+      console.log('[AssignEventManager] Calling /api/createEventManagerHttp via HTTP...');
 
       const idToken = await auth.currentUser?.getIdToken(true);
       if (!idToken) {
         throw new Error('需要登录');
       }
 
-      const resp = await fetch('/api/createEventManager', {
+      const resp = await fetch('/api/createEventManagerHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,10 +94,6 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
           englishName: formData.englishName,
           chineseName: formData.chineseName,
           email: formData.email,
-          identityTag: formData.identityTag,
-          identityId: formData.identityId,
-          department: formData.department,
-          roles: ['eventManager']
         })
       });
 
@@ -129,16 +125,16 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       console.log('[AssignEventManager] Success:', result);
 
       alert(`Event Manager 创建成功！\n\n手机号：${formData.phoneNumber}\n姓名：${formData.englishName}`);
-      
+
       if (onSuccess) {
         onSuccess();
       }
-      
+
     } catch (err) {
       console.error('[AssignEventManager] Error:', err);
-      
+
       let errorMessage = '创建 Event Manager 失败';
-      
+
       if (err.status === 409 || err.code === 'already-exists') {
         errorMessage = err.message || '此活动已有 Event Manager 或手机号已被使用';
       } else if (err.code === 'permission-denied') {
@@ -150,7 +146,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setSubmitting(false);
@@ -162,7 +158,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
       <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
         <div style={styles.modalHeader}>
           <h2 style={styles.modalTitle}>指派 Event Manager</h2>
-          <button 
+          <button
             style={styles.closeButton}
             onClick={onClose}
             disabled={submitting}

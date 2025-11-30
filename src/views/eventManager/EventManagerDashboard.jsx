@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
@@ -45,6 +45,16 @@ const EventManagerDashboard = () => {
   const [pageSize, setPageSize] = useState(50); // 每页显示条数
   const [roleFilter, setRoleFilter] = useState('all'); // 角色过滤
   const [showColumnSelector, setShowColumnSelector] = useState(false); // 列显示选择器
+  const [searchTerm, setSearchTerm] = useState(''); // 🆕 搜索词
+  const [showEditModal, setShowEditModal] = useState(false); // 🆕 编辑模态框
+  const [editingUser, setEditingUser] = useState(null); // 🆕 正在编辑的用户
+  const [editForm, setEditForm] = useState({ // 🆕 编辑表单
+    chineseName: '',
+    englishName: '',
+    phoneNumber: '',
+    identityId: ''
+  });
+  const [isSaving, setIsSaving] = useState(false); // 🆕 保存中状态
   const [visibleColumns, setVisibleColumns] = useState({
     序号: true,
     姓名: true,
@@ -56,6 +66,92 @@ const EventManagerDashboard = () => {
     现有点数: true,
     已销售点数: true
   });
+
+  // 🆕 电话号码遮罩函数
+  const maskPhone = (phone) => {
+    if (!phone) return '-';
+    if (phone.length < 6) return phone; // 号码太短，直接显示
+    
+    const first3 = phone.substring(0, 3);
+    const last3 = phone.substring(phone.length - 3);
+    const middle = '*'.repeat(phone.length - 6);
+    
+    return `${first3}${middle}${last3}`;
+  };
+
+  // 🆕 打开编辑模态框
+  const openEditModal = (user) => {
+    setEditingUser(user);
+    setEditForm({
+      chineseName: user.basicInfo?.chineseName || '',
+      englishName: user.basicInfo?.englishName || '',
+      phoneNumber: user.basicInfo?.phoneNumber || '',
+      identityId: user.identityInfo?.identityId || ''
+    });
+    setShowEditModal(true);
+  };
+
+  // 🆕 保存用户编辑
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+
+    // 验证必填字段
+    if (!editForm.chineseName.trim()) {
+      alert('请输入中文姓名');
+      return;
+    }
+    if (!editForm.englishName.trim()) {
+      alert('请输入英文姓名');
+      return;
+    }
+    if (!editForm.phoneNumber.trim()) {
+      alert('请输入电话号码');
+      return;
+    }
+    if (!editForm.identityId.trim()) {
+      alert('请输入身份ID');
+      return;
+    }
+
+    // 验证电话号码格式（马来西亚手机号）
+    const phoneRegex = /^(01)[0-9]{8,9}$/;
+    if (!phoneRegex.test(editForm.phoneNumber)) {
+      alert('电话号码格式不正确\n马来西亚手机号应为: 01X-XXXXXXXX (10-11位数字)');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // 更新 Firestore
+      const userRef = doc(
+        db,
+        'organizations', organizationId,
+        'events', eventId,
+        'users', editingUser.id
+      );
+
+      await updateDoc(userRef, {
+        'basicInfo.chineseName': editForm.chineseName.trim(),
+        'basicInfo.englishName': editForm.englishName.trim(),
+        'basicInfo.phoneNumber': editForm.phoneNumber.trim(),
+        'identityInfo.identityId': editForm.identityId.trim(),
+        'accountStatus.lastModifiedAt': new Date()
+      });
+
+      alert('✅ 用户信息更新成功!');
+      setShowEditModal(false);
+      setEditingUser(null);
+      
+      // 重新加载用户列表
+      await loadUsers();
+    } catch (error) {
+      console.error('❌ 更新用户失败:', error);
+      alert('更新失败: ' + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -204,8 +300,24 @@ const EventManagerDashboard = () => {
       filtered = filtered.filter(user => user.roles?.includes(roleFilter));
     }
 
+    // 🆕 搜索过滤（姓名、电话、身份ID）
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(user => {
+        const chineseName = (user.basicInfo?.chineseName || '').toLowerCase();
+        const englishName = (user.basicInfo?.englishName || '').toLowerCase();
+        const phoneNumber = (user.basicInfo?.phoneNumber || '');
+        const identityId = (user.identityInfo?.identityId || '').toLowerCase();
+        
+        return chineseName.includes(search) || 
+               englishName.includes(search) || 
+               phoneNumber.includes(search) || 
+               identityId.includes(search);
+      });
+    }
+
     // 然后进行排序
-    const sorted = [...users].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       let aVal = a[sortConfig.key];
       let bVal = b[sortConfig.key];
 
@@ -237,7 +349,7 @@ const EventManagerDashboard = () => {
     return sorted.slice(startIndex, startIndex + pageSize);
   };
 
-  const totalPages = Math.ceil(users.length / pageSize);
+  const totalPages = Math.ceil(getSortedUsers().length / pageSize); // 🆕 使用过滤后的数量计算总页数
 
   const handleLogout = async () => {
     try {
@@ -483,8 +595,35 @@ const EventManagerDashboard = () => {
         <div style={styles.tableHeader}>
           <h2 style={styles.sectionTitle}>用户管理</h2>
           <div style={styles.tableStats}>
-            共 <strong>{users.length}</strong> 个用户（第 <strong>{currentPage}</strong> / <strong>{totalPages}</strong> 页）
+            {searchTerm ? (
+              <>找到 <strong>{getSortedUsers().length}</strong> 个用户 / 共 <strong>{users.length}</strong> 个</>
+            ) : (
+              <>共 <strong>{users.length}</strong> 个用户（第 <strong>{currentPage}</strong> / <strong>{totalPages}</strong> 页）</>
+            )}
           </div>
+        </div>
+
+        {/* 🆕 搜索框 */}
+        <div style={styles.searchSection}>
+          <input
+            type="text"
+            placeholder="🔍 搜索姓名、电话号码或身份ID..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1); // 搜索时重置到第一页
+            }}
+            style={styles.searchInput}
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              style={styles.clearSearchButton}
+              title="清除搜索"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* 分页控制 */}
@@ -538,6 +677,7 @@ const EventManagerDashboard = () => {
                   {visibleColumns.角色 && <th style={styles.tableCell}>角色</th>}
                   {visibleColumns.现有点数 && <th style={styles.tableCell}>现有点数</th>}
                   {visibleColumns.已销售点数 && <th style={styles.tableCell}>已销售点数</th>}
+                  <th style={styles.tableCell}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -566,7 +706,9 @@ const EventManagerDashboard = () => {
 
                       {visibleColumns.电话 && (
                         <td style={styles.tableCell}>
-                          {user.basicInfo?.phoneNumber || '-'}
+                          <span style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                            {maskPhone(user.basicInfo?.phoneNumber)}
+                          </span>
                         </td>
                       )}
 
@@ -662,6 +804,17 @@ const EventManagerDashboard = () => {
                           </span>
                         </td>
                       )}
+
+                      {/* 🆕 操作列 */}
+                      <td style={styles.tableCell}>
+                        <button
+                          onClick={() => openEditModal(user)}
+                          style={styles.editButton}
+                          title="编辑用户信息"
+                        >
+                          ✏️ 编辑
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -805,6 +958,101 @@ const EventManagerDashboard = () => {
             loadDashboardData();
           }}
         />
+      )}
+
+      {/* 🆕 编辑用户模态框 */}
+      {showEditModal && editingUser && (
+        <div style={styles.modalOverlay} onClick={() => setShowEditModal(false)}>
+          <div style={styles.editModalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>编辑用户信息</h3>
+              <button
+                onClick={() => setShowEditModal(false)}
+                style={styles.closeButton}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  中文姓名 <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editForm.chineseName}
+                  onChange={(e) => setEditForm({ ...editForm, chineseName: e.target.value })}
+                  style={styles.formInput}
+                  placeholder="请输入中文姓名"
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  英文姓名 <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editForm.englishName}
+                  onChange={(e) => setEditForm({ ...editForm, englishName: e.target.value })}
+                  style={styles.formInput}
+                  placeholder="请输入英文姓名"
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  电话号码 <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={editForm.phoneNumber}
+                  onChange={(e) => setEditForm({ ...editForm, phoneNumber: e.target.value })}
+                  style={styles.formInput}
+                  placeholder="例如: 0123456789"
+                />
+                <div style={styles.formHint}>
+                  马来西亚手机号格式: 01X-XXXXXXXX (10-11位数字)
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  身份ID (学号/工号) <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editForm.identityId}
+                  onChange={(e) => setEditForm({ ...editForm, identityId: e.target.value })}
+                  style={styles.formInput}
+                  placeholder="请输入学号或工号"
+                />
+              </div>
+
+              <div style={styles.infoBox}>
+                💡 <strong>注意</strong>: 修改用户信息后将立即生效,请仔细核对。
+              </div>
+            </div>
+
+            <div style={styles.modalFooter}>
+              <button
+                onClick={() => setShowEditModal(false)}
+                style={styles.cancelButton}
+                disabled={isSaving}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                style={styles.saveButton}
+                disabled={isSaving}
+              >
+                {isSaving ? '保存中...' : '💾 保存修改'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1086,7 +1334,212 @@ const styles = {
     fontSize: '0.875rem',
     fontWeight: '600',
     transition: 'all 0.2s'
+  },
+  // 🆕 搜索框样式
+  searchSection: {
+    position: 'relative',
+    marginBottom: '1.5rem'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '0.75rem 3rem 0.75rem 1rem',
+    fontSize: '0.875rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.2s'
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '0.75rem',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    padding: '0.25rem 0.5rem',
+    backgroundColor: '#f3f4f6',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '1rem',
+    cursor: 'pointer',
+    color: '#6b7280',
+    transition: 'all 0.2s'
+  },
+  // 🆕 编辑按钮样式
+  editButton: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap'
+  },
+  // 🆕 模态框样式
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000,
+    padding: '1rem'
+  },
+  editModalContent: {
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    width: '100%',
+    maxWidth: '500px',
+    maxHeight: '90vh',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1.5rem',
+    borderBottom: '1px solid #e5e7eb'
+  },
+  modalTitle: {
+    fontSize: '1.25rem',
+    fontWeight: '600',
+    color: '#1f2937',
+    margin: 0
+  },
+  closeButton: {
+    padding: '0.5rem',
+    backgroundColor: 'transparent',
+    border: 'none',
+    fontSize: '1.5rem',
+    color: '#6b7280',
+    cursor: 'pointer',
+    lineHeight: 1,
+    transition: 'color 0.2s'
+  },
+  modalBody: {
+    flex: 1,
+    overflow: 'auto',
+    padding: '1.5rem'
+  },
+  formGroup: {
+    marginBottom: '1.5rem'
+  },
+  formLabel: {
+    display: 'block',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: '0.5rem'
+  },
+  formInput: {
+    width: '100%',
+    padding: '0.75rem',
+    fontSize: '0.875rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.2s'
+  },
+  formHint: {
+    marginTop: '0.5rem',
+    fontSize: '0.75rem',
+    color: '#6b7280'
+  },
+  infoBox: {
+    padding: '0.75rem 1rem',
+    backgroundColor: '#eff6ff',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    color: '#1e40af',
+    border: '1px solid #bfdbfe',
+    marginTop: '1rem'
+  },
+  modalFooter: {
+    display: 'flex',
+    gap: '1rem',
+    justifyContent: 'flex-end',
+    padding: '1.5rem',
+    borderTop: '1px solid #e5e7eb'
+  },
+  cancelButton: {
+    padding: '0.75rem 1.5rem',
+    backgroundColor: '#f3f4f6',
+    color: '#374151',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  saveButton: {
+    padding: '0.75rem 1.5rem',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   }
 };
+
+// 🆕 添加动画和hover效果
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+  /* 搜索框焦点效果 */
+  input:focus {
+    border-color: #3b82f6 !important;
+  }
+  
+  /* 按钮hover效果 */
+  button:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+  
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  /* 编辑按钮特殊效果 */
+  button[title="编辑用户信息"]:hover {
+    background-color: #2563eb !important;
+    box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+  }
+  
+  /* 清除搜索按钮hover */
+  button[title="清除搜索"]:hover {
+    background-color: #e5e7eb !important;
+    color: #1f2937 !important;
+  }
+  
+  /* 关闭按钮hover */
+  button:has(+ *):hover {
+    color: #1f2937 !important;
+  }
+  
+  /* 表格行hover效果 */
+  tbody tr:hover {
+    background-color: #f9fafb !important;
+  }
+`;
+
+// 避免重复添加
+if (!document.head.querySelector('style[data-event-manager-styles]')) {
+  styleSheet.setAttribute('data-event-manager-styles', 'true');
+  document.head.appendChild(styleSheet);
+}
 
 export default EventManagerDashboard;

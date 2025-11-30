@@ -464,7 +464,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       console.log('[BatchImportUser] 默认密码:', defaultPassword);
 
       // 调用 Cloud Function
-      const response = await fetch('/api/batchImportUsers', {
+      const response = await fetch('/api/batchImportUsersHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

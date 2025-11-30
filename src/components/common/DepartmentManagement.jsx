@@ -42,7 +42,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departments', {
+      const response = await fetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -73,7 +73,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departments', {
+      const response = await fetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,7 +107,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departments', {
+      const response = await fetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,7 +166,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departments', {
+      const response = await fetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

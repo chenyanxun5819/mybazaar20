@@ -1,12 +1,13 @@
 /**
- * Overview Stats Component
- * 
- * @description
- * 显示 Seller Manager 的概览统计信息
- * 数据来源：Event/{eventId}/sellerManagerStats/{sellerManagerId}
+ * Overview Stats Component (超级安全版 v3)
  */
 const OverviewStats = ({ smStats, departmentStats, eventData }) => {
-  if (!smStats) {
+  // 确保所有输入都是安全的
+  const safeSmStats = (smStats && typeof smStats === 'object') ? smStats : null;
+  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
+  const safeEventData = (eventData && typeof eventData === 'object') ? eventData : {};
+
+  if (!safeSmStats) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -15,30 +16,62 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
     );
   }
 
-  const managedStats = smStats.managedUsersStats || {};
-  const allocationStats = smStats.allocationStats || {};
-  const collectionMgmt = smStats.collectionManagement || {};
+  // 安全读取
+  const managedStats = (safeSmStats.managedUsersStats && typeof safeSmStats.managedUsersStats === 'object') 
+    ? safeSmStats.managedUsersStats 
+    : {};
+  const allocationStats = (safeSmStats.allocationStats && typeof safeSmStats.allocationStats === 'object')
+    ? safeSmStats.allocationStats
+    : {};
+  const collectionMgmt = (safeSmStats.collectionManagement && typeof safeSmStats.collectionManagement === 'object')
+    ? safeSmStats.collectionManagement
+    : {};
 
-  // 计算收款率颜色
+  // 读取分配规则
+  const getAllocationRules = () => {
+    const defaults = { maxPerAllocation: 100, warningThreshold: 0.3 };
+    
+    try {
+      if (!safeEventData.pointAllocationRules || 
+          typeof safeEventData.pointAllocationRules !== 'object') {
+        return defaults;
+      }
+      
+      if (!safeEventData.pointAllocationRules.sellerManager ||
+          typeof safeEventData.pointAllocationRules.sellerManager !== 'object') {
+        return defaults;
+      }
+      
+      const rules = safeEventData.pointAllocationRules.sellerManager;
+      return {
+        maxPerAllocation: typeof rules.maxPerAllocation === 'number' ? rules.maxPerAllocation : 100,
+        warningThreshold: typeof rules.warningThreshold === 'number' ? rules.warningThreshold : 0.3
+      };
+    } catch (e) {
+      return defaults;
+    }
+  };
+
+  const allocationRules = getAllocationRules();
+
   const getCollectionRateColor = (rate) => {
-    if (rate >= 0.8) return '#10b981'; // 绿色
-    if (rate >= 0.5) return '#f59e0b'; // 黄色
-    return '#ef4444'; // 红色
+    const safeRate = typeof rate === 'number' ? rate : 0;
+    if (safeRate >= 0.8) return '#10b981';
+    if (safeRate >= 0.5) return '#f59e0b';
+    return '#ef4444';
   };
 
   return (
     <div style={styles.container}>
-      {/* 标题 */}
       <h2 style={styles.sectionTitle}>📊 管理概览</h2>
 
-      {/* 个人分配统计 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>我的分配统计</h3>
         <div style={styles.statsGrid}>
           <StatCard
             icon="📦"
             title="累计分配次数"
-            value={allocationStats.totalAllocations || 0}
+            value={String(allocationStats.totalAllocations || 0)}
             color="#3b82f6"
           />
           <StatCard
@@ -56,21 +89,20 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
           <StatCard
             icon="🎯"
             title="分配上限"
-            value={`RM ${eventData?.pointAllocationRules?.sellerManager?.maxPerAllocation || 100}/次`}
+            value={`RM ${allocationRules.maxPerAllocation.toLocaleString()}/次`}
             color="#84cc16"
             description="每次每人最高"
           />
         </div>
       </div>
 
-      {/* 管理用户统计 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>管理的 Sellers 统计</h3>
         <div style={styles.statsGrid}>
           <StatCard
             icon="👥"
             title="总用户数"
-            value={managedStats.totalUsers || 0}
+            value={String(managedStats.totalUsers || 0)}
             subtitle={`活跃: ${managedStats.activeUsers || 0}`}
             color="#f59e0b"
           />
@@ -95,7 +127,6 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
         </div>
       </div>
 
-      {/* 收款监控 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>💰 收款监控</h3>
         <div style={styles.collectionCard}>
@@ -112,15 +143,12 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
             </div>
           </div>
           
-          {/* 收款进度条 */}
           <div style={styles.progressBar}>
-            <div
-              style={{
-                ...styles.progressFill,
-                width: `${(managedStats.collectionRate || 0) * 100}%`,
-                background: getCollectionRateColor(managedStats.collectionRate || 0)
-              }}
-            ></div>
+            <div style={{
+              ...styles.progressFill,
+              width: `${Math.min(100, (managedStats.collectionRate || 0) * 100)}%`,
+              background: getCollectionRateColor(managedStats.collectionRate || 0)
+            }}></div>
           </div>
 
           <div style={styles.collectionDetails}>
@@ -134,7 +162,7 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
               <span>有警示的用户:</span>
               <span style={{
                 ...styles.detailValue,
-                color: collectionMgmt.usersWithWarnings > 0 ? '#ef4444' : '#10b981'
+                color: (collectionMgmt.usersWithWarnings || 0) > 0 ? '#ef4444' : '#10b981'
               }}>
                 {collectionMgmt.usersWithWarnings || 0} 人
               </span>
@@ -143,14 +171,20 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
               <span>高风险用户:</span>
               <span style={{
                 ...styles.detailValue,
-                color: collectionMgmt.highRiskUsers > 0 ? '#dc2626' : '#10b981'
+                color: (collectionMgmt.highRiskUsers || 0) > 0 ? '#dc2626' : '#10b981'
               }}>
                 {collectionMgmt.highRiskUsers || 0} 人
               </span>
             </div>
+            <div style={styles.detailRow}>
+              <span>警示阈值:</span>
+              <span style={styles.detailValue}>
+                {Math.round(allocationRules.warningThreshold * 100)}%
+              </span>
+            </div>
           </div>
 
-          {collectionMgmt.usersWithWarnings > 0 && (
+          {(collectionMgmt.usersWithWarnings || 0) > 0 && (
             <div style={styles.warningBox}>
               ⚠️ 有 {collectionMgmt.usersWithWarnings} 位用户需要关注收款情况
             </div>
@@ -158,13 +192,12 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
         </div>
       </div>
 
-      {/* 部门概览 */}
-      {departmentStats && departmentStats.length > 0 && (
+      {safeDepartmentStats.length > 0 && (
         <div style={styles.section}>
-          <h3 style={styles.subsectionTitle}>🏫 管理的部门 ({departmentStats.length})</h3>
+          <h3 style={styles.subsectionTitle}>🏫 管理的部门 ({safeDepartmentStats.length})</h3>
           <div style={styles.departmentGrid}>
-            {departmentStats.map(dept => (
-              <DepartmentMiniCard key={dept.id} dept={dept} />
+            {safeDepartmentStats.map((dept, index) => (
+              <DepartmentMiniCard key={dept.id || dept.departmentCode || `dept-${index}`} dept={dept} />
             ))}
           </div>
         </div>
@@ -173,38 +206,48 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
   );
 };
 
-// === 统计卡片组件 ===
-const StatCard = ({ icon, title, value, subtitle, color, description }) => (
-  <div style={{ ...styles.statCard, borderLeftColor: color }}>
-    <div style={styles.statIcon}>{icon}</div>
-    <div style={styles.statContent}>
-      <div style={styles.statValue}>{value}</div>
-      <div style={styles.statTitle}>{title}</div>
-      {subtitle && (
-        <div style={styles.statSubtitle}>{subtitle}</div>
-      )}
-      {description && (
-        <div style={styles.statDescription}>{description}</div>
-      )}
+const StatCard = ({ icon, title, value, subtitle, color, description }) => {
+  const safeIcon = String(icon || '📊');
+  const safeTitle = String(title || '');
+  const safeValue = String(value || '0');
+  const safeColor = String(color || '#000000');
+  
+  return (
+    <div style={{ ...styles.statCard, borderLeftColor: safeColor }}>
+      <div style={styles.statIcon}>{safeIcon}</div>
+      <div style={styles.statContent}>
+        <div style={styles.statValue}>{safeValue}</div>
+        <div style={styles.statTitle}>{safeTitle}</div>
+        {subtitle && <div style={styles.statSubtitle}>{String(subtitle)}</div>}
+        {description && <div style={styles.statDescription}>{String(description)}</div>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
-// === 部门迷你卡片 ===
 const DepartmentMiniCard = ({ dept }) => {
-  const pointsStats = dept.pointsStats || {};
-  const collectionRate = pointsStats.collectionRate || 0;
+  if (!dept || typeof dept !== 'object') return null;
+
+  const pointsStats = (dept.pointsStats && typeof dept.pointsStats === 'object') ? dept.pointsStats : {};
+  const membersStats = (dept.membersStats && typeof dept.membersStats === 'object') ? dept.membersStats : {};
+  const collectionRate = typeof pointsStats.collectionRate === 'number' ? pointsStats.collectionRate : 0;
+
+  const getRateColor = (rate) => {
+    if (rate >= 0.8) return '#10b981';
+    if (rate >= 0.5) return '#f59e0b';
+    return '#ef4444';
+  };
 
   return (
     <div style={styles.deptMiniCard}>
       <div style={styles.deptHeader}>
-        <div style={styles.deptCode}>{dept.departmentCode}</div>
+        <div style={styles.deptCode}>{dept.departmentCode || '未知'}</div>
         <div style={styles.deptName}>{dept.departmentName || '未命名部门'}</div>
       </div>
       <div style={styles.deptStats}>
         <div style={styles.deptStatRow}>
           <span>成员:</span>
-          <strong>{dept.membersStats?.totalCount || 0}</strong>
+          <strong>{membersStats.totalCount || 0}</strong>
         </div>
         <div style={styles.deptStatRow}>
           <span>销售额:</span>
@@ -212,10 +255,7 @@ const DepartmentMiniCard = ({ dept }) => {
         </div>
         <div style={styles.deptStatRow}>
           <span>收款率:</span>
-          <strong style={{
-            color: collectionRate >= 0.8 ? '#10b981' : 
-                   collectionRate >= 0.5 ? '#f59e0b' : '#ef4444'
-          }}>
+          <strong style={{ color: getRateColor(collectionRate) }}>
             {Math.round(collectionRate * 100)}%
           </strong>
         </div>
@@ -224,20 +264,15 @@ const DepartmentMiniCard = ({ dept }) => {
   );
 };
 
-// === 样式 ===
 const styles = {
-  container: {
-    padding: '0'
-  },
+  container: { padding: '0' },
   sectionTitle: {
     fontSize: '1.5rem',
     fontWeight: 'bold',
     color: '#1f2937',
     marginBottom: '1.5rem'
   },
-  section: {
-    marginBottom: '2rem'
-  },
+  section: { marginBottom: '2rem' },
   subsectionTitle: {
     fontSize: '1.125rem',
     fontWeight: '600',
@@ -256,16 +291,10 @@ const styles = {
     borderLeft: '4px solid',
     display: 'flex',
     alignItems: 'flex-start',
-    gap: '1rem',
-    transition: 'transform 0.2s',
-    cursor: 'default'
+    gap: '1rem'
   },
-  statIcon: {
-    fontSize: '2rem'
-  },
-  statContent: {
-    flex: 1
-  },
+  statIcon: { fontSize: '2rem' },
+  statContent: { flex: 1 },
   statValue: {
     fontSize: '1.5rem',
     fontWeight: 'bold',
@@ -304,9 +333,7 @@ const styles = {
     fontWeight: '600',
     color: '#374151'
   },
-  collectionValue: {
-    textAlign: 'right'
-  },
+  collectionValue: { textAlign: 'right' },
   progressBar: {
     height: '12px',
     background: '#e5e7eb',
@@ -316,7 +343,6 @@ const styles = {
   },
   progressFill: {
     height: '100%',
-    transition: 'width 0.3s ease',
     borderRadius: '6px'
   },
   collectionDetails: {
@@ -355,9 +381,7 @@ const styles = {
     background: '#fafafa',
     border: '2px solid #e5e7eb',
     borderRadius: '12px',
-    padding: '1rem',
-    transition: 'all 0.2s',
-    cursor: 'pointer'
+    padding: '1rem'
   },
   deptHeader: {
     marginBottom: '0.75rem',

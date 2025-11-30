@@ -1,6 +1,7 @@
 // src/App.jsx
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import UniversalLogin from './views/auth/UniversalLogin';
+import EventManagerLogin from './views/eventManager/EventManagerLogin';
 import PlatformDashboard from './views/platform/PlatformDashboard';
 import PlatformLogin from './views/platform/PlatformLogin';
 import PhoneLogin from './views/phone/auth/Login';
@@ -10,7 +11,6 @@ import PlatformAuthGuard from './components/guards/PlatformAuthGuard';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
-import EventManagerLogin from './views/eventManager/EventManagerLogin.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 
 // Placeholder 組件（之後實現）
@@ -28,18 +28,32 @@ const DesktopPlaceholder = () => (
   </div>
 );
 
+// 重定向組件 - 用於處理舊的路由
+const RedirectToLogin = () => {
+  const { combinedCode } = useParams();
+  return <Navigate to={`/login/${combinedCode}`} replace />;
+};
+
+// 重定向組件 - Event Manager 舊路由
+const RedirectToEventManagerLogin = () => {
+  const { combinedCode } = useParams();
+  return <Navigate to={`/event-manager/${combinedCode}/login`} replace />;
+};
+
 function App() {
   // 臨時調試
   console.log('Current path:', window.location.pathname);
 
   return (
     <Routes>
-      {/* 🆕 统一登录路由（普通用户：Seller, Customer 等）*/}
+      {/* 🆕 統一登錄路由 - 支持所有用戶角色（除 Event Manager） */}
       <Route path="/login/:orgEventCode" element={<UniversalLogin />} />
 
-      {/* ✅ Event Manager 专用登录路由 */}
-      <Route path="/event-admin/:combinedCode/login" element={<EventManagerLogin />} />
-      <Route path="/event-manager/:combinedCode/login" element={<EventManagerLogin />} />
+      {/* 🆕 Event Manager 專用登錄 - 獨立頁面 */}
+      <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
+
+      {/* ✅ 舊路由重定向相容 - 指向 Event Manager 登錄 */}
+      <Route path="/event-admin/:combinedCode/login" element={<RedirectToEventManagerLogin />} />
 
       {/* 🆕 Platform Admin 登录页面 */}
       <Route path="/platform/login" element={<PlatformLogin />} />

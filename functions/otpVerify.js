@@ -186,29 +186,6 @@ function sha256(str) {
 }
 
 /**
- * 歸一化手機號碼
- * 移除國碼和前導0，只保留核心號碼部分
- */
-function normalizePhone(phone) {
-  if (!phone) return '';
-  
-  // 轉為字符串並移除所有非數字字符
-  let digits = String(phone).replace(/[^0-9]/g, '');
-  
-  // 移除馬來西亞國碼 60
-  if (digits.startsWith('60') && digits.length > 9) {
-    digits = digits.substring(2);
-  }
-  
-  // 移除前導 0
-  if (digits.startsWith('0')) {
-    digits = digits.substring(1);
-  }
-  
-  return digits;
-}
-
-/**
  * HTTP 函式：發送 OTP
  * POST /api/sendOtp
  * Body: { phoneNumber, orgCode, eventCode }
@@ -230,14 +207,8 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
   try {
     const { phoneNumber, orgCode, eventCode } = req.body;
 
-    console.log('[sendOtpHttp] Request:', { phoneNumber, orgCode, eventCode });
-
     if (!phoneNumber) {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码' } });
-    }
-
-    if (!orgCode || !eventCode) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少组织或活动代码' } });
     }
 
     // 生成 OTP 碼（開發模式會返回固定值）
@@ -251,16 +222,14 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
     await db.collection('otp_sessions').doc(sessionId).set({
       sessionId,
       phoneNumber,
-      orgCode,
-      eventCode,
+      orgCode: orgCode || '',
+      eventCode: eventCode || '',
       otpCodeHash,
       expiresAt,
       attempts: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: new Date(),
       devMode: USE_DEV_OTP // 標記是否為開發模式
     });
-
-    console.log('[sendOtpHttp] OTP session created:', sessionId);
 
     // 🔧 開發模式：跳過真實 SMS 發送
     if (USE_DEV_OTP) {
@@ -302,7 +271,6 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       } else {
         await sendSmsViaHttps(formattedPhone, message);
       }
-      console.log('[sendOtpHttp] SMS sent successfully');
     } catch (smsError) {
       console.error('[sendOtpHttp] SMS send failed:', smsError.message);
       // OTP 已存入 Firestore，驗證仍可繼續進行
@@ -327,12 +295,9 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 });
 
 /**
- * HTTP 函式：驗證 OTP（通用版本 - 支持所有角色）
+ * HTTP 函式：驗證 OTP
  * POST /api/verifyOtp
  * Body: { phoneNumber, otp, orgCode, eventCode }
- * 
- * 注意：此函數只驗證 OTP 的正確性，不驗證用戶權限
- * 用戶權限已在 loginUniversalHttp 中驗證過了
  */
 exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
   // CORS 設定
@@ -351,14 +316,8 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
   try {
     const { phoneNumber, otp, orgCode, eventCode } = req.body;
 
-    console.log('[verifyOtpHttp] Request:', { phoneNumber, otp: '***', orgCode, eventCode });
-
     if (!phoneNumber || !otp) {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手機號碼或驗證碼' } });
-    }
-
-    if (!orgCode || !eventCode) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少組織或活動代碼' } });
     }
 
     if (otp.length !== 6 || !/^\d+$/.test(otp)) {
@@ -370,125 +329,202 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     // 查詢最新的 OTP session
     const otpSnapshot = await db.collection('otp_sessions')
       .where('phoneNumber', '==', phoneNumber)
-      .where('orgCode', '==', orgCode)
-      .where('eventCode', '==', eventCode)
+      .where('orgCode', '==', orgCode || '')
+      .where('eventCode', '==', eventCode || '')
       .orderBy('createdAt', 'desc')
       .limit(1)
       .get();
 
     if (otpSnapshot.empty) {
-      console.log('[verifyOtpHttp] OTP session not found');
-      return res.status(404).json({ error: { code: 'not-found', message: '驗證碼不存在或已過期，請重新申請' } });
+      return res.status(404).json({ error: { code: 'not-found', message: '驗證碼不存在或已過期' } });
     }
 
     const otpDoc = otpSnapshot.docs[0];
     const otpData = otpDoc.data();
 
-    console.log('[verifyOtpHttp] OTP session found:', otpDoc.id);
-
     // 檢查是否過期
     if (Date.now() > otpData.expiresAt) {
-      console.log('[verifyOtpHttp] OTP expired');
       return res.status(400).json({ error: { code: 'deadline-exceeded', message: '驗證碼已過期，請重新申請' } });
     }
 
     // 檢查嘗試次數
     if ((otpData.attempts || 0) >= 5) {
-      console.log('[verifyOtpHttp] Too many attempts');
       return res.status(429).json({ error: { code: 'resource-exhausted', message: '嘗試次數過多，請重新申請驗證碼' } });
     }
 
     // 驗證 OTP
     const inputOtpHash = sha256(otp);
     if (inputOtpHash !== otpData.otpCodeHash) {
-      console.log('[verifyOtpHttp] Invalid OTP');
       // 增加嘗試次數
       await otpDoc.ref.update({ attempts: (otpData.attempts || 0) + 1 });
       return res.status(403).json({ error: { code: 'permission-denied', message: '驗證碼錯誤' } });
     }
 
-    console.log('[verifyOtpHttp] OTP verified successfully');
-
-    // ✅ OTP 驗證成功
-    // 注意：用戶的角色和權限已在 loginUniversalHttp 中驗證過
-    // 這裡只需要創建 Custom Token 即可
+    // ✅ 驗證用戶是否在該活動中註冊
+    // 1. 查找組織
+    const orgQuery = await db.collection('organizations').where('orgCode', '==', orgCode).limit(1).get();
+    if (orgQuery.empty) {
+      return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
+    }
+    const organizationId = orgQuery.docs[0].id;
     
-    try {
-      // 查詢組織和活動，找出 Event Manager 的真實 authUid
-      const organizationSnapshot = await db.collection('organizations')
-        .where('orgCode', '==', orgCode)
-        .limit(1)
-        .get();
+    // 2. 查找活動
+    const eventQuery = await db
+      .collection('organizations').doc(organizationId)
+      .collection('events')
+      .where('eventCode', '==', eventCode)
+      .limit(1)
+      .get();
+    
+    if (eventQuery.empty) {
+      return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
+    }
+    const eventId = eventQuery.docs[0].id;
 
-      if (organizationSnapshot.empty) {
-        return res.status(404).json({ error: { code: 'not-found', message: '組織代碼不存在' } });
-      }
+    // ✅ 3. 查詢用戶（區分 Event Manager 和其他角色）
+    const normalizePhone = (p) => {
+      if (!p) return '';
+      let digits = String(p).replace(/[^0-9]/g, '');
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
+      if (digits.startsWith('0')) digits = digits.substring(1);
+      return digits; 
+    };
 
-      const organizationId = organizationSnapshot.docs[0].id;
-      const eventSnapshot = await db.collection('organizations')
-        .doc(organizationId)
-        .collection('events')
-        .where('eventCode', '==', eventCode)
-        .limit(1)
-        .get();
+    const targetPhone = normalizePhone(phoneNumber);
+    const variants = [
+      targetPhone,
+      `0${targetPhone}`,
+      `60${targetPhone}`,
+      `+60${targetPhone}`
+    ];
 
-      if (eventSnapshot.empty) {
-        return res.status(404).json({ error: { code: 'not-found', message: '活動代碼不存在' } });
-      }
+    let userData = null;
+    let userRoles = [];
+    let userId = null;
+    let isEventManager = false;
 
-      const eventId = eventSnapshot.docs[0].id;
-      const eventData = eventSnapshot.docs[0].data() || {};
-      const eventManager = eventData.eventManager;
-
-      if (!eventManager || !eventManager.authUid) {
-        return res.status(404).json({ error: { code: 'not-found', message: '此活動未指派 Event Manager' } });
-      }
-
-      // 驗證登入者的手機號是否與 Event Manager 的手機號一致
-      if (eventManager.phoneNumber !== phoneNumber) {
-        return res.status(403).json({ error: { code: 'permission-denied', message: '手機號不匹配此活動的 Event Manager' } });
-      }
-
-      // 使用 Event Manager 的實際 authUid
-      const uid = eventManager.authUid;
+    // 首先檢查 Event Manager（在 events 文檔的 eventManager 字段中）
+    const eventDocRef = db.collection('organizations').doc(organizationId).collection('events').doc(eventId);
+    const eventDocSnapshot = await eventDocRef.get();
+    
+    if (eventDocSnapshot.exists) {
+      const eventData = eventDocSnapshot.data();
+      const eventManagerData = eventData.eventManager;
       
-      console.log('[verifyOtpHttp] Creating custom token for UID:', uid);
-      
-      // 創建 Custom Token
-      // 注意：不在 claims 中包含具體角色，因為角色應該從 Firestore 讀取
-      // 這樣可以保證角色信息的一致性
-      const customToken = await admin.auth().createCustomToken(uid, {
-        orgCode: orgCode,
-        eventCode: eventCode,
-        phone: phoneNumber,
-        verifiedAt: Date.now()
-      });
-
-      console.log('[verifyOtpHttp] Custom token created successfully');
-
-      // 刪除已使用的 OTP
-      await otpDoc.ref.delete();
-      console.log('[verifyOtpHttp] OTP session deleted');
-
-      return res.status(200).json({
-        success: true,
-        message: '驗證成功',
-        phoneNumber,
-        verified: true,
-        customToken: customToken,
-        devMode: otpData.devMode || false
-      });
-
-    } catch (tokenError) {
-      console.error('[verifyOtpHttp] Token creation error:', tokenError);
-      return res.status(500).json({
-        error: {
-          code: 'internal',
-          message: 'Token 創建失敗：' + tokenError.message
+      if (eventManagerData) {
+        // 嘗試比對 Event Manager 的手機號
+        for (const variant of variants) {
+          const eventManagerPhone = normalizePhone(eventManagerData.phoneNumber);
+          if (eventManagerPhone === variant || eventManagerData.phoneNumber === variant) {
+            userData = {
+              authUid: eventManagerData.authUid,
+              basicInfo: {
+                englishName: eventManagerData.englishName || '',
+                chineseName: eventManagerData.chineseName || '',
+                phoneNumber: eventManagerData.phoneNumber
+              },
+              roles: ['eventManager']
+            };
+            userRoles = ['eventManager'];
+            userId = `eventManager_${organizationId}_${eventId}`;
+            isEventManager = true;
+            console.log('[verifyOtpHttp] ✅ Event Manager 找到:', { userId });
+            break;
+          }
         }
+      }
+    }
+
+    // 如果不是 Event Manager，查詢 users 子集合中的其他角色
+    if (!isEventManager) {
+      for (const variant of variants) {
+        const userSnapshot = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('users')
+          .where('basicInfo.phoneNumber', '==', variant)
+          .limit(1)
+          .get();
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          userData = userDoc.data();
+          userId = userDoc.id;
+          userRoles = userData.roles || [];
+          console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, variant, roles: userRoles });
+          break;
+        }
+      }
+    }
+
+    if (!userData) {
+      console.log('[verifyOtpHttp] ❌ 用户不存在，尝试的变体:', variants);
+      return res.status(404).json({ error: { code: 'not-found', message: '该手机号未在此活动中注册' } });
+    }
+
+    // ✅ 4. 檢查用戶角色（支持所有合法角色）
+    const allowedRoles = [
+      'eventManager',
+      'sellerManager',
+      'merchantManager',
+      'customerManager',
+      'financeManager',
+      'seller',
+      'merchant',
+      'customer'
+    ];
+
+    const hasValidRole = userRoles.some(role => allowedRoles.includes(role));
+
+    if (!hasValidRole || userRoles.length === 0) {
+      console.log('[verifyOtpHttp] ❌ 用户没有有效角色:', { userId, roles: userRoles });
+      return res.status(403).json({ 
+        error: { 
+          code: 'permission-denied',
+          message: `您没有访问此活动的权限。当前角色: ${userRoles.join(', ') || '无'}` 
+        } 
       });
     }
 
+    console.log('[verifyOtpHttp] ✅ 用户权限验证通过:', { userId, roles: userRoles });
+
+    // ✅ 5. OTP 驗證成功且權限確認，創建 Custom Token
+    const uid = `${userRoles[0]}_${phoneNumber}`;
+    
+    const customToken = await admin.auth().createCustomToken(uid, {
+      role: userRoles[0],
+      userId: userId,
+      organizationId: organizationId,
+      eventId: eventId,
+      orgCode: orgCode,
+      eventCode: eventCode,
+      phone: phoneNumber,
+      roles: userRoles,
+      isEventManager: isEventManager
+    });
+
+    console.log('[verifyOtpHttp] ✅ Custom Token 生成成功');
+
+    // 刪除已使用的 OTP
+    await otpDoc.ref.delete();
+
+    return res.status(200).json({
+      success: true,
+      message: '驗證成功',
+      phoneNumber,
+      verified: true,
+      customToken: customToken,
+      userId: userId,
+      organizationId: organizationId,
+      eventId: eventId,
+      roles: userRoles,
+      englishName: userData.basicInfo?.englishName || '',
+      chineseName: userData.basicInfo?.chineseName || '',
+      managedDepartments: isEventManager ? [] : (userData.sellerManager?.managedDepartments || userData.roleSpecificData?.sellerManager?.managedDepartments || []),
+      department: isEventManager ? '' : (userData.identityInfo?.department || ''),
+      identityTag: isEventManager ? 'eventManager' : (userData.identityInfo?.identityTag || ''),
+      devMode: otpData.devMode || false
+    });
   } catch (error) {
     console.error('[verifyOtpHttp] 錯誤:', error);
     return res.status(500).json({

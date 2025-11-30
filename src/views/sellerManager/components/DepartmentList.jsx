@@ -1,25 +1,23 @@
 import { useState } from 'react';
 
 /**
- * Department List Component
- * 
- * @description
- * 显示 Seller Manager 管理的部门列表
- * 数据来源：Event/{eventId}/departmentStats/{departmentCode}
+ * Department List Component (超级安全版 v3)
  */
 const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
-  const [sortBy, setSortBy] = useState('revenue'); // revenue | collectionRate | name
-  const [showDetails, setShowDetails] = useState(null); // 展开的部门 ID
+  const [sortBy, setSortBy] = useState('revenue');
+  const [showDetails, setShowDetails] = useState(null);
 
-  /**
-   * 排序部门
-   */
+  // 确保输入是安全的
+  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
+
   const getSortedDepartments = () => {
-    if (!departmentStats || departmentStats.length === 0) return [];
+    if (safeDepartmentStats.length === 0) return [];
 
-    return [...departmentStats].sort((a, b) => {
-      const aStats = a.pointsStats || {};
-      const bStats = b.pointsStats || {};
+    return [...safeDepartmentStats].sort((a, b) => {
+      if (!a || typeof a !== 'object' || !b || typeof b !== 'object') return 0;
+
+      const aStats = (a.pointsStats && typeof a.pointsStats === 'object') ? a.pointsStats : {};
+      const bStats = (b.pointsStats && typeof b.pointsStats === 'object') ? b.pointsStats : {};
 
       switch (sortBy) {
         case 'revenue':
@@ -27,7 +25,9 @@ const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
         case 'collectionRate':
           return (bStats.collectionRate || 0) - (aStats.collectionRate || 0);
         case 'name':
-          return (a.departmentCode || '').localeCompare(b.departmentCode || '');
+          const aCode = a.departmentCode || '';
+          const bCode = b.departmentCode || '';
+          return String(aCode).localeCompare(String(bCode));
         default:
           return 0;
       }
@@ -36,7 +36,7 @@ const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
 
   const sortedDepartments = getSortedDepartments();
 
-  if (!departmentStats || departmentStats.length === 0) {
+  if (sortedDepartments.length === 0) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>🏫</div>
@@ -48,9 +48,8 @@ const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
 
   return (
     <div style={styles.container}>
-      {/* 标题和排序 */}
       <div style={styles.header}>
-        <h2 style={styles.title}>🏫 管理的部门 ({departmentStats.length})</h2>
+        <h2 style={styles.title}>🏫 管理的部门 ({sortedDepartments.length})</h2>
         <div style={styles.sortBox}>
           <label style={styles.sortLabel}>排序：</label>
           <select
@@ -65,80 +64,67 @@ const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
         </div>
       </div>
 
-      {/* 部门卡片列表 */}
       <div style={styles.grid}>
-        {sortedDepartments.map((dept, index) => (
-          <DepartmentCard
-            key={dept.id}
-            dept={dept}
-            rank={index + 1}
-            isExpanded={showDetails === dept.id}
-            onToggle={() => setShowDetails(showDetails === dept.id ? null : dept.id)}
-            onSelect={onSelectDepartment}
-          />
-        ))}
+        {sortedDepartments.map((dept, index) => {
+          if (!dept || typeof dept !== 'object') return null;
+          
+          const deptId = dept.id || dept.departmentCode || `dept-${index}`;
+          
+          return (
+            <DepartmentCard
+              key={deptId}
+              dept={dept}
+              rank={index + 1}
+              isExpanded={showDetails === deptId}
+              onToggle={() => setShowDetails(showDetails === deptId ? null : deptId)}
+              onSelect={onSelectDepartment}
+            />
+          );
+        })}
       </div>
     </div>
   );
 };
 
-/**
- * 单个部门卡片
- */
 const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
-  const pointsStats = dept.pointsStats || {};
-  const membersStats = dept.membersStats || {};
-  const allocationStats = dept.allocationStats || {};
-  const collectionAlerts = dept.collectionAlerts || {};
+  if (!dept || typeof dept !== 'object') return null;
 
-  // 收款率颜色
-  const collectionRate = pointsStats.collectionRate || 0;
+  const pointsStats = (dept.pointsStats && typeof dept.pointsStats === 'object') ? dept.pointsStats : {};
+  const membersStats = (dept.membersStats && typeof dept.membersStats === 'object') ? dept.membersStats : {};
+  const allocationStats = (dept.allocationStats && typeof dept.allocationStats === 'object') ? dept.allocationStats : {};
+  const collectionAlerts = (dept.collectionAlerts && typeof dept.collectionAlerts === 'object') ? dept.collectionAlerts : {};
+
+  const collectionRate = typeof pointsStats.collectionRate === 'number' ? pointsStats.collectionRate : 0;
+  
   const getRateColor = (rate) => {
-    if (rate >= 0.8) return '#10b981';
-    if (rate >= 0.5) return '#f59e0b';
+    const safeRate = typeof rate === 'number' ? rate : 0;
+    if (safeRate >= 0.8) return '#10b981';
+    if (safeRate >= 0.5) return '#f59e0b';
     return '#ef4444';
   };
 
-  // 排名徽章颜色
-  const getRankColor = (rank) => {
-    if (rank === 1) return '#fbbf24'; // 金色
-    if (rank === 2) return '#9ca3af'; // 银色
-    if (rank === 3) return '#cd7f32'; // 铜色
+  const getRankColor = (r) => {
+    if (r === 1) return '#fbbf24';
+    if (r === 2) return '#9ca3af';
+    if (r === 3) return '#cd7f32';
     return '#6b7280';
   };
 
+  const departmentCode = dept.departmentCode || '未知';
+  const departmentName = dept.departmentName || '未命名部门';
+  const deptInitial = String(departmentCode).charAt(0) || '?';
+
   return (
-    <div
-      style={styles.card}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-4px)';
-        e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.15)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-      }}
-    >
-      {/* 排名徽章 */}
-      <div
-        style={{
-          ...styles.rankBadge,
-          background: getRankColor(rank)
-        }}
-      >
+    <div style={styles.card}>
+      <div style={{ ...styles.rankBadge, background: getRankColor(rank) }}>
         #{rank}
       </div>
 
-      {/* 部门头部 */}
       <div style={styles.cardHeader}>
-        <div style={styles.deptIcon}>
-          {dept.departmentCode?.[0] || '?'}
-        </div>
+        <div style={styles.deptIcon}>{deptInitial}</div>
         <div style={styles.deptInfo}>
-          <h3 style={styles.deptCode}>{dept.departmentCode}</h3>
-          <p style={styles.deptName}>
-            {dept.departmentName || '未命名部门'}
-          </p>
+          <h3 style={styles.deptCode}>{departmentCode}</h3>
+          <p style={styles.deptName}>{departmentName}</p>
           <div style={styles.memberCount}>
             👥 {membersStats.totalCount || 0} 人 
             <span style={styles.activeCount}>
@@ -148,7 +134,6 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
         </div>
       </div>
 
-      {/* 主要统计 */}
       <div style={styles.mainStats}>
         <div style={styles.mainStatItem}>
           <div style={styles.mainStatLabel}>持有点数</div>
@@ -165,27 +150,22 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
         </div>
       </div>
 
-      {/* 收款率进度条 */}
       <div style={styles.collectionSection}>
         <div style={styles.collectionHeader}>
           <span style={styles.collectionLabel}>收款率</span>
-          <span
-            style={{
-              ...styles.collectionPercent,
-              color: getRateColor(collectionRate)
-            }}
-          >
+          <span style={{
+            ...styles.collectionPercent,
+            color: getRateColor(collectionRate)
+          }}>
             {Math.round(collectionRate * 100)}%
           </span>
         </div>
         <div style={styles.progressBar}>
-          <div
-            style={{
-              ...styles.progressFill,
-              width: `${collectionRate * 100}%`,
-              background: getRateColor(collectionRate)
-            }}
-          ></div>
+          <div style={{
+            ...styles.progressFill,
+            width: `${Math.min(100, collectionRate * 100)}%`,
+            background: getRateColor(collectionRate)
+          }}></div>
         </div>
         <div style={styles.collectionDetails}>
           <span>已收款: RM {(pointsStats.totalCollected || 0).toLocaleString()}</span>
@@ -195,11 +175,10 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
         </div>
       </div>
 
-      {/* 警示提示 */}
-      {collectionAlerts.usersWithWarnings > 0 && (
+      {(collectionAlerts.usersWithWarnings || 0) > 0 && (
         <div style={styles.alertBanner}>
           ⚠️ {collectionAlerts.usersWithWarnings} 位用户有收款警示
-          {collectionAlerts.highRiskUsers?.length > 0 && (
+          {Array.isArray(collectionAlerts.highRiskUsers) && collectionAlerts.highRiskUsers.length > 0 && (
             <span style={styles.highRisk}>
               ({collectionAlerts.highRiskUsers.length} 高风险)
             </span>
@@ -207,19 +186,13 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
         </div>
       )}
 
-      {/* 展开/折叠详情 */}
-      <button
-        style={styles.toggleButton}
-        onClick={onToggle}
-      >
+      <button style={styles.toggleButton} onClick={onToggle}>
         {isExpanded ? '▲ 收起详情' : '▼ 查看详情'}
       </button>
 
-      {/* 详细信息（展开时显示）*/}
       {isExpanded && (
         <div style={styles.detailsSection}>
           <div style={styles.detailsGrid}>
-            {/* 点数流动 */}
             <div style={styles.detailCard}>
               <div style={styles.detailTitle}>💰 点数流动</div>
               <div style={styles.detailRow}>
@@ -236,7 +209,6 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
               </div>
             </div>
 
-            {/* 分配统计 */}
             <div style={styles.detailCard}>
               <div style={styles.detailTitle}>📦 分配统计</div>
               <div style={styles.detailRow}>
@@ -245,19 +217,22 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
               </div>
               <div style={styles.detailRow}>
                 <span>来自 Event Mgr:</span>
-                <strong>{allocationStats.byEventManager?.count || 0} 次</strong>
+                <strong>
+                  {(allocationStats.byEventManager && typeof allocationStats.byEventManager === 'object' && allocationStats.byEventManager.count) || 0} 次
+                </strong>
               </div>
               <div style={styles.detailRow}>
                 <span>来自 Seller Mgr:</span>
-                <strong>{allocationStats.bySellerManager?.count || 0} 次</strong>
+                <strong>
+                  {(allocationStats.bySellerManager && typeof allocationStats.bySellerManager === 'object' && allocationStats.bySellerManager.count) || 0} 次
+                </strong>
               </div>
             </div>
           </div>
 
-          {/* 操作按钮 */}
           <button
             style={styles.actionButton}
-            onClick={() => onSelect(dept)}
+            onClick={() => onSelect && typeof onSelect === 'function' && onSelect(dept)}
           >
             👁️ 查看该部门的 Sellers
           </button>
@@ -268,9 +243,7 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
 };
 
 const styles = {
-  container: {
-    width: '100%'
-  },
+  container: { width: '100%' },
   emptyState: {
     textAlign: 'center',
     padding: '3rem',
@@ -322,7 +295,6 @@ const styles = {
     border: '2px solid #e5e7eb',
     borderRadius: '12px',
     padding: '1.5rem',
-    transition: 'all 0.2s',
     position: 'relative'
   },
   rankBadge: {
@@ -352,9 +324,7 @@ const styles = {
     fontSize: '1.5rem',
     fontWeight: 'bold'
   },
-  deptInfo: {
-    flex: 1
-  },
+  deptInfo: { flex: 1 },
   deptCode: {
     fontSize: '1.25rem',
     fontWeight: 'bold',
@@ -401,9 +371,7 @@ const styles = {
     width: '1px',
     background: '#e5e7eb'
   },
-  collectionSection: {
-    marginBottom: '1rem'
-  },
+  collectionSection: { marginBottom: '1rem' },
   collectionHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -428,7 +396,6 @@ const styles = {
   },
   progressFill: {
     height: '100%',
-    transition: 'width 0.3s ease',
     borderRadius: '4px'
   },
   collectionDetails: {
@@ -461,8 +428,7 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#374151',
-    transition: 'all 0.2s'
+    color: '#374151'
   },
   detailsSection: {
     marginTop: '1rem',
@@ -503,8 +469,7 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '0.875rem',
-    fontWeight: '600',
-    transition: 'all 0.2s'
+    fontWeight: '600'
   }
 };
 
