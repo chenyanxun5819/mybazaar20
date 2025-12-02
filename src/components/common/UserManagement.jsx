@@ -11,7 +11,8 @@ import {
   orderBy,
   increment,
   arrayUnion,
-  writeBatch
+  writeBatch,
+  serverTimestamp
 } from 'firebase/firestore';
 
 // 统一的角色配置
@@ -347,18 +348,19 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
+      const timestampKey = Date.now().toString();
       const transaction = {
         type: 'allocation',
         amount: points,
-        timestamp: new Date(),
+        timestamp: serverTimestamp(),
         allocatedBy: 'eventManager',
         note: pointsNote || '点数分配'
       };
 
       await updateDoc(userRef, {
         [`${roleType}.availablePoints`]: increment(points),
-        [`${roleType}.transactions`]: arrayUnion(transaction),
-        'accountStatus.lastUpdated': new Date()
+        [`${roleType}.transactions.${timestampKey}`]: transaction,
+        'accountStatus.lastUpdated': serverTimestamp()
       });
 
       alert(`成功分配 ${points.toLocaleString()} 点数！`);
@@ -407,18 +409,19 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
+      const timestampKey = Date.now().toString();
       const transaction = {
         type: 'recall',
         amount: -points,
-        timestamp: new Date(),
+        timestamp: serverTimestamp(),
         recalledBy: 'eventManager',
         note: recallNote || '点数回收'
       };
 
       await updateDoc(userRef, {
         [`${roleType}.availablePoints`]: increment(-points),
-        [`${roleType}.transactions`]: arrayUnion(transaction),
-        'accountStatus.lastUpdated': new Date()
+        [`${roleType}.transactions.${timestampKey}`]: transaction,
+        'accountStatus.lastUpdated': serverTimestamp()
       });
 
       alert(`成功回收 ${points.toLocaleString()} 点数！`);
@@ -476,21 +479,24 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       setIsProcessing(true);
 
       const batch = writeBatch(db);
-      const transaction = {
-        type: 'allocation',
-        amount: points,
-        timestamp: new Date(),
-        allocatedBy: 'eventManager',
-        note: batchNote || `批量分配 - ${tagInfo.label}`
-      };
+      const baseTimestamp = Date.now();
 
-      targetUsers.forEach(user => {
+      targetUsers.forEach((user, index) => {
         let roleType = null;
         if (user.roles?.includes('seller')) roleType = 'seller';
         else if (user.roles?.includes('merchant')) roleType = 'merchant';
         else if (user.roles?.includes('customer')) roleType = 'customer';
 
         if (roleType) {
+          const timestampKey = (baseTimestamp + index).toString();
+          const transaction = {
+            type: 'allocation',
+            amount: points,
+            timestamp: serverTimestamp(),
+            allocatedBy: 'eventManager',
+            note: batchNote || `批量分配 - ${tagInfo.label}`
+          };
+
           const userRef = doc(
             db,
             'organizations', organizationId,
@@ -500,8 +506,8 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
           batch.update(userRef, {
             [`${roleType}.availablePoints`]: increment(points),
-            [`${roleType}.transactions`]: arrayUnion(transaction),
-            'accountStatus.lastUpdated': new Date()
+            [`${roleType}.transactions.${timestampKey}`]: transaction,
+            'accountStatus.lastUpdated': serverTimestamp()
           });
         }
       });
