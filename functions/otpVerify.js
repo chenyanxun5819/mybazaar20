@@ -205,11 +205,15 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const { phoneNumber, orgCode, eventCode } = req.body;
+    const { phoneNumber, orgCode, eventCode, loginType } = req.body;
 
     if (!phoneNumber) {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码' } });
     }
+
+    // loginType: 'universal' (默认) 或 'eventManager'
+    const effectiveLoginType = loginType || 'universal';
+    console.log('[sendOtpHttp] 登录类型:', effectiveLoginType);
 
     // 生成 OTP 碼（開發模式會返回固定值）
     const otpCode = generateOtpCode();
@@ -224,6 +228,7 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       phoneNumber,
       orgCode: orgCode || '',
       eventCode: eventCode || '',
+      loginType: effectiveLoginType, // 保存登录类型
       otpCodeHash,
       expiresAt,
       attempts: 0,
@@ -381,7 +386,7 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     }
     const eventId = eventQuery.docs[0].id;
 
-    // ✅ 3. 查詢用戶（區分 Event Manager 和其他角色）
+    // ✅ 3. 查詢用戶（根据 loginType 决定查询策略）
     const normalizePhone = (p) => {
       if (!p) return '';
       let digits = String(p).replace(/[^0-9]/g, '');
@@ -403,40 +408,59 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     let userId = null;
     let isEventManager = false;
 
-    // 首先檢查 Event Manager（在 events 文檔的 eventManager 字段中）
-    const eventDocRef = db.collection('organizations').doc(organizationId).collection('events').doc(eventId);
-    const eventDocSnapshot = await eventDocRef.get();
-    
-    if (eventDocSnapshot.exists) {
-      const eventData = eventDocSnapshot.data();
-      const eventManagerData = eventData.eventManager;
+    // 获取 OTP session 中保存的 loginType
+    const loginType = otpData.loginType || 'universal';
+    console.log('[verifyOtpHttp] 登录类型:', loginType);
+
+    // 根据 loginType 决定查询策略
+    if (loginType === 'eventManager') {
+      // Event Manager 专用登录：只检查 eventManager 字段
+      console.log('[verifyOtpHttp] Event Manager 专用登录 - 只检查 eventManager 字段');
       
-      if (eventManagerData) {
-        // 嘗試比對 Event Manager 的手機號
-        for (const variant of variants) {
-          const eventManagerPhone = normalizePhone(eventManagerData.phoneNumber);
-          if (eventManagerPhone === variant || eventManagerData.phoneNumber === variant) {
-            userData = {
-              authUid: eventManagerData.authUid,
-              basicInfo: {
-                englishName: eventManagerData.englishName || '',
-                chineseName: eventManagerData.chineseName || '',
-                phoneNumber: eventManagerData.phoneNumber
-              },
-              roles: ['eventManager']
-            };
-            userRoles = ['eventManager'];
-            userId = `eventManager_${organizationId}_${eventId}`;
-            isEventManager = true;
-            console.log('[verifyOtpHttp] ✅ Event Manager 找到:', { userId });
-            break;
+      const eventDocRef = db.collection('organizations').doc(organizationId).collection('events').doc(eventId);
+      const eventDocSnapshot = await eventDocRef.get();
+      
+      if (eventDocSnapshot.exists) {
+        const eventData = eventDocSnapshot.data();
+        const eventManagerData = eventData.eventManager;
+        
+        if (eventManagerData) {
+          // 嘗試比對 Event Manager 的手機號
+          for (const variant of variants) {
+            const eventManagerPhone = normalizePhone(eventManagerData.phoneNumber);
+            if (eventManagerPhone === variant || eventManagerData.phoneNumber === variant) {
+              userData = {
+                authUid: eventManagerData.authUid,
+                basicInfo: {
+                  englishName: eventManagerData.englishName || '',
+                  chineseName: eventManagerData.chineseName || '',
+                  phoneNumber: eventManagerData.phoneNumber
+                },
+                roles: ['eventManager']
+              };
+              userRoles = ['eventManager'];
+              userId = `eventManager_${organizationId}_${eventId}`;
+              isEventManager = true;
+              console.log('[verifyOtpHttp] ✅ Event Manager 找到:', { userId });
+              break;
+            }
           }
         }
       }
-    }
 
-    // 如果不是 Event Manager，查詢 users 子集合中的其他角色
-    if (!isEventManager) {
+      if (!isEventManager) {
+        console.log('[verifyOtpHttp] ❌ Event Manager 专用登录失败 - 该号码不是 Event Manager');
+        return res.status(403).json({ 
+          error: { 
+            code: 'permission-denied',
+            message: '该手机号不是活动主任，请使用正确的登录入口' 
+          } 
+        });
+      }
+    } else {
+      // Universal Login：只检查 users 子集合，忽略 eventManager 字段
+      console.log('[verifyOtpHttp] 通用登录 - 只检查 users 集合');
+      
       for (const variant of variants) {
         const userSnapshot = await db
           .collection('organizations').doc(organizationId)
@@ -451,6 +475,18 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
           userData = userDoc.data();
           userId = userDoc.id;
           userRoles = userData.roles || [];
+          
+          // ⚠️ 过滤掉 eventManager 角色（即使 users 中有这个角色）
+          const originalRoles = [...userRoles];
+          userRoles = userRoles.filter(role => role !== 'eventManager' && role !== 'event_manager');
+          
+          if (originalRoles.length !== userRoles.length) {
+            console.log('[verifyOtpHttp] 已过滤 eventManager 角色', { 
+              original: originalRoles, 
+              filtered: userRoles 
+            });
+          }
+          
           console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, variant, roles: userRoles });
           break;
         }

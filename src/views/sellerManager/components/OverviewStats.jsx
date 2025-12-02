@@ -77,19 +77,19 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
           <StatCard
             icon="💰"
             title="累计分配点数"
-            value={`RM ${(allocationStats.totalPointsAllocated || 0).toLocaleString()}`}
+            value={`${(allocationStats.totalPointsAllocated || 0).toLocaleString()}`}
             color="#8b5cf6"
           />
           <StatCard
             icon="📊"
             title="平均每次分配"
-            value={`RM ${Math.round(allocationStats.averagePerAllocation || 0)}`}
+            value={`${Math.round(allocationStats.averagePerAllocation || 0)}`}
             color="#06b6d4"
           />
           <StatCard
             icon="🎯"
             title="分配上限"
-            value={`RM ${allocationRules.maxPerAllocation.toLocaleString()}/次`}
+            value={`${allocationRules.maxPerAllocation.toLocaleString()}/次`}
             color="#84cc16"
             description="每次每人最高"
           />
@@ -109,19 +109,19 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
           <StatCard
             icon="💳"
             title="当前持有点数"
-            value={`RM ${(managedStats.currentBalance || 0).toLocaleString()}`}
+            value={`${(managedStats.currentBalance || 0).toLocaleString()}`}
             color="#10b981"
           />
           <StatCard
             icon="📈"
             title="累计销售额"
-            value={`RM ${(managedStats.totalRevenue || 0).toLocaleString()}`}
+            value={`${(managedStats.totalRevenue || 0).toLocaleString()}`}
             color="#6366f1"
           />
           <StatCard
             icon="✅"
             title="已收款"
-            value={`RM ${(managedStats.totalCollected || 0).toLocaleString()}`}
+            value={`${(managedStats.totalCollected || 0).toLocaleString()}`}
             color="#14b8a6"
           />
         </div>
@@ -155,7 +155,7 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
             <div style={styles.detailRow}>
               <span>待收款金额:</span>
               <span style={styles.detailValue}>
-                RM {(managedStats.pendingCollection || 0).toLocaleString()}
+                {(managedStats.pendingCollection || 0).toLocaleString()}
               </span>
             </div>
             <div style={styles.detailRow}>
@@ -251,7 +251,7 @@ const DepartmentMiniCard = ({ dept }) => {
         </div>
         <div style={styles.deptStatRow}>
           <span>销售额:</span>
-          <strong>RM {(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
+          <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
         </div>
         <div style={styles.deptStatRow}>
           <span>收款率:</span>

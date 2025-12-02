@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { doc, updateDoc, addDoc, collection, increment, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../config/firebase'; // 修正路徑：由組件目錄返回到 src/config/firebase
+import { db } from '../../../config/firebase'; // 假设你的firebase配置在这里
 
 /**
  * Seller List Component (带收款功能版 v6)
@@ -26,6 +26,7 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
   const safeSellers = Array.isArray(sellers) ? sellers : [];
 
   // 筛选逻辑
+  // ✅ 修改后
   const getFilteredSellers = () => {
     let filtered = [...safeSellers];
 
@@ -40,12 +41,16 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
       filtered = filtered.filter(seller => {
         const sellerData = seller.seller || {};
         const hasAlert = sellerData.collectionAlert === true;
-        const totalSold = seller.pointsStats?.totalSold || 0;
-        const pendingCollection = seller.pointsStats?.pendingCollection || 0;
-        const totalRevenue = seller.pointsStats?.totalRevenue || 1;
-        const pendingRatio = pendingCollection / totalRevenue;
-        
-        switch(filterStatus) {
+        const availablePoints = sellerData.availablePoints || 0;  // ✅ 正确：从 seller 读取
+        const totalSold = sellerData.totalPointsSold || 0;  // ✅ 正确：从 seller 读取
+        const totalCollected = sellerData.totalCashCollected || 0;  // ✅ 正确：从 seller 读取
+
+        // 计算待收款：已售出但未收款的金额
+        const totalRevenue = totalSold;
+        const pendingCollection = totalRevenue - totalCollected;
+        const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
+
+        switch (filterStatus) {
           case 'active':
             return totalSold > 0;
           case 'warning':
@@ -72,12 +77,13 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
   };
 
   // 排序逻辑
+  // ✅ 修改后
   const getSortedSellers = (filtered) => {
     return [...filtered].sort((a, b) => {
-      const aStats = a.pointsStats || {};
-      const bStats = b.pointsStats || {};
+      const aSellerData = a.seller || {};  // ✅ 正确
+      const bSellerData = b.seller || {};  // ✅ 正确
 
-      switch(sortBy) {
+      switch (sortBy) {
         case 'name':
           const aName = a.basicInfo?.chineseName || '';
           const bName = b.basicInfo?.chineseName || '';
@@ -87,15 +93,24 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
           const bDept = b.identityInfo?.department || '';
           return aDept.localeCompare(bDept);
         case 'balance':
-          return (bStats.currentBalance || 0) - (aStats.currentBalance || 0);
+          return (bSellerData.availablePoints || 0) - (aSellerData.availablePoints || 0);  // ✅ 正确
         case 'revenue':
-          return (bStats.totalRevenue || 0) - (aStats.totalRevenue || 0);
+          return (bSellerData.totalPointsSold || 0) - (aSellerData.totalPointsSold || 0);  // ✅ 正确
         case 'collectionRate':
-          const aRate = aStats.collectionRate || 0;
-          const bRate = bStats.collectionRate || 0;
-          return bRate - aRate;
+          // 计算收款率
+          const aRevenue = aSellerData.totalPointsSold || 0;
+          const aCollected = aSellerData.totalCashCollected || 0;
+          const aRate = aRevenue > 0 ? aCollected / aRevenue : 0;
+
+          const bRevenue = bSellerData.totalPointsSold || 0;
+          const bCollected = bSellerData.totalCashCollected || 0;
+          const bRate = bRevenue > 0 ? bCollected / bRevenue : 0;
+
+          return bRate - aRate;  // ✅ 正确
         case 'pendingCollection':
-          return (bStats.pendingCollection || 0) - (aStats.pendingCollection || 0);
+          const aPending = (aSellerData.totalPointsSold || 0) - (aSellerData.totalCashCollected || 0);
+          const bPending = (bSellerData.totalPointsSold || 0) - (bSellerData.totalCashCollected || 0);
+          return bPending - aPending;  // ✅ 正确
         default:
           return 0;
       }
@@ -108,14 +123,14 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
    */
   const handleRecordCollection = async (seller) => {
     const pendingCollection = seller.pointsStats?.pendingCollection || 0;
-    
+
     if (pendingCollection <= 0) {
       alert('该用户没有待收款项');
       return;
     }
 
     const confirmMessage = `确认记录收款？\n\n用户: ${seller.basicInfo?.chineseName}\n待收款: RM ${pendingCollection.toLocaleString()}\n\n此操作将标记全部待收款为已收款。`;
-    
+
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -124,7 +139,7 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
 
     try {
       const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
-      
+
       // 更新用户的收款统计
       await updateDoc(userRef, {
         // 更新 pointsStats
@@ -132,24 +147,24 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
         'pointsStats.pendingCollection': increment(-pendingCollection),
         'pointsStats.collectionRate': (seller.pointsStats?.totalCollected || 0) + pendingCollection / (seller.pointsStats?.totalRevenue || 1),
         'pointsStats.lastCollected': serverTimestamp(),
-        
+
         // 更新 seller 对象
         'seller.totalCollected': increment(pendingCollection),
         'seller.pendingCollection': increment(-pendingCollection),
         'seller.collectionRate': (seller.seller?.totalCollected || 0) + pendingCollection / (seller.seller?.totalRevenue || 1),
-        
+
         // 更新 pendingCashSubmission（增加待上交现金）
         'seller.pendingCashSubmission': increment(pendingCollection),
-        
+
         // 更新时间戳
         'activityData.updatedAt': serverTimestamp()
       });
 
       alert(`收款记录成功！\n已收款: RM ${pendingCollection.toLocaleString()}`);
-      
+
       // 刷新数据（这里假设父组件会重新获取数据）
       // 如果需要，可以调用回调函数通知父组件刷新
-      
+
     } catch (error) {
       console.error('记录收款失败:', error);
       alert('记录收款失败: ' + error.message);
@@ -164,14 +179,14 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
    */
   const handleCashSubmission = async (seller, managerId, managerType = 'sellerManager') => {
     const pendingCash = seller.seller?.pendingCashSubmission || 0;
-    
+
     if (pendingCash <= 0) {
       alert('该用户没有待上交的现金');
       return;
     }
 
     const confirmMessage = `确认现金上交？\n\n上交人: ${seller.basicInfo?.chineseName}\n上交金额: RM ${pendingCash.toLocaleString()}\n接收人: ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'}\n\n此操作将记录全部待上交现金。`;
-    
+
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -179,7 +194,7 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
     try {
       const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
       const submissionsRef = collection(userRef, 'cashSubmissions');
-      
+
       // 创建现金上交记录
       await addDoc(submissionsRef, {
         amount: pendingCash,
@@ -199,7 +214,7 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
       });
 
       alert(`现金上交记录成功！\n上交金额: RM ${pendingCash.toLocaleString()}\n\n等待 ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'} 验证。`);
-      
+
     } catch (error) {
       console.error('现金上交失败:', error);
       alert('现金上交失败: ' + error.message);
@@ -210,21 +225,35 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
   const sortedSellers = getSortedSellers(filteredSellers);
 
   // 统计摘要
+  // ✅ 修改后
   const getStatsSummary = () => {
     const total = filteredSellers.length;
-    const active = filteredSellers.filter(s => (s.pointsStats?.totalSold || 0) > 0).length;
-    
+    const active = filteredSellers.filter(s => {
+      const sellerData = s.seller || {};
+      return (sellerData.totalPointsSold || 0) > 0;  // ✅ 正确
+    }).length;
+
     const withWarning = filteredSellers.filter(s => {
       const sellerData = s.seller || {};
       const hasAlert = sellerData.collectionAlert === true;
-      const pendingRatio = (s.pointsStats?.pendingCollection || 0) / (s.pointsStats?.totalRevenue || 1);
+
+      const totalRevenue = sellerData.totalPointsSold || 0;
+      const totalCollected = sellerData.totalCashCollected || 0;
+      const pendingCollection = totalRevenue - totalCollected;
+      const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;  // ✅ 正确
+
       return hasAlert && pendingRatio < 0.5;
     }).length;
-    
+
     const highRisk = filteredSellers.filter(s => {
       const sellerData = s.seller || {};
       const hasAlert = sellerData.collectionAlert === true;
-      const pendingRatio = (s.pointsStats?.pendingCollection || 0) / (s.pointsStats?.totalRevenue || 1);
+
+      const totalRevenue = sellerData.totalPointsSold || 0;
+      const totalCollected = sellerData.totalCashCollected || 0;
+      const pendingCollection = totalRevenue - totalCollected;
+      const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;  // ✅ 正确
+
       return hasAlert && pendingRatio >= 0.5;
     }).length;
 
@@ -333,20 +362,20 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
           <table style={styles.table}>
             <thead>
               <tr style={styles.tableHeader}>
+                <th style={styles.th}>序号</th>
                 <th style={styles.th}>姓名</th>
                 <th style={styles.th}>部门</th>
                 <th style={styles.th}>电话</th>
-                <th style={styles.th}>当前余额</th>
+                <th style={styles.th}>现有点数</th>
                 <th style={styles.th}>累计销售</th>
-                <th style={styles.th}>收款率</th>
-                <th style={styles.th}>状态</th>
                 <th style={styles.th}>操作</th>
               </tr>
             </thead>
             <tbody>
-              {sortedSellers.map((seller) => (
+              {sortedSellers.map((seller, index) => (
                 <SellerRow
                   key={seller.id || seller.userId}
+                  index={index}
                   seller={seller}
                   isExpanded={expandedSeller === (seller.id || seller.userId)}
                   onToggle={() => setExpandedSeller(
@@ -369,25 +398,29 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
 /**
  * Seller Row Component
  */
-const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection, onCashSubmission, isRecording }) => {
+// ✅ 修改后
+const SellerRow = ({ index, seller, isExpanded, onToggle, onSelect, onRecordCollection, onCashSubmission, isRecording }) => {
   if (!seller || typeof seller !== 'object') return null;
 
   const basicInfo = seller.basicInfo || {};
   const identityInfo = seller.identityInfo || {};
-  const pointsStats = seller.pointsStats || {};
-  const sellerData = seller.seller || {};
-  
+  const sellerData = seller.seller || {};  // ✅ 正确：直接读取 seller 对象
+
   const displayName = basicInfo.chineseName || '未命名';
   const englishName = basicInfo.englishName || '';
   const department = identityInfo.department || '-';
   const phoneNumber = basicInfo.phoneNumber || '-';
-  
-  const currentBalance = pointsStats.currentBalance || 0;
-  const totalRevenue = pointsStats.totalRevenue || 0;
-  const collectionRate = pointsStats.collectionRate || 0;
-  const pendingCollection = pointsStats.pendingCollection || 0;
-  const totalSold = pointsStats.totalSold || 0;
-  
+
+  // ✅ 正确：从 seller 对象读取所有点数相关信息
+  const currentBalance = sellerData.availablePoints || 0;
+  const totalSold = sellerData.totalPointsSold || 0;
+  const totalCollected = sellerData.totalCashCollected || 0;
+
+  // 计算派生数据
+  const totalRevenue = totalSold;
+  const pendingCollection = totalRevenue - totalCollected;
+  const collectionRate = totalRevenue > 0 ? totalCollected / totalRevenue : 0;
+
   const hasCollectionAlert = sellerData.collectionAlert === true;
   const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
 
@@ -429,6 +462,12 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection,
   return (
     <>
       <tr style={styles.tableRow}>
+        {/* 序号 */}
+        <td style={styles.td}>
+          <span style={styles.indexText}>{index + 1}</span>
+        </td>
+
+        {/* 姓名 */}
         <td style={styles.td}>
           <div style={styles.nameCell}>
             <div style={styles.nameText}>{displayName}</div>
@@ -437,40 +476,30 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection,
             )}
           </div>
         </td>
+
+        {/* 部门 */}
         <td style={styles.td}>{department}</td>
+
+        {/* 电话 */}
         <td style={styles.td}>
           <span style={styles.phoneText}>{phoneNumber}</span>
         </td>
+
+        {/* 现有点数 */}
         <td style={styles.td}>
           <span style={styles.balanceText}>
-            RM {currentBalance.toLocaleString()}
+            {currentBalance.toLocaleString()}
           </span>
         </td>
+
+        {/* 累计销售 */}
         <td style={styles.td}>
           <span style={styles.revenueText}>
-            RM {totalRevenue.toLocaleString()}
+            {totalRevenue.toLocaleString()}
           </span>
         </td>
-        <td style={styles.td}>
-          <div style={styles.rateCell}>
-            <span style={{ 
-              ...styles.rateText,
-              color: getRateColor(collectionRate)
-            }}>
-              {Math.round(collectionRate * 100)}%
-            </span>
-            <div style={styles.rateBar}>
-              <div style={{
-                ...styles.rateBarFill,
-                width: `${Math.min(100, collectionRate * 100)}%`,
-                background: getRateColor(collectionRate)
-              }}></div>
-            </div>
-          </div>
-        </td>
-        <td style={styles.td}>
-          {getStatusBadge()}
-        </td>
+
+        {/* 操作 */}
         <td style={styles.td}>
           <div style={styles.actionButtons}>
             <button
@@ -497,8 +526,8 @@ const SellerRow = ({ seller, isExpanded, onToggle, onSelect, onRecordCollection,
       {isExpanded && (
         <tr>
           <td colSpan="8" style={styles.expandedCell}>
-            <SellerDetails 
-              seller={seller} 
+            <SellerDetails
+              seller={seller}
               onSelect={onSelect}
               onRecordCollection={onRecordCollection}
               onCashSubmission={onCashSubmission}
@@ -518,12 +547,12 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
   const sellerData = seller.seller || {};
   const basicInfo = seller.basicInfo || {};
   const identityInfo = seller.identityInfo || {};
-  
+
   const hasCollectionAlert = sellerData.collectionAlert === true;
   const pendingCollection = pointsStats.pendingCollection || 0;
   const totalRevenue = pointsStats.totalRevenue || 0;
   const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
-  
+
   // 现金相关
   const cashSubmitted = sellerData.cashSubmitted || 0;
   const pendingCashSubmission = sellerData.pendingCashSubmission || 0;
@@ -548,19 +577,19 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
           <div style={styles.detailRows}>
             <div style={styles.detailRow}>
               <span>累计收到点数:</span>
-              <strong>RM {(pointsStats.totalReceived || 0).toLocaleString()}</strong>
+              <strong>{(pointsStats.totalReceived || 0).toLocaleString()}</strong>
             </div>
             <div style={styles.detailRow}>
               <span>当前持有:</span>
-              <strong>RM {(pointsStats.currentBalance || 0).toLocaleString()}</strong>
+              <strong>{(pointsStats.currentBalance || 0).toLocaleString()}</strong>
             </div>
             <div style={styles.detailRow}>
               <span>累计售出:</span>
-              <strong>RM {(pointsStats.totalSold || 0).toLocaleString()}</strong>
+              <strong>{(pointsStats.totalSold || 0).toLocaleString()}</strong>
             </div>
             <div style={styles.detailRow}>
               <span>销售额 (=售出):</span>
-              <strong>RM {(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
+              <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
             </div>
           </div>
         </div>
@@ -572,13 +601,13 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             <div style={styles.detailRow}>
               <span>已收款:</span>
               <strong style={{ color: '#10b981' }}>
-                RM {(pointsStats.totalCollected || 0).toLocaleString()}
+                {(pointsStats.totalCollected || 0).toLocaleString()}
               </strong>
             </div>
             <div style={styles.detailRow}>
               <span>待收款:</span>
               <strong style={{ color: '#ef4444' }}>
-                RM {pendingCollection.toLocaleString()}
+                {pendingCollection.toLocaleString()}
               </strong>
             </div>
             <div style={styles.detailRow}>
@@ -603,19 +632,19 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             <div style={styles.detailRow}>
               <span>已上交现金:</span>
               <strong style={{ color: '#10b981' }}>
-                RM {cashSubmitted.toLocaleString()}
+                {cashSubmitted.toLocaleString()}
               </strong>
             </div>
             <div style={styles.detailRow}>
               <span>待上交现金:</span>
               <strong style={{ color: '#f59e0b' }}>
-                RM {pendingCashSubmission.toLocaleString()}
+                {pendingCashSubmission.toLocaleString()}
               </strong>
             </div>
             <div style={styles.detailRow}>
               <span>上交率:</span>
               <strong>
-                {totalRevenue > 0 
+                {totalRevenue > 0
                   ? `${Math.round((cashSubmitted / totalRevenue) * 100)}%`
                   : '0%'
                 }
@@ -628,24 +657,50 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
         <div style={styles.detailCard}>
           <div style={styles.detailCardTitle}>📦 点数来源</div>
           <div style={styles.detailRows}>
-            <div style={styles.detailRow}>
-              <span>来自 Event Manager:</span>
-              <strong>
-                RM {(pointsStats.receivedFromEventManager || 0).toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>来自 Seller Manager:</span>
-              <strong>
-                RM {(pointsStats.receivedFromSellerManager || 0).toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>最后分配时间:</span>
-              <span style={styles.timestampText}>
-                {formatTimestamp(pointsStats.lastReceived)}
-              </span>
-            </div>
+            {(() => {
+              const sellerData = seller.seller || {};
+              const transactions = sellerData.transactions || {};
+
+              let fromEventManager = 0;
+              let fromSellerManager = 0;
+              let lastAllocatedAt = null;
+
+              // 遍历 transactions 对象
+              Object.values(transactions).forEach(tx => {
+                if (tx && typeof tx === 'object' && tx.type === 'allocation') {
+                  const amount = tx.amount || 0;
+                  if (tx.allocatedBy === 'eventManager') {
+                    fromEventManager += amount;
+                  } else if (tx.allocatedBy === 'sellerManager') {
+                    fromSellerManager += amount;
+                  }
+
+                  // 记录最后分配时间
+                  if (tx.timestamp && (!lastAllocatedAt || tx.timestamp > lastAllocatedAt)) {
+                    lastAllocatedAt = tx.timestamp;
+                  }
+                }
+              });
+
+              return (
+                <>
+                  <div style={styles.detailRow}>
+                    <span>来自 Event Manager:</span>
+                    <strong>{fromEventManager.toLocaleString()}</strong>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span>来自 Seller Manager:</span>
+                    <strong>{fromSellerManager.toLocaleString()}</strong>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span>最后分配时间:</span>
+                    <span style={styles.timestampText}>
+                      {lastAllocatedAt ? formatTimestamp(lastAllocatedAt) : '无'}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -656,8 +711,8 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             <div style={styles.detailRows}>
               <div style={styles.detailRow}>
                 <span>风险等级:</span>
-                <strong style={{ 
-                  color: pendingRatio >= 0.5 ? '#dc2626' : '#f59e0b' 
+                <strong style={{
+                  color: pendingRatio >= 0.5 ? '#dc2626' : '#f59e0b'
                 }}>
                   {pendingRatio >= 0.5 ? '🚨 高风险' : '⚠️ 中等'}
                 </strong>
@@ -671,11 +726,11 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
               <div style={styles.detailRow}>
                 <span>待收款金额:</span>
                 <strong style={{ color: '#ef4444' }}>
-                  RM {pendingCollection.toLocaleString()}
+                  {pendingCollection.toLocaleString()}
                 </strong>
               </div>
               <div style={styles.alertMessage}>
-                {pendingRatio >= 0.5 
+                {pendingRatio >= 0.5
                   ? `待收款金额过高（${Math.round(pendingRatio * 100)}%），请尽快收款`
                   : `有待收款项（${Math.round(pendingRatio * 100)}%），请注意跟进`
                 }
@@ -692,7 +747,7 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             onClick={() => onRecordCollection(seller)}
             style={styles.detailActionButton}
           >
-            💰 记录收款 (待收: RM {pendingCollection.toLocaleString()})
+            💰 记录收款 (待收: {pendingCollection.toLocaleString()})
           </button>
         )}
         {pendingCashSubmission > 0 && onCashSubmission && (
@@ -704,7 +759,7 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             }}
             style={{ ...styles.detailActionButton, ...styles.cashButton }}
           >
-            💵 上交现金 (待交: RM {pendingCashSubmission.toLocaleString()})
+            💵 上交现金 (待交: {pendingCashSubmission.toLocaleString()})
           </button>
         )}
         {onSelect && (
@@ -722,7 +777,7 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
 
 const styles = {
   container: { width: '100%' },
-  
+
   header: {
     marginBottom: '1.5rem'
   },
@@ -875,7 +930,11 @@ const styles = {
     height: '100%',
     borderRadius: '2px'
   },
-
+  indexText: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    fontWeight: '500'
+  },
   badge: {
     display: 'inline-block',
     padding: '0.25rem 0.5rem',

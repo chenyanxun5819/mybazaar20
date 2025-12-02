@@ -21,10 +21,11 @@ import { doc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
  * @param {Function} onClose - 关闭回调
  * @param {Function} onSuccess - 成功回调
  */
+// ✅ 修改后
 const AllocatePoints = ({
   seller,
   sellerManager,
-  organizationId, // ✅ 新增参数
+  organizationId,
   eventId,
   maxPerAllocation = 100,
   onClose,
@@ -35,14 +36,28 @@ const AllocatePoints = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const pointsStats = seller.pointsStats || {};
+  const sellerData = seller.seller || {};  // ✅ 正确：从 seller 对象读取
   const collectionAlert = seller.collectionAlert || {};
   const sellerName = seller.displayName || seller.chineseName || seller.englishName || 'N/A';
   const sellerManagerName = sellerManager.displayName || sellerManager.chineseName || sellerManager.englishName || 'Seller Manager';
-
-  // 快速金额选择
-  const quickAmounts = [50, 100, 200, 500, maxPerAllocation];
-
+  
+  // ✅ 正确：从 seller 对象获取当前余额和统计数据
+  const currentBalance = sellerData.availablePoints || 0;
+  
+  // ✅ 定义 pointsStats（从 sellerData 获取）
+  const pointsStats = {
+    currentBalance: sellerData.availablePoints || 0,
+    totalRevenue: sellerData.totalRevenue || sellerData.totalPointsSold || 0,
+    totalCollected: sellerData.totalCollected || sellerData.totalCashCollected || 0,
+    pendingCollection: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) - (sellerData.totalCollected || sellerData.totalCashCollected || 0),
+    collectionRate: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) > 0 
+      ? (sellerData.totalCollected || sellerData.totalCashCollected || 0) / (sellerData.totalRevenue || sellerData.totalPointsSold || 0)
+      : 0
+  };
+  
+  // 快速金额选项
+  const quickAmounts = [10, 20, 50, 100, 200, 500];
+  
   /**
    * 处理金额输入
    */
@@ -101,12 +116,12 @@ const AllocatePoints = ({
       }
     } else {
       // 正常确认
-      if (!confirm(
-        `确定要分配 RM ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
-        `对方当前余额: RM ${(pointsStats.currentBalance || 0).toLocaleString()}\n` +
-        `分配后余额: RM ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}`
-      )) {
-        return;
+  if (!confirm(
+    `确定要分配 RM ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
+    `对方当前余额: RM ${currentBalance.toLocaleString()}\n` +  // ✅ 正确
+    `分配后余额: RM ${(currentBalance + allocateAmount).toLocaleString()}`  // ✅ 正确
+  )) {
+    return;
       }
     }
 
@@ -290,7 +305,7 @@ const AllocatePoints = ({
             <div style={styles.warningContent}>
               <div style={styles.warningTitle}>收款警示</div>
               <div style={styles.warningText}>
-                待收款: RM {(collectionAlert.pendingAmount || 0).toLocaleString()} 
+                待收款: {(collectionAlert.pendingAmount || 0).toLocaleString()} 
                 <span style={{
                   marginLeft: '0.5rem',
                   color: getWarningLevelColor(collectionAlert.warningLevel)
@@ -306,7 +321,7 @@ const AllocatePoints = ({
         <div style={styles.statsBox}>
           <div style={styles.statRow}>
             <span>当前余额:</span>
-            <strong>RM {(pointsStats.currentBalance || 0).toLocaleString()}</strong>
+            <strong>{(pointsStats.currentBalance || 0).toLocaleString()}</strong>
           </div>
           <div style={styles.statRow}>
             <span>累计销售:</span>

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
-import { 
-  doc, 
-  getDoc, 
-  collection, 
+import {
+  doc,
+  getDoc,
+  collection,
   query,
   where,
   onSnapshot
@@ -52,18 +52,18 @@ const getLocalizedText = (val) => {
 const SellerManagerDashboard = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
-  
+
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [eventData, setEventData] = useState(null);
   const [eventId, setEventId] = useState(null);
-  
+
   const [smStats, setSmStats] = useState(null);
   const [departmentStats, setDepartmentStats] = useState([]);
-  
+
   const [sellers, setSellers] = useState([]);
   const [loadingSellers, setLoadingSellers] = useState(false);
-  
+
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
 
@@ -76,7 +76,6 @@ const SellerManagerDashboard = () => {
     let unsubscribeSellers = null;
 
     if (currentUser && eventId) {
-      unsubscribeStats = subscribeToStats();
       unsubscribeSellers = loadSellers();
     }
 
@@ -134,12 +133,12 @@ const SellerManagerDashboard = () => {
       const eventDoc = await getDoc(
         doc(db, 'organizations', userInfo.organizationId, 'events', userInfo.eventId)
       );
-      
+
       if (eventDoc.exists()) {
         const data = eventDoc.data();
         setEventData(data || {});
         console.log('[SM Dashboard] 活动数据加载成功');
-        
+
         // 显示点数分配规则
         if (data && data.pointAllocationRules && data.pointAllocationRules.sellerManager) {
           console.log('[SM Dashboard] 点数分配规则:', data.pointAllocationRules.sellerManager);
@@ -160,78 +159,6 @@ const SellerManagerDashboard = () => {
     }
   };
 
-  const subscribeToStats = () => {
-    if (!currentUser || !eventId) return;
-
-    const unsubscribers = [];
-
-    try {
-      // 监听 Seller Manager 统计
-      const smStatsRef = doc(
-        db,
-        'organizations', currentUser.organizationId,
-        'events', eventId,
-        'sellerManagerStats', currentUser.userId
-      );
-      
-      const unsubSM = onSnapshot(
-        smStatsRef,
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            setSmStats(data || getDefaultStats());
-            console.log('[SM Dashboard] SM 统计更新');
-          } else {
-            console.warn('[SM Dashboard] SM 统计不存在');
-            setSmStats(getDefaultStats());
-          }
-        },
-        (error) => {
-          console.error('[SM Dashboard] SM 统计监听错误:', error);
-          setSmStats(getDefaultStats());
-        }
-      );
-      unsubscribers.push(unsubSM);
-
-      // 监听部门统计
-      if (Array.isArray(currentUser.managedDepartments) && currentUser.managedDepartments.length > 0) {
-        const deptQuery = query(
-          collection(db, 'organizations', currentUser.organizationId, 'events', eventId, 'departmentStats'),
-          where('__name__', 'in', currentUser.managedDepartments.slice(0, 10))
-        );
-        
-        const unsubDept = onSnapshot(
-          deptQuery,
-          (snapshot) => {
-            const depts = [];
-            snapshot.forEach(doc => {
-              depts.push({
-                id: doc.id,
-                departmentCode: doc.id,
-                ...(doc.data() || {})
-              });
-            });
-            setDepartmentStats(depts);
-            console.log('[SM Dashboard] 部门统计更新:', depts.length);
-          },
-          (error) => {
-            console.error('[SM Dashboard] 部门统计错误:', error);
-            setDepartmentStats([]);
-          }
-        );
-        unsubscribers.push(unsubDept);
-      }
-
-    } catch (error) {
-      console.error('[SM Dashboard] 订阅失败:', error);
-    }
-
-    return () => {
-      unsubscribers.forEach(unsub => {
-        if (typeof unsub === 'function') unsub();
-      });
-    };
-  };
 
   const loadSellers = () => {
     if (!currentUser || !eventId) return;
@@ -262,16 +189,39 @@ const SellerManagerDashboard = () => {
               ...(doc.data() || {})
             });
           });
-          
+
           list.sort((a, b) => {
             const timeA = (a.accountStatus && a.accountStatus.createdAt && a.accountStatus.createdAt.toMillis) ? a.accountStatus.createdAt.toMillis() : 0;
             const timeB = (b.accountStatus && b.accountStatus.createdAt && b.accountStatus.createdAt.toMillis) ? b.accountStatus.createdAt.toMillis() : 0;
             return timeB - timeA;
           });
-          
+
           setSellers(list);
           setLoadingSellers(false);
+
+          // ✅ 新增：立即聚合数据
+          const aggregatedStats = aggregateManagedUsersStats(list);
+          const aggregatedDepts = aggregateDepartmentStats(list);
+
+          // 更新 smStats（包含分配统计）
+          setSmStats({
+            managedUsersStats: aggregatedStats,
+            allocationStats: {
+              totalAllocations: 0,  // TODO: 从其他数据源获取
+              totalPointsAllocated: 0,
+              averagePerAllocation: 0
+            },
+            collectionManagement: {
+              usersWithWarnings: aggregatedStats.usersWithWarnings,
+              highRiskUsers: aggregatedStats.highRiskUsers
+            }
+          });
+
+          // 更新部门统计
+          setDepartmentStats(aggregatedDepts);
+
           console.log('[SM Dashboard] Sellers 列表更新:', list.length);
+          console.log('[SM Dashboard] 聚合统计完成');
         },
         (error) => {
           console.error('[SM Dashboard] Sellers 查询错误:', error);
@@ -289,21 +239,171 @@ const SellerManagerDashboard = () => {
     }
   };
 
-  const getDefaultStats = () => ({
-    totalSellers: 0,
-    activeSellers: 0,
-    totalPointsAllocated: 0,
-    totalPointsSold: 0,
-    totalCashCollected: 0,
-    pendingReconciliation: 0
-  });
+
+
+  // Line 300 之后添加
+
+  /**
+   * 聚合被管理的 Sellers 的统计数据
+   * @param {Array} sellersList - sellers 数组
+   * @returns {Object} 聚合后的统计数据
+   */
+  const aggregateManagedUsersStats = (sellersList) => {
+    if (!Array.isArray(sellersList) || sellersList.length === 0) {
+      return {
+        totalUsers: 0,
+        activeUsers: 0,
+        currentBalance: 0,
+        totalRevenue: 0,
+        totalCollected: 0,
+        pendingCollection: 0,
+        collectionRate: 0
+      };
+    }
+
+    let totalUsers = 0;
+    let activeUsers = 0;
+    let currentBalance = 0;
+    let totalRevenue = 0;
+    let totalCollected = 0;
+    let pendingCollection = 0;
+    let usersWithWarnings = 0;
+    let highRiskUsers = 0;
+
+    sellersList.forEach(seller => {
+      const sellerData = seller.seller || {};
+
+      totalUsers++;
+
+      // ✅ 从 seller 对象读取数据
+      const availablePoints = sellerData.availablePoints || 0;
+      const totalSold = sellerData.totalPointsSold || 0;
+      const totalCashCollected = sellerData.totalCashCollected || 0;
+
+      if (totalSold > 0) {
+        activeUsers++;
+      }
+
+      currentBalance += availablePoints;
+      totalRevenue += totalSold;
+      totalCollected += totalCashCollected;
+
+      const pending = totalSold - totalCashCollected;
+      pendingCollection += pending;
+
+      // 检查收款警示
+      if (sellerData.collectionAlert) {
+        usersWithWarnings++;
+
+        const pendingRatio = totalSold > 0 ? pending / totalSold : 0;
+        if (pendingRatio >= 0.5) {
+          highRiskUsers++;
+        }
+      }
+    });
+
+    const collectionRate = totalRevenue > 0 ? totalCollected / totalRevenue : 0;
+
+    return {
+      totalUsers,
+      activeUsers,
+      currentBalance,
+      totalRevenue,
+      totalCollected,
+      pendingCollection,
+      collectionRate,
+      usersWithWarnings,
+      highRiskUsers
+    };
+  };
+
+  /**
+   * 按部门聚合 Sellers 的统计数据
+   * @param {Array} sellersList - sellers 数组
+   * @returns {Array} 各部门的聚合数据
+   */
+  const aggregateDepartmentStats = (sellersList) => {
+    if (!Array.isArray(sellersList) || sellersList.length === 0) {
+      return [];
+    }
+
+    const deptMap = {};
+
+    sellersList.forEach(seller => {
+      const dept = seller.identityInfo?.department || 'unknown';
+      const sellerData = seller.seller || {};
+
+      if (!deptMap[dept]) {
+        deptMap[dept] = {
+          id: dept,
+          departmentCode: dept,
+          departmentName: dept,  // 可以从 eventData.departments 获取完整名称
+          membersStats: {
+            totalCount: 0,
+            activeCount: 0
+          },
+          pointsStats: {
+            currentBalance: 0,
+            totalRevenue: 0,
+            totalCollected: 0,
+            pendingCollection: 0,
+            collectionRate: 0
+          },
+          collectionAlerts: {
+            usersWithWarnings: 0,
+            highRiskUsers: []
+          },
+          allocationStats: {
+            totalAllocations: 0,
+            byEventManager: { count: 0, totalPoints: 0 },
+            bySellerManager: { count: 0, totalPoints: 0 }
+          }
+        };
+      }
+
+      const deptStats = deptMap[dept];
+      deptStats.membersStats.totalCount++;
+
+      const availablePoints = sellerData.availablePoints || 0;
+      const totalSold = sellerData.totalPointsSold || 0;
+      const totalCollected = sellerData.totalCashCollected || 0;
+      const pending = totalSold - totalCollected;
+
+      if (totalSold > 0) {
+        deptStats.membersStats.activeCount++;
+      }
+
+      deptStats.pointsStats.currentBalance += availablePoints;
+      deptStats.pointsStats.totalRevenue += totalSold;
+      deptStats.pointsStats.totalCollected += totalCollected;
+      deptStats.pointsStats.pendingCollection += pending;
+
+      // 检查警示
+      if (sellerData.collectionAlert) {
+        deptStats.collectionAlerts.usersWithWarnings++;
+
+        const pendingRatio = totalSold > 0 ? pending / totalSold : 0;
+        if (pendingRatio >= 0.5) {
+          deptStats.collectionAlerts.highRiskUsers.push(seller.userId);
+        }
+      }
+    });
+
+    // 计算各部门的收款率
+    Object.values(deptMap).forEach(dept => {
+      const { totalRevenue, totalCollected } = dept.pointsStats;
+      dept.pointsStats.collectionRate = totalRevenue > 0 ? totalCollected / totalRevenue : 0;
+    });
+
+    return Object.values(deptMap);
+  };
 
   const handleAllocatePoints = (seller) => {
     if (!seller || typeof seller !== 'object') {
       console.error('[SM Dashboard] 无效的 seller 对象');
       return;
     }
-    
+
     console.log('[SM Dashboard] 准备为 Seller 分配点数:', seller.userId);
     setSelectedSeller(seller);
     setShowAllocatePoints(true);
@@ -338,6 +438,30 @@ const SellerManagerDashboard = () => {
       </div>
     );
   }
+
+  // 默认统计数据
+  const getDefaultStats = () => ({
+    managedUsersStats: {
+      totalUsers: 0,
+      activeUsers: 0,
+      currentBalance: 0,
+      totalRevenue: 0,
+      totalCollected: 0,
+      pendingCollection: 0,
+      collectionRate: 0,
+      usersWithWarnings: 0,
+      highRiskUsers: 0
+    },
+    allocationStats: {
+      totalAllocations: 0,
+      totalPointsAllocated: 0,
+      averagePerAllocation: 0
+    },
+    collectionManagement: {
+      usersWithWarnings: 0,
+      highRiskUsers: 0
+    }
+  });
 
   return (
     <div style={styles.container}>
@@ -393,7 +517,7 @@ const SellerManagerDashboard = () => {
             </div>
           </div>
         </div>
-        
+
         {loadingSellers ? (
           <div style={styles.loadingCard}>
             <div style={styles.spinner}></div>
@@ -402,8 +526,10 @@ const SellerManagerDashboard = () => {
         ) : (
           <SellerList
             sellers={safeSellers}
-            onAllocatePoints={handleAllocatePoints}
-            maxPerAllocation={maxPerAllocation}
+            selectedDepartment={null}
+            onSelectSeller={handleAllocatePoints}
+            eventId={eventId}
+            orgId={safeCurrentUser.organizationId}
           />
         )}
       </div>
@@ -411,13 +537,16 @@ const SellerManagerDashboard = () => {
       {showAllocatePoints && selectedSeller && (
         <AllocatePoints
           seller={selectedSeller}
-          sellerManagerId={safeCurrentUser.userId}
+          sellerManager={safeCurrentUser}
+          organizationId={safeCurrentUser.organizationId}
           eventId={eventId}
           maxPerAllocation={maxPerAllocation}
-          warningThreshold={warningThreshold}
           onClose={() => {
             setShowAllocatePoints(false);
             setSelectedSeller(null);
+          }}
+          onSuccess={() => {
+            console.log('[SM Dashboard] 点数分配成功，数据将自动更新');
           }}
         />
       )}
@@ -571,7 +700,7 @@ const styleSheet = document.styleSheets[0];
 if (styleSheet) {
   try {
     styleSheet.insertRule(`@keyframes spin { to { transform: rotate(360deg); } }`, styleSheet.cssRules.length);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 export default SellerManagerDashboard;

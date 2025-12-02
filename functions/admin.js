@@ -1174,65 +1174,9 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       department: department || '未分配'
     };
 
-    // 7. 构建 roleSpecificData
-    const roleSpecificData = {};
-
-    if (roles.includes('sellerManager')) {
-      roleSpecificData.sellerManager = {
-        managerId: `SM${Date.now()}`,
-        assignedCapital: 0,
-        availableCapital: 0,
-        allocatedToSellers: 0,
-        totalSellersManaged: 0
-      };
-    }
-
-    if (roles.includes('merchantManager')) {
-      roleSpecificData.merchantManager = {
-        managerId: `MM${Date.now()}`,
-        totalMerchantsManaged: 0
-      };
-    }
-
-    if (roles.includes('customerManager')) {
-      roleSpecificData.customerManager = {
-        managerId: `CM${Date.now()}`,
-        totalCustomersManaged: 0,
-        totalSalesAmount: 0
-      };
-    }
-
-    if (roles.includes('seller')) {
-      roleSpecificData.seller = {
-        sellerId: `SL${Date.now()}`,
-        availablePoints: 0,
-        currentSalesAmount: 0,
-        totalPointsSold: 0
-      };
-    }
-
-    if (roles.includes('merchant')) {
-      roleSpecificData.merchant = {
-        merchantId: `MR${Date.now()}`,
-        monthlyReceivedPoints: 0,
-        totalReceivedPoints: 0
-      };
-    }
-
-    if (roles.includes('customer')) {
-      roleSpecificData.customer = {
-        customerId: `CS${Date.now()}`,
-        currentBalance: 0,
-        totalPointsPurchased: 0,
-        totalPointsConsumed: 0
-      };
-    }
-
     // 8. 创建用户文档
     const userId = `usr_${crypto.randomUUID()}`;
     const now = new Date();
-
-    // （保留在後續 8.5 統一處理）
 
     const userDoc = {
       userId: userId,
@@ -1251,7 +1195,6 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         isPhoneVerified: true
       },
       identityInfo: identityInfo,
-      roleSpecificData: roleSpecificData,
       activityData: {
         joinedAt: now,
         lastActiveAt: now,
@@ -1269,6 +1212,60 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         notes: `由 Event Manager 创建 - ${roles.join(', ')}`
       }
     };
+
+    // ✅ 7.5. 添加角色特定的顶层字段（与 UserManagement.jsx 一致）
+    if (roles.includes('sellerManager')) {
+      userDoc.sellerManager = {
+        managerId: `SM${Date.now()}`,
+        assignedCapital: 0,
+        availableCapital: 0,
+        allocatedToSellers: 0,
+        totalSellersManaged: 0,
+        managedDepartments: []
+      };
+    }
+
+    if (roles.includes('merchantManager')) {
+      userDoc.merchantManager = {
+        managerId: `MM${Date.now()}`,
+        totalMerchantsManaged: 0
+      };
+    }
+
+    if (roles.includes('customerManager')) {
+      userDoc.customerManager = {
+        managerId: `CM${Date.now()}`,
+        totalCustomersManaged: 0,
+        totalSalesAmount: 0
+      };
+    }
+
+    if (roles.includes('seller')) {
+      userDoc.seller = {
+        sellerId: `SL${Date.now()}`,
+        availablePoints: 0,
+        currentSalesAmount: 0,
+        totalPointsSold: 0,
+        transactions: []
+      };
+    }
+
+    if (roles.includes('merchant')) {
+      userDoc.merchant = {
+        merchantId: `MR${Date.now()}`,
+        monthlyReceivedPoints: 0,
+        totalReceivedPoints: 0
+      };
+    }
+
+    if (roles.includes('customer')) {
+      userDoc.customer = {
+        customerId: `CS${Date.now()}`,
+        currentBalance: 0,
+        totalPointsPurchased: 0,
+        totalPointsConsumed: 0
+      };
+    }
 
     // 8.5. 自动添加部门到组织（如果有department）
     if (department && department.trim()) {
@@ -2490,15 +2487,7 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
         department: department ? department.trim() : '未分配'
       };
 
-      // 角色資料
-      const roleSpecificData = {};
-      if (roles.includes('sellerManager')) roleSpecificData.sellerManager = { managerId: `SM${Date.now()}`, assignedCapital: 0, availableCapital: 0, allocatedToSellers: 0, totalSellersManaged: 0 };
-      if (roles.includes('merchantManager')) roleSpecificData.merchantManager = { managerId: `MM${Date.now()}`, totalMerchantsManaged: 0 };
-      if (roles.includes('customerManager')) roleSpecificData.customerManager = { managerId: `CM${Date.now()}`, totalCustomersManaged: 0, totalSalesAmount: 0 };
-      if (roles.includes('seller')) roleSpecificData.seller = { sellerId: `SL${Date.now()}`, availablePoints: 0, currentSalesAmount: 0, totalPointsSold: 0 };
-      if (roles.includes('merchant')) roleSpecificData.merchant = { merchantId: `MR${Date.now()}`, monthlyReceivedPoints: 0, totalReceivedPoints: 0 };
-      if (roles.includes('customer')) roleSpecificData.customer = { customerId: `CS${Date.now()}`, currentBalance: 0, totalPointsPurchased: 0, totalPointsConsumed: 0 };
-
+      // 構建用戶文檔基礎結構
       const userDoc = {
         userId,
         authUid,
@@ -2517,11 +2506,59 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
           isPhoneVerified: true
         },
         identityInfo,
-        roleSpecificData,
         activityData: { joinedAt: now, lastActiveAt: now, participationStatus: 'active' },
         accountStatus: { status: 'active', mustChangePassword: false, createdAt: now, updatedAt: now },
         metadata: { registrationSource: 'batch_import', operatorUid: callerUid, notes: `批量匯入 - ${roles.join(', ')}` }
       };
+
+      // ✅ 角色資料：改為頂層字段（與 UserManagement.jsx 一致）
+      if (roles.includes('sellerManager')) {
+        userDoc.sellerManager = { 
+          managerId: `SM${Date.now()}`, 
+          assignedCapital: 0, 
+          availableCapital: 0, 
+          allocatedToSellers: 0, 
+          totalSellersManaged: 0,
+          managedDepartments: []
+        };
+      }
+      if (roles.includes('merchantManager')) {
+        userDoc.merchantManager = { 
+          managerId: `MM${Date.now()}`, 
+          totalMerchantsManaged: 0 
+        };
+      }
+      if (roles.includes('customerManager')) {
+        userDoc.customerManager = { 
+          managerId: `CM${Date.now()}`, 
+          totalCustomersManaged: 0, 
+          totalSalesAmount: 0 
+        };
+      }
+      if (roles.includes('seller')) {
+        userDoc.seller = { 
+          sellerId: `SL${Date.now()}`, 
+          availablePoints: 0, 
+          currentSalesAmount: 0, 
+          totalPointsSold: 0,
+          transactions: []
+        };
+      }
+      if (roles.includes('merchant')) {
+        userDoc.merchant = { 
+          merchantId: `MR${Date.now()}`, 
+          monthlyReceivedPoints: 0, 
+          totalReceivedPoints: 0 
+        };
+      }
+      if (roles.includes('customer')) {
+        userDoc.customer = { 
+          customerId: `CS${Date.now()}`, 
+          currentBalance: 0, 
+          totalPointsPurchased: 0, 
+          totalPointsConsumed: 0 
+        };
+      }
 
       currentBatch.set(usersCol.doc(userId), userDoc);
       batchOpCount++;

@@ -1,4 +1,5 @@
 const functions = require('firebase-functions');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');  // ✅ 新增这行
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const cors = require('cors');
@@ -523,3 +524,82 @@ exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
     });
   }
 });
+
+// index.js
+
+// ============================================================================
+// Firestore 触发器：监听 Seller Manager 的点数分配
+// ============================================================================
+
+/**
+ * 当 Seller Manager 分配点数时自动更新接收者的 seller.availablePoints
+ * 触发路径: organizations/{orgId}/events/{eventId}/users/{smId}/pointAllocations/{allocId}
+ * 
+ * @description
+ * 使用 Firebase Functions v2 语法
+ */
+exports.onSellerManagerAllocation = onDocumentCreated(
+  'organizations/{orgId}/events/{eventId}/users/{smId}/pointAllocations/{allocId}',
+  async (event) => {
+    const db = admin.firestore();
+    
+    // ✅ v2 语法：从 event 获取参数和数据
+    const { orgId, eventId, smId, allocId } = event.params;
+    const allocation = event.data.data();  // 注意：v2 中是 event.data.data()
+
+    // 验证数据
+    if (!allocation || !allocation.recipientId || !allocation.points) {
+      console.error('[onSellerManagerAllocation] Invalid allocation data:', allocation);
+      return { success: false, error: 'Invalid allocation data' };
+    }
+
+    try {
+      console.log('[onSellerManagerAllocation] Processing allocation:', allocId);
+      console.log('[onSellerManagerAllocation] Seller Manager ID:', smId);
+      console.log('[onSellerManagerAllocation] Recipient ID:', allocation.recipientId);
+      console.log('[onSellerManagerAllocation] Points:', allocation.points);
+
+      // 更新接收者的 seller.availablePoints
+      const recipientRef = db.doc(
+        `organizations/${orgId}/events/${eventId}/users/${allocation.recipientId}`
+      );
+
+      // 检查接收者是否存在
+      const recipientDoc = await recipientRef.get();
+      if (!recipientDoc.exists) {
+        console.error('[onSellerManagerAllocation] Recipient user not found:', allocation.recipientId);
+        return { success: false, error: 'Recipient not found' };
+      }
+
+      // 更新点数
+      await recipientRef.update({
+        'seller.availablePoints': admin.firestore.FieldValue.increment(allocation.points),
+        'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log('[onSellerManagerAllocation] ✅ Successfully updated seller.availablePoints');
+      console.log(`[onSellerManagerAllocation] User ${allocation.recipientId} received ${allocation.points} points`);
+
+      // TODO: 未来可以在这里更新 departmentStats 和 sellerManagerStats
+      // 例如：
+      // await updateDepartmentStats(db, orgId, eventId, allocation.recipientDepartment);
+      // await updateSellerManagerStats(db, orgId, eventId, smId);
+
+      return { success: true };
+
+    } catch (error) {
+      console.error('[onSellerManagerAllocation] ❌ Error:', error);
+      console.error('[onSellerManagerAllocation] Error details:', {
+        orgId,
+        eventId,
+        smId,
+        allocId,
+        recipientId: allocation.recipientId,
+        points: allocation.points
+      });
+      
+      // 不要抛出错误，否则会导致重试
+      return { success: false, error: error.message };
+    }
+  }
+);

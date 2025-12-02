@@ -138,14 +138,14 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
         <div style={styles.mainStatItem}>
           <div style={styles.mainStatLabel}>持有点数</div>
           <div style={styles.mainStatValue}>
-            RM {(pointsStats.currentBalance || 0).toLocaleString()}
+            {(pointsStats.currentBalance || 0).toLocaleString()}
           </div>
         </div>
         <div style={styles.statDivider}></div>
         <div style={styles.mainStatItem}>
           <div style={styles.mainStatLabel}>累计销售</div>
           <div style={styles.mainStatValue}>
-            RM {(pointsStats.totalRevenue || 0).toLocaleString()}
+            {(pointsStats.totalRevenue || 0).toLocaleString()}
           </div>
         </div>
       </div>
@@ -168,9 +168,9 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
           }}></div>
         </div>
         <div style={styles.collectionDetails}>
-          <span>已收款: RM {(pointsStats.totalCollected || 0).toLocaleString()}</span>
+          <span>已收款: {(pointsStats.totalCollected || 0).toLocaleString()}</span>
           <span style={{ color: '#ef4444' }}>
-            待收款: RM {(pointsStats.pendingCollection || 0).toLocaleString()}
+            待收款: {(pointsStats.pendingCollection || 0).toLocaleString()}
           </span>
         </div>
       </div>
@@ -197,15 +197,15 @@ const DepartmentCard = ({ dept, rank, isExpanded, onToggle, onSelect }) => {
               <div style={styles.detailTitle}>💰 点数流动</div>
               <div style={styles.detailRow}>
                 <span>累计收到:</span>
-                <strong>RM {(pointsStats.totalReceived || 0).toLocaleString()}</strong>
+                <strong>{(pointsStats.totalReceived || 0).toLocaleString()}</strong>
               </div>
               <div style={styles.detailRow}>
                 <span>当前持有:</span>
-                <strong>RM {(pointsStats.currentBalance || 0).toLocaleString()}</strong>
+                <strong>{(pointsStats.currentBalance || 0).toLocaleString()}</strong>
               </div>
               <div style={styles.detailRow}>
                 <span>累计售出:</span>
-                <strong>RM {(pointsStats.totalSold || 0).toLocaleString()}</strong>
+                <strong>{(pointsStats.totalSold || 0).toLocaleString()}</strong>
               </div>
             </div>
 

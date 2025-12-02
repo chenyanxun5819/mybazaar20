@@ -172,7 +172,8 @@ const UniversalLogin = () => {
       const payload = {
         phoneNumber: phoneNumber,
         orgCode: orgCode.toLowerCase(),
-        eventCode: eventCode
+        eventCode: eventCode,
+        loginType: 'universal' // 标记为通用登录
       };
 
       const resp = await fetch(url, {
@@ -342,62 +343,41 @@ const UniversalLogin = () => {
           phoneNumber: formData.phoneNumber,
           managedDepartments: data.managedDepartments || [],
           department: data.department || '',
-          identityTag: data.identityTag || '',
-          isEventManager: data.isEventManager || false
+          identityTag: data.identityTag || ''
         };
 
         console.log('[UniversalLogin] 验证后的用户信息:', verifiedUserData);
 
-        // ⚠️ Event Manager 特殊处理：不支持设备类型过滤（Event Manager 只在桌面版本）
-        if (verifiedUserData.isEventManager) {
-          console.log('[UniversalLogin] ✅ Event Manager 身份确认');
-          
-          if (isMobile) {
-            throw new Error('Event Manager 只能在桌面版本中登录');
-          }
-          
-          const baseInfo = {
-            ...verifiedUserData,
-            roles: ['eventManager'], // Event Manager 角色不转换
-            loginTime: new Date().toISOString(),
-            availableRoles: ['eventManager'],
-            currentRole: 'eventManager'
-          };
-          
-          console.log('[UniversalLogin] 准备跳转，Event Manager 信息:', baseInfo);
-          handleRoleNavigation('eventManager', baseInfo);
-        } else {
-          // 根据设备类型过滤角色
-          const filteredRoles = filterRolesByDevice(verifiedUserData.roles);
-          console.log('[UniversalLogin] 原始角色:', verifiedUserData.roles);
-          console.log('[UniversalLogin] 过滤后角色:', filteredRoles);
-          console.log('[UniversalLogin] 设备类型:', isMobile ? 'Mobile' : 'Desktop');
-          
-          if (filteredRoles.length === 0) {
-            throw new Error(`您在当前设备（${isMobile ? '手机' : '电脑'}）上没有可用的角色`);
-          }
-
-          // 获取优先级最高的角色
-          const priorityRole = getPriorityRole(filteredRoles);
-          console.log('[UniversalLogin] 优先级角色:', priorityRole);
-          
-          if (!priorityRole) {
-            throw new Error('无法确定要进入的角色');
-          }
-
-          const baseInfo = {
-            ...verifiedUserData,
-            roles: filteredRoles, // ✨ 使用转换后的驼峰式角色列表
-            loginTime: new Date().toISOString(),
-            availableRoles: filteredRoles, // 保存所有可用角色，供切换使用
-            currentRole: priorityRole
-          };
-
-          console.log('[UniversalLogin] 准备跳转，用户信息:', baseInfo);
-
-          // 🎯 直接跳转到优先级最高的角色
-          handleRoleNavigation(priorityRole, baseInfo);
+        // 根据设备类型过滤角色
+        const filteredRoles = filterRolesByDevice(verifiedUserData.roles);
+        console.log('[UniversalLogin] 原始角色:', verifiedUserData.roles);
+        console.log('[UniversalLogin] 过滤后角色:', filteredRoles);
+        console.log('[UniversalLogin] 设备类型:', isMobile ? 'Mobile' : 'Desktop');
+        
+        if (filteredRoles.length === 0) {
+          throw new Error(`您在当前设备（${isMobile ? '手机' : '电脑'}）上没有可用的角色`);
         }
+
+        // 获取优先级最高的角色
+        const priorityRole = getPriorityRole(filteredRoles);
+        console.log('[UniversalLogin] 优先级角色:', priorityRole);
+        
+        if (!priorityRole) {
+          throw new Error('无法确定要进入的角色');
+        }
+
+        const baseInfo = {
+          ...verifiedUserData,
+          roles: filteredRoles, // ✨ 使用转换后的驼峰式角色列表
+          loginTime: new Date().toISOString(),
+          availableRoles: filteredRoles, // 保存所有可用角色，供切换使用
+          currentRole: priorityRole
+        };
+
+        console.log('[UniversalLogin] 准备跳转，用户信息:', baseInfo);
+
+        // 🎯 直接跳转到优先级最高的角色
+        handleRoleNavigation(priorityRole, baseInfo);
       } else {
         throw new Error('未收到 customToken');
       }
