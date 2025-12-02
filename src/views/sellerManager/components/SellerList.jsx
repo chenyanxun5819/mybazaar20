@@ -509,6 +509,13 @@ const SellerRow = ({ index, seller, isExpanded, onToggle, onSelect, onRecordColl
             >
               {isExpanded ? '▲' : '▼'}
             </button>
+            <button
+              onClick={() => onSelect(seller)}
+              style={{ ...styles.actionButton, ...styles.allocateButton }}
+              title="分配点数"
+            >
+              ➕ 分配
+            </button>
             {pendingCollection > 0 && (
               <button
                 onClick={() => onRecordCollection(seller)}
@@ -742,6 +749,14 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
 
       {/* 操作按钮 */}
       <div style={styles.detailActions}>
+        {onSelect && (
+          <button
+            onClick={() => onSelect(seller)}
+            style={{ ...styles.detailActionButton, ...styles.allocateDetailButton }}
+          >
+            ➕ 分配点数
+          </button>
+        )}
         {pendingCollection > 0 && (
           <button
             onClick={() => onRecordCollection(seller)}
@@ -760,14 +775,6 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
             style={{ ...styles.detailActionButton, ...styles.cashButton }}
           >
             💵 上交现金 (待交: {pendingCashSubmission.toLocaleString()})
-          </button>
-        )}
-        {onSelect && (
-          <button
-            onClick={() => onSelect(seller)}
-            style={{ ...styles.detailActionButton, ...styles.secondaryButton }}
-          >
-            👁️ 查看完整信息
           </button>
         )}
       </div>
@@ -977,6 +984,12 @@ const styles = {
     background: '#fef3c7',
     borderColor: '#fbbf24'
   },
+  allocateButton: {
+    background: '#dbeafe',
+    borderColor: '#93c5fd',
+    color: '#1e40af',
+    fontWeight: '600'
+  },
 
   expandedCell: {
     padding: '0',
@@ -1051,6 +1064,10 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600'
+  },
+  allocateDetailButton: {
+    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+    order: -1
   },
   cashButton: {
     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
