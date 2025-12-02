@@ -571,14 +571,28 @@ exports.onSellerManagerAllocation = onDocumentCreated(
         return { success: false, error: 'Recipient not found' };
       }
 
-      // 更新点数
+      // 更新点数和交易记录（Map格式，使用时间戳作为键）
+      const timestampKey = Date.now().toString();
+      const transactionRecord = {
+        type: 'allocation',
+        amount: allocation.points,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        allocatedBy: smId,
+        allocatedByName: allocation.allocatedByName || 'Seller Manager',
+        allocatedByRole: 'sellerManager',
+        note: allocation.notes || 'Seller Manager 分配',
+        allocationDocId: allocId
+      };
+
       await recipientRef.update({
         'seller.availablePoints': admin.firestore.FieldValue.increment(allocation.points),
+        [`seller.transactions.${timestampKey}`]: transactionRecord,
         'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
       });
 
-      console.log('[onSellerManagerAllocation] ✅ Successfully updated seller.availablePoints');
+      console.log('[onSellerManagerAllocation] ✅ Successfully updated seller.availablePoints and transactions');
       console.log(`[onSellerManagerAllocation] User ${allocation.recipientId} received ${allocation.points} points`);
+      console.log(`[onSellerManagerAllocation] Transaction record created with key: ${timestampKey}`);
 
       // TODO: 未来可以在这里更新 departmentStats 和 sellerManagerStats
       // 例如：
