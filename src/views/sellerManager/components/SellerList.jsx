@@ -671,40 +671,85 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
               let fromEventManager = 0;
               let fromSellerManager = 0;
               let lastAllocatedAt = null;
+              let txCount = 0;
 
-              // 遍历 transactions 对象
-              Object.values(transactions).forEach(tx => {
-                if (tx && typeof tx === 'object' && tx.type === 'allocation') {
-                  const amount = tx.amount || 0;
-                  if (tx.allocatedBy === 'eventManager') {
-                    fromEventManager += amount;
-                  } else if (tx.allocatedBy === 'sellerManager') {
-                    fromSellerManager += amount;
-                  }
+              // 遍历 transactions 对象（Map 格式，键为时间戳）
+              try {
+                Object.entries(transactions).forEach(([key, tx]) => {
+                  // 跳过非对象和继承属性
+                  if (!tx || typeof tx !== 'object') return;
+                  
+                  // 只处理 allocation 类型的交易
+                  if (tx.type === 'allocation') {
+                    txCount++;
+                    const amount = parseFloat(tx.amount) || 0;
+                    
+                    // 根据 allocatedBy 分类统计
+                    const allocatedBy = tx.allocatedBy || '';
+                    if (allocatedBy === 'eventManager') {
+                      fromEventManager += amount;
+                    } else if (allocatedBy === 'sellerManager' || allocatedBy === 'sm') {
+                      fromSellerManager += amount;
+                    }
 
-                  // 记录最后分配时间
-                  if (tx.timestamp && (!lastAllocatedAt || tx.timestamp > lastAllocatedAt)) {
-                    lastAllocatedAt = tx.timestamp;
+                    // 记录最后分配时间（比较时间戳字符串）
+                    if (tx.timestamp) {
+                      if (!lastAllocatedAt) {
+                        lastAllocatedAt = tx.timestamp;
+                      } else {
+                        // 时间戳比较：尝试转换为毫秒数
+                        const currentTs = typeof tx.timestamp === 'object' && tx.timestamp.seconds 
+                          ? tx.timestamp.seconds * 1000 
+                          : tx.timestamp;
+                        const lastTs = typeof lastAllocatedAt === 'object' && lastAllocatedAt.seconds 
+                          ? lastAllocatedAt.seconds * 1000 
+                          : lastAllocatedAt;
+                        
+                        if (currentTs > lastTs) {
+                          lastAllocatedAt = tx.timestamp;
+                        }
+                      }
+                    }
                   }
-                }
-              });
+                });
+              } catch (err) {
+                console.error('❌ 处理 transactions 出错:', err);
+              }
+
+              const totalAllocated = fromEventManager + fromSellerManager;
 
               return (
                 <>
                   <div style={styles.detailRow}>
                     <span>来自 Event Manager:</span>
-                    <strong>{fromEventManager.toLocaleString()}</strong>
+                    <strong style={{ color: '#3b82f6' }}>
+                      {fromEventManager.toLocaleString()}
+                    </strong>
                   </div>
                   <div style={styles.detailRow}>
                     <span>来自 Seller Manager:</span>
-                    <strong>{fromSellerManager.toLocaleString()}</strong>
+                    <strong style={{ color: '#f59e0b' }}>
+                      {fromSellerManager.toLocaleString()}
+                    </strong>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span>总计已分配:</span>
+                    <strong style={{ color: '#10b981' }}>
+                      {totalAllocated.toLocaleString()}
+                    </strong>
                   </div>
                   <div style={styles.detailRow}>
                     <span>最后分配时间:</span>
                     <span style={styles.timestampText}>
-                      {lastAllocatedAt ? formatTimestamp(lastAllocatedAt) : '无'}
+                      {lastAllocatedAt ? formatTimestamp(lastAllocatedAt) : '暂无分配'}
                     </span>
                   </div>
+                  {txCount > 0 && (
+                    <div style={styles.detailRow}>
+                      <span>分配记录:</span>
+                      <span style={styles.timestampText}>{txCount} 条</span>
+                    </div>
+                  )}
                 </>
               );
             })()}
