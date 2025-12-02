@@ -59,7 +59,12 @@ const EventManagerLogin = () => {
       const resp = await fetch('/api/sendOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber, orgCode, eventCode })
+        body: JSON.stringify({ 
+          phoneNumber, 
+          orgCode, 
+          eventCode,
+          loginType: 'eventManager' // ✅ 標記為 Event Manager 專用登錄
+        })
       });
 
       const data = await resp.json();
