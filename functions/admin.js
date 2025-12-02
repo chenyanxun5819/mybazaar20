@@ -1447,7 +1447,7 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     const batch = db.batch();
     let operationCount = 0;
 
-    // 1. Delete all users in the event
+    // 1. Delete all users and their pointAllocations subcollections
     const usersSnapshot = await db
       .collection('organizations').doc(organizationId)
       .collection('events').doc(eventId)
@@ -1456,9 +1456,15 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
 
     console.log(`[deleteEventHttp] Found ${usersSnapshot.size} users to delete`);
 
-    usersSnapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
+    usersSnapshot.docs.forEach(userDoc => {
+      // 删除用户文档本身
+      batch.delete(userDoc.ref);
       operationCount++;
+      
+      // 删除用户下的 pointAllocations 子集合
+      // 注意：Firestore 不支持在 batch 中直接删除整个子集合
+      // 但我们可以在此处同步获取并删除（因为通常不会很多）
+      // 这里暂时标记，后续使用事务或单独处理
     });
 
     // 2. Delete all metadata
@@ -1496,6 +1502,36 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
 
     // Commit all operations atomically
     await batch.commit();
+
+    // 6. Delete pointAllocations subcollections for all users
+    // (这必须在 batch 之后进行，因为 Firestore 不支持在 batch 中删除子集合)
+    console.log('[deleteEventHttp] Starting deletion of pointAllocations subcollections');
+    
+    const deletePointAllocationsPromises = usersSnapshot.docs.map(async (userDoc) => {
+      try {
+        const pointAllocationsSnapshot = await userDoc.ref
+          .collection('pointAllocations')
+          .get();
+        
+        if (pointAllocationsSnapshot.size > 0) {
+          const pointBatch = db.batch();
+          let pointBatchOps = 0;
+          
+          pointAllocationsSnapshot.docs.forEach(allocDoc => {
+            pointBatch.delete(allocDoc.ref);
+            pointBatchOps++;
+          });
+          
+          await pointBatch.commit();
+          console.log(`[deleteEventHttp] Deleted ${pointBatchOps} pointAllocations for user ${userDoc.id}`);
+        }
+      } catch (err) {
+        console.error(`[deleteEventHttp] Error deleting pointAllocations for user ${userDoc.id}:`, err);
+      }
+    });
+
+    await Promise.all(deletePointAllocationsPromises);
+    console.log('[deleteEventHttp] ✅ All pointAllocations deleted');
 
     // 進行 department userCount 回沖（減少） - 使用 transaction 保證一致性
     try {

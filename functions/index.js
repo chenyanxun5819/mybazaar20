@@ -568,7 +568,7 @@ exports.onSellerManagerAllocation = onDocumentCreated(
       const recipientDoc = await recipientRef.get();
       if (!recipientDoc.exists) {
         console.error('[onSellerManagerAllocation] Recipient user not found:', allocation.recipientId);
-        return { success: false, error: 'Recipient not found' };
+        return { success: false, error: 'Recpient not found' };
       }
 
       // 更新点数和交易记录（Map格式，使用时间戳作为键）
@@ -577,7 +577,8 @@ exports.onSellerManagerAllocation = onDocumentCreated(
         type: 'allocation',
         amount: allocation.points,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        allocatedBy: smId,
+        allocatedBy: 'sellerManager', // ✅ 改为字符串标识，方便前端识别
+        allocatedByUserId: smId, // 保存具体的Seller Manager用户ID
         allocatedByName: allocation.allocatedByName || 'Seller Manager',
         allocatedByRole: 'sellerManager',
         note: allocation.notes || 'Seller Manager 分配',
