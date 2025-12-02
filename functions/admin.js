@@ -1246,7 +1246,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         availablePoints: 0,
         currentSalesAmount: 0,
         totalPointsSold: 0,
-        transactions: []
+        transactions: {}
       };
     }
 
@@ -2541,7 +2541,7 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
           availablePoints: 0, 
           currentSalesAmount: 0, 
           totalPointsSold: 0,
-          transactions: []
+          transactions: {}
         };
       }
       if (roles.includes('merchant')) {
@@ -2761,7 +2761,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
         updateData['sellerManager.allocatedPoints'] = 0;
         updateData['sellerManager.returnedPoints'] = 0;
         updateData['sellerManager.totalPoints'] = 0;
-        updateData['sellerManager.transactions'] = [];
+        updateData['sellerManager.transactions'] = {};
       }
     }
 
@@ -2771,19 +2771,19 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     if (roles.seller && !previousRoles?.includes('seller')) {
       additionalUpdateData['seller.availablePoints'] = 0;
       additionalUpdateData['seller.totalPointsSold'] = 0;
-      additionalUpdateData['seller.transactions'] = [];
+      additionalUpdateData['seller.transactions'] = {};
     }
 
     if (roles.merchant && !previousRoles?.includes('merchant')) {
       additionalUpdateData['merchant.availablePoints'] = 0;
       additionalUpdateData['merchant.totalPointsSold'] = 0;
-      additionalUpdateData['merchant.transactions'] = [];
+      additionalUpdateData['merchant.transactions'] = {};
     }
 
     if (roles.customer && !previousRoles?.includes('customer')) {
       additionalUpdateData['customer.availablePoints'] = 0;
       additionalUpdateData['customer.totalPointsSpent'] = 0;
-      additionalUpdateData['customer.transactions'] = [];
+      additionalUpdateData['customer.transactions'] = {};
     }
 
     // 合併更新數據
