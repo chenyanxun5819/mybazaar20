@@ -399,6 +399,9 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
       `  • 活动文档本身\n` +
       `  • 所有用户数据 (${event.statistics?.totalUsers || 0} 位用户)\n` +
       `  • 所有元数据 (部门等)\n` +
+      `  • 所有点数分配记录 (pointAllocations)\n` +
+      `  • 所有部门统计 (departmentStats)\n` +
+      `  • 所有 Seller Manager 统计 (sellerManagerStats)\n` +
       `  • Event Manager 信息\n` +
       `  • 更新组织统计数据\n\n` +
       `⚠️ 此操作无法撤销！`
@@ -443,7 +446,8 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
         `  • 用户数据: ${result.deletedUsers} 位\n` +
         `  • 元数据: ${result.deletedMetadata} 个\n` +
         `  • Event Manager: ${result.removedAdmins} 位\n` +
-        `  • 已更新组织统计数据`
+        `  • 已更新组织统计数据\n` +
+        `  • 已清理所有子集合数据`
       );
 
       // 4️⃣ 重新加载数据

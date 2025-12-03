@@ -1,5 +1,5 @@
 const functions = require('firebase-functions');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');  // ✅ 新增这行
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const cors = require('cors');
@@ -9,13 +9,27 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+// 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
   createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles} = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { eventManagerLoginHttp } = require('./auth/eventManagerLoginHttp');
-// 切換至 otpVerify.js (取代舊 twilio.js)
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 
+// 导入 Seller Manager Functions (新增)
+const { 
+  onSellerManagerAllocation, 
+  updateUserPointsStats, 
+  checkCollectionWarnings 
+} = require('./sellerManagerFunctions');
+
+// 导入 Seller Manager HTTP Functions (新增)
+const { 
+  allocatePointsBySellerManagerHttp, 
+  getSellerManagerDashboardDataHttp 
+} = require('./sellerManagerHttpFunctions');
+
+// 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
 exports.setProjectInfo = setProjectInfo;
@@ -35,10 +49,18 @@ exports.batchImportUsersHttp = batchImportUsersHttp;
 exports.updateUserRoles = updateUserRoles;
 exports.loginUniversalHttp = loginUniversalHttp;
 exports.eventManagerLoginHttp = eventManagerLoginHttp;
-
-// SMS OTP 函式
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
+
+// 导出 Seller Manager Functions (新增)
+exports.onSellerManagerAllocation = onSellerManagerAllocation;
+exports.updateUserPointsStats = updateUserPointsStats;
+exports.checkCollectionWarnings = checkCollectionWarnings;
+
+// 导出 Seller Manager HTTP Functions (新增)
+exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
+exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
+
 
 // CORS 中间件配置
 const allowedOrigins = [
@@ -528,93 +550,6 @@ exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
 // index.js
 
 // ============================================================================
-// Firestore 触发器：监听 Seller Manager 的点数分配
-// ============================================================================
-
-/**
- * 当 Seller Manager 分配点数时自动更新接收者的 seller.availablePoints
- * 触发路径: organizations/{orgId}/events/{eventId}/users/{smId}/pointAllocations/{allocId}
- * 
- * @description
- * 使用 Firebase Functions v2 语法
- */
-exports.onSellerManagerAllocation = onDocumentCreated(
-  'organizations/{orgId}/events/{eventId}/users/{smId}/pointAllocations/{allocId}',
-  async (event) => {
-    const db = admin.firestore();
-    
-    // ✅ v2 语法：从 event 获取参数和数据
-    const { orgId, eventId, smId, allocId } = event.params;
-    const allocation = event.data.data();  // 注意：v2 中是 event.data.data()
-
-    // 验证数据
-    if (!allocation || !allocation.recipientId || !allocation.points) {
-      console.error('[onSellerManagerAllocation] Invalid allocation data:', allocation);
-      return { success: false, error: 'Invalid allocation data' };
-    }
-
-    try {
-      console.log('[onSellerManagerAllocation] Processing allocation:', allocId);
-      console.log('[onSellerManagerAllocation] Seller Manager ID:', smId);
-      console.log('[onSellerManagerAllocation] Recipient ID:', allocation.recipientId);
-      console.log('[onSellerManagerAllocation] Points:', allocation.points);
-
-      // 更新接收者的 seller.availablePoints
-      const recipientRef = db.doc(
-        `organizations/${orgId}/events/${eventId}/users/${allocation.recipientId}`
-      );
-
-      // 检查接收者是否存在
-      const recipientDoc = await recipientRef.get();
-      if (!recipientDoc.exists) {
-        console.error('[onSellerManagerAllocation] Recipient user not found:', allocation.recipientId);
-        return { success: false, error: 'Recpient not found' };
-      }
-
-      // 更新点数和交易记录（Map格式，使用时间戳作为键）
-      const timestampKey = Date.now().toString();
-      const transactionRecord = {
-        type: 'allocation',
-        amount: allocation.points,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        allocatedBy: 'sellerManager', // ✅ 改为字符串标识，方便前端识别
-        allocatedByUserId: smId, // 保存具体的Seller Manager用户ID
-        allocatedByName: allocation.allocatedByName || 'Seller Manager',
-        allocatedByRole: 'sellerManager',
-        note: allocation.notes || 'Seller Manager 分配',
-        allocationDocId: allocId
-      };
-
-      await recipientRef.update({
-        'seller.availablePoints': admin.firestore.FieldValue.increment(allocation.points),
-        [`seller.transactions.${timestampKey}`]: transactionRecord,
-        'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      console.log('[onSellerManagerAllocation] ✅ Successfully updated seller.availablePoints and transactions');
-      console.log(`[onSellerManagerAllocation] User ${allocation.recipientId} received ${allocation.points} points`);
-      console.log(`[onSellerManagerAllocation] Transaction record created with key: ${timestampKey}`);
-
-      // TODO: 未来可以在这里更新 departmentStats 和 sellerManagerStats
-      // 例如：
-      // await updateDepartmentStats(db, orgId, eventId, allocation.recipientDepartment);
-      // await updateSellerManagerStats(db, orgId, eventId, smId);
-
-      return { success: true };
-
-    } catch (error) {
-      console.error('[onSellerManagerAllocation] ❌ Error:', error);
-      console.error('[onSellerManagerAllocation] Error details:', {
-        orgId,
-        eventId,
-        smId,
-        allocId,
-        recipientId: allocation.recipientId,
-        points: allocation.points
-      });
-      
-      // 不要抛出错误，否则会导致重试
-      return { success: false, error: error.message };
-    }
-  }
-);
+// 注意：onSellerManagerAllocation 已迁移到 sellerManagerFunctions.js
+// 该触发器已从此处删除以避免重复触发导致点数翻倍
+// 请参考 sellerManagerFunctions.js 中的 onSellerManagerAllocation 实现

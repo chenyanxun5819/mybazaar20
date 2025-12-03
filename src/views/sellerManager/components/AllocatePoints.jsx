@@ -55,8 +55,8 @@ const AllocatePoints = ({
       : 0
   };
   
-  // 快速金额选项
-  const quickAmounts = [10, 20, 50, 100, 200, 500];
+  // 快速金额选项 - 根据 maxPerAllocation 动态生成
+  const quickAmounts = [10, 20, 50, 100, 200, 500].filter(amt => amt <= maxPerAllocation);
   
   /**
    * 处理金额输入
@@ -98,18 +98,18 @@ const AllocatePoints = ({
 
     // 验证是否超过上限
     if (allocateAmount > maxPerAllocation) {
-      setError(`金额超过单次分配上限 (RM ${maxPerAllocation.toLocaleString()})`);
+      setError(`金额超过单次分配上限 (${maxPerAllocation.toLocaleString()})`);
       return;
     }
 
     // 收款警示检查
     if (collectionAlert.hasWarning) {
       const confirmMsg = 
-        `⚠️ 警告：该用户有待收款 RM ${(collectionAlert.pendingAmount || 0).toLocaleString()}\n\n` +
+        `⚠️ 警告：该用户有待收款 ${(collectionAlert.pendingAmount || 0).toLocaleString()}\n\n` +
         `收款率: ${Math.round((pointsStats.collectionRate || 0) * 100)}%\n` +
         `警示级别: ${collectionAlert.warningLevel || 'low'}\n\n` +
         `建议先收款再分配新点数。\n\n` +
-        `确定要继续分配 RM ${allocateAmount.toLocaleString()} 吗？`;
+        `确定要继续分配 ${allocateAmount.toLocaleString()} 吗？`;
       
       if (!confirm(confirmMsg)) {
         return;
@@ -117,9 +117,9 @@ const AllocatePoints = ({
     } else {
       // 正常确认
   if (!confirm(
-    `确定要分配 RM ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
-    `对方当前余额: RM ${currentBalance.toLocaleString()}\n` +  // ✅ 正确
-    `分配后余额: RM ${(currentBalance + allocateAmount).toLocaleString()}`  // ✅ 正确
+    `确定要分配 ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
+    `对方当前余额: ${currentBalance.toLocaleString()}\n` +
+    `分配后余额: ${(currentBalance + allocateAmount).toLocaleString()}`
   )) {
     return;
       }
@@ -204,8 +204,8 @@ const AllocatePoints = ({
       alert(
         `✅ 分配成功！\n\n` +
         `Seller: ${sellerName}\n` +
-        `金额: RM ${allocateAmount.toLocaleString()}\n` +
-        `预计新余额: RM ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}\n\n` +
+        `点数: ${allocateAmount.toLocaleString()}\n` +
+        `预计新余额: ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}\n\n` +
         `统计数据将在几秒内自动更新`
       );
 
@@ -325,7 +325,7 @@ const AllocatePoints = ({
           </div>
           <div style={styles.statRow}>
             <span>累计销售:</span>
-            <strong>RM {(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
+            <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
           </div>
           <div style={styles.statRow}>
             <span>收款率:</span>
@@ -340,9 +340,9 @@ const AllocatePoints = ({
 
         {/* 表单 */}
         <form onSubmit={handleSubmit} style={styles.form}>
-          {/* 金额输入 */}
+          {/* 点数输入 */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>分配金额 (RM) *</label>
+            <label style={styles.label}>分配点数 *</label>
             <input
               type="text"
               style={{
@@ -351,12 +351,12 @@ const AllocatePoints = ({
               }}
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              placeholder="请输入金额"
+              placeholder="请输入点数"
               disabled={loading}
               autoFocus
             />
             <div style={styles.hint}>
-              单次分配上限: RM {maxPerAllocation.toLocaleString()}
+              单次分配上限: {maxPerAllocation.toLocaleString()}
             </div>
           </div>
 
@@ -373,7 +373,7 @@ const AllocatePoints = ({
                 onClick={() => handleQuickAmount(amt)}
                 disabled={loading}
               >
-                RM {amt}
+                {amt}
               </button>
             ))}
           </div>
@@ -396,16 +396,16 @@ const AllocatePoints = ({
             <div style={styles.preview}>
               <div style={styles.previewTitle}>📊 分配预览</div>
               <div style={styles.previewRow}>
-                <span>分配金额:</span>
+                <span>分配点数:</span>
                 <strong style={{ color: '#3b82f6' }}>
-                  RM {parseFloat(amount).toLocaleString()}
+                  {parseFloat(amount).toLocaleString()}
                 </strong>
               </div>
               <div style={styles.previewDivider}></div>
               <div style={styles.previewRow}>
                 <span>预计新余额:</span>
                 <strong style={{ color: '#10b981' }}>
-                  RM {getExpectedBalance().toLocaleString()}
+                  {getExpectedBalance().toLocaleString()}
                 </strong>
               </div>
             </div>

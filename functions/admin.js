@@ -1533,6 +1533,56 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     await Promise.all(deletePointAllocationsPromises);
     console.log('[deleteEventHttp] ✅ All pointAllocations deleted');
 
+    // 7. Delete departmentStats subcollection (新增)
+    console.log('[deleteEventHttp] Starting deletion of departmentStats');
+    try {
+      const departmentStatsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('departmentStats')
+        .get();
+
+      if (departmentStatsSnapshot.size > 0) {
+        const deptBatch = db.batch();
+        let deptBatchOps = 0;
+        
+        departmentStatsSnapshot.docs.forEach(doc => {
+          deptBatch.delete(doc.ref);
+          deptBatchOps++;
+        });
+        
+        await deptBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${deptBatchOps} departmentStats documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting departmentStats:', err);
+    }
+
+    // 8. Delete sellerManagerStats subcollection (新增)
+    console.log('[deleteEventHttp] Starting deletion of sellerManagerStats');
+    try {
+      const sellerManagerStatsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('sellerManagerStats')
+        .get();
+
+      if (sellerManagerStatsSnapshot.size > 0) {
+        const smBatch = db.batch();
+        let smBatchOps = 0;
+        
+        sellerManagerStatsSnapshot.docs.forEach(doc => {
+          smBatch.delete(doc.ref);
+          smBatchOps++;
+        });
+        
+        await smBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${smBatchOps} sellerManagerStats documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting sellerManagerStats:', err);
+    }
+
     // 進行 department userCount 回沖（減少） - 使用 transaction 保證一致性
     try {
       await db.runTransaction(async (tx) => {

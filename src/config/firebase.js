@@ -26,9 +26,15 @@ const app = initializeApp(firebaseConfig);
 // 初始化服务
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
-// 🔥 直接使用 Production Cloud Functions，指定 us-central1 region
 export const functions = getFunctions(app, 'us-central1');
+
+// 🔧 立即挂载到 window（确保生产构建后也能工作）
+(function() {
+  window.auth = auth;
+  window.db = db;
+  window.functions = functions;
+  console.log('✅ [Firebase] window.auth 已挂载，可在 Console 获取 Token');
+})();
 
 console.log('☁️ [Firebase] 使用 Firebase 生產環境');
 console.log('📍 [Firebase] Project ID:', firebaseConfig.projectId);
