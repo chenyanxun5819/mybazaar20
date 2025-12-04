@@ -224,6 +224,13 @@
                 "totalCustomers": "number (Customer 总数)",
                 "lastUpdated": "timestamp"
               },
+              "cashCollections": {
+                "description": "现金收款统计",
+                "totalSubmitted": "number (累计上交现金 RM)",
+                "totalVerified": "number (累计验证现金 RM)",
+                "pendingVerification": "number (待验证现金 RM)",
+                "lastUpdated": "timestamp"
+              },
               "status": "string ('planning' | 'active' | 'completed' | 'cancelled')",
               "createdAt": "timestamp",
               "updatedAt": "timestamp",
@@ -519,6 +526,91 @@
                   "transactionAt",
                   "collectionStatus"
                 ]
+              },
+              "cashCollections": {
+                "path": "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
+                "description": "现金收款记录（Seller Manager 从 Seller 收取现金的记录）",
+                "level": "Event Subcollection",
+                "documentStructure": {
+                  "collectionId": "string (文档ID)",
+                  "type": "string ('sellerToManager')",
+                  "collectedBy": "string (Seller Manager ID)",
+                  "collectedByName": "string",
+                  "collectedByRole": "string ('sellerManager')",
+                  "collectedByDepartment": "string",
+                  "submittedBy": "string (Seller ID)",
+                  "submittedByName": "string",
+                  "submittedByRole": "string ('seller')",
+                  "submittedByDepartment": "string",
+                  "amount": "number",
+                  "pointsValue": "number",
+                  "discrepancy": "number",
+                  "discrepancyReason": "string",
+                  "discrepancyType": "string",
+                  "status": "string",
+                  "collectedAt": "timestamp",
+                  "submittedAt": "timestamp",
+                  "confirmedAt": "timestamp",
+                  "submissionId": "string",
+                  "sellerId": "string",
+                  "sellerDepartment": "string",
+                  "eventId": "string",
+                  "organizationId": "string",
+                  "note": "string",
+                  "createdAt": "timestamp",
+                  "updatedAt": "timestamp"
+                },
+                "indexes": [
+                  "collectedBy",
+                  "collectedAt",
+                  "sellerId",
+                  "status"
+                ],
+                "securityRules": "Seller Manager 可读写自己的记录; Finance Manager 和 Event Manager 可读所有记录"
+              },
+              "cashSubmissions": {
+                "path": "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
+                "description": "现金上交记录（Seller Manager 批量上交给 Finance Manager 的记录）",
+                "level": "Event Subcollection",
+                "documentStructure": {
+                  "submissionId": "string (文档ID)",
+                  "type": "string ('managerToFinance')",
+                  "submittedBy": "string (Seller Manager ID)",
+                  "submittedByName": "string",
+                  "submittedByRole": "string ('sellerManager')",
+                  "submittedByDepartments": "array<string>",
+                  "receivedBy": "string (Finance Manager ID)",
+                  "receivedByName": "string",
+                  "receivedByRole": "string ('financeManager')",
+                  "totalAmount": "number",
+                  "collectionCount": "number",
+                  "includedCollections": "array<string>",
+                  "breakdown": {
+                    "normalCollections": "number",
+                    "partialCollections": "number",
+                    "pointsRecovery": "number",
+                    "waivers": "number",
+                    "totalDiscrepancy": "number"
+                  },
+                  "status": "string ('pending' | 'confirmed' | 'rejected')",
+                  "submittedAt": "timestamp",
+                  "confirmedAt": "timestamp",
+                  "rejectedAt": "timestamp",
+                  "rejectionReason": "string",
+                  "eventId": "string",
+                  "organizationId": "string",
+                  "note": "string",
+                  "financeNote": "string",
+                  "createdAt": "timestamp",
+                  "updatedAt": "timestamp"
+                },
+                "indexes": [
+                  "submittedBy",
+                  "submittedAt",
+                  "status",
+                  "receivedBy"
+                ],
+                "securityRules": "Seller Manager 可创建和读取自己的记录; Finance Manager 可读写所有记录; Event Manager 可读所有记录"
               },
               "departments": {
                 "path": "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}",

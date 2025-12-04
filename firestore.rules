@@ -1,128 +1,387 @@
 rules_version = '2';
+
+/**
+ * MyBazaar Firestore Security Rules
+ * 
+ * Phase 3.1: Enhanced Event Manager Permissions
+ * 
+ * 更新日期: 2025-12-04
+ * 版本: 3.1
+ * 
+ * 主要变更:
+ * - Event Manager 可以创建 pointAllocations（用于紧急情况或特殊分配）
+ * - Event Manager 可以修改 pointAllocations（用于更正错误）
+ * - 保持审计追踪和权限控制
+ */
+
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // ========== 辅助函数 ==========
+    // ============================================================================
+    // 辅助函数 (Helper Functions)
+    // ============================================================================
+    
+    /**
+     * 检查用户是否已认证
+     */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    /**
+     * 检查用户是否是 Platform Admin
+     */
     function isAdmin() {
       return request.auth != null && 
              exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
     }
     
-    function isAuthenticated() {
-      return request.auth != null;
+    /**
+     * 获取用户在特定 Event 中的角色信息
+     */
+    function getUserData(orgId, eventId, userId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(userId)).data;
     }
     
-    // ========== Event 集合（新架构 - 顶级） ==========
-    match /Event/{eventId} {
-      // 所有已认证用户可读
-      allow read: if isAuthenticated();
-      allow write: if false;
-      
-      // ========== users 子集合 ==========
-      match /users/{userId} {
-        allow read: if isAuthenticated();
-        allow create, update, delete: if isAuthenticated();
-        
-        // users 的子集合
-        match /{document=**} {
-          allow read: if isAuthenticated();
-          allow write: if isAuthenticated();
-        }
-      }
-      
-      // ========== sellerManagerStats 子集合 ==========
-      match /sellerManagerStats/{smId} {
-        allow read: if isAuthenticated();
-        allow write: if false;
-      }
-      
-      // ========== departmentStats 子集合 ==========
-      match /departmentStats/{deptCode} {
-        allow read: if isAuthenticated();
-        allow write: if false;
-      }
-      
-      // ========== pointAllocations 子集合 ==========
-      match /pointAllocations/{allocationId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
-      }
-      
-      // ========== transactions 子集合 ==========
-      match /transactions/{transactionId} {
-        allow read: if isAuthenticated();
-        allow write: if false;
-      }
-      
-      // ========== 其他子集合 ==========
-      match /{document=**} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
-      }
+    /**
+     * 检查用户是否有特定角色
+     */
+    function hasRole(orgId, eventId, userId, role) {
+      let userData = getUserData(orgId, eventId, userId);
+      return userData.roles != null && role in userData.roles;
     }
     
-    // ========== organizations 集合（旧架构兼容） ==========
+    /**
+     * 检查用户是否是 Event Manager
+     */
+    function isEventManager(orgId, eventId) {
+      return isAuthenticated() && 
+             hasRole(orgId, eventId, request.auth.uid, 'eventManager');
+    }
+    
+    /**
+     * 检查用户是否是 Seller Manager
+     */
+    function isSellerManager(orgId, eventId) {
+      return isAuthenticated() && 
+             hasRole(orgId, eventId, request.auth.uid, 'sellerManager');
+    }
+    
+    /**
+     * 检查用户是否是 Finance Manager
+     */
+    function isFinanceManager(orgId, eventId) {
+      return isAuthenticated() && 
+             hasRole(orgId, eventId, request.auth.uid, 'financeManager');
+    }
+    
+    /**
+     * 检查用户是否是 Seller
+     */
+    function isSeller(orgId, eventId) {
+      return isAuthenticated() && 
+             hasRole(orgId, eventId, request.auth.uid, 'seller');
+    }
+    
+    /**
+     * 检查 Seller Manager 是否管理特定部门
+     */
+    function managesDepartment(orgId, eventId, department) {
+      let userData = getUserData(orgId, eventId, request.auth.uid);
+      return userData.managedDepartments != null && 
+             department in userData.managedDepartments;
+    }
+    
+    /**
+     * 检查 Seller Manager 是否管理特定用户
+     */
+    function managesUser(orgId, eventId, targetUserId) {
+      let targetUserData = getUserData(orgId, eventId, targetUserId);
+      let targetDepartment = targetUserData.department;
+      return managesDepartment(orgId, eventId, targetDepartment);
+    }
+    
+    /**
+     * 检查用户是否有管理权限（Admin, Event Manager, 或 Seller Manager）
+     */
+    function hasManagementAccess(orgId, eventId) {
+      return isAdmin() || 
+             isEventManager(orgId, eventId) || 
+             isSellerManager(orgId, eventId);
+    }
+    
+    // ============================================================================
+    // organizations 集合 (主架构)
+    // ============================================================================
+    
     match /organizations/{orgId} {
+      // 所有已认证用户可以读取组织信息
       allow read: if isAuthenticated();
+      
+      // 只有 Admin 可以创建、修改、删除组织
       allow create, update, delete: if isAdmin();
       
-      // ========== events 子集合 ==========
+      // --------------------------------------------------------------------------
+      // events 子集合
+      // --------------------------------------------------------------------------
+      
       match /events/{eventId} {
+        // 所有已认证用户可以读取 Event 信息
         allow read: if isAuthenticated();
-        allow create, delete: if isAdmin();
-        allow update: if isAdmin() || isAuthenticated();
         
-        // ========== events 的 users 子集合 ==========
+        // 只有 Admin 可以创建、删除 Event
+        allow create, delete: if isAdmin();
+        
+        // Admin 和 Event Manager 可以更新 Event
+        // Event Manager 不能修改敏感字段
+        allow update: if isAdmin() || 
+                         (isEventManager(orgId, eventId) && 
+                          !request.resource.data.diff(resource.data).affectedKeys()
+                            .hasAny(['organizationId', 'eventCode', 'createdBy', 'createdAt']));
+        
+        // ------------------------------------------------------------------------
+        // users 子集合 (核心权限控制)
+        // ------------------------------------------------------------------------
+        
         match /users/{userId} {
-          allow read: if isAuthenticated();
-          allow create, update, delete: if isAdmin() || isAuthenticated();
+          
+          // 读取权限
+          allow read: if isAdmin() || 
+                         isEventManager(orgId, eventId) ||
+                         isFinanceManager(orgId, eventId) ||
+                         request.auth.uid == userId ||
+                         (isSellerManager(orgId, eventId) && managesUser(orgId, eventId, userId));
+          
+          // 创建权限
+          allow create: if isAdmin() || isEventManager(orgId, eventId);
+          
+          // 更新权限
+          allow update: if isAdmin() || 
+                           isEventManager(orgId, eventId) ||
+                           // Seller Manager 更新管理范围内的用户
+                           (isSellerManager(orgId, eventId) && 
+                            managesUser(orgId, eventId, userId) &&
+                            !request.resource.data.diff(resource.data).affectedKeys()
+                              .hasAny(['roles', 'managedDepartments', 'userId', 'createdBy', 'createdAt'])) ||
+                           // 用户更新自己的数据
+                           (request.auth.uid == userId &&
+                            !request.resource.data.diff(resource.data).affectedKeys()
+                              .hasAny(['roles', 'seller.availablePoints', 'pointsStats', 
+                                       'managedDepartments', 'userId', 'createdBy', 'createdAt']));
+          
+          // 删除权限
+          allow delete: if isAdmin();
+          
+          // ----------------------------------------------------------------------
+          // pointAllocations 子集合 (点数分配记录)
+          // ----------------------------------------------------------------------
+          
+          match /pointAllocations/{allocationId} {
+            // 读取权限:
+            // 1. Admin 和 Event Manager 可以读取所有分配记录
+            // 2. Seller Manager 可以读取自己创建的分配记录
+            // 3. Finance Manager 可以读取所有分配记录
+            // 4. 接收者可以读取分配给自己的记录
+            allow read: if isAdmin() || 
+                           isEventManager(orgId, eventId) ||
+                           isFinanceManager(orgId, eventId) ||
+                           userId == request.auth.uid ||
+                           resource.data.recipientId == request.auth.uid;
+            
+            // 创建权限:
+            // ✅ 新增: Event Manager 也可以创建分配记录（用于特殊情况）
+            // Seller Manager 只能分配给管理范围内的用户
+            // Event Manager 可以分配给任何用户
+            allow create: if (isSellerManager(orgId, eventId) &&
+                             userId == request.auth.uid &&
+                             request.resource.data.recipientId != null &&
+                             request.resource.data.points > 0 &&
+                             request.resource.data.allocatedBy == request.auth.uid &&
+                             managesUser(orgId, eventId, request.resource.data.recipientId)) ||
+                            (isEventManager(orgId, eventId) &&
+                             request.resource.data.recipientId != null &&
+                             request.resource.data.points > 0 &&
+                             request.resource.data.allocatedBy == request.auth.uid);
+            
+            // 更新和删除权限:
+            // ✅ 新增: Event Manager 可以修改分配记录（用于更正错误）
+            // Admin 和 Event Manager 可以修改或删除
+            // Seller Manager 不能修改（保持审计追踪）
+            allow update, delete: if isAdmin() || isEventManager(orgId, eventId);
+          }
+          
+          // ----------------------------------------------------------------------
+          // 其他用户子集合（transactions, cashSubmissions 等）
+          // ----------------------------------------------------------------------
+          
+          match /{subcollection}/{docId} {
+            // 读取权限
+            allow read: if isAdmin() || 
+                           isEventManager(orgId, eventId) ||
+                           request.auth.uid == userId ||
+                           (isSellerManager(orgId, eventId) && managesUser(orgId, eventId, userId)) ||
+                           isFinanceManager(orgId, eventId);
+            
+            // 写入权限
+            allow write: if isAdmin() || isEventManager(orgId, eventId);
+          }
         }
         
-        // ========== events 的其他子集合 ==========
+        // ------------------------------------------------------------------------
+        // departmentStats 子集合 (部门统计)
+        // ------------------------------------------------------------------------
+        
+        match /departmentStats/{deptCode} {
+          // 读取权限
+          allow read: if isAdmin() || 
+                         isEventManager(orgId, eventId) ||
+                         isFinanceManager(orgId, eventId) ||
+                         (isSellerManager(orgId, eventId) && managesDepartment(orgId, eventId, deptCode));
+          
+          // 写入权限: 统计数据只能由 Cloud Functions 更新
+          allow write: if false;
+        }
+        
+        // ------------------------------------------------------------------------
+        // sellerManagerStats 子集合 (Seller Manager 统计)
+        // ------------------------------------------------------------------------
+        
+        match /sellerManagerStats/{smId} {
+          // 读取权限
+          allow read: if isAdmin() || 
+                         isEventManager(orgId, eventId) ||
+                         isFinanceManager(orgId, eventId) ||
+                         (isSellerManager(orgId, eventId) && smId == request.auth.uid);
+          
+          // 写入权限: 统计数据只能由 Cloud Functions 更新
+          allow write: if false;
+        }
+        
+        // ------------------------------------------------------------------------
+        // pointAllocations 顶级子集合 (全局分配记录 - 如果使用)
+        // ------------------------------------------------------------------------
+        
+        match /pointAllocations/{allocationId} {
+          allow read: if isAdmin() || 
+                         isEventManager(orgId, eventId) ||
+                         isFinanceManager(orgId, eventId) ||
+                         resource.data.allocatedBy == request.auth.uid ||
+                         resource.data.recipientId == request.auth.uid;
+          
+          // 写入由 Cloud Functions 处理
+          allow write: if false;
+        }
+        
+        // ------------------------------------------------------------------------
+        // transactions 子集合 (交易记录)
+        // ------------------------------------------------------------------------
+        
+        match /transactions/{transactionId} {
+          allow read: if isAdmin() || 
+                         isEventManager(orgId, eventId) ||
+                         isFinanceManager(orgId, eventId);
+          
+          // 交易记录由系统自动创建
+          allow write: if false;
+        }
+        
+        // ------------------------------------------------------------------------
+        // 其他 Event 子集合
+        // ------------------------------------------------------------------------
+        
         match /{document=**} {
           allow read: if isAuthenticated();
-          allow write: if isAuthenticated();
+          allow write: if isAdmin() || isEventManager(orgId, eventId);
         }
       }
       
-      // ========== organizations 的其他子集合 ==========
+      // --------------------------------------------------------------------------
+      // organizations 的其他子集合
+      // --------------------------------------------------------------------------
+      
       match /{document=**} {
         allow read: if isAuthenticated();
         allow write: if isAdmin();
       }
     }
     
-    // ========== OTP Sessions（登录验证码） ==========
+    // ============================================================================
+    // Event 集合（如果使用顶级 Event 架构）
+    // ============================================================================
+    
+    match /Event/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+      
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+        
+        match /{document=**} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated();
+        }
+      }
+      
+      match /sellerManagerStats/{smId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      match /departmentStats/{deptCode} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      match /pointAllocations/{allocationId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+      
+      match /transactions/{transactionId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+      
+      match /{document=**} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+    
+    // ============================================================================
+    // 系统集合
+    // ============================================================================
+    
     match /otp_sessions/{sessionId} {
       allow read, write: if isAuthenticated();
     }
     
-    // ========== GlobalUsers 集合 ==========
     match /GlobalUsers/{userId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAuthenticated();
     }
     
-    // ========== system_config 配置 ==========
     match /system_config/{docId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
     
-    // ========== users 集合（通用用户） ==========
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update, delete: if isAuthenticated() && request.auth.uid == userId;
     }
     
-    // ========== admin_uids 白名单 ==========
     match /admin_uids/{uid} {
       allow read: if isAuthenticated();
       allow write: if false;
     }
     
-    // ========== 默认拒绝规则 ==========
+    // ============================================================================
+    // 默认拒绝规则
+    // ============================================================================
+    
     match /{document=**} {
       allow read, write: if false;
     }

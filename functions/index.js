@@ -15,6 +15,8 @@ const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, g
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { eventManagerLoginHttp } = require('./auth/eventManagerLoginHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
+// 导入现金收款 Cloud Functions
+const { onCashCollection } = require('./onCashCollection');
 
 // 导入 Seller Manager Functions (新增)
 const { 
@@ -52,6 +54,8 @@ exports.eventManagerLoginHttp = eventManagerLoginHttp;
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
 
+// 导出现金收款 Cloud Functions
+exports.onCashCollection = onCashCollection;
 // 导出 Seller Manager Functions (新增)
 exports.onSellerManagerAllocation = onSellerManagerAllocation;
 exports.updateUserPointsStats = updateUserPointsStats;

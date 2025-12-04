@@ -13,6 +13,8 @@ import { signOut } from 'firebase/auth';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
+import CollectCash from './CollectCash';  // 新增
+import SubmitCash from './SubmitCash';    // 新增
 
 /**
  * Seller Manager Dashboard (简化版)
@@ -66,6 +68,9 @@ const SellerManagerDashboard = () => {
 
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
+  
+  // 新增：标签页管理
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     initializeDashboard();
@@ -495,41 +500,168 @@ const SellerManagerDashboard = () => {
         </div>
       </div>
 
-      {/* 概览统计 */}
-      <div style={styles.section}>
-        <OverviewStats
-          smStats={smStats || getDefaultStats()}
-          departmentStats={safeDepartmentStats}
-          eventData={safeEventData}
-        />
+      {/* 标签页导航 */}
+      <div style={styles.tabs}>
+        <button
+          onClick={() => setActiveTab('overview')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'overview' ? styles.activeTab : {})
+          }}
+        >
+          📊 概览
+        </button>
+        <button
+          onClick={() => setActiveTab('departments')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'departments' ? styles.activeTab : {})
+          }}
+        >
+          🏫 部门管理
+        </button>
+        <button
+          onClick={() => setActiveTab('sellers')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'sellers' ? styles.activeTab : {})
+          }}
+        >
+          👥 Sellers 管理
+        </button>
+        <button
+          onClick={() => setActiveTab('allocate')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'allocate' ? styles.activeTab : {})
+          }}
+        >
+          📦 分配点数
+        </button>
+        <button
+          onClick={() => setActiveTab('collect')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'collect' ? styles.activeTab : {})
+          }}
+        >
+          💰 收取现金
+        </button>
+        <button
+          onClick={() => setActiveTab('submit')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'submit' ? styles.activeTab : {})
+          }}
+        >
+          📤 上交现金
+        </button>
       </div>
 
-      {/* Sellers 列表 */}
-      <div style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>👥 Sellers ({safeSellers.length})</h2>
-          <div style={styles.actionsBar}>
-            <button style={styles.refreshButton}>
-              🔄 数据实时更新中
-            </button>
-            <div style={styles.allocationInfo}>
-              💡 每次最高分配: <strong>RM {maxPerAllocation}</strong>
-            </div>
+      {/* 内容区域 */}
+      <div style={styles.content}>
+        {activeTab === 'overview' && (
+          <div style={styles.section}>
+            <OverviewStats
+              smStats={smStats || getDefaultStats()}
+              departmentStats={safeDepartmentStats}
+              eventData={safeEventData}
+            />
           </div>
-        </div>
+        )}
 
-        {loadingSellers ? (
-          <div style={styles.loadingCard}>
-            <div style={styles.spinner}></div>
-            <p>加载 Sellers...</p>
+        {activeTab === 'departments' && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>🏫 部门管理</h2>
+            </div>
+            {safeDepartmentStats.length === 0 ? (
+              <div style={styles.emptyState}>
+                <p>暂无部门数据</p>
+              </div>
+            ) : (
+              <div style={styles.departmentGrid}>
+                {safeDepartmentStats.map(dept => (
+                  <div key={dept.id} style={styles.departmentCard}>
+                    <div style={styles.deptCode}>{dept.departmentCode}</div>
+                    <div style={styles.deptName}>{dept.departmentName}</div>
+                    <div style={styles.deptStats}>
+                      <div>成员: {dept.membersStats?.totalCount || 0}</div>
+                      <div>销售额: RM {(dept.pointsStats?.totalRevenue || 0).toLocaleString()}</div>
+                      <div>已收款: RM {(dept.pointsStats?.totalCollected || 0).toLocaleString()}</div>
+                      <div style={{
+                        color: (dept.pointsStats?.collectionRate || 0) >= 0.8 ? '#10b981' : '#f59e0b'
+                      }}>
+                        收款率: {Math.round((dept.pointsStats?.collectionRate || 0) * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <SellerList
-            sellers={safeSellers}
-            selectedDepartment={null}
-            onSelectSeller={handleAllocatePoints}
-            eventId={eventId}
-            orgId={safeCurrentUser.organizationId}
+        )}
+
+        {activeTab === 'sellers' && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>👥 Sellers ({safeSellers.length})</h2>
+              <div style={styles.actionsBar}>
+                <button style={styles.refreshButton}>
+                  🔄 数据实时更新中
+                </button>
+                <div style={styles.allocationInfo}>
+                  💡 每次最高分配: <strong>RM {maxPerAllocation}</strong>
+                </div>
+              </div>
+            </div>
+
+            {loadingSellers ? (
+              <div style={styles.loadingCard}>
+                <div style={styles.spinner}></div>
+                <p>加载 Sellers...</p>
+              </div>
+            ) : (
+              <SellerList
+                sellers={safeSellers}
+                selectedDepartment={null}
+                onSelectSeller={handleAllocatePoints}
+                eventId={eventId}
+                orgId={safeCurrentUser.organizationId}
+              />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'allocate' && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>📦 分配点数</h2>
+              <div style={styles.allocationInfo}>
+                💡 每次最高分配: <strong>RM {maxPerAllocation}</strong>
+              </div>
+            </div>
+            <AllocatePoints
+              sellers={safeSellers}
+              sellerManager={safeCurrentUser}
+              organizationId={safeCurrentUser.organizationId}
+              eventId={eventId}
+              maxPerAllocation={maxPerAllocation}
+            />
+          </div>
+        )}
+
+        {activeTab === 'collect' && (
+          <CollectCash
+            userInfo={safeCurrentUser}
+            eventData={safeEventData}
+          />
+        )}
+
+        {activeTab === 'submit' && (
+          <SubmitCash
+            userInfo={safeCurrentUser}
+            eventData={safeEventData}
           />
         )}
       </div>
@@ -693,6 +825,74 @@ const styles = {
     borderRadius: '8px',
     fontSize: '0.875rem',
     fontWeight: '500'
+  },
+  // 新增：标签页样式
+  tabs: {
+    display: 'flex',
+    gap: '0.5rem',
+    marginBottom: '1rem',
+    flexWrap: 'wrap',
+    background: 'white',
+    padding: '1rem',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  tab: {
+    padding: '0.75rem 1.5rem',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#6b7280',
+    transition: 'all 0.2s'
+  },
+  activeTab: {
+    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    color: 'white'
+  },
+  content: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '1.5rem',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    marginBottom: '1rem'
+  },
+  // 新增：部门管理样式
+  departmentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gap: '1.5rem'
+  },
+  departmentCard: {
+    background: '#fafafa',
+    border: '2px solid #e5e7eb',
+    borderRadius: '12px',
+    padding: '1.5rem'
+  },
+  deptCode: {
+    fontSize: '1.25rem',
+    fontWeight: 'bold',
+    color: '#f59e0b',
+    marginBottom: '0.5rem'
+  },
+  deptName: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    marginBottom: '1rem'
+  },
+  deptStats: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+    fontSize: '0.875rem',
+    color: '#374151'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '2rem',
+    color: '#6b7280'
   }
 };
 
