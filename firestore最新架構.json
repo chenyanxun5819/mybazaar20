@@ -1,9 +1,26 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2025-11-28-v2",
-    "lastUpdated": "2025-11-28",
+    "version":"2025-12-08-v4",
+    "lastUpdated": "2025-12-08",
     "architectureChanges": {
+      "version_2025-12-08-v3": [
+      "version_2025-12-08-v4": [
+        "完全移除 Event.contactPerson 字段",
+        "Event Manager 本身就是活动联络人，其 basicInfo 即为对外联络信息",
+        "users.identityInfo 新增 position 字段（职位）",
+        "Organization.contact 在创建组织时填写（组织主要联系人）",
+        "创建 Event 时同时创建 Event Manager（活动负责人即联络人）",
+        "简化架构：不需要额外的 contactPerson 或 contactPersons 数组"
+        "Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
+        "Event Manager 从 Event.eventManager 对象移到 users 集合",
+        "Event 文档中移除 eventManager 对象，改为 contactPerson（纯联络用途）",
+        "Event Manager 成为 users 集合中的特殊角色，与 Finance Manager 形成制衡",
+        "Event Manager 不分配点数，纯监控所有人员数据",
+        "删除 Event 级别的 pointAllocations 集合",
+        "Seller Manager 只管理 students，只能单人分配",
+        "Platform Admin 创建 Event 时手动输入 contactPerson 信息"
+      ],
       "version_2025-11-28-v2": [
         "修正 Event 集合路径：从顶级集合改为 Organization 的子集合",
         "修正所有子集合路径：users, pointAllocations, departmentStats 等都在 Event 下",
@@ -18,8 +35,9 @@
     "keyArchitecturePrinciples": {
       "hierarchicalStructure": "organizations/{orgId}/events/{eventId}/users/{userId}",
       "dataIsolation": "每个 Organization 的数据完全隔离",
-      "eventManager": "每个 Event 只有一个 Event Manager，存储在 Event.eventManager 对象中",
-      "subcollections": "users, pointAllocations, departmentStats 等都是 Event 的子集合"
+      "eventManager": "每个 Event 只有一个 Event Manager，存储在 users 集合中，通过 roles 识别",
+      "contactPerson": "Event Manager 本身就是活动联络人，无需额外的 contactPerson 字段",
+      "subcollections": "users, departmentStats, sellerManagerStats 等都是 Event 的子集合"
     },
     "collections": {
       "admin_uids": {
@@ -137,27 +155,6 @@
                   "endDate": "timestamp (消费结束日期)"
                 }
               },
-              "eventManager": {
-                "description": "Event Manager 详细信息（单个对象，每个 Event 只有一个）",
-                "authUid": "string (Event Manager的认证UID)",
-                "displayName": "string (显示名称)",
-                "chineseName": "string (中文名)",
-                "englishName": "string (英文名)",
-                "email": "string (邮箱，可选)",
-                "phoneNumber": "string (电话号码)",
-                "password": "string (登录密码，加密存储)",
-                "passwordSalt": "string (密码盐值)",
-                "addedAt": "timestamp (添加时间)",
-                "addedBy": "string (添加者的Platform Admin UID)"
-              },
-              "pointAllocationRules": {
-                "description": "点数分配规则配置",
-                "sellerManager": {
-                  "maxPerAllocation": "number (每次给单个用户最多分配的点数，如 100)",
-                  "enableWarnings": "boolean (是否启用收款警示)",
-                  "warningThreshold": "number (待收款警示阈值，如 0.3 表示30%)"
-                }
-              },
               "globalPointsStats": {
                 "description": "全局点数统计（实时维护）",
                 "totalAllocated": "number (累计分配的点数总额)",
@@ -173,9 +170,7 @@
               "roleStats": {
                 "description": "各角色统计信息",
                 "eventManagers": {
-                  "count": "number (Event Manager 数量，固定为1)",
-                  "totalAllocations": "number (累计分配次数)",
-                  "totalPointsAllocated": "number (累计分配点数)"
+                  "count": "number (Event Manager 数量，固定为1)"
                 },
                 "sellerManagers": {
                   "count": "number (Seller Manager 数量)",
@@ -258,7 +253,8 @@
                     "identityId": "string (身份编号，如学号、工号)",
                     "identityTag": "string (身份标签)",
                     "identityName": "string (身份名称)",
-                    "department": "string (部门代码)"
+                    "department": "string (部门代码)",
+                    "position": "string (职位，如 '活动负责人'、'班主任'，可选)"
                   },
                   "basicInfo": {
                     "phoneNumber": "string (电话号码)",
@@ -286,55 +282,95 @@
                     "lastUpdated": "timestamp"
                   },
                   "seller": {
-                    "description": "Seller 角色专用数据",
-                    "availablePoints": "number (可用点数余额)",
+                    "availablePoints": "number (当前可用点数余额)",
                     "totalPointsSold": "number (累计售出点数)",
-                    "totalRevenue": "number (累计销售额)",
-                    "totalCollected": "number (累计已收款)",
-                    "pendingCollection": "number (待收款)",
-                    "collectionRate": "number (收款率)",
-                    "collectionAlert": "boolean (是否有收款警示)",
-                    "lastTransactionAt": "timestamp",
-                    "transactions": {
-                      "description": "点数分配/扣减交易记录，以时间戳为键的 Map 对象。记录来自 Event Manager 批量分配或 Seller Manager 的部门内分配",
-                      "<timestamp_key>": {
-                        "amount": "number",
-                        "type": "allocation | deduction",
-                        "allocatedBy": "eventManager | sellerManager",
-                        "note": "string",
-                        "timestamp": "timestamp"
-                      }
+                    "totalRevenue": "number (累计销售额 RM)",
+                    "totalCashCollected": "number (累计已收现金)",
+                    "pendingCollection": "number (待收款金额)",
+                    "transactions": "object (交易记录)",
+                    "collectionAlert": {
+                      "hasWarning": "boolean (是否有收款警示)",
+                      "warningLevel": "string ('none' | 'low' | 'medium' | 'high')",
+                      "pendingAmount": "number (待收款金额)",
+                      "pendingRatio": "number (待收款比例 0-1)"
                     }
                   },
                   "merchant": {
-                    "description": "Merchant 角色专用数据",
-                    "totalPointsSold": "number",
-                    "totalRevenue": "number",
-                    "totalCollected": "number",
-                    "pendingCollection": "number",
-                    "collectionRate": "number",
-                    "collectionAlert": "boolean",
-                    "lastTransactionAt": "timestamp"
+                    "availablePoints": "number",
+                    "totalPointsReceived": "number",
+                    "totalSpent": "number",
+                    "transactions": "object"
                   },
                   "customer": {
-                    "description": "Customer 角色专用数据",
-                    "availablePoints": "number (可用点数余额)",
-                    "totalSpent": "number (累计消费点数)",
-                    "lastPurchaseAt": "timestamp"
+                    "availablePoints": "number",
+                    "totalPointsReceived": "number",
+                    "totalSpent": "number",
+                    "transactions": "object"
+                  },
+                  "eventManager": {
+                    "description": "Event Manager 角色专用数据",
+                    "permissions": {
+                      "canManageUsers": "boolean (可以创建、编辑、删除用户)",
+                      "canManageRoles": "boolean (可以分配角色给用户)",
+                      "canAssignManagers": "boolean (可以指派 Seller Manager、Finance Manager)",
+                      "canViewAllData": "boolean (可以查看所有数据)",
+                      "canMonitorAll": "boolean (可以监控所有人员活动)",
+                      "canModifyEventSettings": "boolean (可以修改活动设置)"
+                    },
+                    "restrictions": {
+                      "cannotAllocatePoints": "boolean (不能分配点数)",
+                      "cannotModifyOwnRoles": "boolean (不能修改自己的角色)",
+                      "cannotDeleteSelf": "boolean (不能删除自己)",
+                      "cannotHoldOtherRoles": "boolean (不能兼任其他角色)"
+                    },
+                    "monitoringScope": {
+                      "canMonitorFinanceManager": "boolean (可以监控 Finance Manager 的点数分配)",
+                      "canMonitorSellerManager": "boolean (可以监控 Seller Manager 的收款活动)",
+                      "canMonitorAllTransactions": "boolean (可以查看所有交易记录)",
+                      "canViewAllStats": "boolean (可以查看所有统计数据)"
+                    },
+                    "notes": "Event Manager 纯监控角色，不参与点数分配和现金流；与 Finance Manager 形成制衡；每个 Event 只有一个 Event Manager"
                   },
                   "sellerManager": {
                     "description": "Seller Manager 角色专用数据",
                     "totalAllocations": "number (累计分配次数)",
                     "totalPointsAllocated": "number (累计分配点数)",
                     "managedDepartments": [
-                      "string (管理的部门代码)"
+                      "string (管理的部门代码数组，如 ['J1A', 'J1B'])"
                     ],
+                    "managedIdentityTags": [
+                      "student"
+                    ],
+                    "permissions": {
+                      "canAllocatePoints": true,
+                      "canCollectCash": true,
+                      "canViewDepartmentStats": true,
+                      "canBatchAllocate": false
+                    },
+                    "notes": "Seller Manager 只管理 students，不管理 teacher/staff",
                     "alerts": {
                       "lowCollectionRate": [
                         "string (低收款率警示的用户ID列表)"
                       ]
                     },
                     "lastAllocationAt": "timestamp"
+                  },
+                  "financeManager": {
+                    "managedIdentityTags": [
+                      "teacher",
+                      "staff",
+                      "parent",
+                      "...其他非學生身份"
+                    ],
+                    "permissions": {
+                      "canAllocateToIndividual": true,
+                      "canBatchAllocate": false,
+                      "canReceiveCash": true,
+                      "canVerifySubmissions": true,
+                      "canViewAllStats": true
+                    },
+                    "batchAllocationLimit": 0,
+                    "notes": "所有 FM 都可單人分配；批量分配需特別開啟權限"
                   },
                   "cashSubmissions (subcollection)": {
                     "description": "现金上交记录 - Subcollection to track cash submissions from sellers to managers",
@@ -391,27 +427,6 @@
                     ]
                   }
                 }
-              },
-              "pointAllocations": {
-                "path": "organizations/{organizationId}/events/{eventId}/pointAllocations/{allocationId}",
-                "description": "Event Manager 的点数分配记录（Event 级别）",
-                "documentStructure": {
-                  "allocationId": "string (分配记录ID)",
-                  "fromUserId": "string (Event Manager的userId)",
-                  "toUserId": "string (接收者的userId，可以是 Seller 或 Seller Manager)",
-                  "toRole": "string (接收者角色：'seller' | 'sellerManager')",
-                  "toDepartment": "string (接收者的部门)",
-                  "points": "number (分配的点数)",
-                  "reason": "string (分配原因，可选)",
-                  "allocatedAt": "timestamp",
-                  "allocatedBy": "string (Event Manager UID)",
-                  "status": "string ('completed' | 'cancelled')"
-                },
-                "indexes": [
-                  "toUserId",
-                  "allocatedAt",
-                  "status"
-                ]
               },
               "departmentStats": {
                 "path": "organizations/{organizationId}/events/{eventId}/departmentStats/{departmentCode}",
@@ -662,45 +677,124 @@
           "trigger": "organizations/{orgId}/events/{eventId}/users/{userId} onWrite",
           "description": "当用户点数变化时，更新相关统计",
           "tasks": [
-            "计算用户的 pointsStats",
+            "计算用户的 pointsStats（实时统计）",
             "更新部门的 departmentStats",
             "更新 Event 的 globalPointsStats",
-            "更新 SellerManager 的 sellerManagerStats（如果用户属于被管理范围）",
+            "如果用户是 Seller，更新对应 SellerManager 的 stats",
             "检查是否需要触发收款警示"
-          ]
-        },
-        "onPointAllocation": {
-          "trigger": "organizations/{orgId}/events/{eventId}/pointAllocations/{allocationId} onCreate",
-          "description": "当 Event Manager 分配点数时",
-          "tasks": [
-            "更新接收者的 pointsStats.totalReceived",
-            "更新接收者的 pointsStats.receivedFromEventManager",
-            "更新部门的 departmentStats",
-            "更新 Event 的 globalPointsStats",
-            "更新 Event 的 roleStats.eventManagers"
+          ],
+          "relatedFiles": [
+            "functions/userStatsFunctions.js"
           ]
         },
         "onSellerManagerAllocation": {
           "trigger": "organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId} onCreate",
           "description": "当 Seller Manager 分配点数时",
+          "scope": "只能分配給 identityTag 為 student 的用戶",
           "tasks": [
+            "验证接收者的 identityTag 是否为 'student'",
             "验证分配额度是否超出 maxPerAllocation 限制",
+            "更新接收者的 seller.availablePoints",
             "更新接收者的 pointsStats.totalReceived",
             "更新接收者的 pointsStats.receivedFromSellerManager",
             "更新部门的 departmentStats",
             "更新 SellerManager 的 sellerManagerStats",
-            "更新 Event 的 globalPointsStats",
-            "计算并更新收款警示"
+            "更新 Event 的 globalPointsStats.totalAllocated",
+            "计算并更新收款警示（仅对 students）"
+          ],
+          "relatedFiles": [
+            "functions/sellerManagerFunctions.js"
+          ]
+        },
+        "onFinanceManagerAllocation": {
+          "trigger": "organizations/{orgId}/events/{eventId}/users/{financeManagerId}/pointAllocations/{allocationId} onCreate",
+          "description": "当 Finance Manager 分配点数时（单人或批量）",
+          "scope": "可分配給任何非 student 的 identityTag，如 teacher/staff/parent 等",
+          "tasks": [
+            "验证 Finance Manager 是否有 canAllocateToIndividual 权限",
+            "如果是批量分配，验证 canBatchAllocate 权限",
+            "验证批量分配额度是否超出 batchAllocationLimit",
+            "验证接收者的 identityTag 不是 'student'",
+            "更新接收者的对应角色 availablePoints（seller/merchant/customer）",
+            "更新接收者的 pointsStats.totalReceived",
+            "更新接收者的 pointsStats.receivedFromFinanceManager",
+            "更新 FinanceManager 的 financeManagerStats",
+            "更新 Event 的 globalPointsStats.totalAllocated",
+            "不计算收款警示（非 students 不需要）"
+          ],
+          "relatedFiles": [
+            "functions/financeManagerFunctions.js"
           ]
         },
         "onTransaction": {
-          "trigger": "organizations/{orgId}/events/{eventId}/transactions/{transactionId} onWrite",
+          "trigger": "organizations/{orgId}/events/{eventId}/transactions/{transactionId} onCreate",
           "description": "当交易发生时，更新统计",
           "tasks": [
-            "更新 Seller 的 pointsStats（售出、收款等）",
+            "验证 Seller 有足够的点数余额",
+            "更新 Seller 的 seller.availablePoints（减少）",
+            "更新 Seller 的 seller.totalPointsSold（增加）",
+            "更新 Seller 的 seller.totalRevenue（增加）",
+            "更新 Seller 的 seller.pendingCollection（增加待收款）",
+            "更新 Customer/Merchant 的 availablePoints（增加）",
             "更新部门的 departmentStats",
-            "更新 Event 的 globalPointsStats",
-            "检查收款警示"
+            "更新 Event 的 globalPointsStats.totalSold",
+            "更新 Event 的 globalPointsStats.totalRevenue",
+            "检查并更新收款警示"
+          ],
+          "relatedFiles": [
+            "functions/transactionFunctions.js"
+          ]
+        },
+        "onCashSubmission": {
+          "trigger": "organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId} onCreate",
+          "description": "当现金上交记录创建时（SM 上交给 FM）",
+          "tasks": [
+            "验证 Seller Manager 的上交金额",
+            "更新 Seller Manager 的 sellerManagerStats（待上交金额减少）",
+            "更新 Finance Manager 的 financeManagerStats（待验证金额增加）",
+            "创建待验证记录",
+            "发送通知给 Finance Manager"
+          ],
+          "relatedFiles": [
+            "functions/cashSubmissionFunctions.js"
+          ]
+        },
+        "onCashCollection": {
+          "trigger": "organizations/{orgId}/events/{eventId}/cashCollections/{collectionId} onCreate",
+          "description": "当现金收款记录创建时",
+          "types": [
+            "Seller Manager 从 Student 收款",
+            "Finance Manager 直接从 Teacher/Staff 收款"
+          ],
+          "tasks": [
+            "验证收款人权限（SM 或 FM）",
+            "验证金额是否合理（不超过 pendingCollection）",
+            "更新 Seller 的 seller.totalCashCollected",
+            "更新 Seller 的 seller.pendingCollection（减少）",
+            "更新收款人的统计（sellerManagerStats 或 financeManagerStats）",
+            "更新部门的 departmentStats",
+            "更新 Event 的 globalPointsStats.totalCollected",
+            "更新收款警示状态"
+          ],
+          "relatedFiles": [
+            "functions/cashCollectionFunctions.js"
+          ]
+        },
+        "checkCollectionWarnings": {
+          "trigger": "organizations/{orgId}/events/{eventId}/users/{userId} onUpdate",
+          "description": "检查并更新收款警示",
+          "scope": "仅对 identityTag 为 student 的用户",
+          "tasks": [
+            "验证用户是否为 student",
+            "计算待收款比例",
+            "根据 Event.pointAllocationRules.sellerManager.warningThreshold 判断",
+            "更新用户的 seller.collectionAlert",
+            "更新部门的 collectionAlerts",
+            "更新 SellerManager 的 alerts",
+            "如果达到高风险级别，发送通知"
+          ],
+          "relatedFiles": [
+            "functions/collectionWarningFunctions.js"
           ]
         },
         "dailyStatsRecalculation": {
@@ -711,18 +805,12 @@
             "重新计算 globalPointsStats",
             "重新计算所有 departmentStats",
             "重新计算所有 sellerManagerStats",
-            "标记 lastCalculated 时间戳"
-          ]
-        },
-        "checkCollectionWarnings": {
-          "trigger": "organizations/{orgId}/events/{eventId}/users/{userId} onUpdate",
-          "description": "检查并更新收款警示",
-          "tasks": [
-            "计算待收款比例",
-            "根据 Event.pointAllocationRules.sellerManager.warningThreshold 判断",
-            "更新用户的 collectionAlert",
-            "更新部门的 collectionAlerts",
-            "更新 SellerManager 的 alerts"
+            "重新计算所有 financeManagerStats",
+            "标记 lastCalculated 时间戳",
+            "生成每日统计报告"
+          ],
+          "relatedFiles": [
+            "functions/scheduledFunctions.js"
           ]
         }
       }
@@ -732,7 +820,7 @@
       "principles": [
         "三层权限架构：Platform Admin（平台级）-> Organization（组织级）-> Event（活动级，由 Event Manager 管理）",
         "Platform Admin 权限：可以创建和管理所有 Organization；可以创建 Event 并指定 Event Manager",
-        "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据",
+        "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据；不分配点数；不兼任其他角色；纯监控所有人员数据",
         "完全数据隔离：不同 Organization 和 Event 之间的数据完全隔离",
         "角色权限：基于用户角色（Platform Admin, Event Manager, Seller Manager, Seller, Merchant, Customer, Finance）控制访问",
         "所有权验证：用户只能访问自己的数据或管理范围内的数据",
@@ -756,6 +844,11 @@
           "read": "用户可以读取自己的数据；Event Manager 可以读取所有用户；Seller Manager 可以读取 managedDepartments 内的用户",
           "write": "用户只能更新自己的基本信息；Event Manager 可以创建/更新用户；Seller Manager 可以更新管理范围内的用户"
         },
+        "organizations/{orgId}/events/{eventId}/users/{eventManagerId}": {
+          "read": "Event Manager 可以读取自己的数据；Platform Admin 可读；其他用户不可读",
+          "write": "Platform Admin 可以创建/修改 Event Manager；Event Manager 不能修改自己的 roles；不能删除自己",
+          "note": "Event Manager 通过 roles=['eventManager'] 识别，每个 Event 只能有一个"
+        },
         "organizations/{orgId}/events/{eventId}/departmentStats": {
           "read": "Event Manager 和相关 Seller Manager 可读",
           "write": "仅 Cloud Functions 可写"
@@ -767,18 +860,24 @@
       }
     },
     "dataFlowExamples": {
-      "eventManagerAllocatesPoints": {
-        "description": "Event Manager 分配点数给 Seller",
+      "platformAdminCreatesEvent": {
+        "description": "Platform Admin 创建 Event 并指定 Event Manager",
         "steps": [
-          "1. Event Manager 在 frontend 输入分配信息（toUserId, points）",
-          "2. Frontend 调用 Cloud Function: allocatePoints",
-          "3. Cloud Function 验证权限（检查 Event.eventManager.authUid）",
-          "4. Cloud Function 创建文档：organizations/{orgId}/events/{eventId}/pointAllocations/{allocationId}",
-          "5. Firestore 触发器：onPointAllocation",
-          "6. 更新 organizations/{orgId}/events/{eventId}/users/{toUserId}.pointsStats",
-          "7. 更新 organizations/{orgId}/events/{eventId}/departmentStats/{deptCode}",
-          "8. 更新 organizations/{orgId}/events/{eventId}.globalPointsStats"
-        ]
+          "1. Platform Admin 在 frontend 输入 Event 基本信息",
+          "2. Platform Admin 手动输入 contactPerson 信息（姓名、电话、邮箱、职位）",
+          "3. Platform Admin 输入 Event Manager 的基本信息（姓名、电话、密码等）",
+          "4. Frontend 调用 Cloud Function: createEvent",
+          "5. Cloud Function 创建 Event 文档（包含 contactPerson）",
+          "6. Cloud Function 在 users 集合中创建 Event Manager 文档：",
+          "   organizations/{orgId}/events/{eventId}/users/{eventManagerId}",
+          "7. Event Manager 文档包含：",
+          "   - roles: ['eventManager']",
+          "   - eventManager: { permissions, restrictions, monitoringScope }",
+          "   - basicInfo: { 姓名、电话、邮箱等 }",
+          "8. Cloud Function 为 Event Manager 生成登录凭证",
+          "9. 返回成功，Platform Admin 可以通知 Event Manager 登录信息"
+        ],
+        "note": "contactPerson 与 Event Manager 可以是同一人，也可以是不同人"
       },
       "sellerManagerAllocatesPoints": {
         "description": "Seller Manager 分配点数给部门内的 Seller",
@@ -822,14 +921,17 @@
       ],
       "eventSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{userId}",
-        "organizations/{organizationId}/events/{eventId}/pointAllocations/{allocationId}",
         "organizations/{organizationId}/events/{eventId}/departmentStats/{departmentCode}",
         "organizations/{organizationId}/events/{eventId}/sellerManagerStats/{sellerManagerId}",
+        "organizations/{organizationId}/events/{eventId}/financeManagerStats/{financeManagerId}",
         "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
+        "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
+        "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
         "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}"
       ],
       "userSubcollections": [
-        "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}"
+        "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
+        "organizations/{organizationId}/events/{eventId}/users/{financeManagerId}/pointAllocations/{allocationId}"
       ]
     }
   }

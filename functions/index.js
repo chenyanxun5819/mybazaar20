@@ -1,8 +1,12 @@
 const functions = require('firebase-functions');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const cors = require('cors');
+
+// 设置全局选项，确保 v2 触发器使用正确的区域
+setGlobalOptions({ region: 'us-central1' });
 
 // 确保只初始化一次
 if (!admin.apps.length) {
@@ -11,9 +15,8 @@ if (!admin.apps.length) {
 
 // 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles} = require('./admin');
+  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
-const { eventManagerLoginHttp } = require('./auth/eventManagerLoginHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
 const { onCashCollection } = require('./onCashCollection');
@@ -50,9 +53,12 @@ exports.departmentsHttp = departmentsHttp;
 exports.batchImportUsersHttp = batchImportUsersHttp;
 exports.updateUserRoles = updateUserRoles;
 exports.loginUniversalHttp = loginUniversalHttp;
-exports.eventManagerLoginHttp = eventManagerLoginHttp;
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
+
+// 新增 Platform Admin 專用事件建立函數
+exports.createEventByPlatformAdmin = createEventByPlatformAdmin;
+exports.createEventByPlatformAdminHttp = createEventByPlatformAdminHttp;
 
 // 导出现金收款 Cloud Functions
 exports.onCashCollection = onCashCollection;

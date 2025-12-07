@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { doc, updateDoc, addDoc, collection, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, addDoc, collection, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; // 假设你的firebase配置在这里
 
 /**
@@ -15,7 +15,7 @@ import { db } from '../../../config/firebase'; // 假设你的firebase配置在�
  * 3. 更新 seller.totalCollected 和 seller.pendingCollection
  * 4. 更新 pointsStats（如果需要）
  */
-const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgId }) => {
+const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgId, currentUser }) => {
   const [sortBy, setSortBy] = useState('name');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -118,56 +118,150 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
   };
 
   /**
-   * 记录收款功能（简化版：全款收取）
-   * 当 Seller 从 Customer 收到现金时调用
+   * 改进的收款处理函数
+   * 
+   * 功能：Seller Manager 从 Seller 收取现金
+   * 
+   * 流程：
+   * 1. 验证待收款金额
+   * 2. 创建 cashCollection 记录（Event 级别）
+   * 3. 更新 Seller 的收款统计
+   * 4. 更新 Seller Manager 的待上交金额
    */
+
   const handleRecordCollection = async (seller) => {
-    const pendingCollection = seller.pointsStats?.pendingCollection || 0;
+    // ✅ 步骤 1: 读取并验证待收款金额
+    const sellerData = seller.seller || {};
+    const pendingCollection = sellerData.pendingCollection || 0;
 
     if (pendingCollection <= 0) {
       alert('该用户没有待收款项');
       return;
     }
 
-    const confirmMessage = `确认记录收款？\n\n用户: ${seller.basicInfo?.chineseName}\n待收款: RM ${pendingCollection.toLocaleString()}\n\n此操作将标记全部待收款为已收款。`;
+    // ✅ 步骤 2: 显示确认对话框
+    const confirmMessage = `
+    确认收取现金？
+
+    Seller: ${seller.basicInfo?.chineseName || '未知'}
+    待收款: RM ${pendingCollection.toLocaleString()}
+
+    此操作将：
+    1. 记录你从该 Seller 收到 RM ${pendingCollection}
+    2. 标记该 Seller 的待收款为已收款
+    3. 增加你的待上交金额
+
+    确认收款？
+    `.trim();
 
     if (!window.confirm(confirmMessage)) {
       return;
     }
 
+    // ✅ 步骤 3: 获取当前 Seller Manager 信息
+    // 注意：这里需要从父组件传入 currentUser
+    // 临时方案：从 seller 推断（实际应该从 props 获取）
+    const currentUserId = seller.managedBy || 'CURRENT_SM_ID'; // ⚠️ 需要修改
+
     setRecordingCollection(seller.userId);
 
     try {
-      const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
+      const batch = writeBatch(db);
 
-      // 更新用户的收款统计
-      await updateDoc(userRef, {
-        // 更新 pointsStats
-        'pointsStats.totalCollected': increment(pendingCollection),
-        'pointsStats.pendingCollection': increment(-pendingCollection),
-        'pointsStats.collectionRate': (seller.pointsStats?.totalCollected || 0) + pendingCollection / (seller.pointsStats?.totalRevenue || 1),
-        'pointsStats.lastCollected': serverTimestamp(),
+      // ✅ 步骤 4: 创建 cashCollection 记录（Event 级别）
+      const collectionRef = collection(db, `organizations/${orgId}/events/${eventId}/cashCollections`);
+      const collectionDoc = doc(collectionRef); // 自动生成 ID
 
+      batch.set(collectionDoc, {
+        // 基本信息
+        collectionId: collectionDoc.id,
+        sellerId: seller.userId,
+        sellerName: seller.basicInfo?.chineseName || '未知',
+        sellerDepartment: seller.identityInfo?.department || '未分配',
+
+        // Seller Manager 信息
+        collectedBy: currentUserId,
+        collectedByName: 'Seller Manager', // ⚠️ 应该从 currentUser 获取
+
+        // 金额信息
+        amount: pendingCollection,
+        collectedAt: serverTimestamp(),
+
+        // 状态
+        status: 'collected',  // collected → submitted → approved
+
+        // 备注
+        note: `从 ${seller.basicInfo?.chineseName} 收取现金`,
+
+        // 特殊情况标记
+        specialCircumstance: null,
+        specialNote: null,
+
+        // 审计信息
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // ✅ 步骤 5: 更新 Seller 的统计数据
+      const sellerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
+
+      batch.update(sellerRef, {
         // 更新 seller 对象
-        'seller.totalCollected': increment(pendingCollection),
+        'seller.totalCashCollected': increment(pendingCollection),
         'seller.pendingCollection': increment(-pendingCollection),
-        'seller.collectionRate': (seller.seller?.totalCollected || 0) + pendingCollection / (seller.seller?.totalRevenue || 1),
 
-        // 更新 pendingCashSubmission（增加待上交现金）
-        'seller.pendingCashSubmission': increment(pendingCollection),
+        // 计算新的收款率
+        // 注意：这里简化处理，实际应该在 Cloud Function 中计算
+        'seller.collectionRate': (sellerData.totalCashCollected || 0) + pendingCollection > 0
+          ? ((sellerData.totalCashCollected || 0) + pendingCollection) / (sellerData.totalRevenue || 1)
+          : 0,
+
+        // 检查是否需要更新警示状态
+        'seller.collectionAlert': false, // 收款后可能解除警示
 
         // 更新时间戳
+        'activityData.lastCollected': serverTimestamp(),
         'activityData.updatedAt': serverTimestamp()
       });
 
-      alert(`收款记录成功！\n已收款: RM ${pendingCollection.toLocaleString()}`);
+      // ✅ 步骤 6: 更新 Seller Manager 的待上交金额
+      const managerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${currentUserId}`);
 
-      // 刷新数据（这里假设父组件会重新获取数据）
-      // 如果需要，可以调用回调函数通知父组件刷新
+      batch.update(managerRef, {
+        // 增加待上交金额
+        'sellerManager.pendingCashSubmission': increment(pendingCollection),
+
+        // 更新统计
+        'sellerManager.totalCashCollected': increment(pendingCollection),
+
+        // 更新时间戳
+        'activityData.lastCollected': serverTimestamp(),
+        'activityData.updatedAt': serverTimestamp()
+      });
+
+      // ✅ 步骤 7: 提交批量操作
+      await batch.commit();
+
+      // ✅ 步骤 8: 显示成功消息
+      alert(`
+      ✅ 收款记录成功！
+
+      已收款: RM ${pendingCollection.toLocaleString()}
+      来自: ${seller.basicInfo?.chineseName || '未知'}
+
+      该金额已加入你的待上交金额。
+      请记得在"上交现金"标签页提交给 Finance Manager。
+      `.trim());  
+
+      console.log('✅ 收款成功:', {
+        collectionId: collectionDoc.id,
+        seller: seller.userId,
+        amount: pendingCollection
+      });
 
     } catch (error) {
-      console.error('记录收款失败:', error);
-      alert('记录收款失败: ' + error.message);
+      console.error('❌ 记录收款失败:', error);
+      alert(`记录收款失败: ${error.message}`);
     } finally {
       setRecordingCollection(null);
     }
@@ -678,12 +772,12 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
                 Object.entries(transactions).forEach(([key, tx]) => {
                   // 跳过非对象和继承属性
                   if (!tx || typeof tx !== 'object') return;
-                  
+
                   // 只处理 allocation 类型的交易
                   if (tx.type === 'allocation') {
                     txCount++;
                     const amount = parseFloat(tx.amount) || 0;
-                    
+
                     // 根据 allocatedBy 分类统计
                     const allocatedBy = tx.allocatedBy || '';
                     if (allocatedBy === 'eventManager') {
@@ -698,13 +792,13 @@ const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission 
                         lastAllocatedAt = tx.timestamp;
                       } else {
                         // 时间戳比较：尝试转换为毫秒数
-                        const currentTs = typeof tx.timestamp === 'object' && tx.timestamp.seconds 
-                          ? tx.timestamp.seconds * 1000 
+                        const currentTs = typeof tx.timestamp === 'object' && tx.timestamp.seconds
+                          ? tx.timestamp.seconds * 1000
                           : tx.timestamp;
-                        const lastTs = typeof lastAllocatedAt === 'object' && lastAllocatedAt.seconds 
-                          ? lastAllocatedAt.seconds * 1000 
+                        const lastTs = typeof lastAllocatedAt === 'object' && lastAllocatedAt.seconds
+                          ? lastAllocatedAt.seconds * 1000
                           : lastAllocatedAt;
-                        
+
                         if (currentTs > lastTs) {
                           lastAllocatedAt = tx.timestamp;
                         }

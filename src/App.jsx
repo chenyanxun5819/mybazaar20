@@ -1,7 +1,7 @@
 // src/App.jsx
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import UniversalLogin from './views/auth/UniversalLogin';
-import EventManagerLogin from './views/eventManager/EventManagerLogin';
+import EventManagerLogin from './views/eventManager/EventManagerLogin'; // 重定向组件
 import PlatformDashboard from './views/platform/PlatformDashboard';
 import PlatformLogin from './views/platform/PlatformLogin';
 import PhoneLogin from './views/phone/auth/Login';
@@ -13,7 +13,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 
-// Placeholder 組件（之後實現）
+// Placeholder 组件（之后实现）
 const PhonePlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
     <h2>手机版首页</h2>
@@ -28,32 +28,26 @@ const DesktopPlaceholder = () => (
   </div>
 );
 
-// 重定向組件 - 用於處理舊的路由
+// 重定向组件 - 用于处理旧的路由
 const RedirectToLogin = () => {
   const { combinedCode } = useParams();
   return <Navigate to={`/login/${combinedCode}`} replace />;
 };
 
-// 重定向組件 - Event Manager 舊路由
-const RedirectToEventManagerLogin = () => {
-  const { combinedCode } = useParams();
-  return <Navigate to={`/event-manager/${combinedCode}/login`} replace />;
-};
-
 function App() {
-  // 臨時調試
+  // 临时调试
   console.log('Current path:', window.location.pathname);
 
   return (
     <Routes>
-      {/* 🆕 統一登錄路由 - 支持所有用戶角色（除 Event Manager） */}
+      {/* 🆕 统一登录路由 - 支持所有用户角色（包括 Event Manager） */}
       <Route path="/login/:orgEventCode" element={<UniversalLogin />} />
 
-      {/* 🆕 Event Manager 專用登錄 - 獨立頁面 */}
+      {/* 🔄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
 
-      {/* ✅ 舊路由重定向相容 - 指向 Event Manager 登錄 */}
-      <Route path="/event-admin/:combinedCode/login" element={<RedirectToEventManagerLogin />} />
+      {/* ✅ 旧路由重定向相容 - 指向统一登录 */}
+      <Route path="/event-admin/:combinedCode/login" element={<RedirectToLogin />} />
 
       {/* 🆕 Platform Admin 登录页面 */}
       <Route path="/platform/login" element={<PlatformLogin />} />
@@ -67,7 +61,7 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 活動路由 - 手機版登入 */}
+      {/* 活动路由 - 手机版登入 */}
       <Route path="/:eventSlug/phone/login" element={
         <MobileGuard>
           <EventProvider>
@@ -78,7 +72,7 @@ function App() {
         </MobileGuard>
       } />
 
-      {/* 活動路由 - 手機版首頁（需要登入） */}
+      {/* 活动路由 - 手机版首页（需要登入） */}
       <Route path="/:eventSlug/phone" element={
         <MobileGuard>
           <EventProvider>
@@ -89,7 +83,7 @@ function App() {
         </MobileGuard>
       } />
 
-      {/* 活動路由 - 桌機版登入 */}
+      {/* 活动路由 - 桌机版登入 */}
       <Route path="/:eventSlug/desktop/login" element={
         <DesktopGuard>
           <EventProvider>
@@ -100,7 +94,7 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 活動路由 - 桌機版首頁（需要登入） */}
+      {/* 活动路由 - 桌机版首页（需要登入） */}
       <Route path="/:eventSlug/desktop" element={
         <DesktopGuard>
           <EventProvider>
@@ -111,7 +105,7 @@ function App() {
         </DesktopGuard>
       } />
 
-      {/* 🆕 Event Manager 儀表板 - 新路径 */}
+      {/* 🆕 Event Manager 仪表板 - 新路径 */}
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
       
       {/* ✅ 向后兼容：旧的 event-admin 路径 */}
@@ -121,13 +115,14 @@ function App() {
       <Route path="/seller-manager/:orgEventCode/dashboard" element={<SellerManagerDashboard />} />
       <Route path="/merchant-manager/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Merchant Manager Dashboard</h2><p>功能开发中...</p></div>} />
       <Route path="/customer-manager/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Customer Manager Dashboard</h2><p>功能开发中...</p></div>} />
+      <Route path="/finance-manager/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Finance Manager Dashboard</h2><p>功能开发中...</p></div>} />
 
       {/* 🆕 普通用户 Dashboards - Mobile 版本 */}
       <Route path="/seller/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Seller Dashboard</h2><p>功能开发中...</p></div>} />
       <Route path="/merchant/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Merchant Dashboard</h2><p>功能开发中...</p></div>} />
       <Route path="/customer/:orgEventCode/dashboard" element={<div style={{ padding: '2rem', textAlign: 'center' }}><h2>Customer Dashboard</h2><p>功能开发中...</p></div>} />
 
-      {/* 預設路由 - 重定向到 Platform Admin 登录 */}
+      {/* 默认路由 - 重定向到 Platform Admin 登录 */}
       <Route path="/" element={<Navigate to="/platform/login" replace />} />
 
       {/* 404 */}

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { db } from '../../config/firebase';
+import { db, functions } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import AssignEventManager from './AssignEventManager';
 import { auth } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
 
 const PlatformDashboard = () => {
   const [organizations, setOrganizations] = useState([]);
@@ -419,10 +420,11 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
       // 3️⃣ 调用 Cloud Function
       const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
 
-      const response = await fetch(functionUrl, {
+      const resp = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
           organizationId: organization.id,
@@ -431,33 +433,20 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '删除失败');
+      let respData;
+      const contentType = resp.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        respData = await resp.json();
+      } else {
+        const text = await resp.text();
+        throw new Error(`Cloud Function 回應非 JSON，狀態碼 ${resp.status}，內容：${text.slice(0, 200)}`);
       }
 
-      const result = await response.json();
-      console.log('[EventCard] ✅ 删除成功:', result);
-
-      alert(
-        `✅ 活动删除成功！\n\n` +
-        `已删除：\n` +
-        `  • 活动文档: 1 个\n` +
-        `  • 用户数据: ${result.deletedUsers} 位\n` +
-        `  • 元数据: ${result.deletedMetadata} 个\n` +
-        `  • Event Manager: ${result.removedAdmins} 位\n` +
-        `  • 已更新组织统计数据\n` +
-        `  • 已清理所有子集合数据`
-      );
-
-      // 4️⃣ 重新加载数据
-      if (onReload) {
-        onReload();
+      if (!resp.ok || respData?.error) {
+        const errMsg = respData?.error || `HTTP ${resp.status}`;
+        throw new Error(errMsg);
       }
-
-    } catch (error) {
-      console.error('[EventCard] 删除活动失败:', error);
-      alert(`❌ 删除失败：${error.message}\n\n请查看控制台了解详细信息`);
+      console.log('[EventCard] 删除成功响应:', respData);
     } finally {
       setDeleting(false);
     }
@@ -762,28 +751,53 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   // 提交保存
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
+    setSubmitting(true);
+    setError('');
 
     try {
-      setSubmitting(true);
-      setError('');
+      // 獲取當前用戶的 ID Token
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('用户未登录，请重新登录');
+      }
 
-      // 更新 Organization 的 identityTags
-      const orgRef = doc(db, 'organizations', organization.id);
-      await updateDoc(orgRef, {
-        identityTags: identityTags,
-        updatedAt: serverTimestamp()
+      const idToken = await user.getIdToken();
+
+      // 使用 Hosting API 路徑（透過 firebase.json rewrites）
+      const response = await fetch('/api/createEventByPlatformAdminHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId: organization.id,
+          orgCode: organization.orgCode,
+          eventCode: formData.eventCode,
+          eventName: formData.eventName,
+          description: formData.description,
+          eventInfo: {
+            endDate: formData.endDate,
+            endTime: formData.endTime,
+            duration: formData.duration
+          },
+          status: formData.status
+        })
       });
 
-      alert('身份标签更新成功！');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '创建活动失败');
+      }
+
+      const result = await response.json();
+      console.log('活动创建成功:', result);
+      alert('活动创建成功！');
       onSuccess();
 
     } catch (err) {
-      console.error('更新失败:', err);
-      setError('更新失败: ' + err.message);
+      console.error('创建活动失败:', err);
+      setError(err.message || '创建活动失败');
     } finally {
       setSubmitting(false);
     }
@@ -931,13 +945,21 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   );
 };
 
-// CreateOrganizationModal 组件
+// ✅ 修改後的 CreateOrganizationModal
+// 位置：PlatformDashboard.jsx Line 961 開始
+// 修改內容：新增 contact 字段（組織聯絡人）
+
 const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     orgCode: '',
     orgNameEN: '',
     orgNameZH: '',
-    status: 'active'
+    status: 'active',
+    // ✅ 新增：組織聯絡人信息
+    contactName: '',
+    contactPhone: '',
+    contactEmail: '',
+    contactPosition: ''
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -954,8 +976,16 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH) {
-      setError('请填写所有必填字段');
+    // ✅ 修改驗證：新增 contact 必填驗證
+    if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH || 
+        !formData.contactName || !formData.contactPhone) {
+      setError('请填写所有必填字段（包括联系人姓名和电话）');
+      return;
+    }
+
+    // ✅ 驗證聯絡電話格式
+    if (!/^01\d{8,9}$/.test(formData.contactPhone)) {
+      setError('联系电话格式不正确，请输入01开头的10-11位数字');
       return;
     }
 
@@ -974,12 +1004,12 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         return;
       }
 
-      // ✨ 创建默认的身份标签
+      // 创建默认的身份标签
       const defaultIdentityTags = [
         {
           id: 'staff',
           name: {
-            'en': 'Staff',
+            'en-US': 'Staff',
             'zh-CN': '职员'
           },
           displayOrder: 1,
@@ -989,7 +1019,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         {
           id: 'student',
           name: {
-            'en': 'Student',
+            'en-US': 'Student',
             'zh-CN': '学生'
           },
           displayOrder: 2,
@@ -999,7 +1029,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         {
           id: 'teacher',
           name: {
-            'en': 'Teacher',
+            'en-US': 'Teacher',
             'zh-CN': '教师'
           },
           displayOrder: 3,
@@ -1008,13 +1038,27 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         }
       ];
 
+      // ✅ 創建組織文檔（包含 contact）
       await addDoc(collection(db, 'organizations'), {
         orgCode: formData.orgCode.toLowerCase(),
         orgName: {
-          'en': formData.orgNameEN,
+          'en-US': formData.orgNameEN,
           'zh-CN': formData.orgNameZH
         },
-        identityTags: defaultIdentityTags, // ✨ 添加默认身份标签
+        identityTags: defaultIdentityTags,
+        departments: [],  // 初始化空的部門陣列
+        // ✅ 新增：contact 字段
+        contact: {
+          name: formData.contactName,
+          phone: formData.contactPhone,
+          email: formData.contactEmail || '',
+          position: formData.contactPosition || ''
+        },
+        statistics: {
+          totalEvents: 0,
+          activeEvents: 0,
+          totalUsers: 0
+        },
         status: formData.status,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -1022,10 +1066,10 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
 
       alert('组织创建成功！');
       onSuccess();
-
+      
     } catch (err) {
-      console.error('创建失败:', err);
-      setError('创建失败: ' + err.message);
+      console.error('创建组织失败:', err);
+      setError(err.message || '创建组织失败，请重试');
     } finally {
       setSubmitting(false);
     }
@@ -1033,88 +1077,150 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+      <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <h2 style={styles.modalTitle}>创建新组织</h2>
 
-        <form onSubmit={handleSubmit}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织代码 *</label>
-            <input
-              type="text"
-              name="orgCode"
-              value={formData.orgCode}
-              onChange={handleChange}
-              placeholder="例如：fch"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-            <small style={styles.hint}>小写字母，用于 URL</small>
+        {error && (
+          <div style={styles.errorMessage}>
+            ⚠️ {error}
           </div>
+        )}
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（英文）*</label>
-            <input
-              type="text"
-              name="orgNameEN"
-              value={formData.orgNameEN}
-              onChange={handleChange}
-              placeholder="Organization Name"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>组织名称（中文）*</label>
-            <input
-              type="text"
-              name="orgNameZH"
-              value={formData.orgNameZH}
-              onChange={handleChange}
-              placeholder="组织名称"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>状态</label>
-            <select
-              name="status"
-              value={formData.status}
-              onChange={handleChange}
-              style={styles.input}
-              disabled={submitting}
-            >
-              <option value="active">运作中</option>
-              <option value="inactive">已停用</option>
-            </select>
-          </div>
-
-          {error && (
-            <div style={styles.errorMessage}>
-              ⚠️ {error}
+        <form onSubmit={handleSubmit} style={styles.form}>
+          {/* ====== 組織基本信息 ====== */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>🏢 组织基本信息</h3>
+            
+            <div style={styles.formGroup}>
+              <label style={styles.label}>组织代码 *</label>
+              <input
+                type="text"
+                name="orgCode"
+                value={formData.orgCode}
+                onChange={handleChange}
+                placeholder="例如：chhs（小写字母）"
+                style={styles.input}
+                required
+              />
+              <small style={{ fontSize: '12px', color: '#666', marginTop: '5px', display: 'block' }}>
+                将自动转换为小写
+              </small>
             </div>
-          )}
 
-          <div style={styles.modalActions}>
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>组织名称（中文）*</label>
+                <input
+                  type="text"
+                  name="orgNameZH"
+                  value={formData.orgNameZH}
+                  onChange={handleChange}
+                  placeholder="例如：芙蓉中华中学"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>组织名称（英文）*</label>
+                <input
+                  type="text"
+                  name="orgNameEN"
+                  value={formData.orgNameEN}
+                  onChange={handleChange}
+                  placeholder="例如：Chung Hua High School"
+                  style={styles.input}
+                  required
+                />
+              </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>状态</label>
+              <select
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                style={styles.input}
+              >
+                <option value="active">激活</option>
+                <option value="inactive">停用</option>
+              </select>
+            </div>
+          </div>
+
+          {/* ====== 新增：組織聯絡人信息 ====== */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>👤 组织联系人</h3>
+            <p style={styles.sectionNote}>
+              组织的主要联系人信息（如校长、主任等）
+            </p>
+            
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>联系人姓名 *</label>
+                <input
+                  type="text"
+                  name="contactName"
+                  value={formData.contactName}
+                  onChange={handleChange}
+                  placeholder="例如：张校长"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>联系电话 *</label>
+                <input
+                  type="tel"
+                  name="contactPhone"
+                  value={formData.contactPhone}
+                  onChange={handleChange}
+                  placeholder="01XXXXXXXX"
+                  style={styles.input}
+                  required
+                />
+              </div>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>联系邮箱</label>
+                <input
+                  type="email"
+                  name="contactEmail"
+                  value={formData.contactEmail}
+                  onChange={handleChange}
+                  placeholder="例如：zhang@school.edu.my"
+                  style={styles.input}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>职位</label>
+                <input
+                  type="text"
+                  name="contactPosition"
+                  value={formData.contactPosition}
+                  onChange={handleChange}
+                  placeholder="例如：校长、主任"
+                  style={styles.input}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ====== 按钮区 ====== */}
+          <div style={styles.buttonGroup}>
             <button
               type="button"
-              style={styles.cancelButton}
               onClick={onClose}
+              style={styles.cancelButton}
               disabled={submitting}
             >
               取消
             </button>
             <button
               type="submit"
-              style={{
-                ...styles.submitButton,
-                ...(submitting ? styles.submitButtonDisabled : {})
-              }}
+              style={styles.submitButton}
               disabled={submitting}
             >
               {submitting ? '创建中...' : '创建组织'}
@@ -1126,22 +1232,61 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
   );
 };
 
-// CreateEventModal 组件
+// ✅ 修改後的 CreateEventModal
+// 位置：PlatformDashboard.jsx Line 1157 開始
+// 修改內容：
+// 1. 移除所有 contactPerson 相關字段
+// 2. 補充完整的 Event Manager 字段（參考 AssignEventManager.jsx）
+// 3. 新增 position 字段
+
 const CreateEventModal = ({ organization, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
+    // Event 基本信息
     eventCode: '',
-    eventNameEN: '',
-    eventNameZH: '',
+    eventNameZh: '',
+    eventNameEn: '',
+    description: '',
     fairDate: '',
     fairTime: '',
-    location: '',
-    purpose: '',
-    consumptionStartDate: '',
-    consumptionEndDate: '',
-    status: 'planning'
+    startDate: '',
+    endDate: '',
+    status: 'planning',
+    
+    // ❌ 移除所有 contactPerson 字段
+    // contactPersonName: '',
+    // contactPersonPhone: '',
+    // contactPersonEmail: '',
+    // contactPersonPosition: '',
+    
+    // ✅ Event Manager 信息（完整字段）
+    emPhoneNumber: '',
+    emPassword: '',
+    emConfirmPassword: '',
+    emEnglishName: '',
+    emChineseName: '',
+    emEmail: '',
+    emIdentityTag: '',
+    emIdentityId: '',          // ✅ 新增
+    emDepartment: '',
+    emPosition: ''             // ✅ 新增 position 字段
   });
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const availableIdentityTags = organization.identityTags
+    ?.filter(tag => tag.isActive)
+    ?.sort((a, b) => a.displayOrder - b.displayOrder) || [];
+
+  const availableDepartments = organization.departments?.filter(dep => dep.isActive) || [];
+
+  // 設置默認 identityTag
+  if (!formData.emIdentityTag && availableIdentityTags.length > 0) {
+    setFormData(prev => ({
+      ...prev,
+      emIdentityTag: availableIdentityTags[0].id
+    }));
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -1152,11 +1297,48 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     if (error) setError('');
   };
 
+  const validateForm = () => {
+    // Event 基本信息驗證
+    if (!formData.eventCode || !formData.eventNameZh || !formData.fairDate) {
+      setError('请填写活动代码、活动名称（中文）和活动当天日期');
+      return false;
+    }
+
+    // ❌ 移除 contactPerson 驗證
+
+    // Event Manager 驗證
+    if (!formData.emPhoneNumber || !formData.emPassword || !formData.emEnglishName || !formData.emDepartment) {
+      setError('请填写 Event Manager 的必填字段（手机号、密码、英文名、部门）');
+      return false;
+    }
+
+    if (!/^01\d{8,9}$/.test(formData.emPhoneNumber)) {
+      setError('Event Manager 手机号格式不正确，请输入01开头的10-11位数字');
+      return false;
+    }
+
+    if (formData.emPassword.length < 8) {
+      setError('Event Manager 密码至少需要8个字符');
+      return false;
+    }
+
+    if (!/[a-zA-Z]/.test(formData.emPassword) || !/\d/.test(formData.emPassword)) {
+      setError('Event Manager 密码必须包含英文字母和数字');
+      return false;
+    }
+
+    if (formData.emPassword !== formData.emConfirmPassword) {
+      setError('Event Manager 密码与确认密码不一致');
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.eventCode || !formData.eventNameEN || !formData.eventNameZH) {
-      setError('请填写所有必填字段');
+    if (!validateForm()) {
       return;
     }
 
@@ -1164,54 +1346,66 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      // 检查 eventCode 是否已存在
-      const eventsSnapshot = await getDocs(
-        collection(db, 'organizations', organization.id, 'events')
-      );
-      const existingEvent = eventsSnapshot.docs.find(
-        doc => doc.data().eventCode.toLowerCase() === formData.eventCode.toLowerCase()
-      );
-
-      if (existingEvent) {
-        setError('此活动代码已存在，请使用其他代码');
-        return;
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('用户未登录，请重新登录');
       }
+      
+      const idToken = await user.getIdToken();
+      const apiUrl = '/api/createEventByPlatformAdminHttp';
 
-      await addDoc(collection(db, 'organizations', organization.id, 'events'), {
-        eventCode: formData.eventCode,
-        orgCode: organization.orgCode,
-        eventName: {
-          'en': formData.eventNameEN,
-          'zh-CN': formData.eventNameZH
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
         },
-        description: {
-          fairDate: formData.fairDate || null,
-          fairTime: formData.fairTime || null,
-          location: formData.location || null,
-          purpose: formData.purpose || null
-        },
-        eventInfo: {
-          fairDate: formData.fairDate || null,
-          consumptionPeriod: {
-            startDate: formData.consumptionStartDate || null,
-            endDate: formData.consumptionEndDate || null
+        body: JSON.stringify({
+          organizationId: organization.id,
+          orgCode: organization.orgCode,
+          eventCode: formData.eventCode,
+          eventName: {
+            'zh-CN': formData.eventNameZh,
+            'en-US': formData.eventNameEn || formData.eventNameZh
+          },
+          description: formData.description,
+          eventInfo: {
+            fairDate: formData.fairDate,
+            fairTime: formData.fairTime,
+            consumptionPeriod: {
+              startDate: formData.startDate,
+              endDate: formData.endDate
+            }
+          },
+          status: formData.status,
+          // ❌ 移除 contactPerson
+          // ✅ Event Manager 信息
+          eventManagerInfo: {
+            phoneNumber: formData.emPhoneNumber,
+            password: formData.emPassword,
+            englishName: formData.emEnglishName,
+            chineseName: formData.emChineseName,
+            email: formData.emEmail,
+            identityTag: formData.emIdentityTag,
+            identityId: formData.emIdentityId,
+            department: formData.emDepartment,
+            position: formData.emPosition || '活动负责人'  // ✅ position 字段
           }
-        },
-        settings: {},
-        status: formData.status,
-        statistics: {
-          totalUsers: 0
-        },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        })
       });
 
-      alert('活动创建成功！');
-      onSuccess();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}: 创建活动失败`);
+      }
 
+      const result = await response.json();
+      alert('活动和 Event Manager 创建成功！');
+      onSuccess();
+      
     } catch (err) {
-      console.error('创建失败:', err);
-      setError('创建失败: ' + err.message);
+      console.error('[CreateEventModal] Error:', err);
+      setError(err.message || '创建活动失败，请重试');
     } finally {
       setSubmitting(false);
     }
@@ -1219,172 +1413,330 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+      <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <h2 style={styles.modalTitle}>创建新活动</h2>
-        <div style={styles.infoBox}>
-          <p><strong>组织：</strong>{organization.orgName['zh-CN']}</p>
-        </div>
+        <p style={styles.modalSubtitle}>
+          在 <strong>{organization.orgName['zh-CN']}</strong> 下创建活动
+        </p>
 
-        <form onSubmit={handleSubmit}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动代码 *</label>
-            <input
-              type="text"
-              name="eventCode"
-              value={formData.eventCode}
-              onChange={handleChange}
-              placeholder="例如：2025"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-            <small style={styles.hint}>通常使用年份</small>
+        {error && (
+          <div style={styles.errorMessage}>
+            ⚠️ {error}
           </div>
+        )}
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（英文）*</label>
-            <input
-              type="text"
-              name="eventNameEN"
-              value={formData.eventNameEN}
-              onChange={handleChange}
-              placeholder="Event Name"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动名称（中文）*</label>
-            <input
-              type="text"
-              name="eventNameZH"
-              value={formData.eventNameZH}
-              onChange={handleChange}
-              placeholder="活动名称"
-              style={styles.input}
-              disabled={submitting}
-              required
-            />
-          </div>
-
-          <div style={styles.sectionDivider}>
-            <h3 style={styles.sectionTitle}>活动详情</h3>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>义卖会日期</label>
-            <input
-              type="date"
-              name="fairDate"
-              value={formData.fairDate}
-              onChange={handleChange}
-              style={styles.input}
-              disabled={submitting}
-            />
-          </div>
-
-          <div style={styles.formRow}>
+        <form onSubmit={handleSubmit} style={styles.form}>
+          {/* ====== 第一部分：Event 基本信息 ====== */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>📋 活动基本信息</h3>
+            
             <div style={styles.formGroup}>
-              <label style={styles.label}>义卖会时间</label>
-              <input
-                type="time"
-                name="fairTime"
-                value={formData.fairTime}
-                onChange={handleChange}
-                style={styles.input}
-                disabled={submitting}
-              />
-            </div>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>地点</label>
+              <label style={styles.label}>活动代码 *</label>
               <input
                 type="text"
-                name="location"
-                value={formData.location}
+                name="eventCode"
+                value={formData.eventCode}
                 onChange={handleChange}
-                placeholder="例如：校礼堂、操场"
+                placeholder="例如：ban2025"
                 style={styles.input}
-                disabled={submitting}
+                required
               />
             </div>
-          </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>活动目的</label>
-            <input
-              type="text"
-              name="purpose"
-              value={formData.purpose}
-              onChange={handleChange}
-              placeholder="例如：筹集学校发展基金"
-              style={styles.input}
-              disabled={submitting}
-            />
-          </div>
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>活动名称（中文）*</label>
+                <input
+                  type="text"
+                  name="eventNameZh"
+                  value={formData.eventNameZh}
+                  onChange={handleChange}
+                  placeholder="例如：2025年慈善义卖会"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>活动名称（英文）</label>
+                <input
+                  type="text"
+                  name="eventNameEn"
+                  value={formData.eventNameEn}
+                  onChange={handleChange}
+                  placeholder="例如：2025 Charity Bazaar"
+                  style={styles.input}
+                />
+              </div>
+            </div>
 
-          <div style={styles.formRow}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>消费期开始</label>
-              <input
-                type="date"
-                name="consumptionStartDate"
-                value={formData.consumptionStartDate}
+              <label style={styles.label}>活动描述</label>
+              <textarea
+                name="description"
+                value={formData.description}
                 onChange={handleChange}
-                style={styles.input}
-                disabled={submitting}
+                placeholder="简单描述活动内容..."
+                style={{...styles.input, minHeight: '80px'}}
               />
             </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>活动当天日期 *</label>
+                <input
+                  type="date"
+                  name="fairDate"
+                  value={formData.fairDate}
+                  onChange={handleChange}
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>活动当天时间</label>
+                <input
+                  type="time"
+                  name="fairTime"
+                  value={formData.fairTime}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>消费开始日期</label>
+                <input
+                  type="date"
+                  name="startDate"
+                  value={formData.startDate}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>消费结束日期</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  value={formData.endDate}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
             <div style={styles.formGroup}>
-              <label style={styles.label}>消费期结束</label>
-              <input
-                type="date"
-                name="consumptionEndDate"
-                value={formData.consumptionEndDate}
+              <label style={styles.label}>活动状态</label>
+              <select
+                name="status"
+                value={formData.status}
                 onChange={handleChange}
                 style={styles.input}
-                disabled={submitting}
-              />
+              >
+                <option value="planning">筹备中</option>
+                <option value="active">进行中</option>
+                <option value="completed">已完成</option>
+              </select>
             </div>
           </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>状态</label>
-            <select
-              name="status"
-              value={formData.status}
-              onChange={handleChange}
-              style={styles.input}
-              disabled={submitting}
-            >
-              <option value="planning">筹备中</option>
-              <option value="active">进行中</option>
-              <option value="completed">已完成</option>
-            </select>
+          {/* ====== 第二部分：Event Manager（系统管理员） ====== */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>🔑 Event Manager（系统管理员）</h3>
+            <p style={styles.sectionNote}>
+              Event Manager 将拥有系统管理权限，可以管理用户和监控所有数据。<br/>
+              Event Manager 的基本信息也将作为活动的对外联络信息。
+            </p>
+            
+            {/* 基本信息 */}
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>手机号 * (登录帐号)</label>
+                <input
+                  type="tel"
+                  name="emPhoneNumber"
+                  value={formData.emPhoneNumber}
+                  onChange={handleChange}
+                  placeholder="01XXXXXXXX (10-11位)"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>英文名 *</label>
+                <input
+                  type="text"
+                  name="emEnglishName"
+                  value={formData.emEnglishName}
+                  onChange={handleChange}
+                  placeholder="例如：John Lee"
+                  style={styles.input}
+                  required
+                />
+              </div>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>中文名</label>
+                <input
+                  type="text"
+                  name="emChineseName"
+                  value={formData.emChineseName}
+                  onChange={handleChange}
+                  placeholder="例如：李华"
+                  style={styles.input}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>邮箱</label>
+                <input
+                  type="email"
+                  name="emEmail"
+                  value={formData.emEmail}
+                  onChange={handleChange}
+                  placeholder="例如：john@school.edu.my"
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
+            {/* 密码 */}
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>密码 * (至少8位，含英文和数字)</label>
+                <input
+                  type="password"
+                  name="emPassword"
+                  value={formData.emPassword}
+                  onChange={handleChange}
+                  placeholder="请输入密码"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>确认密码 *</label>
+                <input
+                  type="password"
+                  name="emConfirmPassword"
+                  value={formData.emConfirmPassword}
+                  onChange={handleChange}
+                  placeholder="再次输入密码"
+                  style={styles.input}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* 身份和部门 */}
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>身份标签 *</label>
+                <select
+                  name="emIdentityTag"
+                  value={formData.emIdentityTag}
+                  onChange={handleChange}
+                  style={styles.input}
+                  required
+                >
+                  {availableIdentityTags.length === 0 && (
+                    <option value="">无可用身份标签</option>
+                  )}
+                  {availableIdentityTags.map(tag => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name['zh-CN'] || tag.name['en-US'] || tag.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>身份编号</label>
+                <input
+                  type="text"
+                  name="emIdentityId"
+                  value={formData.emIdentityId}
+                  onChange={handleChange}
+                  placeholder="例如：工号、学号（可选）"
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>
+                  部门 * 
+                  <small style={{ fontSize: '12px', color: '#666', marginLeft: '8px' }}>
+                    （可从建议中选择或输入新部门）
+                  </small>
+                </label>
+                <input
+                  type="text"
+                  name="emDepartment"
+                  list="departmentList"
+                  placeholder="例如：行政部、J1A"
+                  value={formData.emDepartment}
+                  onChange={handleChange}
+                  style={styles.input}
+                  required
+                />
+                <datalist id="departmentList">
+                  {availableDepartments.map(dept => (
+                    <option 
+                      key={dept.id} 
+                      value={dept.name}
+                    >
+                      {dept.name} ({dept.userCount || 0} 人)
+                    </option>
+                  ))}
+                </datalist>
+                <small style={{ 
+                  fontSize: '12px', 
+                  color: '#666', 
+                  marginTop: '5px', 
+                  display: 'block' 
+                }}>
+                  提示：输入时会显示现有部门建议，也可以输入新部门名称
+                </small>
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>职位</label>
+                <input
+                  type="text"
+                  name="emPosition"
+                  value={formData.emPosition}
+                  onChange={handleChange}
+                  placeholder="例如：活动负责人"
+                  style={styles.input}
+                />
+                <small style={{ 
+                  fontSize: '12px', 
+                  color: '#666', 
+                  marginTop: '5px', 
+                  display: 'block' 
+                }}>
+                  选填：Event Manager 的职位（默认为"活动负责人"）
+                </small>
+              </div>
+            </div>
           </div>
 
-          {error && (
-            <div style={styles.errorMessage}>
-              ⚠️ {error}
-            </div>
-          )}
-
-          <div style={styles.modalActions}>
+          {/* ====== 按钮区 ====== */}
+          <div style={styles.buttonGroup}>
             <button
               type="button"
-              style={styles.cancelButton}
               onClick={onClose}
+              style={styles.cancelButton}
               disabled={submitting}
             >
               取消
             </button>
             <button
               type="submit"
-              style={{
-                ...styles.submitButton,
-                ...(submitting ? styles.submitButtonDisabled : {})
-              }}
+              style={styles.submitButton}
               disabled={submitting}
             >
               {submitting ? '创建中...' : '创建活动'}
@@ -1395,6 +1747,17 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     </div>
   );
 };
+
+
+// ============================================================================
+// 說明：這個修正後的組件使用以下改進：
+// ============================================================================
+// 1. ✅ 使用 '/api/createEvent' 路徑而非直接 Cloud Functions URL
+// 2. ✅ 添加詳細的錯誤處理和日誌記錄
+// 3. ✅ 驗證用戶登入狀態
+// 4. ✅ 獲取並使用 ID Token 進行身份驗證
+// 5. ✅ 正確處理響應和錯誤狀態
+// ============================================================================
 
 const styles = {
   container: {
@@ -2035,6 +2398,13 @@ const styles = {
   deleteButtonDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed'
+  },
+  section: {
+    marginBottom: '30px',
+    padding: '20px',
+    backgroundColor: '#f9f9f9',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0'
   }
 };
 

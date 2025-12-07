@@ -16,13 +16,13 @@ function normalizePhoneNumber(phoneNumber) {
 }
 
 /**
- * 通用登录端点 - 支持所有角色
+ * 通用登录端点 - 支持所有角色（包括 Event Manager）
  * 
  * @description
  * 1. 验证 orgCode + eventCode + phoneNumber + password
  * 2. 查找用户并验证密码
- * 3. 返回用户的所有角色信息
- * 4. 生成 Custom Token 用于 Firebase Auth
+ * 3. 返回用户的所有角色信息（包括 eventManager）
+ * 4. 生成 Custom Token 用于 Firebase Auth（包含 Custom Claims）
  * 
  * @route POST /api/loginUniversalHttp
  * 
@@ -40,7 +40,7 @@ function normalizePhoneNumber(phoneNumber) {
  * @returns {string} eventId - 活动 ID
  * @returns {string} englishName - 英文名
  * @returns {string} chineseName - 中文名
- * @returns {Array<string>} roles - 用户角色列表
+ * @returns {Array<string>} roles - 用户角色列表（包括 eventManager）
  */
 exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
   // 🔐 CORS 设置
@@ -197,16 +197,30 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       });
     }
 
-    // 🎫 Step 6: 生成 Custom Token
-    console.log('[loginUniversalHttp] Step 6: 生成 Custom Token');
+    // 🎫 Step 6: 生成 Custom Token（包含 Custom Claims）
+    console.log('[loginUniversalHttp] Step 6: 生成 Custom Token with Custom Claims');
     
     const authUidForToken = userData.authUid || `phone_60${norm}`;
-    const customToken = await admin.auth().createCustomToken(authUidForToken, {
+    
+    // ✨ 提取 managedDepartments（支持两种数据结构）
+    const managedDepartments = userData.sellerManager?.managedDepartments || 
+                               userData.roleSpecificData?.sellerManager?.managedDepartments || 
+                               [];
+    
+    // ✨ 构建 Custom Claims
+    const customClaims = {
       organizationId,
       eventId,
       userId,
-      roles
-    });
+      roles,  // 用户的所有角色（包括 eventManager）
+      managedDepartments,  // Seller Manager 管理的部门
+      department: userData.identityInfo?.department || '',
+      identityTag: userData.identityTag || userData.identityInfo?.identityTag || ''
+    };
+    
+    console.log('[loginUniversalHttp] Custom Claims:', customClaims);
+    
+    const customToken = await admin.auth().createCustomToken(authUidForToken, customClaims);
 
     // 📝 Step 7: 更新最后登录时间
     await userDoc.ref.update({
@@ -217,6 +231,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     console.log('[loginUniversalHttp] ✅ 登录成功', { 
       userId, 
       roles,
+      managedDepartments,
       elapsedMs 
     });
 
@@ -229,8 +244,8 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       eventId,
       englishName: userData.basicInfo?.englishName || '',
       chineseName: userData.basicInfo?.chineseName || '',
-      roles: roles, // 返回所有角色
-      managedDepartments: (userData.sellerManager?.managedDepartments || userData.roleSpecificData?.sellerManager?.managedDepartments || []),
+      roles: roles, // 返回所有角色（包括 eventManager）
+      managedDepartments: managedDepartments,
       department: userData.identityInfo?.department || '',
       identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
       roleSpecificData: userData.roleSpecificData || {} // 返回角色特定数据（可选）

@@ -28,14 +28,6 @@
           },
           "region": "us-central1"
         },
-        "eventManagerLoginHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "us-central1"
-        },
         "sendOtpHttp": {
           "httpsOptions": {
             "invoker": [
@@ -103,15 +95,14 @@
         "function": "verifyOtpHttp"
       },
       {
-        "source": "/api/eventManagerLoginHttp",
-        "function": "eventManagerLoginHttp"
-      },
-      {
         "source": "/api/loginUniversalHttp",
         "function": "loginUniversalHttp"
       },
       {
         "source": "/api/createEventManagerHttp",
+        "function": "createEventManagerHttp"
+      },      {
+        "source": "/api/createEventManager",
         "function": "createEventManagerHttp"
       },
       {
@@ -141,6 +132,18 @@
       {
         "source": "/api/loginWithPin",
         "function": "loginWithPin"
+      },
+      {
+        "source": "/api/createEvent",
+        "function": "createEventByPlatformAdminHttp"
+      },
+      {
+        "source": "/api/createEventByPlatformAdminHttp",
+        "function": "createEventByPlatformAdminHttp"
+      },
+      {
+        "source": "/api/ping",
+        "function": "pingHttp"
       },
       {
         "source": "**",

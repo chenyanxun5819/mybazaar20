@@ -22,6 +22,107 @@
         }
       ]
     },
+    // ====== 用戶新索引開始 ======
+    // 注：移除了 managedBy + roles（兩個 ARRAY_CONTAINS 欄位，Firestore 不支援）
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "roles", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "identityInfo.department", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "roles", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "seller.collectionAlert", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashCollections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "collectedBy", "order": "ASCENDING" },
+        { "fieldPath": "collectedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashCollections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sellerId", "order": "ASCENDING" },
+        { "fieldPath": "collectedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashCollections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "collectedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashSubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "submittedBy", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashSubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "submittedTo", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cashSubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pointAllocations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pointAllocations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "allocatedBy", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    // 移除 departmentStats 單欄位索引（Firestore 自動管理）
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sellerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    // ====== 用戶新索引結束 ======
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
@@ -51,6 +152,38 @@
         {
           "fieldPath": "orgCode",
           "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cashCollections",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "collectedBy",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collectedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cashCollections",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "sellerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collectedAt",
+          "order": "DESCENDING"
         }
       ]
     }

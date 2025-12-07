@@ -166,7 +166,7 @@ const EventManagerDashboard = () => {
       if (!storedInfo) {
         alert('请先登录');
         if (orgEventCode) {
-          navigate(`/event-admin/${orgEventCode}/login`);
+          navigate(`/login/${orgEventCode}`);
         }
         return;
       }
@@ -221,8 +221,9 @@ const EventManagerDashboard = () => {
             ...userData
           });
 
-          // ❌ 移除：Event Manager 不再在 users 子集合的 roles 中
-          // if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
+          // ✅ 新架构：Event Manager 在 users 集合中，通过 roles 识别
+          if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
+          if (userData.roles?.includes('financeManager')) stats.totalFinanceManagers++;
           if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
           if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
           if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
@@ -242,7 +243,6 @@ const EventManagerDashboard = () => {
 
         // ✅ 新架构：eventManager 是单个对象，不是数组
         // Event Manager 数量固定为 1（如果存在）或 0（如果不存在）
-        stats.totalEventManagers = eventInfo?.eventManager ? 1 : 0;
         stats.totalAllocatedPoints = totalAllocated;  // 🆕 设置已分配总点数
 
         setStatistics(stats);
@@ -356,7 +356,7 @@ const EventManagerDashboard = () => {
       await signOut(auth);
       localStorage.removeItem('eventManagerInfo');
       localStorage.removeItem('eventManagerLogin');
-      navigate(`/event-admin/${orgEventCode}/login`);
+      navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('[Logout] 错误:', error);
       alert('退出登录失败');

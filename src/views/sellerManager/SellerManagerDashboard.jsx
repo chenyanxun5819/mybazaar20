@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
 import {
@@ -13,8 +13,7 @@ import { signOut } from 'firebase/auth';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
-import CollectCash from './CollectCash';  // 新增
-import SubmitCash from './SubmitCash';    // 新增
+import SubmitCash from './components/SubmitCash';    // 新增
 
 /**
  * Seller Manager Dashboard (简化版)
@@ -62,13 +61,14 @@ const SellerManagerDashboard = () => {
 
   const [smStats, setSmStats] = useState(null);
   const [departmentStats, setDepartmentStats] = useState([]);
+  const [managedUsersStats, setManagedUsersStats] = useState(null);
 
   const [sellers, setSellers] = useState([]);
   const [loadingSellers, setLoadingSellers] = useState(false);
 
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
-  
+
   // 新增：标签页管理
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -172,77 +172,80 @@ const SellerManagerDashboard = () => {
       setLoadingSellers(true);
 
       if (!Array.isArray(currentUser.managedDepartments) || currentUser.managedDepartments.length === 0) {
+        console.warn('⚠️ 没有管理的部门');
         setSellers([]);
         setLoadingSellers(false);
         return;
       }
 
+      console.log(`📊 开始加载 Sellers，管理 ${currentUser.managedDepartments.length} 个部门:`, currentUser.managedDepartments);
+
+      // ✅ 只使用 array-contains 查询
       const q = query(
         collection(db, 'organizations', currentUser.organizationId, 'events', eventId, 'users'),
-        where('roles', 'array-contains', 'seller'),
-        where('identityInfo.department', 'in', currentUser.managedDepartments.slice(0, 10))
+        where('roles', 'array-contains', 'seller')
+        // ❌ 移除这行：where('identityInfo.department', 'in', currentUser.managedDepartments.slice(0, 10))
       );
 
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
           const list = [];
+          let totalCount = 0;
+
           snapshot.forEach(doc => {
-            list.push({
-              id: doc.id,
-              userId: doc.id,
-              ...(doc.data() || {})
-            });
+            totalCount++;
+            const data = doc.data() || {};
+
+            // ✅ 客户端过滤：只保留管理范围内的 sellers
+            if (currentUser.managedDepartments &&
+              data.identityInfo?.department &&
+              currentUser.managedDepartments.includes(data.identityInfo.department)) {
+
+              list.push({
+                id: doc.id,
+                userId: doc.id,
+                ...data
+              });
+            }
           });
 
+          // 排序：最新创建的在前
           list.sort((a, b) => {
-            const timeA = (a.accountStatus && a.accountStatus.createdAt && a.accountStatus.createdAt.toMillis) ? a.accountStatus.createdAt.toMillis() : 0;
-            const timeB = (b.accountStatus && b.accountStatus.createdAt && b.accountStatus.createdAt.toMillis) ? b.accountStatus.createdAt.toMillis() : 0;
+            const timeA = (a.accountStatus?.createdAt?.toMillis) ? a.accountStatus.createdAt.toMillis() : 0;
+            const timeB = (b.accountStatus?.createdAt?.toMillis) ? b.accountStatus.createdAt.toMillis() : 0;
             return timeB - timeA;
           });
+
+          console.log(`✅ 加载完成: 读取 ${totalCount} 条，筛选出 ${list.length} 条 (过滤 ${totalCount - list.length} 条)`);
 
           setSellers(list);
           setLoadingSellers(false);
 
-          // ✅ 新增：立即聚合数据
+          // ✅ 聚合数据（保持原有逻辑）
           const aggregatedStats = aggregateManagedUsersStats(list);
           const aggregatedDepts = aggregateDepartmentStats(list);
 
-          // 更新 smStats（包含分配统计）
-          setSmStats({
-            managedUsersStats: aggregatedStats,
-            allocationStats: {
-              totalAllocations: 0,  // TODO: 从其他数据源获取
-              totalPointsAllocated: 0,
-              averagePerAllocation: 0
-            },
-            collectionManagement: {
-              usersWithWarnings: aggregatedStats.usersWithWarnings,
-              highRiskUsers: aggregatedStats.highRiskUsers
-            }
-          });
-
-          // 更新部门统计
+          setManagedUsersStats(aggregatedStats);
           setDepartmentStats(aggregatedDepts);
-
-          console.log('[SM Dashboard] Sellers 列表更新:', list.length);
-          console.log('[SM Dashboard] 聚合统计完成');
         },
         (error) => {
-          console.error('[SM Dashboard] Sellers 查询错误:', error);
+          console.error('❌ 加载 Sellers 失败:', error);
           setSellers([]);
           setLoadingSellers(false);
         }
       );
 
+      // 保存 unsubscribe 以便清理
       return unsubscribe;
 
     } catch (error) {
-      console.error('[SM Dashboard] 加载 Sellers 失败:', error);
+      console.error('❌ 加载 Sellers 异常:', error);
       setSellers([]);
       setLoadingSellers(false);
     }
   };
+
 
 
 
@@ -538,15 +541,7 @@ const SellerManagerDashboard = () => {
         >
           📦 分配点数
         </button>
-        <button
-          onClick={() => setActiveTab('collect')}
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'collect' ? styles.activeTab : {})
-          }}
-        >
-          💰 收取现金
-        </button>
+
         <button
           onClick={() => setActiveTab('submit')}
           style={{
@@ -628,6 +623,7 @@ const SellerManagerDashboard = () => {
                 onSelectSeller={handleAllocatePoints}
                 eventId={eventId}
                 orgId={safeCurrentUser.organizationId}
+                currentUser={safeCurrentUser}
               />
             )}
           </div>
@@ -651,12 +647,7 @@ const SellerManagerDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'collect' && (
-          <CollectCash
-            userInfo={safeCurrentUser}
-            eventData={safeEventData}
-          />
-        )}
+
 
         {activeTab === 'submit' && (
           <SubmitCash

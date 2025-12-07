@@ -1,6 +1,22 @@
 ﻿const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const crypto = require('crypto');
+const cors = require('cors');
+
+// 配置允許的來源
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://mybazaar-c4881.web.app',
+  'https://mybazaar-c4881.firebaseapp.com'
+];
+
+const corsHandler = cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+});
 
 function getDb() {
   return admin.firestore();
@@ -194,147 +210,16 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
   }
 });
 
-// ========== Event Manager 创建（HTTP 版本，经由 Hosting /api/createEventManager，Authorization: Bearer <ID Token>） ==========
-exports.createEventManagerHttp = functions.https.onRequest(async (req, res) => {
-  // CORS headers
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).send('');
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: { code: 'method-not-allowed', message: '只支持 POST' } });
-  }
-
-  try {
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: { code: 'unauthenticated', message: '需要登录' } });
-    }
-
-    const idToken = authHeader.substring('Bearer '.length);
-    let decoded;
-    try {
-      decoded = await admin.auth().verifyIdToken(idToken);
-    } catch (e) {
-      return res.status(401).json({ error: { code: 'unauthenticated', message: '无效的凭证' } });
-    }
-
-    const callerUid = decoded.uid;
-    // Verify platform admin
-    const adminCheck = await getDb().collection('admin_uids').doc(callerUid).get();
-    if (!adminCheck.exists) {
-      return res.status(403).json({ error: { code: 'permission-denied', message: '只有平台管理员可以创建 Event Manager' } });
-    }
-
-    const {
-      organizationId,
-      eventId,
-      phoneNumber,
-      password,
-      englishName,
-      chineseName = '',
-      email = '',
-      identityTag = 'staff',
-      identityId
-    } = req.body || {};
-
-    if (!organizationId || !eventId) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少组织或活动编号' } });
-    }
-    if (!phoneNumber || typeof phoneNumber !== 'string') {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '请输入有效的手机号' } });
-    }
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '密码至少需要 8 个字符' } });
-    }
-    if (!englishName) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '英文名为必填' } });
-    }
-
-    const orgRef = getDb().collection('organizations').doc(organizationId);
-    const orgSnap = await orgRef.get();
-    if (!orgSnap.exists) {
-      return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
-    }
-    const orgData = orgSnap.data();
-    const identityTags = orgData.identityTags || [];
-    const validTag = identityTags.find(tag => tag.id === identityTag && tag.isActive);
-    if (!validTag) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: `身份标签 "${identityTag}" 不存在或已停用` } });
-    }
-
-    const eventRef = orgRef.collection('events').doc(eventId);
-    const eventSnap = await eventRef.get();
-    if (!eventSnap.exists) {
-      return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
-    }
-    const eventData = eventSnap.data() || {};
-
-    // 检查活动是否已有 Event Manager
-    if (eventData.eventManager) {
-      return res.status(409).json({ error: { code: 'already-exists', message: '此活动已指派 Event Manager' } });
-    }
-
-    const usersCol = eventRef.collection('users');
-    const dupSnap = await usersCol.where('basicInfo.phoneNumber', '==', phoneNumber).limit(1).get();
-    if (!dupSnap.empty) {
-      return res.status(409).json({ error: { code: 'already-exists', message: '该手机号已在此活动中存在' } });
-    }
-
-    const passwordSalt = crypto.randomBytes(16).toString('hex');
-    const passwordHash = sha256(password + passwordSalt);
-
-    const now = new Date();
-
-    // 💾 Event Manager 只儲存在 Event.eventManager 物件中，不在 users 集合
-    const eventManagerData = {
-      authUid: `eventManager_${phoneNumber}`,
-      displayName: englishName,
-      chineseName,
-      englishName,
-      email,
-      phoneNumber,
-      password: passwordHash,
-      passwordSalt,
-      identityTag,
-      department: (req.body?.department && String(req.body.department).trim()) || '未分配',
-      identityId: identityId && String(identityId).trim()
-        ? String(identityId).trim()
-        : `${identityTag.toUpperCase()}_${Date.now()}`,
-      addedAt: now,
-      addedBy: callerUid
-    };
-
-    // 更新事件文件：只設置 Event.eventManager 物件
-    const eventUpdateData = {
-      eventManager: eventManagerData,
-      updatedAt: now
-    };
-
-    await eventRef.update(eventUpdateData);
-
-    console.log('[createEventManagerHttp] Event Manager 已儲存到 Event.eventManager:', {
-      phoneNumber,
-      eventId,
-      organizationId
-    });
-
-    return res.status(200).json({ 
-      success: true, 
-      phoneNumber,
-      message: 'Event Manager 创建成功' 
-    });
-  } catch (error) {
-    console.error('[createEventManagerHttp] Error:', error);
-    const code = error.code || 'internal';
-    const message = error.message || '内部错误';
-    return res.status(code === 'unauthenticated' ? 401 : code === 'permission-denied' ? 403 : 500)
-      .json({ error: { code, message } });
-  }
+// Line 214
+// ⚠️ 此函數已廢棄
+// Event Manager 現在在創建 Event 時一併創建
+// 請使用 createEventByPlatformAdminHttp
+exports.createEventManagerHttp = functions.https.onRequest((req, res) => {
+  // 返回錯誤提示
+  return res.status(410).json({
+    error: 'gone',
+    message: '此 API 已廢棄，Event Manager 現在在創建 Event 時一併創建'
+  });
 });
 
 // ========== OTP 相关函数 ==========
@@ -1460,7 +1345,7 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       // 删除用户文档本身
       batch.delete(userDoc.ref);
       operationCount++;
-      
+
       // 删除用户下的 pointAllocations 子集合
       // 注意：Firestore 不支持在 batch 中直接删除整个子集合
       // 但我们可以在此处同步获取并删除（因为通常不会很多）
@@ -1506,22 +1391,22 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     // 6. Delete pointAllocations subcollections for all users
     // (这必须在 batch 之后进行，因为 Firestore 不支持在 batch 中删除子集合)
     console.log('[deleteEventHttp] Starting deletion of pointAllocations subcollections');
-    
+
     const deletePointAllocationsPromises = usersSnapshot.docs.map(async (userDoc) => {
       try {
         const pointAllocationsSnapshot = await userDoc.ref
           .collection('pointAllocations')
           .get();
-        
+
         if (pointAllocationsSnapshot.size > 0) {
           const pointBatch = db.batch();
           let pointBatchOps = 0;
-          
+
           pointAllocationsSnapshot.docs.forEach(allocDoc => {
             pointBatch.delete(allocDoc.ref);
             pointBatchOps++;
           });
-          
+
           await pointBatch.commit();
           console.log(`[deleteEventHttp] Deleted ${pointBatchOps} pointAllocations for user ${userDoc.id}`);
         }
@@ -1545,12 +1430,12 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       if (departmentStatsSnapshot.size > 0) {
         const deptBatch = db.batch();
         let deptBatchOps = 0;
-        
+
         departmentStatsSnapshot.docs.forEach(doc => {
           deptBatch.delete(doc.ref);
           deptBatchOps++;
         });
-        
+
         await deptBatch.commit();
         console.log(`[deleteEventHttp] Deleted ${deptBatchOps} departmentStats documents`);
       }
@@ -1570,12 +1455,12 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       if (sellerManagerStatsSnapshot.size > 0) {
         const smBatch = db.batch();
         let smBatchOps = 0;
-        
+
         sellerManagerStatsSnapshot.docs.forEach(doc => {
           smBatch.delete(doc.ref);
           smBatchOps++;
         });
-        
+
         await smBatch.commit();
         console.log(`[deleteEventHttp] Deleted ${smBatchOps} sellerManagerStats documents`);
       }
@@ -1633,56 +1518,52 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
     }
 
     // 最後做一次全組織層面的部門人數重算（保險），並可選擇清理 userCount=0 且為 system 建立的部門
+    // ✅ 最後做一次全組織層面的部門人數重算（保險）
+    // ✅ 但保留所有部門，即使 userCount=0（由管理員手動刪除不需要的部門）
     try {
+      console.log('[deleteEventHttp] 開始重算組織的部門人數');
+
       const remainingEvents = await orgRef.collection('events').get();
-      const counterAll = new Map();
-      for (const ev of remainingEvents.docs) {
-        const usersSnapshot = await ev.ref.collection('users').get();
-        usersSnapshot.forEach(u => {
-          const name = u.data()?.identityInfo?.department;
-          if (typeof name === 'string' && name.trim()) {
-            const display = name.trim();
-            const key = display.toLocaleLowerCase();
-            const prev = counterAll.get(key) || { displayName: display, count: 0 };
-            prev.count += 1; counterAll.set(key, prev);
+      const allDeptUsage = new Map(); // key: lower-case name, value: count
+
+      // 遍歷所有剩餘的 Events，統計部門使用
+      for (const evDoc of remainingEvents.docs) {
+        const usersSnap = await evDoc.ref.collection('users').get();
+        usersSnap.forEach(userDoc => {
+          const dept = userDoc.data()?.identityInfo?.department;
+          if (typeof dept === 'string' && dept.trim()) {
+            const key = dept.trim().toLowerCase();
+            allDeptUsage.set(key, (allDeptUsage.get(key) || 0) + 1);
           }
         });
       }
 
+      // 更新組織的部門統計
       await db.runTransaction(async (tx) => {
         const orgDoc = await tx.get(orgRef);
         if (!orgDoc.exists) return;
-        const data = orgDoc.data() || {};
-        const current = Array.isArray(data.departments) ? data.departments : [];
-        const byKey = new Map(current.map(d => [typeof d.name === 'string' ? d.name.trim().toLocaleLowerCase() : '', d]));
-        const merged = [];
-        let order = 1;
-        current.forEach(d => {
-          if (!d || typeof d.name !== 'string') return;
-          const key = d.name.trim().toLocaleLowerCase();
-          const cnt = counterAll.get(key)?.count || 0;
-          // 若為 system 建立且計數為 0，可選擇清理；這裡直接清理
-          if (cnt === 0 && (d.createdBy === 'system' || !d.createdBy)) return;
-          merged.push({ ...d, userCount: cnt, displayOrder: order++ });
+
+        const orgData = orgDoc.data() || {};
+        const departments = Array.isArray(orgData.departments) ? orgData.departments : [];
+
+        // ✅ 更新每個部門的 userCount，但不刪除任何部門
+        const updatedDepartments = departments.map(d => {
+          if (!d || typeof d.name !== 'string') return d;
+          const key = d.name.trim().toLowerCase();
+          const count = allDeptUsage.get(key) || 0;
+          return { ...d, userCount: count };
         });
-        // 加入新的（counter 有但 current 沒有）
-        counterAll.forEach((stat, key) => {
-          if (!byKey.has(key)) {
-            merged.push({
-              id: `dept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              name: stat.displayName,
-              displayOrder: order++,
-              userCount: stat.count,
-              createdAt: admin.firestore.Timestamp.fromDate(new Date()),
-              createdBy: 'system'
-            });
-          }
+
+        tx.update(orgRef, {
+          departments: updatedDepartments,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        tx.update(orgRef, { departments: merged, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
       });
-      console.log('[deleteEventHttp] Departments fully recounted post-deletion');
-    } catch (fullRecountErr) {
-      console.error('[deleteEventHttp] Full recount after deletion failed:', fullRecountErr && fullRecountErr.message);
+
+      console.log('[deleteEventHttp] 部門人數重算完成，保留所有部門');
+    } catch (deptErr) {
+      console.error('[deleteEventHttp] 部門重算錯誤:', deptErr && deptErr.message);
+      // 不影響主流程，僅記錄錯誤
     }
 
     console.log('[deleteEventHttp] ✅ Delete successful');
@@ -2599,50 +2480,50 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
 
       // ✅ 角色資料：改為頂層字段（與 UserManagement.jsx 一致）
       if (roles.includes('sellerManager')) {
-        userDoc.sellerManager = { 
-          managerId: `SM${Date.now()}`, 
-          assignedCapital: 0, 
-          availableCapital: 0, 
-          allocatedToSellers: 0, 
+        userDoc.sellerManager = {
+          managerId: `SM${Date.now()}`,
+          assignedCapital: 0,
+          availableCapital: 0,
+          allocatedToSellers: 0,
           totalSellersManaged: 0,
           managedDepartments: []
         };
       }
       if (roles.includes('merchantManager')) {
-        userDoc.merchantManager = { 
-          managerId: `MM${Date.now()}`, 
-          totalMerchantsManaged: 0 
+        userDoc.merchantManager = {
+          managerId: `MM${Date.now()}`,
+          totalMerchantsManaged: 0
         };
       }
       if (roles.includes('customerManager')) {
-        userDoc.customerManager = { 
-          managerId: `CM${Date.now()}`, 
-          totalCustomersManaged: 0, 
-          totalSalesAmount: 0 
+        userDoc.customerManager = {
+          managerId: `CM${Date.now()}`,
+          totalCustomersManaged: 0,
+          totalSalesAmount: 0
         };
       }
       if (roles.includes('seller')) {
-        userDoc.seller = { 
-          sellerId: `SL${Date.now()}`, 
-          availablePoints: 0, 
-          currentSalesAmount: 0, 
+        userDoc.seller = {
+          sellerId: `SL${Date.now()}`,
+          availablePoints: 0,
+          currentSalesAmount: 0,
           totalPointsSold: 0,
           transactions: {}
         };
       }
       if (roles.includes('merchant')) {
-        userDoc.merchant = { 
-          merchantId: `MR${Date.now()}`, 
-          monthlyReceivedPoints: 0, 
-          totalReceivedPoints: 0 
+        userDoc.merchant = {
+          merchantId: `MR${Date.now()}`,
+          monthlyReceivedPoints: 0,
+          totalReceivedPoints: 0
         };
       }
       if (roles.includes('customer')) {
-        userDoc.customer = { 
-          customerId: `CS${Date.now()}`, 
-          currentBalance: 0, 
-          totalPointsPurchased: 0, 
-          totalPointsConsumed: 0 
+        userDoc.customer = {
+          customerId: `CS${Date.now()}`,
+          currentBalance: 0,
+          totalPointsPurchased: 0,
+          totalPointsConsumed: 0
         };
       }
 
@@ -2752,10 +2633,10 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     if (!effectiveToken) return res.status(401).json({ error: '需要登录' });
 
     let decoded;
-    try { 
-      decoded = await admin.auth().verifyIdToken(effectiveToken); 
-    } catch (e) { 
-      return res.status(401).json({ error: '身份验证失败' }); 
+    try {
+      decoded = await admin.auth().verifyIdToken(effectiveToken);
+    } catch (e) {
+      return res.status(401).json({ error: '身份验证失败' });
     }
     const callerUid = decoded.uid;
 
@@ -2763,14 +2644,14 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     const orgRef = db.collection('organizations').doc(organizationId);
     const eventRef = orgRef.collection('events').doc(eventId);
     const eventSnap = await eventRef.get();
-    
+
     if (!eventSnap.exists) {
       return res.status(404).json({ error: '活动不存在' });
     }
 
     // 權限檢查：確認 callerUid 在 event.admins 中
     console.log('[updateUserRoles] callerUid:', callerUid);
-    
+
     let phoneFromUid = null;
     if (callerUid.startsWith('eventManager_')) {
       phoneFromUid = callerUid.replace('eventManager_', '');
@@ -2781,19 +2662,19 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     let hasPermission = false;
     const eventData = eventSnap.data() || {};
     const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
-    
+
     const normalizePhone = (p) => {
       if (!p) return '';
       let digits = String(p).replace(/[^0-9]/g, '');
-      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
       if (digits.startsWith('0')) digits = digits.substring(1);
-      return digits; 
+      return digits;
     };
 
     // 檢查 event.admins
     if (phoneFromUid) {
       const coreCaller = normalizePhone(phoneFromUid);
-      
+
       for (const adm of admins) {
         const admPhone = adm && (adm.phone || adm.phoneNumber);
         if (!admPhone) continue;
@@ -2841,7 +2722,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     // 如果勾選了 sellerManager，保存管理部門
     if (roles.sellerManager) {
       updateData['sellerManager.managedDepartments'] = managedDepartments;
-      
+
       // 如果是新添加的 sellerManager，初始化其他欄位
       if (!previousRoles?.includes('sellerManager')) {
         updateData['sellerManager.allocatedPoints'] = 0;
@@ -2890,4 +2771,296 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       error: error.message || '更新角色失败'
     });
   }
+});
+
+// ⚠️ 此函數已廢棄，請使用 createEventByPlatformAdminHttp
+// 保留此函數僅供參考或作為備用
+exports.createEventByPlatformAdmin = functions.https.onCall(async (data, context) => {
+  // 返回錯誤提示
+  throw new functions.https.HttpsError(
+    'failed-precondition',
+    '此函數已廢棄，請使用 createEventByPlatformAdminHttp'
+  );
+});
+
+// ✅ 修改後的 createEventByPlatformAdminHttp
+// 位置：admin.js Line 2789 開始
+// 修改內容：
+// 1. 移除 contactPerson 參數和驗證
+// 2. 移除 Event 文檔中的 contactPerson 字段
+// 3. 在 Event Manager 的 identityInfo 中新增 position 字段
+
+exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) => {
+  corsHandler(req, res, async () => {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    try {
+      const authHeader = req.headers['authorization'] || '';
+      const tokenMatch = authHeader.match(/^Bearer\s+(.*)$/i);
+      if (!tokenMatch) {
+        return res.status(401).json({ error: 'Missing Authorization Bearer token' });
+      }
+
+      const idToken = tokenMatch[1];
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      const callerUid = decoded.uid;
+
+      const adminDoc = await admin.firestore().collection('admin_uids').doc(callerUid).get();
+      if (!adminDoc.exists) {
+        return res.status(403).json({ error: 'permission-denied: 只有平台管理員可以創建活動' });
+      }
+
+      const data = req.body?.data || req.body || {};
+      const {
+        organizationId,
+        eventCode,
+        eventName,
+        description,
+        eventInfo,
+        status,
+        orgCode,
+        // ❌ 移除 contactPerson
+        eventManagerInfo    // ✅ Event Manager 信息
+      } = data;
+
+      // ✅ 驗證必要參數
+      if (!organizationId || !eventCode || !eventName) {
+        return res.status(400).json({ error: 'invalid-argument: 缺少必要参数（organizationId, eventCode, eventName）' });
+      }
+
+      // ✅ 验证 eventName 结构
+      if (typeof eventName !== 'object' || !eventName['zh-CN']) {
+        return res.status(400).json({ error: 'invalid-argument: eventName 必须包含中文名称（zh-CN）' });
+      }
+
+      // ❌ 移除 contactPerson 驗證
+
+      // ✅ 驗證 eventManagerInfo
+      if (!eventManagerInfo || !eventManagerInfo.phoneNumber || !eventManagerInfo.password || !eventManagerInfo.englishName) {
+        return res.status(400).json({ error: 'invalid-argument: 缺少 Event Manager 信息（phoneNumber, password, englishName）' });
+      }
+
+      // ✅ 驗證手機號格式
+      if (!/^01\d{8,9}$/.test(eventManagerInfo.phoneNumber)) {
+        return res.status(400).json({ error: 'invalid-argument: Event Manager 手機號格式不正確' });
+      }
+
+      // ✅ 驗證密碼強度
+      if (eventManagerInfo.password.length < 8) {
+        return res.status(400).json({ error: 'invalid-argument: Event Manager 密碼至少需要8個字符' });
+      }
+
+      if (!/[a-zA-Z]/.test(eventManagerInfo.password) || !/\d/.test(eventManagerInfo.password)) {
+        return res.status(400).json({ error: 'invalid-argument: Event Manager 密碼必須包含英文字母和數字' });
+      }
+
+      // ✅ 獲取 Organization 數據
+      const orgRef = admin.firestore().collection('organizations').doc(organizationId);
+      const orgSnap = await orgRef.get();
+      if (!orgSnap.exists) {
+        return res.status(404).json({ error: 'not-found: 組織不存在' });
+      }
+
+      const orgData = orgSnap.data();
+
+      // ✅ 驗證 identityTag（如果提供）
+      const identityTag = eventManagerInfo.identityTag || 'staff';
+      const identityTags = orgData.identityTags || [];
+      const validTag = identityTags.find(tag => tag.id === identityTag && tag.isActive);
+      if (!validTag) {
+        return res.status(400).json({ error: `invalid-argument: 身份標籤 "${identityTag}" 不存在或已停用` });
+      }
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      // ✅ 第一步：創建 Event 文檔
+      const eventRef = await admin.firestore()
+        .collection(`organizations/${organizationId}/events`)
+        .add({
+          eventCode,
+          orgCode,
+          eventName: {
+            'zh-CN': eventName['zh-CN'],
+            'en-US': eventName['en-US'] || eventName['zh-CN']
+          },
+          description: description || '',
+          eventInfo: {
+            description: description || '',
+            fairDate: eventInfo?.fairDate || null,
+            fairTime: eventInfo?.fairTime || null,
+            consumptionPeriod: {
+              startDate: eventInfo?.consumptionPeriod?.startDate || null,
+              endDate: eventInfo?.consumptionPeriod?.endDate || null
+            }
+          },
+          // ❌ 移除 contactPerson 字段
+          pointAllocationRules: {
+            sellerManager: {
+              maxPerAllocation: 100,
+              enableWarnings: true,
+              warningThreshold: 0.3
+            }
+          },
+          settings: {},
+          status: status || 'planning',
+          statistics: { totalUsers: 0 },
+          roleStats: {
+            eventManagers: { count: 0 }
+          },
+          createdAt: now,
+          updatedAt: now,
+          createdBy: callerUid
+        });
+
+      const eventId = eventRef.id;
+      console.log('[createEventByPlatformAdminHttp] Event 創建成功:', eventId);
+
+      // ✅ 第二步：檢查 Event Manager 手機號是否已存在於此活動
+      const usersCol = eventRef.collection('users');
+      const dupSnap = await usersCol.where('basicInfo.phoneNumber', '==', eventManagerInfo.phoneNumber).limit(1).get();
+      if (!dupSnap.empty) {
+        await eventRef.delete();
+        return res.status(409).json({ error: 'already-exists: Event Manager 手機號已在此活動中存在' });
+      }
+
+      // ✅ 驗證 Event Manager 的部門
+      if (!eventManagerInfo.department || !eventManagerInfo.department.trim()) {
+        await eventRef.delete();
+        return res.status(400).json({ error: 'invalid-argument: Event Manager 必須指定部門' });
+      }
+
+      const deptName = eventManagerInfo.department.trim();
+
+      // ✅ 第三步：處理部門
+      try {
+        const departments = orgData.departments || [];
+        const deptNameLower = deptName.toLowerCase();
+
+        const existingDeptIndex = departments.findIndex(d =>
+          d.name && d.name.toLowerCase() === deptNameLower
+        );
+
+        if (existingDeptIndex >= 0) {
+          console.log('[createEventByPlatformAdminHttp] 部門已存在，增加 userCount:', deptName);
+          departments[existingDeptIndex].userCount = (departments[existingDeptIndex].userCount || 0) + 1;
+
+          await orgRef.update({
+            departments: departments,
+            updatedAt: now
+          });
+        } else {
+          console.log('[createEventByPlatformAdminHttp] 創建新部門:', deptName);
+          const newDept = {
+            id: deptName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, ''),
+            name: deptName,
+            isActive: true,
+            userCount: 1,
+            displayOrder: departments.length + 1,
+            createdBy: 'manual',
+            createdAt: new Date()  // ✅ 改用 Date 物件，arrayUnion 不能包含 serverTimestamp()
+          };
+
+          await orgRef.update({
+            departments: admin.firestore.FieldValue.arrayUnion(newDept),
+            updatedAt: now
+          });
+        }
+      } catch (deptErr) {
+        console.error('[createEventByPlatformAdminHttp] 部門處理錯誤:', deptErr);
+        await eventRef.delete();
+        return res.status(500).json({
+          error: 'internal: 部門處理失敗 - ' + (deptErr.message || 'unknown')
+        });
+      }
+
+      // ✅ 第四步：生成密碼哈希
+      const passwordSalt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = sha256(eventManagerInfo.password + passwordSalt);
+
+      // ✅ 第五步：生成 userId
+      const userId = `phone_${eventManagerInfo.phoneNumber}`;
+
+      // ✅ 第六步：在 users 集合創建 Event Manager 文檔
+      const eventManagerData = {
+        userId: userId,
+        roles: ['eventManager'],
+        identityInfo: {
+          identityId: eventManagerInfo.identityId || `${identityTag.toUpperCase()}_${Date.now()}`,
+          identityTag: identityTag,
+          identityName: validTag.name['zh-CN'] || validTag.name['en-US'] || identityTag,
+          department: deptName,
+          position: eventManagerInfo.position || '活动负责人'  // ✅ 新增 position 字段
+        },
+        basicInfo: {
+          phoneNumber: eventManagerInfo.phoneNumber,
+          englishName: eventManagerInfo.englishName,
+          chineseName: eventManagerInfo.chineseName || '',
+          email: eventManagerInfo.email || '',
+          passwordHash: passwordHash,
+          passwordSalt: passwordSalt,
+          isPhoneVerified: false
+        },
+        eventManager: {
+          permissions: {
+            canManageUsers: true,
+            canManageRoles: true,
+            canAssignManagers: true,
+            canViewAllData: true,
+            canMonitorAll: true,
+            canModifyEventSettings: true
+          },
+          restrictions: {
+            cannotAllocatePoints: true,
+            cannotModifyOwnRoles: true,
+            cannotDeleteSelf: true,
+            cannotHoldOtherRoles: true
+          },
+          monitoringScope: {
+            canMonitorFinanceManager: true,
+            canMonitorSellerManager: true,
+            canMonitorAllTransactions: true,
+            canViewAllStats: true
+          }
+        },
+        accountStatus: {
+          isActive: true,
+          isSuspended: false,
+          lastLoginAt: null,
+          createdAt: now,
+          updatedAt: now
+        },
+        activityData: {
+          lastActiveAt: null,
+          totalLogins: 0,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: callerUid
+        }
+      };
+
+      await usersCol.doc(userId).set(eventManagerData);
+
+      // ✅ 更新 Event 的 roleStats
+      await eventRef.update({
+        'roleStats.eventManagers.count': 1
+      });
+
+      console.log('[createEventByPlatformAdminHttp] Event Manager 創建成功:', userId);
+
+      return res.status(200).json({
+        success: true,
+        eventId: eventId,
+        eventManagerUserId: userId,
+        message: 'Event 和 Event Manager 創建成功'
+      });
+
+    } catch (err) {
+      console.error('createEventByPlatformAdminHttp error:', err);
+      return res.status(500).json({
+        error: err.message || 'internal'
+      });
+    }
+  });
 });

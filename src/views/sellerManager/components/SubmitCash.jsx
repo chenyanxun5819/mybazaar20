@@ -24,7 +24,7 @@ import {
   increment,
   orderBy
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { db } from '../../../config/firebase';
 
 const SubmitCash = ({ userInfo, eventData }) => {
   const [collections, setCollections] = useState([]);
