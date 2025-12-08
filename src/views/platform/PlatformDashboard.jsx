@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, functions } from '../../config/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
-import AssignEventManager from './AssignEventManager';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { auth } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
@@ -12,10 +11,6 @@ const PlatformDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [showAssignManager, setShowAssignManager] = useState(false);
-  const [selectedOrg, setSelectedOrg] = useState(null);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const navigate = useNavigate();  // ← 新增
 
   useEffect(() => {
     loadOrganizations();
@@ -57,19 +52,6 @@ const PlatformDashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleAssignManager = (org, event) => {
-    setSelectedOrg(org);
-    setSelectedEvent(event);
-    setShowAssignManager(true);
-  };
-
-  const handleAssignSuccess = () => {
-    setShowAssignManager(false);
-    setSelectedOrg(null);
-    setSelectedEvent(null);
-    loadOrganizations();
   };
 
   // ← 新增登出函數
@@ -169,7 +151,6 @@ const PlatformDashboard = () => {
                 setSelectedOrg(org);
                 setShowCreateEvent(true);
               }}
-              onAssignManager={handleAssignManager}
               onReload={loadOrganizations}
             />
           ))
@@ -201,18 +182,6 @@ const PlatformDashboard = () => {
         />
       )}
 
-      {showAssignManager && (
-        <AssignEventManager
-          organization={selectedOrg}
-          event={selectedEvent}
-          onClose={() => {
-            setShowAssignManager(false);
-            setSelectedOrg(null);
-            setSelectedEvent(null);
-          }}
-          onSuccess={handleAssignSuccess}
-        />
-      )}
     </div>
   );
 };
@@ -227,7 +196,7 @@ const StatCard = ({ title, value, icon, color }) => (
   </div>
 );
 
-const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onReload }) => {
+const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
   const [expanded, setExpanded] = useState(false);
   const [showEditIdentityTags, setShowEditIdentityTags] = useState(false);
 
@@ -306,7 +275,6 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
                   key={event.id}
                   event={event}
                   organization={organization}
-                  onAssignManager={() => onAssignManager(organization, event)}
                   onReload={onReload}
                 />
               ))}
@@ -336,23 +304,49 @@ const OrganizationCard = ({ organization, onCreateEvent, onAssignManager, onRelo
 // ============================================
 
 
-const EventCard = ({ event, organization, onAssignManager, onReload }) => {
+const EventCard = ({ event, organization, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // ✅ 新架构：直接使用 Event.eventManager 对象
+  // ✅ 新架构：從 users 集合查詢 Event Manager
   useEffect(() => {
-    // event.eventManager 现在是一个完整的对象，不需要再去 users 集合读取
-    if (event.eventManager) {
-      setEventManager(event.eventManager);
-      setLoadingManager(false);
-    } else {
-      setEventManager(null);
-      setLoadingManager(false);
-    }
-  }, [event.eventManager]);
+    const fetchEventManager = async () => {
+      setLoadingManager(true);
+      try {
+        // 查詢 users 集合中 roles 包含 'eventManager' 的用戶
+        const usersRef = collection(
+          db,
+          `organizations/${organization.id}/events/${event.id}/users`
+        );
+        const q = query(usersRef, where('roles', 'array-contains', 'eventManager'));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const emDoc = snapshot.docs[0];
+          const emData = emDoc.data();
+          setEventManager({
+            userId: emData.userId,
+            phoneNumber: emData.basicInfo?.phoneNumber || '',
+            englishName: emData.basicInfo?.englishName || '',
+            chineseName: emData.basicInfo?.chineseName || '',
+            email: emData.basicInfo?.email || '',
+            position: emData.identityInfo?.position || '活动负责人'
+          });
+        } else {
+          setEventManager(null);
+        }
+      } catch (err) {
+        console.error('[EventCard] 獲取 Event Manager 失敗:', err);
+        setEventManager(null);
+      } finally {
+        setLoadingManager(false);
+      }
+    };
+
+    fetchEventManager();
+  }, [event.id, organization.id]);
 
   // 格式化日期
   const formatDate = (dateStr) => {
@@ -587,17 +581,7 @@ const EventCard = ({ event, organization, onAssignManager, onReload }) => {
       </div>
 
       {/* 操作按钮 */}
-      <div style={styles.eventActions}>
-        {/* 分配 Event Manager - 仅当未分配时显示 */}
-        {!eventManager && (
-          <button
-            style={styles.assignButton}
-            onClick={onAssignManager}
-          >
-            👤 分配 Event Manager
-          </button>
-        )}
-
+      <div style={styles.actionButtons}>
         {/* 删除按钮 */}
         <button
           style={{

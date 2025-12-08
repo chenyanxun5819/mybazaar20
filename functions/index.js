@@ -21,18 +21,18 @@ const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
 const { onCashCollection } = require('./onCashCollection');
 
-// 导入 Seller Manager Functions (新增)
-const { 
-  onSellerManagerAllocation, 
-  updateUserPointsStats, 
-  checkCollectionWarnings 
-} = require('./sellerManagerFunctions');
+// 导入 Seller Manager Functions (新增) - 暂时注释以解决部署超时
+// const { 
+//   onSellerManagerAllocation, 
+//   updateUserPointsStats, 
+//   checkCollectionWarnings 
+// } = require('./sellerManagerFunctions');
 
-// 导入 Seller Manager HTTP Functions (新增)
-const { 
-  allocatePointsBySellerManagerHttp, 
-  getSellerManagerDashboardDataHttp 
-} = require('./sellerManagerHttpFunctions');
+// 导入 Seller Manager HTTP Functions (新增) - 暂时注释以解决部署超时
+// const { 
+//   allocatePointsBySellerManagerHttp, 
+//   getSellerManagerDashboardDataHttp 
+// } = require('./sellerManagerHttpFunctions');
 
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
@@ -62,14 +62,14 @@ exports.createEventByPlatformAdminHttp = createEventByPlatformAdminHttp;
 
 // 导出现金收款 Cloud Functions
 exports.onCashCollection = onCashCollection;
-// 导出 Seller Manager Functions (新增)
-exports.onSellerManagerAllocation = onSellerManagerAllocation;
-exports.updateUserPointsStats = updateUserPointsStats;
-exports.checkCollectionWarnings = checkCollectionWarnings;
+// 导出 Seller Manager Functions (新增) - 暂时注释以解决部署超时
+// exports.onSellerManagerAllocation = onSellerManagerAllocation;
+// exports.updateUserPointsStats = updateUserPointsStats;
+// exports.checkCollectionWarnings = checkCollectionWarnings;
 
-// 导出 Seller Manager HTTP Functions (新增)
-exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
-exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
+// 导出 Seller Manager HTTP Functions (新增) - 暂时注释以解决部署超时
+// exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
+// exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 
 
 // CORS 中间件配置
