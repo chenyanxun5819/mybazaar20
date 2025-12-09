@@ -127,8 +127,8 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       eventName: eventData.eventName?.['zh-CN'] 
     });
 
-    // 📋 Step 3: 查找用户（通过手机号 basicInfo.phoneNumber 的多种变体）
-    console.log('[loginUniversalHttp] Step 3: 查找用户', { phoneNumber });
+    // 📋 Step 3A: 先检查是否为 Event Manager 登录（匹配 event.eventManager）
+    console.log('[loginUniversalHttp] Step 3A: 检查是否为 Event Manager 登录');
 
     const norm = normalizePhoneNumber(phoneNumber);
     const variants = [
@@ -138,6 +138,71 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       `+60${norm}`,
       String(phoneNumber)
     ];
+
+    let isEventManagerLogin = false;
+    let eventManagerData = null;
+    if (eventData && eventData.eventManager && eventData.eventManager.phoneNumber) {
+      const emPhone = String(eventData.eventManager.phoneNumber);
+      const emNorm = normalizePhoneNumber(emPhone);
+      const emVariants = [emNorm, `0${emNorm}`, `60${emNorm}`, `+60${emNorm}`, emPhone];
+      const phoneMatched = variants.some(v => emVariants.includes(String(v)));
+      if (phoneMatched) {
+        // 验证 Event Manager 密码（hash+salt）
+        const emSalt = eventData.eventManager.passwordSalt;
+        const emHash = eventData.eventManager.password;
+        if (emSalt && emHash) {
+          const computed = sha256(String(password) + String(emSalt));
+          if (computed === emHash) {
+            isEventManagerLogin = true;
+            eventManagerData = eventData.eventManager;
+            console.log('[loginUniversalHttp] Event Manager 手机匹配且密码正确');
+          } else {
+            console.warn('[loginUniversalHttp] Event Manager 密码错误');
+          }
+        }
+      } else {
+        console.log('[loginUniversalHttp] 非 Event Manager 手机或不匹配');
+      }
+    }
+
+    if (isEventManagerLogin) {
+      // 生成 Custom Token（使用 eventManager.authUid，确保后端权限检查通过）
+      const authUidForToken = eventManagerData.authUid || `eventManager_${norm}`;
+
+      const customClaims = {
+        organizationId,
+        eventId,
+        userId: 'eventManager',
+        roles: ['eventManager'],
+        managedDepartments: [],
+        department: '',
+        identityTag: ''
+      };
+      console.log('[loginUniversalHttp] Event Manager Custom Claims:', customClaims);
+
+      const customToken = await admin.auth().createCustomToken(authUidForToken, customClaims);
+
+      // 返回成功结果（使用 eventManagerData 信息）
+      const elapsedMs = Date.now() - startTime;
+      console.log('[loginUniversalHttp] ✅ 登录成功 (Event Manager)', { elapsedMs });
+      return res.status(200).json({
+        success: true,
+        customToken,
+        userId: 'eventManager',
+        organizationId,
+        eventId,
+        englishName: eventManagerData.englishName || eventManagerData.displayName || '',
+        chineseName: eventManagerData.chineseName || '',
+        roles: ['eventManager'],
+        managedDepartments: [],
+        department: '',
+        identityTag: '',
+        roleSpecificData: {}
+      });
+    }
+
+    // 📋 Step 3B: 普通用户登录（从 users 集合）
+    console.log('[loginUniversalHttp] Step 3B: 普通用户登录，查找 users 集合');
 
     let userDoc = null;
     for (const variant of variants) {

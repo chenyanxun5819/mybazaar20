@@ -15,7 +15,7 @@ if (!admin.apps.length) {
 
 // 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp } = require('./admin');
+  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
@@ -52,6 +52,8 @@ exports.reorderDepartments = reorderDepartments;
 exports.departmentsHttp = departmentsHttp;
 exports.batchImportUsersHttp = batchImportUsersHttp;
 exports.updateUserRoles = updateUserRoles;
+exports.allocatePointsHttp = allocatePointsHttp;
+exports.recallPointsHttp = recallPointsHttp;
 exports.loginUniversalHttp = loginUniversalHttp;
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;

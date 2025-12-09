@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { db, functions } from '../../config/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
 const PlatformDashboard = () => {
+  const navigate = useNavigate();
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [selectedOrg, setSelectedOrg] = useState(null);
 
   useEffect(() => {
     loadOrganizations();
@@ -60,6 +62,7 @@ const PlatformDashboard = () => {
       console.log('[PlatformDashboard] 开始登出');
       await signOut(auth);
       console.log('[PlatformDashboard] 登出成功');
+      // 使用 react-router 的导航，避免直接刷新导致状态不一致
       navigate('/platform/login');
     } catch (error) {
       console.error('[PlatformDashboard] 登出失败:', error);
@@ -310,43 +313,16 @@ const EventCard = ({ event, organization, onReload }) => {
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  // ✅ 新架构：從 users 集合查詢 Event Manager
+  // ✅ 新架构：直接使用 Event.eventManager 對象
   useEffect(() => {
-    const fetchEventManager = async () => {
-      setLoadingManager(true);
-      try {
-        // 查詢 users 集合中 roles 包含 'eventManager' 的用戶
-        const usersRef = collection(
-          db,
-          `organizations/${organization.id}/events/${event.id}/users`
-        );
-        const q = query(usersRef, where('roles', 'array-contains', 'eventManager'));
-        const snapshot = await getDocs(q);
-        
-        if (!snapshot.empty) {
-          const emDoc = snapshot.docs[0];
-          const emData = emDoc.data();
-          setEventManager({
-            userId: emData.userId,
-            phoneNumber: emData.basicInfo?.phoneNumber || '',
-            englishName: emData.basicInfo?.englishName || '',
-            chineseName: emData.basicInfo?.chineseName || '',
-            email: emData.basicInfo?.email || '',
-            position: emData.identityInfo?.position || '活动负责人'
-          });
-        } else {
-          setEventManager(null);
-        }
-      } catch (err) {
-        console.error('[EventCard] 獲取 Event Manager 失敗:', err);
-        setEventManager(null);
-      } finally {
-        setLoadingManager(false);
-      }
-    };
-
-    fetchEventManager();
-  }, [event.id, organization.id]);
+    if (event.eventManager) {
+      setEventManager(event.eventManager);
+      setLoadingManager(false);
+    } else {
+      setEventManager(null);
+      setLoadingManager(false);
+    }
+  }, [event.eventManager]);
 
   // 格式化日期
   const formatDate = (dateStr) => {
@@ -1386,6 +1362,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       const result = await response.json();
       alert('活动和 Event Manager 创建成功！');
       onSuccess();
+      onClose();
       
     } catch (err) {
       console.error('[CreateEventModal] Error:', err);

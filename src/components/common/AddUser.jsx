@@ -254,9 +254,9 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     setLoading(true);
 
     try {
-      // 使用 HTTP 调用
+      // ✅ 修复：调用正确的 API 端点，email 改为可选
       const response = await fetch(
-        'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
+        'https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
         {
           method: 'POST',
           headers: {
@@ -269,7 +269,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             password: formData.password,
             englishName: formData.englishName,
             chineseName: formData.chineseName,
-            email: formData.email,
+            email: formData.email || '', // ✅ email 改为可选，空字符串也可以
             identityTag: formData.identityTag,
             department: formData.department,
             identityId: formData.identityId, // ✨ 新增：传递 identityId
@@ -316,11 +316,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // ✨ 如果还在加载身份标签，显示加载状态
   if (loadingTags) {
     return (
-      <div style={styles.overlay} onClick={onClose}>
-        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.overlay}>
+        <div style={styles.modal}>
           <div style={styles.loadingContainer}>
             <div style={styles.spinner}></div>
-            <p>加载身份标签中...</p>
+            <div>加载中...</div>
           </div>
         </div>
       </div>
@@ -328,190 +328,197 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   }
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div style={styles.overlay}>
+      <div style={styles.modal}>
+        {/* 头部 */}
         <div style={styles.header}>
-          <h2 style={styles.title}>创建用户</h2>
-          <button style={styles.closeButton} onClick={onClose}>✕</button>
+          <h2 style={styles.title}>添加用户</h2>
+          <button
+            onClick={onClose}
+            style={styles.closeButton}
+            disabled={loading}
+          >
+            ✕
+          </button>
         </div>
 
+        {/* 表单 */}
         <form onSubmit={handleSubmit} style={styles.form}>
           {/* 基本信息 */}
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>📋 基本信息</h3>
-
-            <div style={styles.formGroup}>
-              <label style={styles.label}>手机号 *</label>
-              <input
-                type="tel"
-                style={styles.input}
-                value={formData.phoneNumber}
-                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                placeholder="0123456789"
-                required
-              />
-              <small style={styles.hint}>马来西亚手机号</small>
+            <h3 style={styles.sectionTitle}>
+              <span>👤</span>
+              基本信息
+            </h3>
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>英文名 *</label>
+                <input
+                  type="text"
+                  value={formData.englishName}
+                  onChange={(e) => setFormData({ ...formData, englishName: e.target.value })}
+                  style={styles.input}
+                  placeholder="John Doe"
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>中文名</label>
+                <input
+                  type="text"
+                  value={formData.chineseName}
+                  onChange={(e) => setFormData({ ...formData, chineseName: e.target.value })}
+                  style={styles.input}
+                  placeholder="张三"
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>英文名 / 拼音名 *</label>
+                <label style={styles.label}>手机号码 *</label>
                 <input
-                  type="text"
+                  type="tel"
+                  value={formData.phoneNumber}
+                  onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
                   style={styles.input}
-                  value={formData.englishName}
-                  onChange={(e) => setFormData({ ...formData, englishName: e.target.value })}
-                  placeholder="John Doe"
+                  placeholder="0123456789"
                   required
+                  disabled={loading}
                 />
+                <span style={styles.hint}>10位数字，以0开头</span>
               </div>
-
               <div style={styles.formGroup}>
-                <label style={styles.label}>中文名（可选）</label>
+                <label style={styles.label}>邮箱</label>
                 <input
-                  type="text"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   style={styles.input}
-                  value={formData.chineseName}
-                  onChange={(e) => setFormData({ ...formData, chineseName: e.target.value })}
-                  placeholder="张三"
+                  placeholder="user@example.com"
+                  disabled={loading}
                 />
+                <span style={styles.hint}>可选填</span>
               </div>
             </div>
+          </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>电子邮箱（可选）</label>
-              <input
-                type="email"
-                style={styles.input}
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="example@email.com"
-              />
-            </div>
-
-            {/* ✨ 身份标签：从 Organization 动态读取 */}
+          {/* 身份信息 */}
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>
+              <span>🎓</span>
+              身份信息
+            </h3>
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>身份标签 *</label>
                 <select
-                  style={styles.select}
                   value={formData.identityTag}
                   onChange={(e) => setFormData({ ...formData, identityTag: e.target.value })}
+                  style={styles.select}
                   required
-                  disabled={identityTags.length === 0}
+                  disabled={loading || identityTags.length === 0}
                 >
-                  {identityTags.length === 0 ? (
-                    <option value="">无可用身份标签</option>
-                  ) : (
-                    identityTags.map(tag => (
-                      <option key={tag.id} value={tag.id}>
-                        {tag.name['zh-CN']} ({tag.name['en']})
-                      </option>
-                    ))
-                  )}
+                  <option value="">请选择身份标签</option>
+                  {identityTags.map(tag => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name['zh-CN']} ({tag.name['en']})
+                    </option>
+                  ))}
                 </select>
-                <small style={styles.hint}>
-                  {identityTags.length === 0
-                    ? '此组织还没有设置身份标签'
-                    : '选择用户的身份标签'}
-                </small>
               </div>
-
               <div style={styles.formGroup}>
-                <label style={styles.label}>班级 / 部门（可选）</label>
+                <label style={styles.label}>学号/工号</label>
                 <input
                   type="text"
-                  list="departments-list"
+                  value={formData.identityId}
+                  onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
                   style={styles.input}
-                  value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder={departments.length > 0 ? "选择或输入部门" : "例如：初一（1）班"}
+                  placeholder="如: 2024001 或 T2024001"
+                  disabled={loading}
                 />
-                <datalist id="departments-list">
-                  {departments.map(dept => (
-                    <option key={dept.id} value={dept.name} />
-                  ))}
-                </datalist>
-                {departments.length > 0 && (
-                  <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    可用部门：{departments.map(d => d.name).join('、')}
-                  </div>
-                )}
+                <span style={styles.hint}>可选，如组织有发放请填写</span>
               </div>
             </div>
-          </div>
 
-          {/* ✨ 新增：学号/工号输入框 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>学号 / 工号（可选）</label>
-            <input
-              type="text"
-              style={styles.input}
-              value={formData.identityId}
-              onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
-              placeholder="例如：2024001 或 T2024001"
-            />
-            <small style={styles.hint}>
-              组织发放的学号、工号或其他证号
-            </small>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>部门</label>
+              <select
+                value={formData.department}
+                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                style={styles.select}
+                disabled={loading}
+              >
+                <option value="">请选择部门</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.name}>
+                    {dept.name} ({dept.userCount || 0} 人)
+                  </option>
+                ))}
+              </select>
+              <span style={styles.hint}>可选，如果没有合适的部门可以留空</span>
+            </div>
           </div>
 
           {/* 密码设置 */}
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>🔒 密码设置</h3>
-
-            <div style={styles.formGroup}>
-              <label style={styles.label}>密码 *</label>
-              <input
-                type="password"
-                style={styles.input}
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="至少 8 个字符"
-                required
-                minLength="8"
-              />
-              <small style={styles.hint}>至少 8 个字符，包含英文字母和数字</small>
-            </div>
-
-            <div style={styles.formGroup}>
-              <label style={styles.label}>确认密码 *</label>
-              <input
-                type="password"
-                style={styles.input}
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                placeholder="再次输入密码"
-                required
-              />
+            <h3 style={styles.sectionTitle}>
+              <span>🔒</span>
+              密码设置
+            </h3>
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>密码 *</label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  style={styles.input}
+                  placeholder="至少8位，包含字母和数字"
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>确认密码 *</label>
+                <input
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  style={styles.input}
+                  placeholder="再次输入密码"
+                  required
+                  disabled={loading}
+                />
+              </div>
             </div>
           </div>
 
-          {/* 角色分配 */}
+          {/* 角色选择 */}
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>👥 角色分配 *</h3>
-            <p style={styles.roleHint}>
-              {(callerRole === 'eventManager')
-                ? '请选择一个或多个角色（可多选）'
-                : '以下角色为必选项（已自动勾选）'}
-            </p>
-
+            <h3 style={styles.sectionTitle}>
+              <span>🎭</span>
+              角色选择
+            </h3>
+            <p style={styles.roleHint}>请选择用户将担任的角色（可多选）</p>
             <div style={styles.rolesGrid}>
               {roleOptions.map(role => {
                 const isChecked = formData.roles.includes(role.value);
                 const isDisabled = isRoleDisabled(role.value);
-
+                
                 return (
                   <div
                     key={role.value}
                     style={{
                       ...styles.roleCard,
                       borderColor: isChecked ? '#667eea' : '#e5e7eb',
-                      background: isChecked ? '#f0f4ff' : 'white',
-                      opacity: isDisabled ? 0.8 : 1,
-                      cursor: isDisabled ? 'not-allowed' : 'pointer'
+                      backgroundColor: isChecked ? '#eef2ff' : 'white',
+                      opacity: loading ? 0.6 : 1,
+                      cursor: loading || isDisabled ? 'not-allowed' : 'pointer'
                     }}
-                    onClick={() => !isDisabled && handleRoleToggle(role.value)}
+                    onClick={() => !loading && handleRoleToggle(role.value)}
                   >
                     <div style={styles.roleHeader}>
                       <input

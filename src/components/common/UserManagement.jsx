@@ -251,7 +251,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     setShowBatchModal(true);
   };
 
-  // 保存角色分配
+  // 保存角色分配（改為呼叫雲函數）
   const handleSaveRoles = async () => {
     if (!selectedUser) return;
 
@@ -264,43 +264,34 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
-      const assignedRoles = Object.entries(selectedRoles)
-        .filter(([_, isAssigned]) => isAssigned)
-        .map(([role, _]) => role);
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      const updateData = {
-        roles: assignedRoles,
-        'accountStatus.lastUpdated': new Date()
+      // 準備提交到雲函數的資料
+      const body = {
+        organizationId,
+        eventId,
+        userId: selectedUser.id,
+        roles: selectedRoles, // 後端會轉換成陣列
+        managedDepartments,
+        previousRoles: selectedUser.roles || [],
+        idToken
       };
 
-      // 如果分配了 Seller Manager 角色，保存管理的部门
-      if (selectedRoles.sellerManager) {
-        updateData['sellerManager.managedDepartments'] = managedDepartments;
-        updateData['sellerManager.assignedAt'] = selectedUser.sellerManager?.assignedAt || new Date();
-      } else {
-        // 如果取消了 Seller Manager 角色，清空管理部门
-        updateData['sellerManager.managedDepartments'] = [];
-      }
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify(body)
+      });
 
-      // 为每个新分配的用户角色初始化数据结构
-      for (const role of ['seller', 'merchant', 'customer']) {
-        if (selectedRoles[role] && !selectedUser.roles?.includes(role)) {
-          updateData[`${role}.availablePoints`] = 0;
-          updateData[`${role}.totalPointsSold`] = 0;
-          updateData[`${role}.totalCashCollected`] = 0;
-          updateData[`${role}.transactions`] = [];
-          updateData[`${role}.assignedAt`] = new Date();
-        }
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data?.error || '更新角色失败');
       }
-
-      await updateDoc(userRef, updateData);
 
       alert('角色分配成功！');
       setShowRoleModal(false);
@@ -331,12 +322,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
@@ -348,20 +333,27 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
-      const timestampKey = Date.now().toString();
-      const transaction = {
-        type: 'allocation',
-        amount: points,
-        timestamp: serverTimestamp(),
-        allocatedBy: 'eventManager',
-        note: pointsNote || '点数分配'
-      };
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      await updateDoc(userRef, {
-        [`${roleType}.availablePoints`]: increment(points),
-        [`${roleType}.transactions.${timestampKey}`]: transaction,
-        'accountStatus.lastUpdated': serverTimestamp()
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: selectedUser.id,
+          roleType,
+          amount: points,
+          note: pointsNote || ''
+        })
       });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || '分配失败');
 
       alert(`成功分配 ${points.toLocaleString()} 点数！`);
       setShowPointsModal(false);
@@ -392,12 +384,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
@@ -409,20 +395,27 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
-      const timestampKey = Date.now().toString();
-      const transaction = {
-        type: 'recall',
-        amount: -points,
-        timestamp: serverTimestamp(),
-        recalledBy: 'eventManager',
-        note: recallNote || '点数回收'
-      };
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      await updateDoc(userRef, {
-        [`${roleType}.availablePoints`]: increment(-points),
-        [`${roleType}.transactions.${timestampKey}`]: transaction,
-        'accountStatus.lastUpdated': serverTimestamp()
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: selectedUser.id,
+          roleType,
+          amount: points,
+          note: recallNote || ''
+        })
       });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || '回收失败');
 
       alert(`成功回收 ${points.toLocaleString()} 点数！`);
       setShowRecallModal(false);

@@ -155,6 +155,14 @@
                   "endDate": "timestamp (消费结束日期)"
                 }
               },
+              "eventManager": {
+                "description": "活动负责人基本联络信息（从 users 集合复制）",
+                "chineseName": "string (中文姓名)",
+                "englishName": "string (英文姓名)",
+                "phoneNumber": "string (联络电话)",
+                "position": "string (职务，如 '活动负责人')",
+                "note": "此字段仅用于快速显示联络信息，完整数据存储在 users 集合中"
+              },
               "globalPointsStats": {
                 "description": "全局点数统计（实时维护）",
                 "totalAllocated": "number (累计分配的点数总额)",
