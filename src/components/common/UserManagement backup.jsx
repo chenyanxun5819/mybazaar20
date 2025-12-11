@@ -11,7 +11,8 @@ import {
   orderBy,
   increment,
   arrayUnion,
-  writeBatch
+  writeBatch,
+  serverTimestamp
 } from 'firebase/firestore';
 
 // 统一的角色配置
@@ -38,6 +39,8 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [eventData, setEventData] = useState(null);
   const [deptOrderMaps, setDeptOrderMaps] = useState({ byId: {}, byName: {} });
+  const [isModifyingOwnRoles, setIsModifyingOwnRoles] = useState(false);
+
 
   // 🆕 identityTags 相关状态
   const [identityTags, setIdentityTags] = useState([]);
@@ -53,6 +56,8 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   });
 
 
+  // 🆕 规则设定模态框
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   // 角色分配状态
   const [selectedRoles, setSelectedRoles] = useState({
@@ -210,6 +215,16 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 打开角色分配模态框
   const openRoleModal = (user) => {
     setSelectedUser(user);
+
+    // 🔹 检查是否是 Event Manager 在修改自己的角色
+    const auth = getAuth();
+    const currentUserPhone = auth.currentUser?.phoneNumber?.replace(/^\+60/, '0') || '';
+    const targetUserPhone = user.basicInfo?.phoneNumber || '';
+    const isModifyingSelf = currentUserPhone === targetUserPhone;
+    const hasEventManagerRole = user.roles?.includes('eventManager') || false;
+
+    setIsModifyingOwnRoles(isModifyingSelf && hasEventManagerRole);
+
     setSelectedRoles({
       sellerManager: user.roles?.includes('sellerManager') || false,
       merchantManager: user.roles?.includes('merchantManager') || false,
@@ -248,9 +263,15 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     setShowBatchModal(true);
   };
 
-  // 保存角色分配
+  // 保存角色分配（改為呼叫雲函數）
   const handleSaveRoles = async () => {
     if (!selectedUser) return;
+
+    // 🔹 如果是 Event Manager 修改自己，阻止保存
+    if (isModifyingOwnRoles) {
+      alert('Event Manager 不能修改自己的角色\n\n如需修改，请联系 Platform Admin');
+      return;
+    }
 
     // 如果勾选了 sellerManager 但没有选择管理部门，提示用户
     if (selectedRoles.sellerManager && managedDepartments.length === 0) {
@@ -259,45 +280,56 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       }
     }
 
+    // 🔹 验证角色组合规则
+    const hasEventManager = selectedUser.roles?.includes('eventManager') || false;
+    const hasOtherManagerRoles = selectedRoles.sellerManager ||
+      selectedRoles.merchantManager ||
+      selectedRoles.customerManager ||
+      selectedRoles.financeManager;
+
+    if (hasEventManager && hasOtherManagerRoles) {
+      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Finance Manager');
+      return;
+    }
+
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
-      const assignedRoles = Object.entries(selectedRoles)
-        .filter(([_, isAssigned]) => isAssigned)
-        .map(([role, _]) => role);
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      const updateData = {
-        roles: assignedRoles,
-        'accountStatus.lastUpdated': new Date()
+      // 准备提交到云函数的数据
+      const body = {
+        organizationId,
+        eventId,
+        userId: selectedUser.id,
+        roles: selectedRoles,
+        managedDepartments,
+        previousRoles: selectedUser.roles || [],
+        idToken
       };
 
-      // 如果分配了 Seller Manager 角色，保存管理的部门
-      if (selectedRoles.sellerManager) {
-        updateData['sellerManager.managedDepartments'] = managedDepartments;
-        updateData['sellerManager.assignedAt'] = selectedUser.sellerManager?.assignedAt || new Date();
-      } else {
-        // 如果取消了 Seller Manager 角色，清空管理部门
-        updateData['sellerManager.managedDepartments'] = [];
-      }
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify(body)
+      });
 
-      // 为每个新分配的用户角色初始化数据结构
-      for (const role of ['seller', 'merchant', 'customer']) {
-        if (selectedRoles[role] && !selectedUser.roles?.includes(role)) {
-          updateData[`${role}.availablePoints`] = 0;
-          updateData[`${role}.totalPointsSold`] = 0;
-          updateData[`${role}.totalCashCollected`] = 0;
-          updateData[`${role}.transactions`] = [];
-          updateData[`${role}.assignedAt`] = new Date();
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        // 🔹 处理特殊错误代码
+        if (data.code === 'cannot-modify-own-roles') {
+          alert('❌ Event Manager 不能修改自己的角色\n\n如需修改，请联系 Platform Admin');
+        } else if (data.code === 'eventmanager-cannot-hold-other-manager-roles') {
+          alert('❌ Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色：\n✅ Event Manager + Seller + Customer');
+        } else {
+          throw new Error(data?.error || '更新角色失败');
         }
+        return;
       }
-
-      await updateDoc(userRef, updateData);
 
       alert('角色分配成功！');
       setShowRoleModal(false);
@@ -311,6 +343,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       setIsProcessing(false);
     }
   };
+
 
   // 点数分配
   const handleAllocatePoints = async () => {
@@ -328,12 +361,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
@@ -345,19 +372,27 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
-      const transaction = {
-        type: 'allocation',
-        amount: points,
-        timestamp: new Date(),
-        allocatedBy: 'eventManager',
-        note: pointsNote || '点数分配'
-      };
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      await updateDoc(userRef, {
-        [`${roleType}.availablePoints`]: increment(points),
-        [`${roleType}.transactions`]: arrayUnion(transaction),
-        'accountStatus.lastUpdated': new Date()
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: selectedUser.id,
+          roleType,
+          amount: points,
+          note: pointsNote || ''
+        })
       });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || '分配失败');
 
       alert(`成功分配 ${points.toLocaleString()} 点数！`);
       setShowPointsModal(false);
@@ -388,12 +423,6 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     try {
       setIsProcessing(true);
-      const userRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', selectedUser.id
-      );
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
@@ -405,19 +434,27 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         return;
       }
 
-      const transaction = {
-        type: 'recall',
-        amount: -points,
-        timestamp: new Date(),
-        recalledBy: 'eventManager',
-        note: recallNote || '点数回收'
-      };
+      const auth = getAuth();
+      const idToken = await auth.currentUser.getIdToken();
 
-      await updateDoc(userRef, {
-        [`${roleType}.availablePoints`]: increment(-points),
-        [`${roleType}.transactions`]: arrayUnion(transaction),
-        'accountStatus.lastUpdated': new Date()
+      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: selectedUser.id,
+          roleType,
+          amount: points,
+          note: recallNote || ''
+        })
       });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || '回收失败');
 
       alert(`成功回收 ${points.toLocaleString()} 点数！`);
       setShowRecallModal(false);
@@ -474,21 +511,24 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       setIsProcessing(true);
 
       const batch = writeBatch(db);
-      const transaction = {
-        type: 'allocation',
-        amount: points,
-        timestamp: new Date(),
-        allocatedBy: 'eventManager',
-        note: batchNote || `批量分配 - ${tagInfo.label}`
-      };
+      const baseTimestamp = Date.now();
 
-      targetUsers.forEach(user => {
+      targetUsers.forEach((user, index) => {
         let roleType = null;
         if (user.roles?.includes('seller')) roleType = 'seller';
         else if (user.roles?.includes('merchant')) roleType = 'merchant';
         else if (user.roles?.includes('customer')) roleType = 'customer';
 
         if (roleType) {
+          const timestampKey = (baseTimestamp + index).toString();
+          const transaction = {
+            type: 'allocation',
+            amount: points,
+            timestamp: serverTimestamp(),
+            allocatedBy: 'eventManager',
+            note: batchNote || `批量分配 - ${tagInfo.label}`
+          };
+
           const userRef = doc(
             db,
             'organizations', organizationId,
@@ -498,8 +538,8 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
           batch.update(userRef, {
             [`${roleType}.availablePoints`]: increment(points),
-            [`${roleType}.transactions`]: arrayUnion(transaction),
-            'accountStatus.lastUpdated': new Date()
+            [`${roleType}.transactions.${timestampKey}`]: transaction,
+            'accountStatus.lastUpdated': serverTimestamp()
           });
         }
       });
@@ -769,6 +809,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       </div>
 
       {/* 角色分配模态框 */}
+      {/* 角色分配模态框 */}
       {showRoleModal && selectedUser && (
         <div style={styles.subModal}>
           <div style={styles.subModalContent}>
@@ -776,33 +817,153 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
               分配角色 - {selectedUser.basicInfo?.chineseName}
             </h3>
 
+            {/* 🔹 警告提示 - 当 Event Manager 修改自己时显示 */}
+            {isModifyingOwnRoles && (
+              <div style={{
+                padding: '1rem',
+                backgroundColor: '#fef3c7',
+                border: '2px solid #f59e0b',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                fontSize: '0.875rem',
+                color: '#92400e',
+                fontWeight: '500',
+                lineHeight: '1.5'
+              }}>
+                ⚠️ <strong>注意：</strong>您正在修改自己的角色<br />
+                作为 Event Manager，您不能修改自己的角色。<br />
+                如需修改，请联系 Platform Admin。
+              </div>
+            )}
+
             <div style={styles.rolesGrid}>
-              {allRoles.map(role => (
-                <label key={role.id} style={styles.roleCheckbox}>
-                  <input
-                    type="checkbox"
-                    checked={selectedRoles[role.id]}
-                    onChange={(e) => setSelectedRoles({
-                      ...selectedRoles,
-                      [role.id]: e.target.checked
-                    })}
-                    style={styles.checkbox}
-                  />
-                  <div style={styles.roleInfo}>
-                    <span style={styles.roleIcon}>{role.icon}</span>
-                    <span style={styles.roleLabel}>{role.fullLabel}</span>
-                    <span
+              {/* 🔹 Manager 角色区域 */}
+              <div style={{
+                marginBottom: '1rem',
+                paddingBottom: '1rem',
+                borderBottom: '2px solid #e5e7eb'
+              }}>
+                <div style={{
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#6b7280',
+                  marginBottom: '0.75rem'
+                }}>
+                  🎯 Manager 角色
+                </div>
+
+                {allRoles
+                  .filter(role => role.category === 'manager')
+                  .map(role => {
+                    // 🔹 如果是 Event Manager 修改自己，禁用所有 manager 角色选项
+                    const isDisabled = isModifyingOwnRoles;
+
+                    return (
+                      <label
+                        key={role.id}
+                        style={{
+                          ...styles.roleCheckbox,
+                          backgroundColor: selectedRoles[role.id] ? '#f0f9ff' : 'white',
+                          borderColor: selectedRoles[role.id] ? role.color : '#e5e7eb',
+                          opacity: isDisabled ? 0.5 : 1,
+                          cursor: isDisabled ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={(e) => {
+                          if (isDisabled) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedRoles[role.id]}
+                          onChange={(e) => {
+                            if (!isDisabled) {
+                              setSelectedRoles({
+                                ...selectedRoles,
+                                [role.id]: e.target.checked
+                              });
+                            }
+                          }}
+                          disabled={isDisabled}
+                          style={styles.checkbox}
+                        />
+                        <div style={styles.roleInfo}>
+                          <span style={styles.roleIcon}>{role.icon}</span>
+                          <span style={styles.roleLabel}>{role.fullLabel}</span>
+                          <span
+                            style={{
+                              ...styles.roleBadge,
+                              backgroundColor: role.color,
+                              marginLeft: '0.5rem'
+                            }}
+                          >
+                            {role.label}
+                          </span>
+                          {isDisabled && (
+                            <span style={{
+                              marginLeft: 'auto',
+                              fontSize: '0.75rem',
+                              color: '#ef4444',
+                              fontWeight: '600'
+                            }}>
+                              🔒 已锁定
+                            </span>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+              </div>
+
+              {/* 🔹 参与者角色区域 */}
+              <div>
+                <div style={{
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#6b7280',
+                  marginBottom: '0.75rem'
+                }}>
+                  👥 参与者角色
+                </div>
+
+                {allRoles
+                  .filter(role => role.category === 'user')
+                  .map(role => (
+                    <label
+                      key={role.id}
                       style={{
-                        ...styles.roleBadge,
-                        backgroundColor: role.color,
-                        marginLeft: '0.5rem'
+                        ...styles.roleCheckbox,
+                        backgroundColor: selectedRoles[role.id] ? '#f0f9ff' : 'white',
+                        borderColor: selectedRoles[role.id] ? role.color : '#e5e7eb',
+                        cursor: 'pointer'
                       }}
                     >
-                      {role.label}
-                    </span>
-                  </div>
-                </label>
-              ))}
+                      <input
+                        type="checkbox"
+                        checked={selectedRoles[role.id]}
+                        onChange={(e) => setSelectedRoles({
+                          ...selectedRoles,
+                          [role.id]: e.target.checked
+                        })}
+                        style={styles.checkbox}
+                      />
+                      <div style={styles.roleInfo}>
+                        <span style={styles.roleIcon}>{role.icon}</span>
+                        <span style={styles.roleLabel}>{role.fullLabel}</span>
+                        <span
+                          style={{
+                            ...styles.roleBadge,
+                            backgroundColor: role.color,
+                            marginLeft: '0.5rem'
+                          }}
+                        >
+                          {role.label}
+                        </span>
+                      </div>
+                    </label>
+                  ))}
+              </div>
             </div>
 
             {/* Seller Manager 管理部门选择 */}
@@ -856,9 +1017,13 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
               </div>
             )}
 
+            {/* 🔹 操作按钮 */}
             <div style={styles.modalActions}>
               <button
-                onClick={() => setShowRoleModal(false)}
+                onClick={() => {
+                  setShowRoleModal(false);
+                  setIsModifyingOwnRoles(false); // 🔹 关闭时重置状态
+                }}
                 style={styles.cancelButton}
                 disabled={isProcessing}
               >
@@ -866,10 +1031,14 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
               </button>
               <button
                 onClick={handleSaveRoles}
-                style={styles.saveButton}
-                disabled={isProcessing}
+                style={{
+                  ...styles.saveButton,
+                  opacity: (isProcessing || isModifyingOwnRoles) ? 0.5 : 1,
+                  cursor: (isProcessing || isModifyingOwnRoles) ? 'not-allowed' : 'pointer'
+                }}
+                disabled={isProcessing || isModifyingOwnRoles} // 🔹 如果是修改自己则禁用
               >
-                {isProcessing ? '处理中...' : '保存'}
+                {isProcessing ? '处理中...' : isModifyingOwnRoles ? '🔒 不能修改自己' : '保存'}
               </button>
             </div>
           </div>

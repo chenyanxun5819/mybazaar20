@@ -72,6 +72,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [pointsAmount, setPointsAmount] = useState('');
   const [pointsNote, setPointsNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isModifyingOwnRoles, setIsModifyingOwnRoles] = useState(false);
 
   // 点数回收状态
   const [recallAmount, setRecallAmount] = useState('');
@@ -213,6 +214,16 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 打开角色分配模态框
   const openRoleModal = (user) => {
     setSelectedUser(user);
+
+    // 🔹 检查是否是 Event Manager 在修改自己的角色
+    const auth = getAuth();
+    const currentUserPhone = auth.currentUser?.phoneNumber?.replace(/^\+60/, '0') || '';
+    const targetUserPhone = user.basicInfo?.phoneNumber || '';
+    const isModifyingSelf = currentUserPhone === targetUserPhone;
+    const hasEventManagerRole = user.roles?.includes('eventManager') || false;
+
+    setIsModifyingOwnRoles(isModifyingSelf && hasEventManagerRole);
+
     setSelectedRoles({
       sellerManager: user.roles?.includes('sellerManager') || false,
       merchantManager: user.roles?.includes('merchantManager') || false,
@@ -255,11 +266,29 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const handleSaveRoles = async () => {
     if (!selectedUser) return;
 
+    // 🔹 如果是 Event Manager 修改自己，阻止保存
+    if (isModifyingOwnRoles) {
+      alert('Event Manager 不能修改自己的角色。');
+      return;
+    }
+
     // 如果勾选了 sellerManager 但没有选择管理部门，提示用户
     if (selectedRoles.sellerManager && managedDepartments.length === 0) {
       if (!confirm('您勾选了 Seller Manager 角色但未选择管理部门。\n是否继续？（该用户将无法管理任何部门）')) {
         return;
       }
+    }
+
+    // 🔹 验证角色组合规则
+    const hasEventManager = selectedUser.roles?.includes('eventManager') || false;
+    const hasOtherManagerRoles = selectedRoles.sellerManager ||
+      selectedRoles.merchantManager ||
+      selectedRoles.customerManager ||
+      selectedRoles.financeManager;
+
+    if (hasEventManager && hasOtherManagerRoles) {
+      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Finance Manager');
+      return;
     }
 
     try {

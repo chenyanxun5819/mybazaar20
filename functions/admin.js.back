@@ -2671,11 +2671,7 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// ============================================================================
-// 修复后的 updateUserRoles 函数
-// 替换 admin.js 中第 2675-2835 行的代码
-// ============================================================================
-
+// ========== 更新用戶角色 ==========
 // POST /api/updateUserRoles
 // Body: { organizationId, eventId, userId, roles: {...}, managedDepartments: [...], previousRoles: [...], idToken }
 exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
@@ -2714,9 +2710,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       return res.status(404).json({ error: '活动不存在' });
     }
 
-    // ============================================================================
-    // 🔹 步骤 1: 权限检查 - 确认 caller 是 Event Manager
-    // ============================================================================
+    // 權限檢查：確認 callerUid 在 event.admins 中
     console.log('[updateUserRoles] callerUid:', callerUid);
 
     let phoneFromUid = null;
@@ -2727,8 +2721,8 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     }
 
     let hasPermission = false;
-    let isCallerEventManager = false;
     const eventData = eventSnap.data() || {};
+    const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
 
     const normalizePhone = (p) => {
       if (!p) return '';
@@ -2738,38 +2732,30 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       return digits;
     };
 
-    // 🔹 检查 caller 是否是 Event Manager (通过 users 集合中的 roles)
-    if (phoneFromUid) {
+    // 檢查 event.admins
+    if (!hasPermission && phoneFromUid) {
       const coreCaller = normalizePhone(phoneFromUid);
-      
-      // 获取所有 users
-      const usersSnapshot = await eventRef.collection('users').get();
-      
-      for (const userDoc of usersSnapshot.docs) {
-        const userData = userDoc.data();
-        const userPhone = userData.basicInfo?.phoneNumber;
-        if (!userPhone) continue;
-        
-        const coreUserPhone = normalizePhone(userPhone);
-        if (coreCaller === coreUserPhone) {
-          // 找到了 caller 的用户文档
-          if (userData.roles && userData.roles.includes('eventManager')) {
-            hasPermission = true;
-            isCallerEventManager = true;
-            console.log('[updateUserRoles] Permission granted: caller is Event Manager');
-          }
+
+      for (const adm of admins) {
+        const admPhone = adm && (adm.phone || adm.phoneNumber);
+        if (!admPhone) continue;
+
+        const coreAdmin = normalizePhone(admPhone);
+        if (coreCaller === coreAdmin) {
+          hasPermission = true;
+          console.log('[updateUserRoles] Permission granted via event.admins (phone match)');
           break;
         }
       }
     }
 
-    // 🔹 检查平台管理员
+    // 檢查平台管理員
     if (!hasPermission) {
       const adminRef = db.collection('admin_uids').doc(callerUid);
       const adminSnap = await adminRef.get();
       if (adminSnap.exists) {
         hasPermission = true;
-        console.log('[updateUserRoles] Permission granted via admin_uids (Platform Admin)');
+        console.log('[updateUserRoles] Permission granted via admin_uids');
       }
     }
 
@@ -2778,95 +2764,27 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       return res.status(403).json({ error: '需要 Event Manager 权限' });
     }
 
-    // ============================================================================
-    // 🔹 步骤 2: 获取目标用户文档
-    // ============================================================================
-    const userRef = eventRef.collection('users').doc(userId);
-    const userSnap = await userRef.get();
-    
-    if (!userSnap.exists) {
-      return res.status(404).json({ error: '用户不存在' });
-    }
-    
-    const userData = userSnap.data();
-    const currentRoles = userData.roles || [];
-
-    // ============================================================================
-    // 🔹 步骤 3: 检查是否是 Event Manager 修改自己的角色
-    // ============================================================================
-    const isModifyingSelf = (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) || 
-                            (callerUid === `eventManager_${userData.basicInfo?.phoneNumber}`);
-
-    console.log('[updateUserRoles] isModifyingSelf:', isModifyingSelf);
-    console.log('[updateUserRoles] currentRoles:', currentRoles);
-    console.log('[updateUserRoles] hasEventManagerRole:', currentRoles.includes('eventManager'));
-
-    // 🚫 禁止 Event Manager 修改自己的角色
-    if (isModifyingSelf && currentRoles.includes('eventManager')) {
-      console.log('[updateUserRoles] ❌ Event Manager 不能修改自己的角色');
-      return res.status(403).json({ 
-        error: 'Event Manager 不能修改自己的角色',
-        code: 'cannot-modify-own-roles'
-      });
-    }
-
-    // ============================================================================
-    // 🔹 步骤 4: 构建新角色列表
-    // ============================================================================
+    // 構建新角色列表
     const newRoles = [];
-    const managerRoles = [];
-    const participantRoles = [];
+    if (roles.sellerManager) newRoles.push('sellerManager');
+    if (roles.merchantManager) newRoles.push('merchantManager');
+    if (roles.customerManager) newRoles.push('customerManager');
+    if (roles.financeManager) newRoles.push('financeManager');
+    if (roles.seller) newRoles.push('seller');
+    if (roles.merchant) newRoles.push('merchant');
+    if (roles.customer) newRoles.push('customer');
 
-    // 分类角色
-    if (roles.sellerManager) { newRoles.push('sellerManager'); managerRoles.push('sellerManager'); }
-    if (roles.merchantManager) { newRoles.push('merchantManager'); managerRoles.push('merchantManager'); }
-    if (roles.customerManager) { newRoles.push('customerManager'); managerRoles.push('customerManager'); }
-    if (roles.financeManager) { newRoles.push('financeManager'); managerRoles.push('financeManager'); }
-    if (roles.seller) { newRoles.push('seller'); participantRoles.push('seller'); }
-    if (roles.merchant) { newRoles.push('merchant'); participantRoles.push('merchant'); }
-    if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
-
-    // ============================================================================
-    // 🔹 步骤 5: 验证角色组合规则
-    // ============================================================================
-    
-    // 🚫 规则 1: Event Manager 不能同时拥有其他 manager 角色
-    if (currentRoles.includes('eventManager')) {
-      if (managerRoles.length > 0) {
-        console.log('[updateUserRoles] ❌ Event Manager 不能拥有其他 manager 角色');
-        return res.status(400).json({ 
-          error: 'Event Manager 不能同时拥有其他 manager 角色（Seller Manager、Finance Manager 等）',
-          code: 'eventmanager-cannot-hold-other-manager-roles'
-        });
-      }
-      
-      // ✅ Event Manager 可以拥有参与者角色 (seller, merchant, customer)
-      // 保持 eventManager 角色
-      newRoles.push('eventManager');
-    }
-
-    // 🚫 规则 2: 如果尝试添加 eventManager 角色给已有其他 manager 角色的用户
-    if (roles.eventManager && managerRoles.length > 0) {
-      console.log('[updateUserRoles] ❌ 不能给拥有其他 manager 角色的用户添加 eventManager');
-      return res.status(400).json({ 
-        error: '拥有其他 manager 角色的用户不能成为 Event Manager',
-        code: 'cannot-add-eventmanager-with-other-managers'
-      });
-    }
-
-    // ============================================================================
-    // 🔹 步骤 6: 构建更新数据
-    // ============================================================================
+    const userRef = eventRef.collection('users').doc(userId);
     const updateData = {
       roles: newRoles,
       'accountStatus.updatedAt': new Date()
     };
 
-    // 如果勾选了 sellerManager，保存管理部门
+    // 如果勾選了 sellerManager，保存管理部門
     if (roles.sellerManager) {
-      updateData['sellerManager.managedDepartments'] = managedDepartments || [];
+      updateData['sellerManager.managedDepartments'] = managedDepartments;
 
-      // 如果是新添加的 sellerManager，初始化其他字段
+      // 如果是新添加的 sellerManager，初始化其他欄位
       if (!previousRoles?.includes('sellerManager')) {
         updateData['sellerManager.allocatedPoints'] = 0;
         updateData['sellerManager.returnedPoints'] = 0;
@@ -2875,7 +2793,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       }
     }
 
-    // 初始化新角色的点数账户
+    // 初始化新角色的點數賬戶
     const additionalUpdateData = {};
 
     if (roles.seller && !previousRoles?.includes('seller')) {
@@ -2896,15 +2814,12 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       additionalUpdateData['customer.transactions'] = {};
     }
 
-    // 合并更新数据
+    // 合併更新數據
     const finalUpdateData = { ...updateData, ...additionalUpdateData };
 
-    // ============================================================================
-    // 🔹 步骤 7: 更新用户文档
-    // ============================================================================
     await userRef.update(finalUpdateData);
 
-    console.log('[updateUserRoles] ✅ User roles updated successfully:', userId, newRoles);
+    console.log('[updateUserRoles] User roles updated:', userId, newRoles);
     return res.status(200).json({
       success: true,
       message: '角色分配成功',
@@ -2912,7 +2827,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       roles: newRoles
     });
   } catch (error) {
-    console.error('[updateUserRoles] ❌ Error:', error);
+    console.error('[updateUserRoles] Error:', error);
     return res.status(500).json({
       error: error.message || '更新角色失败'
     });
@@ -2939,7 +2854,7 @@ exports.allocatePointsHttp = functions.https.onRequest(async (req, res) => {
     if (!organizationId || !eventId || !userId || !roleType || !amount) {
       return res.status(400).json({ error: '缺少必要參數' });
     }
-    if (!['seller', 'merchant', 'customer'].includes(roleType)) {
+    if (!['seller','merchant','customer'].includes(roleType)) {
       return res.status(400).json({ error: 'roleType 不正確' });
     }
     const points = Number(amount);
@@ -2969,8 +2884,8 @@ exports.allocatePointsHttp = functions.https.onRequest(async (req, res) => {
 
       if (!hasPermission) {
         let phoneFromUid = null;
-        if (callerUid.startsWith('eventManager_')) phoneFromUid = callerUid.replace('eventManager_', '');
-        else if (callerUid.startsWith('phone_')) phoneFromUid = callerUid.replace('phone_', '');
+        if (callerUid.startsWith('eventManager_')) phoneFromUid = callerUid.replace('eventManager_','');
+        else if (callerUid.startsWith('phone_')) phoneFromUid = callerUid.replace('phone_','');
 
         const normalizePhone = (p) => {
           if (!p) return '';
@@ -3040,7 +2955,7 @@ exports.recallPointsHttp = functions.https.onRequest(async (req, res) => {
     if (!organizationId || !eventId || !userId || !roleType || !amount) {
       return res.status(400).json({ error: '缺少必要參數' });
     }
-    if (!['seller', 'merchant', 'customer'].includes(roleType)) {
+    if (!['seller','merchant','customer'].includes(roleType)) {
       return res.status(400).json({ error: 'roleType 不正確' });
     }
     const points = Number(amount);
@@ -3067,13 +2982,13 @@ exports.recallPointsHttp = functions.https.onRequest(async (req, res) => {
     if (!hasPermission && eventData.eventManager?.authUid === callerUid) hasPermission = true;
     if (!hasPermission) {
       let phoneFromUid = null;
-      if (callerUid.startsWith('eventManager_')) phoneFromUid = callerUid.replace('eventManager_', '');
-      else if (callerUid.startsWith('phone_')) phoneFromUid = callerUid.replace('phone_', '');
-      const normalizePhone = (p) => { if (!p) return ''; let d = String(p).replace(/[^0-9]/g, ''); if (d.startsWith('60') && d.length > 9) d = d.substring(2); if (d.startsWith('0')) d = d.substring(1); return d; };
+      if (callerUid.startsWith('eventManager_')) phoneFromUid = callerUid.replace('eventManager_','');
+      else if (callerUid.startsWith('phone_')) phoneFromUid = callerUid.replace('phone_','');
+      const normalizePhone = (p) => { if (!p) return ''; let d=String(p).replace(/[^0-9]/g,''); if (d.startsWith('60')&&d.length>9) d=d.substring(2); if (d.startsWith('0')) d=d.substring(1); return d; };
       if (phoneFromUid) {
         const coreCaller = normalizePhone(phoneFromUid);
         const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
-        for (const adm of admins) { const ap = adm && (adm.phone || adm.phoneNumber); if (ap && normalizePhone(ap) === coreCaller) { hasPermission = true; break; } }
+        for (const adm of admins) { const ap = adm && (adm.phone || adm.phoneNumber); if (ap && normalizePhone(ap)===coreCaller) { hasPermission = true; break; } }
       }
     }
 
@@ -3317,7 +3232,7 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
       // ✅ 第六步：在 users 集合創建 Event Manager 文檔
       const eventManagerData = {
         userId: userId,
-        roles: ['eventManager', 'seller', 'customer'],
+        roles: ['eventManager'],
         identityInfo: {
           identityId: eventManagerInfo.identityId || `${identityTag.toUpperCase()}_${Date.now()}`,
           identityTag: identityTag,
@@ -3333,17 +3248,6 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
           passwordHash: passwordHash,
           passwordSalt: passwordSalt,
           isPhoneVerified: false
-        },// 初始化 seller 账户
-        seller: {
-          availablePoints: 0,
-          totalPointsSold: 0,
-          transactions: {}
-        },
-        // 初始化 customer 账户
-        customer: {
-          availablePoints: 0,
-          totalPointsSpent: 0,
-          transactions: {}
         },
         eventManager: {
           permissions: {
@@ -3358,7 +3262,7 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
             cannotAllocatePoints: true,
             cannotModifyOwnRoles: true,
             cannotDeleteSelf: true,
-            cannotHoldOtherManagerRoles: true
+            cannotHoldOtherRoles: true
           },
           monitoringScope: {
             canMonitorFinanceManager: true,
@@ -3380,8 +3284,7 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
           createdAt: now,
           updatedAt: now,
           createdBy: callerUid
-        },
-
+        }
       };
 
       await usersCol.doc(userId).set(eventManagerData);

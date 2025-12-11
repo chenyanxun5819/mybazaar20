@@ -417,6 +417,17 @@ const EventCard = ({ event, organization, onReload }) => {
         throw new Error(errMsg);
       }
       console.log('[EventCard] 删除成功响应:', respData);
+      // 删除成功后，从本地状态中移除该event
+      // 触发父组件重新加载，确保 UI 立即更新
+      if (onReload) {
+        try {
+          onReload();
+        } catch (e) {
+          console.warn('[EventCard] onReload 调用失败:', e);
+        }
+      }
+      alert('活动删除成功！');
+
     } finally {
       setDeleting(false);
     }
@@ -937,8 +948,8 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
     e.preventDefault();
 
     // ✅ 修改驗證：新增 contact 必填驗證
-    if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH || 
-        !formData.contactName || !formData.contactPhone) {
+    if (!formData.orgCode || !formData.orgNameEN || !formData.orgNameZH ||
+      !formData.contactName || !formData.contactPhone) {
       setError('请填写所有必填字段（包括联系人姓名和电话）');
       return;
     }
@@ -1026,7 +1037,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
 
       alert('组织创建成功！');
       onSuccess();
-      
+
     } catch (err) {
       console.error('创建组织失败:', err);
       setError(err.message || '创建组织失败，请重试');
@@ -1050,7 +1061,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           {/* ====== 組織基本信息 ====== */}
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>🏢 组织基本信息</h3>
-            
+
             <div style={styles.formGroup}>
               <label style={styles.label}>组织代码 *</label>
               <input
@@ -1114,7 +1125,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
             <p style={styles.sectionNote}>
               组织的主要联系人信息（如校长、主任等）
             </p>
-            
+
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>联系人姓名 *</label>
@@ -1211,13 +1222,13 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     startDate: '',
     endDate: '',
     status: 'planning',
-    
+
     // ❌ 移除所有 contactPerson 字段
     // contactPersonName: '',
     // contactPersonPhone: '',
     // contactPersonEmail: '',
     // contactPersonPosition: '',
-    
+
     // ✅ Event Manager 信息（完整字段）
     emPhoneNumber: '',
     emPassword: '',
@@ -1310,7 +1321,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       if (!user) {
         throw new Error('用户未登录，请重新登录');
       }
-      
+
       const idToken = await user.getIdToken();
       const apiUrl = '/api/createEventByPlatformAdminHttp';
 
@@ -1363,7 +1374,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       alert('活动和 Event Manager 创建成功！');
       onSuccess();
       onClose();
-      
+
     } catch (err) {
       console.error('[CreateEventModal] Error:', err);
       setError(err.message || '创建活动失败，请重试');
@@ -1390,7 +1401,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           {/* ====== 第一部分：Event 基本信息 ====== */}
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>📋 活动基本信息</h3>
-            
+
             <div style={styles.formGroup}>
               <label style={styles.label}>活动代码 *</label>
               <input
@@ -1437,7 +1448,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                 value={formData.description}
                 onChange={handleChange}
                 placeholder="简单描述活动内容..."
-                style={{...styles.input, minHeight: '80px'}}
+                style={{ ...styles.input, minHeight: '80px' }}
               />
             </div>
 
@@ -1507,10 +1518,10 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>🔑 Event Manager（系统管理员）</h3>
             <p style={styles.sectionNote}>
-              Event Manager 将拥有系统管理权限，可以管理用户和监控所有数据。<br/>
+              Event Manager 将拥有系统管理权限，可以管理用户和监控所有数据。<br />
               Event Manager 的基本信息也将作为活动的对外联络信息。
             </p>
-            
+
             {/* 基本信息 */}
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
@@ -1629,7 +1640,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>
-                  部门 * 
+                  部门 *
                   <small style={{ fontSize: '12px', color: '#666', marginLeft: '8px' }}>
                     （可从建议中选择或输入新部门）
                   </small>
@@ -1646,19 +1657,19 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                 />
                 <datalist id="departmentList">
                   {availableDepartments.map(dept => (
-                    <option 
-                      key={dept.id} 
+                    <option
+                      key={dept.id}
                       value={dept.name}
                     >
                       {dept.name} ({dept.userCount || 0} 人)
                     </option>
                   ))}
                 </datalist>
-                <small style={{ 
-                  fontSize: '12px', 
-                  color: '#666', 
-                  marginTop: '5px', 
-                  display: 'block' 
+                <small style={{
+                  fontSize: '12px',
+                  color: '#666',
+                  marginTop: '5px',
+                  display: 'block'
                 }}>
                   提示：输入时会显示现有部门建议，也可以输入新部门名称
                 </small>
@@ -1673,11 +1684,11 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   placeholder="例如：活动负责人"
                   style={styles.input}
                 />
-                <small style={{ 
-                  fontSize: '12px', 
-                  color: '#666', 
-                  marginTop: '5px', 
-                  display: 'block' 
+                <small style={{
+                  fontSize: '12px',
+                  color: '#666',
+                  marginTop: '5px',
+                  display: 'block'
                 }}>
                   选填：Event Manager 的职位（默认为"活动负责人"）
                 </small>
