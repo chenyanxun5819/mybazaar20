@@ -142,6 +142,10 @@
         "function": "createEventByPlatformAdminHttp"
       },
       {
+        "source": "/api/allocatePointsBySellerManager",
+        "function": "allocatePointsBySellerManagerHttp"
+      },
+      {
         "source": "/api/ping",
         "function": "pingHttp"
       },

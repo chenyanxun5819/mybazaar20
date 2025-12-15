@@ -23,12 +23,11 @@ service cloud.firestore {
     
     /**
      * ✨ 检查用户是否有特定角色（从 Custom Claims 读取）
-     * ✅ 修复 2024-12-14: 支持 roles 数组格式
      */
     function hasRole(role) {
       return isAuthenticated() && 
              request.auth.token.roles != null &&
-             request.auth.token.roles.hasAny([role]);
+             role in request.auth.token.roles;
     }
 
     /**
@@ -42,10 +41,8 @@ service cloud.firestore {
     
     /**
      * ✨ 检查 Custom Claims 中的 organizationId 和 eventId 是否匹配
-     * 🔥 临时宽松版本：只检查是否已认证
      */
     function isInContext(orgId, eventId) {
-      // 嚴格版：claims 必須與路徑參數一致
       return isAuthenticated() &&
              request.auth.token.organizationId == orgId &&
              request.auth.token.eventId == eventId;
@@ -163,10 +160,12 @@ service cloud.firestore {
         match /users/{userId} {
           /**
            * ✨ 读取规则（使用 Custom Claims）：
-           * 🔥 临时宽松规则：允许所有已认证用户读取
-           * 用于测试和调试
+           * 1. 用户可以读取自己的信息
+           * 2. Event Manager 可以读取所有用户
+           * 3. Seller Manager 可以读取所有 Seller（前端客户端过滤管理范围）
+           * 4. Finance Manager 可以读取所有 Seller Manager 和 Seller
            */
-          allow read: if isAuthenticated();
+          allow read: if isInContext(organizationId, eventId);
           
           /**
            * 创建规则：
@@ -177,35 +176,20 @@ service cloud.firestore {
                            (isAuthenticated() && request.auth.token.userId == userId);
           
           /**
-           * ✅ 更新规则（暫時放寬以支持銷售流程）：
+           * ✅ 更新规则：
            * 1. 用户可以更新自己的基本信息（排除敏感字段）
            * 2. Event Manager 可以更新任何用户（但不能修改自己的 roles）
            * 3. Seller Manager 可以更新管理范围内用户的特定字段
-           * 🔥 4. 任何已认证用户可以更新 seller 字段（Seller 销售点数）
-           * 🔥 5. 任何已认证用户可以更新 customer 字段（接收销售点数）
            */
           allow update: if (isAuthenticated() && request.auth.token.userId == userId && 
                            onlyAllowedFields(['basicInfo', 'updatedAt'])) ||
-                           // 允許 Seller Manager 更新自己的現金統計（收款/上交等），僅限 pointsStats 與時間戳
-                           (isSellerManager(organizationId, eventId) &&
-                            request.auth.token.userId == userId &&
-                            onlyAllowedFields(['pointsStats', 'updatedAt'])) ||
                            (isEventManager(organizationId, eventId) &&
                             // Event Manager 不能修改自己的 roles
                             !(request.auth.token.userId == userId && 
                               request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles']))) ||
                            (isSellerManager(organizationId, eventId) && 
-                            isManagedBy(organizationId, eventId, userId, request.auth.token.userId) &&
-                            onlyAllowedFields(['seller', 'pointsStats', 'updatedAt'])) ||
-                           (isAuthenticated() && 
-                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seller', 'updatedAt'])) ||
-                           (isAuthenticated() && 
-                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['merchant', 'updatedAt'])) ||
-                           (isAuthenticated() && 
-                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customer', 'updatedAt'])) ||
-                           // 🔥 暫時放寬：允許寫入 roleSpecificData（僅為了現有資料結構兼容）
-                           (isAuthenticated() && 
-                            onlyAllowedFields(['roleSpecificData', 'updatedAt']));
+                            isManagedBy(organizationId, eventId, userId, request.auth.uid) &&
+                            onlyAllowedFields(['seller', 'pointsStats', 'updatedAt']));
           
           /**
            * ✅ 删除规则：
@@ -227,8 +211,8 @@ service cloud.firestore {
              * 3. Event Manager 可以读取所有分配记录
              * 4. Finance Manager 可以读取所有分配记录
              */
-             allow read: if isAuthenticated() && (
-                        resource.data.allocatedBy == request.auth.token.userId ||
+            allow read: if isAuthenticated() && (
+                           resource.data.allocatedBy == request.auth.uid ||
                            resource.data.recipientId == request.auth.token.userId ||
                            isEventManager(organizationId, eventId) ||
                            isFinanceManager(organizationId, eventId)
@@ -241,12 +225,12 @@ service cloud.firestore {
              * 3. 必须验证 recipientId 和 organizationId/eventId
              */
             allow create: if (isSellerManager(organizationId, eventId) &&
-                             request.resource.data.allocatedBy == request.auth.token.userId &&
+                             request.resource.data.allocatedBy == request.auth.uid &&
                              request.resource.data.organizationId == organizationId &&
                              request.resource.data.eventId == eventId &&
-                             isManagedBy(organizationId, eventId, request.resource.data.recipientId, request.auth.token.userId)) ||
+                             isManagedBy(organizationId, eventId, request.resource.data.recipientId, request.auth.uid)) ||
                              (isFinanceManager(organizationId, eventId) &&
-                             request.resource.data.allocatedBy == request.auth.token.userId &&
+                             request.resource.data.allocatedBy == request.auth.uid &&
                              request.resource.data.organizationId == organizationId &&
                              request.resource.data.eventId == eventId);
             
@@ -263,39 +247,40 @@ service cloud.firestore {
         
         match /cashCollections/{collectionId} {
           /**
-           * ✅ 读取规则（修复 2024-12-14）
-           * 使用 request.auth.token.userId 匹配 collectedBy
+           * 读取规则：
+           * 1. Seller Manager 可以读取自己创建的记录
+           * 2. Finance Manager 可以读取所有记录
+           * 3. Event Manager 可以读取所有记录
+           * 4. Seller 可以读取自己的收款记录
            */
-          allow read: if isAuthenticated();
+          allow read: if isEventManager(organizationId, eventId) ||
+                         isFinanceManager(organizationId, eventId) ||
+                         (isAuthenticated() && resource.data.collectedBy == request.auth.uid) ||
+                         (isAuthenticated() && resource.data.sellerId == request.auth.token.userId);
           
           /**
-           * ✅ 创建规则（修复 2024-12-14）
-           * 关键修改：使用 request.auth.token.userId 而不是 request.auth.uid
-           * 原因：collectedBy 存储的是应用内部 userId，不是 Firebase Auth UID
+           * 创建规则：
+           * 1. Seller Manager 可以创建收款记录
+           * 2. 必须验证 sellerId 在管理范围内
+           * 3. 必须验证金额 > 0
            */
-          allow create: if isAuthenticated() &&
-                           // 必须包含必填字段
-                           request.resource.data.keys().hasAll([
-                             'collectedBy', 'submittedBy', 'amount',
-                             'status', 'eventId', 'organizationId'
-                           ]) &&
-                           // ✅ 使用 Custom Claims 中的 userId
-                           (request.resource.data.collectedBy == request.auth.token.userId ||
-                            request.resource.data.collectedBy == request.auth.uid) &&
-                           // 金额必须 > 0
-                           request.resource.data.amount > 0 &&
-                           // 状态必须是 collected
-                           request.resource.data.status == 'collected' &&
-                           // organizationId 和 eventId 必须匹配
+          allow create: if isSellerManager(organizationId, eventId) &&
+                           request.resource.data.collectedBy == request.auth.uid &&
                            request.resource.data.organizationId == organizationId &&
-                           request.resource.data.eventId == eventId;
+                           request.resource.data.eventId == eventId &&
+                           request.resource.data.amount >= 0 &&
+                           request.resource.data.sellerId is string &&
+                           // 验证 seller 存在且在管理范围内
+                           exists(/databases/$(database)/documents/organizations/$(organizationId)/events/$(eventId)/users/$(request.resource.data.sellerId)) &&
+                           isManagedBy(organizationId, eventId, request.resource.data.sellerId, request.auth.uid);
           
           /**
-           * ✅ 更新规则（修复 2024-12-14）
-           * 使用 request.auth.token.userId 匹配 collectedBy
+           * 更新规则：
+           * 1. Seller Manager 可以更新自己创建的记录（仅限特定字段）
+           * 2. Finance Manager 可以更新状态
            */
           allow update: if (isSellerManager(organizationId, eventId) &&
-                           resource.data.collectedBy == request.auth.token.userId &&
+                           resource.data.collectedBy == request.auth.uid &&
                            onlyAllowedFields(['note', 'discrepancyReason', 'updatedAt'])) ||
                            (isFinanceManager(organizationId, eventId) &&
                            onlyStatusChange());
@@ -319,7 +304,7 @@ service cloud.firestore {
            */
           allow read: if isEventManager(organizationId, eventId) ||
                          isFinanceManager(organizationId, eventId) ||
-                         (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId);
+                         (isAuthenticated() && resource.data.submittedBy == request.auth.uid);
           
           /**
            * 创建规则：
@@ -328,7 +313,7 @@ service cloud.firestore {
            * 3. 总金额 > 0
            */
           allow create: if isSellerManager(organizationId, eventId) &&
-                           request.resource.data.submittedBy == request.auth.token.userId &&
+                           request.resource.data.submittedBy == request.auth.uid &&
                            request.resource.data.organizationId == organizationId &&
                            request.resource.data.eventId == eventId &&
                            request.resource.data.type == 'managerToFinance' &&
@@ -344,7 +329,7 @@ service cloud.firestore {
           allow update: if (isFinanceManager(organizationId, eventId) &&
                            onlyAllowedFields(['status', 'verifiedAt', 'verifiedBy', 'verifiedAmount', 'discrepancy', 'discrepancyReason', 'notes', 'updatedAt'])) ||
                            (isSellerManager(organizationId, eventId) &&
-                           resource.data.submittedBy == request.auth.token.userId &&
+                           resource.data.submittedBy == request.auth.uid &&
                            resource.data.status == 'pending' &&
                            request.resource.data.status == 'cancelled');
           
@@ -422,19 +407,26 @@ service cloud.firestore {
         
         match /transactions/{transactionId} {
           /**
-           * 🔥 临时宽松读取规则：允许所有已认证用户读取
-           * 用于测试和调试
+           * 读取规则：
+           * 1. 交易双方可以读取
+           * 2. Event Manager 可以读取所有交易
+           * 3. Finance Manager 可以读取所有交易
            */
-          allow read: if isAuthenticated();
+          allow read: if isEventManager(organizationId, eventId) ||
+                         isFinanceManager(organizationId, eventId) ||
+                         (isAuthenticated() && 
+                          (resource.data.sellerId == request.auth.token.userId || 
+                           resource.data.customerId == request.auth.token.userId));
           
           /**
            * 创建规则：
-           * 🔥 临时宽松版本：允许所有已认证用户创建
+           * 1. Seller 可以创建交易（自己作为 seller）
+           * 2. 必须验证余额充足
            */
-          // 收緊：需已認證、且交易文件的 org/event 與路徑一致
           allow create: if isAuthenticated() &&
-                           request.resource.data.organizationId == organizationId &&
-                           request.resource.data.eventId == eventId;
+                           hasRole('seller') &&
+                           request.resource.data.sellerId == request.auth.token.userId &&
+                           request.resource.data.points > 0;
           
           /**
            * 更新和删除：只能通过 Cloud Functions

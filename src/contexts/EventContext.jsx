@@ -32,33 +32,74 @@ export const EventProvider = ({ children }) => {
       setLoading(true);
       setError(null);
 
-      // 🔥 改进的 URL 解析
-      // 支持格式: /orgCode-eventCode/platform/page
-      // 例如: /xhessbn-2025/desktop/login
-      const urlPath = window.location.pathname;
+      // 🔥 改进的 URL 解析：segment-based，容错更强
+      // 支持：
+      // - /orgCode-eventCode/platform(/...)
+      // - /(seller|merchant|customer)/orgCode-eventCode/dashboard
+      const urlPath = decodeURIComponent(window.location.pathname || '/').replace(/\/+$/, '');
       console.log('[EventContext] 解析 URL:', urlPath);
 
-      // 🔥 更灵活的正则表达式
-      // 匹配: /orgCode-eventCode/platform
-      const match = urlPath.match(/\/([a-z0-9]+)-([a-z0-9\-]+)\/(phone|desktop)/i);
+      const segments = urlPath.split('/').filter(Boolean); // 移除空段
+      let parsedOrgCode = null;
+      let parsedEventCode = null;
+      let platform = null;
 
-      if (!match) {
+      if (segments.length >= 2) {
+        // 兼容普通用户 dashboard 路徑
+        const first = segments[0].toLowerCase();
+        if (['seller','merchant','customer'].includes(first)) {
+          const orgEvent = segments[1];
+          const dash = segments[2]?.toLowerCase();
+          if (orgEvent && dash === 'dashboard') {
+            const idx = orgEvent.indexOf('-');
+            if (idx > 0) {
+              parsedOrgCode = orgEvent.substring(0, idx);
+              parsedEventCode = orgEvent.substring(idx + 1);
+              platform = 'phone';
+            }
+          }
+        }
+      }
+
+      if (!parsedOrgCode || !parsedEventCode) {
+        // 通用格式：/orgCode-eventCode/platform
+        if (segments.length >= 2) {
+          const combined = segments[0];
+          const idx = combined.indexOf('-');
+          const plat = segments[1]?.toLowerCase();
+          if (idx > 0 && ['phone','desktop'].includes(plat)) {
+            parsedOrgCode = combined.substring(0, idx);
+            parsedEventCode = combined.substring(idx + 1);
+            platform = plat;
+          }
+        }
+      }
+
+      if (!parsedOrgCode || !parsedEventCode) {
         console.warn('[EventContext] URL 格式无法识别:', urlPath);
-        console.log('[EventContext] 预期格式: /orgCode-eventCode/platform');
-        console.log('[EventContext] 例如: /xhessbn-2025/desktop/login');
-        setError('URL 格式不正确，请使用正确的链接\n例如: /xhessbn-2025/desktop/login');
+        console.log('[EventContext] 预期格式: /orgCode-eventCode/platform 或 /seller/:orgEventCode/dashboard');
+        console.log('[EventContext] 例如: /xhessbn-2025/desktop/login 或 /seller/xhessbn-2025/dashboard');
+        const hints = [
+          'URL 格式不正确，请使用正确的链接',
+          '例如: /xhessbn-2025/desktop/login 或 /seller/xhessbn-2025/dashboard',
+          '',
+          '可能原因：',
+          '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',
+          '• 访问路径与设备不匹配（phone/desktop）',
+          '• 浏览器缓存导致旧链接，尝试刷新或清除缓存',
+        ].join('\n');
+        setError(hints);
         setLoading(false);
         return;
       }
 
-      const parsedOrgCode = match[1];
-      const parsedEventCode = match[2];
-
       console.log('[EventContext] 从 URL 解析出:', {
         orgCode: parsedOrgCode,
         eventCode: parsedEventCode,
-        platform: match[3]
+        platform: platform || '(unknown)'
       });
+
+      // 兼容舊日誌格式（移除 match 依賴）
 
       setOrgCode(parsedOrgCode);
       setEventCode(parsedEventCode);
@@ -144,11 +185,15 @@ export const EventProvider = ({ children }) => {
         });
 
         console.error('[EventContext] 可用的活动:', availableEvents);
-        throw new Error(
-          `找不到活动代码: ${eventCode}\n` +
-          `可用的活动: ${availableEvents.join(', ')}\n` +
-          `请检查 URL 是否正确`
-        );
+        throw new Error([
+          `找不到活动代码: ${eventCode}`,
+          `可用的活动: ${availableEvents.join(', ') || '（空）'}`,
+          '',
+          '请检查 URL：',
+          '• 链接是否包含 orgCode-eventCode（例如 xhessbn-2025）',
+          '• 组织与活动是否已在 Firestore 建立',
+          '• 链接大小写是否与保存的一致',
+        ].join('\n'));
       }
 
       const evtId = eventDoc.id;
@@ -232,9 +277,9 @@ export const EventProvider = ({ children }) => {
           </pre>
           <p>请检查：</p>
           <ul>
-            <li>URL 格式是否正确</li>
+            <li>URL 格式是否正确（orgCode-eventCode/platform）</li>
             <li>组织和活动代码是否存在于 Firestore</li>
-            <li>网络连接是否正常</li>
+            <li>网络连接是否正常（若使用公司网路，可能阻挡 Google 域名）</li>
           </ul>
           <button
             onClick={() => window.location.reload()}
@@ -250,6 +295,11 @@ export const EventProvider = ({ children }) => {
           >
             重新载入
           </button>
+          <div style={{ marginTop: '0.75rem', color: '#6b7280' }}>
+            <small>
+              提示：若看到 apis.google.com 載入逾時，請嘗試更換網路、停用阻擋外部腳本的外掛，或改用 Firebase 測試電話登入。
+            </small>
+          </div>
         </div>
       </EventContext.Provider>
     );

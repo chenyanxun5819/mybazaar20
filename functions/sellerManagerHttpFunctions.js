@@ -30,27 +30,12 @@ const corsHandler = cors({
 // HTTP Function 1: allocatePointsBySellerManager
 // ============================================================================
 
-/**
- * Seller Manager 分配点数给部门内的 Seller
- * 
- * Request Body:
- * {
- *   organizationId: string,
- *   eventId: string,
- *   recipientId: string,
- *   points: number,
- *   notes: string (optional)
- * }
- * 
- * Response:
- * {
- *   success: true,
- *   allocationId: string,
- *   message: string
- * }
- */
+// ============================================================================
+// 完整的 allocatePointsBySellerManagerHttp 函数（如果你想直接替换整个函数）
+// ============================================================================
+
 exports.allocatePointsBySellerManagerHttp = onRequest(
-  { 
+  {
     region: 'asia-southeast1',
     cors: allowedOrigins
   },
@@ -58,7 +43,7 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
     // 使用CORS中间件
     return corsHandler(req, res, async () => {
       const requestId = Math.random().toString(36).substring(7);
-      
+
       logger.info(`[${requestId}] [allocatePointsBySellerManager] 请求开始`, {
         method: req.method,
         body: req.body
@@ -147,8 +132,11 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
         }
 
         const recipientData = recipientDoc.data();
-        const recipientDept = recipientData.department || recipientData.basicInfo?.department;
-        const managedDepartments = smData.managedDepartments || [];
+        const recipientDept = recipientData.identityInfo?.department ||
+          recipientData.department ||
+          recipientData.basicInfo?.department;
+        const managedDepartments = smData.sellerManager?.managedDepartments ||
+          smData.managedDepartments || [];
 
         if (!managedDepartments.includes(recipientDept)) {
           return res.status(403).json({
@@ -172,30 +160,33 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
         // 验证分配限额
         if (points > maxPerAllocation) {
           return res.status(400).json({
-            error: { 
-              code: 'invalid-argument', 
-              message: `超出单次分配限额（最多 ${maxPerAllocation} 点）` 
+            error: {
+              code: 'invalid-argument',
+              message: `超出单次分配限额（最多 ${maxPerAllocation} 点）`
             }
           });
         }
 
         // ========== 第4步: 创建分配记录 ==========
+        // ✅ 使用 seller 对象的字段
         const allocationData = {
           recipientId,
-          recipientName: recipientData.basicInfo?.chineseName || '未知',
+          recipientName: recipientData.basicInfo?.chineseName || recipientData.basicInfo?.englishName || '未知',
           recipientDepartment: recipientDept,
           points,
           notes: notes || '',
           allocatedBy: sellerManagerId,
-          allocatedByName: smData.basicInfo?.chineseName || 'Seller Manager',
+          allocatedByName: smData.basicInfo?.chineseName || smData.basicInfo?.englishName || 'Seller Manager',
           allocatedByRole: 'sellerManager',
           status: 'completed',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          
-          // 快照数据（用于审计）
+
+          // ✅ 快照数据（用于审计）- 使用 seller 对象
           recipientStatsSnapshot: {
             beforeBalance: recipientData.seller?.availablePoints || 0,
-            beforeTotalReceived: recipientData.pointsStats?.totalReceived || 0
+            beforeTotalRevenue: recipientData.seller?.totalRevenue || 0,
+            beforeTotalCashCollected: recipientData.seller?.totalCashCollected || 0,
+            beforePendingCollection: recipientData.seller?.pendingCollection || 0
           }
         };
 
@@ -224,15 +215,16 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
         });
 
         return res.status(500).json({
-          error: { 
-            code: 'internal', 
-            message: '服务器内部错误，请稍后重试' 
+          error: {
+            code: 'internal',
+            message: '服务器内部错误，请稍后重试'
           }
         });
       }
     });
   }
 );
+
 
 // ============================================================================
 // HTTP Function 2: getSellerManagerDashboardData
@@ -266,7 +258,7 @@ exports.getSellerManagerDashboardDataHttp = onRequest(
   async (req, res) => {
     return corsHandler(req, res, async () => {
       const requestId = Math.random().toString(36).substring(7);
-      
+
       logger.info(`[${requestId}] [getSellerManagerDashboardData] 请求开始`);
 
       try {
@@ -308,7 +300,7 @@ exports.getSellerManagerDashboardDataHttp = onRequest(
         // ========== 第2步: 获取管理的部门列表 ==========
         const smRef = db.doc(`organizations/${organizationId}/events/${eventId}/users/${sellerManagerId}`);
         const smDoc = await smRef.get();
-        
+
         if (!smDoc.exists) {
           return res.status(404).json({
             error: { code: 'not-found', message: '找不到您的账户信息' }
@@ -322,7 +314,7 @@ exports.getSellerManagerDashboardDataHttp = onRequest(
           const deptStatsDoc = await db
             .doc(`organizations/${organizationId}/events/${eventId}/departmentStats/${deptCode}`)
             .get();
-          
+
           if (deptStatsDoc.exists) {
             return {
               id: deptStatsDoc.id,

@@ -920,6 +920,7 @@ const EventManagerDashboard = () => {
         <AddUser
           organizationId={organizationId}
           eventId={eventId}
+          callerRole="eventManager"
           onClose={() => {
             setShowAddUser(false);
             loadDashboardData(); // 重新加载数据

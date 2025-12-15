@@ -13,17 +13,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  writeBatch, 
-  serverTimestamp,
-  increment,
-  orderBy
-} from 'firebase/firestore';
+import {collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, increment, orderBy} from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
 const SubmitCash = ({ userInfo, eventData }) => {

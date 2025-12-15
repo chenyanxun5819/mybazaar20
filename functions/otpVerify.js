@@ -419,8 +419,8 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     const managedDepartments = userData.sellerManager?.managedDepartments || 
                                userData.roleSpecificData?.sellerManager?.managedDepartments || [];
     
-    // 生成 Custom Token
-    const authUid = userData.authUid || `phone_${targetPhone}`;
+    // 🔥 关键修复：使用 userId（Firestore 文档 ID）作为 Custom Token 的 uid
+    // userId 就是用户在 Firestore 中的唯一标识符
     const customClaims = {
       organizationId, eventId, userId,
       roles: userRoles,
@@ -431,7 +431,8 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     };
     
     console.log('[verifyOtpHttp] Custom Claims:', customClaims);
-    const customToken = await admin.auth().createCustomToken(authUid, customClaims);
+    console.log('[verifyOtpHttp] 使用 userId 生成 Custom Token:', userId);
+    const customToken = await admin.auth().createCustomToken(userId, customClaims);
     console.log('[verifyOtpHttp] ✅ Custom Token 生成成功');
 
     // 更新最后登录

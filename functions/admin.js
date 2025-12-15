@@ -911,7 +911,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
   // 设置 CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   // 处理 OPTIONS 预检请求
   if (req.method === 'OPTIONS') {
@@ -947,6 +947,72 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       res.status(400).json({ error: '缺少必填字段' });
       return;
     }
+
+    // ✅ 新增：验证权限 - 确认调用者是 Event Manager
+    const idToken = req.body.idToken || req.headers['authorization']?.replace('Bearer ', '') || null;
+    if (!idToken) {
+      res.status(401).json({ error: '需要登录 (缺少 idToken)' });
+      return;
+    }
+
+    let callerUid = null;
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      callerUid = decodedToken.uid;
+      console.log('[createUserByEventManagerHttp] Caller UID:', callerUid);
+    } catch (err) {
+      console.error('[createUserByEventManagerHttp] Token verification failed:', err);
+      res.status(401).json({ error: '身份验证失败' });
+      return;
+    }
+
+    // ✅ 检查调用者是否是 Event Manager
+    const eventRef = getDb()
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('events')
+      .doc(eventId);
+    
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
+      res.status(404).json({ error: '活动不存在' });
+      return;
+    }
+
+    const eventData = eventSnap.data() || {};
+    const eventManager = eventData.eventManager || {};
+    
+    // 标准化电话号码函数
+    const normalizePhone = (p) => {
+      if (!p) return '';
+      let digits = String(p).replace(/[^0-9]/g, '');
+      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
+      if (digits.startsWith('0')) digits = digits.substring(1);
+      return digits;
+    };
+
+    let hasPermission = false;
+    
+    // 方法 1: 检查 authUid 完全匹配
+    if (eventManager.authUid === callerUid) {
+      hasPermission = true;
+    }
+    // 方法 2: 检查电话号码匹配（兼容不同 UID 格式）
+    else if (eventManager.phoneNumber) {
+      const emPhone = normalizePhone(eventManager.phoneNumber);
+      const callerPhone = normalizePhone(callerUid.replace(/^[a-zA-Z_]+_/, ''));
+      if (emPhone && emPhone === callerPhone) {
+        hasPermission = true;
+      }
+    }
+
+    if (!hasPermission) {
+      console.log('[createUserByEventManagerHttp] Permission denied for UID:', callerUid);
+      res.status(403).json({ error: '需要 Event Manager 权限' });
+      return;
+    }
+
+    console.log('[createUserByEventManagerHttp] Permission granted for UID:', callerUid);
 
     // 验证至少有一个角色
     if (!roles || roles.length === 0) {
@@ -990,20 +1056,6 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       });
       return;
     }
-
-    const eventDoc = await getDb()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('events')
-      .doc(eventId)
-      .get();
-
-    if (!eventDoc.exists) {
-      res.status(404).json({ error: '活动不存在' });
-      return;
-    }
-
-
 
     // 2. 检查手机号是否已存在
     const usersCol = getDb()
@@ -2089,6 +2141,31 @@ exports.departmentsHttp = functions.https.onRequest(async (req, res) => {
     const ensurePermission = async () => {
       if (!callerUid) return false;
 
+      // 標準化電話號碼
+      const normalizePhone = (p) => {
+        if (!p) return '';
+        let digits = String(p).replace(/[^0-9]/g, '');
+        if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
+        if (digits.startsWith('0')) digits = digits.substring(1);
+        return digits;
+      };
+
+      // 從 callerUid 解析電話號碼（支持多種格式）
+      let phoneFromUid = null;
+      if (callerUid.includes('_')) {
+        const parts = callerUid.split('_');
+        // 格式: role_phone (例如: eventManager_0181234567 或 sellerManager_60181234567)
+        phoneFromUid = parts.slice(1).join('_'); // 取 _ 之後的所有內容
+      }
+
+      if (!phoneFromUid) {
+        console.log('[departmentsHttp] 無法從 UID 解析電話號碼:', callerUid);
+        return false;
+      }
+
+      const coreCaller = normalizePhone(phoneFromUid);
+      console.log('[departmentsHttp] 檢查權限，電話號碼:', coreCaller);
+
       // ✅ 檢查所有活動的 Event Manager 和 admins
       const eventsSnapshot = await orgRef.collection('events').get();
       for (const eventDoc of eventsSnapshot.docs) {
@@ -2096,48 +2173,39 @@ exports.departmentsHttp = functions.https.onRequest(async (req, res) => {
 
         // ✅ 檢查 1：Event Manager (新架構)
         const eventManager = eventData.eventManager;
-        if (eventManager && eventManager.authUid && eventManager.authUid === callerUid) {
-          console.log('[departmentsHttp] Permission granted as Event Manager');
-          return true;
+        if (eventManager) {
+          // 1a. authUid 完全匹配（首選）
+          if (eventManager.authUid && eventManager.authUid === callerUid) {
+            console.log('[departmentsHttp] 權限通過：Event Manager (authUid 完全匹配)');
+            return true;
+          }
+          // 1b. 以電話號碼匹配（容忍不同 UID 前綴與 E.164/本地格式差異）
+          const emPhone = eventManager.phoneNumber || eventManager.phone;
+          if (emPhone) {
+            const coreEm = normalizePhone(emPhone);
+            if (coreEm && coreEm === coreCaller) {
+              console.log('[departmentsHttp] 權限通過：Event Manager (電話號碼匹配)');
+              return true;
+            }
+          }
         }
 
         // ✅ 檢查 2：檢查 admins 數組（舊架構相容）
         const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
 
-        // 解析 callerUid 中的電話號碼
-        let phoneFromUid = null;
-        if (callerUid.startsWith('eventManager_')) {
-          phoneFromUid = callerUid.replace('eventManager_', '');
-        } else if (callerUid.startsWith('phone_')) {
-          phoneFromUid = callerUid.replace('phone_', '');
-        }
+        for (const admin of admins) {
+          const adminPhone = admin.phone || admin.phoneNumber;
+          if (!adminPhone) continue;
 
-        if (phoneFromUid) {
-          // 標準化電話號碼
-          const normalizePhone = (p) => {
-            if (!p) return '';
-            let digits = String(p).replace(/[^0-9]/g, '');
-            if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2);
-            if (digits.startsWith('0')) digits = digits.substring(1);
-            return digits;
-          };
-
-          const coreCaller = normalizePhone(phoneFromUid);
-
-          for (const admin of admins) {
-            const adminPhone = admin.phone || admin.phoneNumber;
-            if (!adminPhone) continue;
-
-            const coreAdmin = normalizePhone(adminPhone);
-            if (coreCaller === coreAdmin) {
-              console.log('[departmentsHttp] Permission granted via event.admins (phone match)');
-              return true;
-            }
+          const coreAdmin = normalizePhone(adminPhone);
+          if (coreCaller === coreAdmin) {
+            console.log('[departmentsHttp] 權限通過：事件 admins 數組匹配 (電話號碼)');
+            return true;
           }
         }
       }
 
-      console.log('[departmentsHttp] Permission denied for:', callerUid);
+      console.log('[departmentsHttp] 權限拒絕，UID:', callerUid, '解析的電話:', coreCaller);
       return false;
     };
 
@@ -2958,10 +3026,10 @@ exports.allocatePointsHttp = functions.https.onRequest(async (req, res) => {
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
 
-    // 權限：接受 custom claims 角色 或 event.admins / eventManager.authUid
+    // 權限：接受 custom claims 角色 或 event.admins / eventManager.authUid 或 sellerManager
     let hasPermission = false;
     const decodedRoles = Array.isArray(decoded.roles) ? decoded.roles : [];
-    if (decodedRoles.includes('eventManager')) hasPermission = true;
+    if (decodedRoles.includes('eventManager') || decodedRoles.includes('sellerManager')) hasPermission = true;
 
     if (!hasPermission) {
       const eventData = eventSnap.data() || {};
@@ -2970,6 +3038,7 @@ exports.allocatePointsHttp = functions.https.onRequest(async (req, res) => {
       if (!hasPermission) {
         let phoneFromUid = null;
         if (callerUid.startsWith('eventManager_')) phoneFromUid = callerUid.replace('eventManager_', '');
+        else if (callerUid.startsWith('sellerManager_')) phoneFromUid = callerUid.replace('sellerManager_', '');
         else if (callerUid.startsWith('phone_')) phoneFromUid = callerUid.replace('phone_', '');
 
         const normalizePhone = (p) => {
@@ -2982,17 +3051,38 @@ exports.allocatePointsHttp = functions.https.onRequest(async (req, res) => {
 
         if (phoneFromUid) {
           const coreCaller = normalizePhone(phoneFromUid);
+          
+          // 检查 Event Manager (eventManager.authUid 或 admins 数组)
           const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
           for (const adm of admins) {
             const admPhone = adm && (adm.phone || adm.phoneNumber);
             if (!admPhone) continue;
             if (coreCaller === normalizePhone(admPhone)) { hasPermission = true; break; }
           }
+
+          // ✅ 检查 Seller Manager (users 集合)
+          if (!hasPermission) {
+            const usersSnapshot = await eventRef.collection('users').get();
+            for (const userDoc of usersSnapshot.docs) {
+              const userData = userDoc.data();
+              if (!userData.roles || !userData.roles.includes('sellerManager')) continue;
+              
+              const userPhone = userData.basicInfo?.phoneNumber;
+              if (!userPhone) continue;
+              
+              const coreUserPhone = normalizePhone(userPhone);
+              if (coreCaller === coreUserPhone) {
+                hasPermission = true;
+                console.log('[allocatePointsHttp] Seller Manager 权限验证通过:', callerUid);
+                break;
+              }
+            }
+          }
         }
       }
     }
 
-    if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 权限' });
+    if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 或 Seller Manager 权限' });
 
     // 進行分配
     const userRef = eventRef.collection('users').doc(userId);

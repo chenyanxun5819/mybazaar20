@@ -1,16 +1,14 @@
 import { useState } from 'react';
-import { db } from '../../../config/firebase';
-import { doc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
+import { auth } from '../../../config/firebase';  // 确保导入 auth
 /**
- * Allocate Points Modal (重构版 - 新架构适配)
+ * Allocate Points Modal (重构版 - Cloud Functions API)
  * 
  * @description
  * Seller Manager 分配点数给 Seller 的弹窗组件
  * 
- * ✅ 新架构路径（2025-11-28 更新）：
- * - organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}
- * - Cloud Function 会自动处理统计更新
+ * ✅ 使用 Cloud Functions API：
+ * - 调用 allocatePointsHttp 进行点数分配
+ * - 自动更新统计数据
  * - 支持额度限制和收款警示
  * 
  * @param {Object} seller - 要分配点数的 Seller
@@ -35,29 +33,30 @@ const AllocatePoints = ({
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const sellerData = seller.seller || {};  // ✅ 正确：从 seller 对象读取
   const collectionAlert = seller.collectionAlert || {};
   const sellerName = seller.displayName || seller.chineseName || seller.englishName || 'N/A';
   const sellerManagerName = sellerManager.displayName || sellerManager.chineseName || sellerManager.englishName || 'Seller Manager';
-  
+
   // ✅ 正确：从 seller 对象获取当前余额和统计数据
   const currentBalance = sellerData.availablePoints || 0;
-  
+
   // ✅ 定义 pointsStats（从 sellerData 获取）
   const pointsStats = {
     currentBalance: sellerData.availablePoints || 0,
     totalRevenue: sellerData.totalRevenue || sellerData.totalPointsSold || 0,
     totalCollected: sellerData.totalCollected || sellerData.totalCashCollected || 0,
     pendingCollection: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) - (sellerData.totalCollected || sellerData.totalCashCollected || 0),
-    collectionRate: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) > 0 
+    collectionRate: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) > 0
       ? (sellerData.totalCollected || sellerData.totalCashCollected || 0) / (sellerData.totalRevenue || sellerData.totalPointsSold || 0)
       : 0
   };
-  
+
   // 快速金额选项 - 根据 maxPerAllocation 动态生成
   const quickAmounts = [10, 20, 50, 100, 200, 500].filter(amt => amt <= maxPerAllocation);
-  
+
   /**
    * 处理金额输入
    */
@@ -80,158 +79,126 @@ const AllocatePoints = ({
    * 验证并提交分配
    */
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    // ✅ 前端验证必需参数
-    if (!organizationId || !eventId) {
-      setError('缺少组织或活动信息，请重新登录');
+    e?.preventDefault?.();
+    
+    // ========== 第1步: 验证输入 ==========
+    if (!seller || !seller.id) {
+      setError('无效的 Seller 对象');
       return;
     }
 
-    // 验证金额
-    const allocateAmount = parseFloat(amount);
-    if (isNaN(allocateAmount) || allocateAmount <= 0) {
-      setError('请输入有效的金额（大于 0）');
+    if (!amount || parseFloat(amount) <= 0) {
+      setError('请输入有效的点数');
       return;
     }
 
-    // 验证是否超过上限
-    if (allocateAmount > maxPerAllocation) {
-      setError(`金额超过单次分配上限 (${maxPerAllocation.toLocaleString()})`);
+    const pointsNumber = parseFloat(amount);
+    if (isNaN(pointsNumber)) {
+      setError('点数必须是数字');
       return;
     }
 
-    // 收款警示检查
-    if (collectionAlert.hasWarning) {
-      const confirmMsg = 
-        `⚠️ 警告：该用户有待收款 ${(collectionAlert.pendingAmount || 0).toLocaleString()}\n\n` +
-        `收款率: ${Math.round((pointsStats.collectionRate || 0) * 100)}%\n` +
-        `警示级别: ${collectionAlert.warningLevel || 'low'}\n\n` +
-        `建议先收款再分配新点数。\n\n` +
-        `确定要继续分配 ${allocateAmount.toLocaleString()} 吗？`;
-      
-      if (!confirm(confirmMsg)) {
-        return;
-      }
-    } else {
-      // 正常确认
-  if (!confirm(
-    `确定要分配 ${allocateAmount.toLocaleString()} 给 ${sellerName} 吗？\n\n` +
-    `对方当前余额: ${currentBalance.toLocaleString()}\n` +
-    `分配后余额: ${(currentBalance + allocateAmount).toLocaleString()}`
-  )) {
-    return;
-      }
+    if (pointsNumber > maxPerAllocation) {
+      setError(`单次分配不能超过 ${maxPerAllocation}`);
+      return;
     }
 
     setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
 
     try {
-      console.log('[AllocatePoints] 开始分配点数');
-      console.log('[AllocatePoints] organizationId:', organizationId);
-      console.log('[AllocatePoints] eventId:', eventId);
-      console.log('[AllocatePoints] sellerManagerId:', sellerManager.userId);
-      console.log('[AllocatePoints] sellerId:', seller.userId);
-      console.log('[AllocatePoints] amount:', allocateAmount);
+      console.log('[AllocatePoints] 开始分配点数', {
+        recipientId: seller.id,
+        recipientName: seller.basicInfo?.chineseName,
+        points: pointsNumber
+      });
 
-      // 🔑 写入 Firestore（✅ 使用新架构路径）
-      // 路径：organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}
-      const allocationRef = collection(
-        db,
-        'organizations',
-        organizationId,
-        'events',
-        eventId,
-        'users',
-        sellerManager.userId,
-        'pointAllocations'
-      );
-
-      console.log('[AllocatePoints] 写入路径:', allocationRef.path);
-
-      const allocationData = {
-        // 接收者信息
-        recipientId: seller.userId,
-        recipientName: sellerName,
-        recipientDepartment: seller.department || '',
-        recipientIdentityTag: seller.identityTag || 'student',
-        
-        // 分配信息
-        points: allocateAmount,
-        allocatedBy: sellerManager.userId,
-        allocatedByName: sellerManagerName,
-        allocatedByRole: 'sellerManager',
-        allocatedAt: serverTimestamp(),
-        status: 'completed', // 立即生效
-        notes: notes || '',
-        
-        // 接收者统计快照（用于审计和对账）
-        recipientStatsSnapshot: {
-          currentBalance: pointsStats.currentBalance || 0,
-          balanceAfter: (pointsStats.currentBalance || 0) + allocateAmount,
-          totalRevenue: pointsStats.totalRevenue || 0,
-          totalCollected: pointsStats.totalCollected || 0,
-          pendingCollection: pointsStats.pendingCollection || 0,
-          collectionRate: pointsStats.collectionRate || 0,
-          hasWarning: collectionAlert.hasWarning || false,
-          warningLevel: collectionAlert.warningLevel || 'none'
-        },
-
-        // 元数据
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-
-      console.log('[AllocatePoints] 分配数据:', allocationData);
-
-      const docRef = await addDoc(allocationRef, allocationData);
-
-      console.log('[AllocatePoints] ✅ 分配记录创建成功');
-      console.log('[AllocatePoints] 文档 ID:', docRef.id);
-      console.log('[AllocatePoints] 完整路径:', docRef.path);
-
-      // Cloud Function（onSellerManagerAllocation）会自动处理：
-      // 1. 更新 Seller 的 pointsStats.totalReceived
-      // 2. 更新 Seller 的 pointsStats.receivedFromSellerManager
-      // 3. 更新 Seller 的 pointsStats.currentBalance
-      // 4. 更新部门的 departmentStats
-      // 5. 更新 SellerManager 的 sellerManagerStats
-      // 6. 更新 Event 的 globalPointsStats
-      // 7. 检查收款警示
-
-      // 成功提示
-      alert(
-        `✅ 分配成功！\n\n` +
-        `Seller: ${sellerName}\n` +
-        `点数: ${allocateAmount.toLocaleString()}\n` +
-        `预计新余额: ${((pointsStats.currentBalance || 0) + allocateAmount).toLocaleString()}\n\n` +
-        `统计数据将在几秒内自动更新`
-      );
-
-      // 调用成功回调
-      if (onSuccess) {
-        onSuccess();
+      // ========== 第2步: 获取 Firebase Auth Token ==========
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('未登录，请重新登录');
       }
 
-      // 关闭弹窗
-      onClose();
+      const token = await user.getIdToken();
+      console.log('[AllocatePoints] Token 获取成功');
+
+      // ========== 第3步: 准备请求数据 ==========
+      const requestBody = {
+        organizationId: organizationId,
+        eventId: eventId,
+        recipientId: seller.id,
+        points: pointsNumber,
+        notes: notes || ''
+      };
+
+      console.log('[AllocatePoints] 请求数据:', requestBody);
+
+      // ========== 第4步: 调用 Cloud Function ==========
+      // 使用相对路径，会自动转向 Firebase Hosting 的 /api 端点
+      const response = await fetch('/api/allocatePointsBySellerManager', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('[AllocatePoints] Response status:', response.status);
+
+      // ========== 第5步: 处理响应 ==========
+      const result = await response.json();
+      console.log('[AllocatePoints] Response data:', result);
+
+      if (!response.ok) {
+        const errorMessage = result.error?.message || '分配失败';
+        throw new Error(errorMessage);
+      }
+
+      // ========== 第6步: 成功处理 ==========
+      console.log('[AllocatePoints] ✅ 分配成功', {
+        allocationId: result.allocationId || 'N/A'
+      });
+
+      setSuccessMessage(
+        `成功分配 ${pointsNumber} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！`
+      );
+
+      // 重置表单
+      setAmount('');
+      setNotes('');
+
+      // 3秒后关闭弹窗
+      setTimeout(() => {
+        setSuccessMessage(null);
+        onSuccess?.();
+        onClose?.();
+      }, 2000);
 
     } catch (err) {
       console.error('[AllocatePoints] ❌ 分配失败:', err);
-      console.error('[AllocatePoints] 错误详情:', err.message);
-      
-      setError(
-        `分配失败: ${err.message}\n\n` +
-        `请检查：\n` +
-        `1. 您是否有权限管理该部门\n` +
-        `2. 网络连接是否正常\n` +
-        `3. Firestore 安全规则是否正确配置`
-      );
+
+      let errorMessage = '分配失败';
+
+      if (err.message.includes('未登录')) {
+        errorMessage = '登录已过期，请重新登录';
+      } else if (err.message.includes('权限')) {
+        errorMessage = '您没有权限执行此操作';
+      } else if (err.message.includes('限额')) {
+        errorMessage = err.message;
+      } else if (err.message.includes('管理范围')) {
+        errorMessage = '该用户不在您的管理范围内';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
+
 
   /**
    * 计算预期余额
@@ -305,7 +272,7 @@ const AllocatePoints = ({
             <div style={styles.warningContent}>
               <div style={styles.warningTitle}>收款警示</div>
               <div style={styles.warningText}>
-                待收款: {(collectionAlert.pendingAmount || 0).toLocaleString()} 
+                待收款: {(collectionAlert.pendingAmount || 0).toLocaleString()}
                 <span style={{
                   marginLeft: '0.5rem',
                   color: getWarningLevelColor(collectionAlert.warningLevel)
@@ -330,8 +297,8 @@ const AllocatePoints = ({
           <div style={styles.statRow}>
             <span>收款率:</span>
             <strong style={{
-              color: (pointsStats.collectionRate || 0) >= 0.8 ? '#10b981' : 
-                     (pointsStats.collectionRate || 0) >= 0.5 ? '#f59e0b' : '#ef4444'
+              color: (pointsStats.collectionRate || 0) >= 0.8 ? '#10b981' :
+                (pointsStats.collectionRate || 0) >= 0.5 ? '#f59e0b' : '#ef4444'
             }}>
               {Math.round((pointsStats.collectionRate || 0) * 100)}%
             </strong>

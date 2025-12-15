@@ -837,17 +837,15 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
             )}
 
             <div style={styles.rolesGrid}>
-              {/* 🔹 Manager 角色区域 */}
-              <div style={{
-                marginBottom: '1rem',
-                paddingBottom: '1rem',
-                borderBottom: '2px solid #e5e7eb'
-              }}>
+              {/* 🎯 Manager 角色区域 */}
+              <div style={{ marginBottom: '1.5rem' }}>
                 <div style={{
                   fontSize: '0.875rem',
                   fontWeight: '600',
                   color: '#6b7280',
-                  marginBottom: '0.75rem'
+                  marginBottom: '0.75rem',
+                  paddingBottom: '0.5rem',
+                  borderBottom: '2px solid #e5e7eb'
                 }}>
                   🎯 Manager 角色
                 </div>
@@ -855,8 +853,8 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                 {allRoles
                   .filter(role => role.category === 'manager')
                   .map(role => {
-                    // 🔹 如果是 Event Manager 修改自己，禁用所有 manager 角色选项
-                    const isDisabled = isModifyingOwnRoles;
+                    // 🔹 关键：判断是否需要禁用
+                    const isDisabled = isModifyingOwnRoles && role.category === 'manager';
 
                     return (
                       <label
@@ -865,27 +863,23 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                           ...styles.roleCheckbox,
                           backgroundColor: selectedRoles[role.id] ? '#f0f9ff' : 'white',
                           borderColor: selectedRoles[role.id] ? role.color : '#e5e7eb',
-                          opacity: isDisabled ? 0.5 : 1,
-                          cursor: isDisabled ? 'not-allowed' : 'pointer'
-                        }}
-                        onClick={(e) => {
-                          if (isDisabled) {
-                            e.preventDefault();
-                          }
+                          opacity: isDisabled ? 0.4 : 1,  // 🔹 禁用时变灰
+                          cursor: isDisabled ? 'not-allowed' : 'pointer',
+                          position: 'relative'
                         }}
                       >
                         <input
                           type="checkbox"
                           checked={selectedRoles[role.id]}
                           onChange={(e) => {
-                            if (!isDisabled) {
+                            if (!isDisabled) {  // 🔹 禁用时不响应
                               setSelectedRoles({
                                 ...selectedRoles,
                                 [role.id]: e.target.checked
                               });
                             }
                           }}
-                          disabled={isDisabled}
+                          disabled={isDisabled}  // 🔹 HTML 禁用
                           style={styles.checkbox}
                         />
                         <div style={styles.roleInfo}>
@@ -916,13 +910,15 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   })}
               </div>
 
-              {/* 🔹 参与者角色区域 */}
+              {/* 👥 参与者角色区域 */}
               <div>
                 <div style={{
                   fontSize: '0.875rem',
                   fontWeight: '600',
                   color: '#6b7280',
-                  marginBottom: '0.75rem'
+                  marginBottom: '0.75rem',
+                  paddingBottom: '0.5rem',
+                  borderBottom: '2px solid #e5e7eb'
                 }}>
                   👥 参与者角色
                 </div>

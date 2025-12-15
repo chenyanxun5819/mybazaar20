@@ -255,12 +255,18 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
     try {
       // ✅ 修复：调用正确的 API 端点，email 改为可选
+      // 注意：需要从 Firebase Auth 获取 idToken
+      const { getAuth } = await import('firebase/auth');
+      const auth = getAuth();
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
       const response = await fetch(
-        'https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
+        'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(idToken && { 'Authorization': `Bearer ${idToken}` })
           },
           body: JSON.stringify({
             organizationId,
@@ -273,7 +279,8 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             identityTag: formData.identityTag,
             department: formData.department,
             identityId: formData.identityId, // ✨ 新增：传递 identityId
-            roles: formData.roles
+            roles: formData.roles,
+            idToken: idToken || '' // ✨ 也在 body 中傳遞 idToken
           })
         }
       );

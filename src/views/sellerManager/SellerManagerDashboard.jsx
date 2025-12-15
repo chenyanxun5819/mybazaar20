@@ -1,20 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
-import {
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  onSnapshot
-} from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot} from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
 import SubmitCash from './components/SubmitCash';    // 新增
-
+import CollectCash from './components/CollectCash';    // ✅ 新增这行
 /**
  * Seller Manager Dashboard (简化版)
  * 移除部门过滤，直接显示所有 Sellers
@@ -532,16 +525,16 @@ const SellerManagerDashboard = () => {
         >
           👥 Sellers 管理
         </button>
+        {/* ✅ 新增：收款现金 Tab */}
         <button
-          onClick={() => setActiveTab('allocate')}
+          onClick={() => setActiveTab('collect')}
           style={{
             ...styles.tab,
-            ...(activeTab === 'allocate' ? styles.activeTab : {})
+            ...(activeTab === 'collect' ? styles.activeTab : {})
           }}
         >
-          📦 分配点数
+          💰 收款现金
         </button>
-
         <button
           onClick={() => setActiveTab('submit')}
           style={{
@@ -628,26 +621,16 @@ const SellerManagerDashboard = () => {
             )}
           </div>
         )}
-
-        {activeTab === 'allocate' && (
+        {/* ✅ 新增：收款现金内容 */}
+        {activeTab === 'collect' && (
           <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>📦 分配点数</h2>
-              <div style={styles.allocationInfo}>
-                💡 每次最高分配: <strong>RM {maxPerAllocation}</strong>
-              </div>
-            </div>
-            <AllocatePoints
+            <CollectCash
+              userInfo={safeCurrentUser}
+              eventData={safeEventData}
               sellers={safeSellers}
-              sellerManager={safeCurrentUser}
-              organizationId={safeCurrentUser.organizationId}
-              eventId={eventId}
-              maxPerAllocation={maxPerAllocation}
             />
           </div>
         )}
-
-
 
         {activeTab === 'submit' && (
           <SubmitCash

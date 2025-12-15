@@ -1,6 +1,14 @@
 /**
- * CollectCash.jsx
+ * CollectCash.jsx (完整修复版)
  * Seller Manager 收取学生现金的主要界面
+ * 
+ * ✅ 修复日期: 2024-12-14
+ * ✅ 修复内容:
+ *    1. 删除错误的 useEffect 中的 useMemo
+ *    2. 将 processedSellers 移到组件顶层
+ *    3. 修复所有拼写错误（添加缺失的点号）
+ *    4. 统一使用 processedSellers 而不是 sellers
+ *    5. 修正字段名：seller.pendingCollection
  * 
  * 功能:
  * 1. 显示所有管理范围内的 Sellers
@@ -8,28 +16,17 @@
  * 3. 支持正常收款和特殊情况处理
  * 4. 实时更新统计数据
  * 
- * @version 1.0
- * @date 2024-12-04
+ * @version 2.0
+ * @date 2024-12-14
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  writeBatch, 
-  serverTimestamp,
-  increment,
-  orderBy
-} from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, increment, orderBy } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
 
-const CollectCash = ({ userInfo, eventData }) => {
-  const [sellers, setSellers] = useState([]);
+const CollectCash = ({ userInfo, eventData, sellers }) => {
   const [collections, setCollections] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,46 +37,31 @@ const CollectCash = ({ userInfo, eventData }) => {
   const eventId = userInfo.eventId;
   const smId = userInfo.userId;
 
+  // ========== ✅ 修复：processedSellers 移到组件顶层 ==========
+  
+  // 处理传入的 sellers，计算 pendingAmount
+  const processedSellers = useMemo(() => {
+    if (!sellers || !Array.isArray(sellers)) {
+      console.log('[CollectCash] 没有传入 sellers');
+      return [];
+    }
+    
+    console.log(`[CollectCash] 处理 ${sellers.length} 个 Seller`);
+    
+    return sellers.map(seller => ({
+      ...seller,
+      // ✅ 使用正确的字段 seller.pendingCollection
+      pendingAmount: seller.seller?.pendingCollection || 0
+    }));
+  }, [sellers]);
+
   // ========== 数据加载 ==========
-
-  // 加载管理的 Sellers
-  useEffect(() => {
-    if (!orgId || !eventId || !smId) return;
-
-    const sellersQuery = query(
-      collection(db, `organizations/${orgId}/events/${eventId}/users`),
-      where('managedBy', 'array-contains', smId),
-      where('roles', 'array-contains', 'seller')
-    );
-
-    const unsubscribe = onSnapshot(
-      sellersQuery,
-      (snapshot) => {
-        const sellersData = [];
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          sellersData.push({
-            id: doc.id,
-            ...data,
-            // 计算待收款金额
-            pendingAmount: (data.pointsStats?.cashFlow?.cashOnHand || 0)
-          });
-        });
-        setSellers(sellersData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('加载 Sellers 失败:', error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [orgId, eventId, smId]);
 
   // 加载收款历史
   useEffect(() => {
     if (!orgId || !eventId || !smId) return;
+
+    console.log('[CollectCash] 加载收款历史...');
 
     const collectionsQuery = query(
       collection(db, `organizations/${orgId}/events/${eventId}/cashCollections`),
@@ -97,10 +79,11 @@ const CollectCash = ({ userInfo, eventData }) => {
             ...doc.data()
           });
         });
+        console.log(`[CollectCash] 加载了 ${collectionsData.length} 条收款记录`);
         setCollections(collectionsData);
       },
       (error) => {
-        console.error('加载收款历史失败:', error);
+        console.error('[CollectCash] 加载收款历史失败:', error);
       }
     );
 
@@ -114,9 +97,10 @@ const CollectCash = ({ userInfo, eventData }) => {
     const cashHolding = userInfo.pointsStats?.cashFlow?.cashHolding || 0;
     const collectedFromSellers = userInfo.pointsStats?.cashFlow?.collectedFromSellers || 0;
     const submittedToFinance = userInfo.pointsStats?.cashFlow?.submittedToFinance || 0;
-    
+
     const availableCollections = collections.filter(c => c.status === 'collected').length;
-    const totalPending = sellers.reduce((sum, s) => sum + s.pendingAmount, 0);
+    // ✅ 修复：添加点号 .reduce
+    const totalPending = processedSellers.reduce((sum, s) => sum + s.pendingAmount, 0);
 
     return {
       cashHolding,
@@ -125,15 +109,16 @@ const CollectCash = ({ userInfo, eventData }) => {
       availableCollections,
       totalPending
     };
-  }, [userInfo, collections, sellers]);
+  }, [userInfo, collections, processedSellers]);  // ✅ 修复：使用 processedSellers
 
   // 筛选和排序 Sellers
   const filteredAndSortedSellers = useMemo(() => {
-    let result = [...sellers];
+    // ✅ 修复：使用 processedSellers
+    let result = [...processedSellers];
 
     // 搜索筛选
     if (searchTerm) {
-      result = result.filter(s => 
+      result = result.filter(s =>
         s.basicInfo?.chineseName?.includes(searchTerm) ||
         s.basicInfo?.englishName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.identityInfo?.identityId?.includes(searchTerm)
@@ -164,7 +149,7 @@ const CollectCash = ({ userInfo, eventData }) => {
     });
 
     return result;
-  }, [sellers, searchTerm, filterStatus, sortBy]);
+  }, [processedSellers, searchTerm, filterStatus, sortBy]);  // ✅ 修复：使用 processedSellers
 
   // ========== 事件处理 ==========
 
@@ -219,7 +204,8 @@ const CollectCash = ({ userInfo, eventData }) => {
           title="待收款总额"
           value={`RM ${stats.totalPending.toLocaleString()}`}
           color="#f59e0b"
-          description={`${sellers.filter(s => s.pendingAmount > 0).length} 位学生`}
+          // ✅ 修复：添加点号 .filter
+          description={`${processedSellers.filter(s => s.pendingAmount > 0).length} 位学生`}
         />
       </div>
 
@@ -232,7 +218,7 @@ const CollectCash = ({ userInfo, eventData }) => {
           onChange={(e) => setSearchTerm(e.target.value)}
           style={styles.searchInput}
         />
-        
+
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
@@ -382,7 +368,7 @@ const SellerCard = ({ seller, collections, onCollect }) => {
                 <div key={collection.id} style={styles.historyItem}>
                   <div style={styles.historyHeader}>
                     <span style={styles.historyDate}>
-                      {collection.collectedAt?.toDate ? 
+                      {collection.collectedAt?.toDate ?
                         new Date(collection.collectedAt.toDate()).toLocaleString('zh-CN') :
                         '时间未知'
                       }
@@ -464,126 +450,128 @@ const CollectCashModal = ({ seller, smInfo, eventData, orgId, eventId, onClose }
   }, [amount, isSpecialCase, actualAmount, discrepancyReason, pendingAmount]);
 
   // 提交收款
-  const handleSubmit = async () => {
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+/**
+ * CollectCashModal - handleSubmit 诊断版本
+ * 添加详细日志来诊断权限问题
+ */
 
-    setSubmitting(true);
-    setError('');
+const handleSubmit = async () => {
+  // 移除診斷日誌，保留最小必要流程
+  
+  // 原来的验证代码
+  const validationError = validate();
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
 
-    try {
-      const batch = writeBatch(db);
+  setSubmitting(true);
+  setError('');
 
-      // 计算金额
-      const collectionAmount = isSpecialCase ? parseFloat(actualAmount) : parseFloat(amount);
-      const pointsValue = parseFloat(amount);
-      const finalDiscrepancy = isSpecialCase ? discrepancy : 0;
+  try {
+    const batch = writeBatch(db);
 
-      // 1. 创建 cashCollection 记录
-      const collectionRef = doc(collection(db, `organizations/${orgId}/events/${eventId}/cashCollections`));
-      batch.set(collectionRef, {
-        collectionId: collectionRef.id,
-        type: 'sellerToManager',
-        
-        // 收款方
-        collectedBy: smInfo.userId,
-        collectedByName: smInfo.basicInfo?.chineseName || 'Seller Manager',
-        collectedByRole: 'sellerManager',
-        collectedByDepartment: smInfo.identityInfo?.department || '',
-        
-        // 提交方
-        submittedBy: seller.id,
-        submittedByName: seller.basicInfo?.chineseName || '未知',
-        submittedByRole: 'seller',
-        submittedByDepartment: seller.identityInfo?.department || '',
-        
-        // 金额
-        amount: collectionAmount,
-        pointsValue: pointsValue,
-        discrepancy: finalDiscrepancy,
-        discrepancyReason: isSpecialCase ? discrepancyReason : '',
-        discrepancyType: isSpecialCase ? discrepancyType : '',
-        
-        // 状态
-        status: 'collected',
-        collectedAt: serverTimestamp(),
-        submittedAt: null,
-        confirmedAt: null,
-        
-        // 关联
-        submissionId: null,
-        sellerId: seller.id,
-        sellerDepartment: seller.identityInfo?.department || '',
-        eventId: eventId,
-        organizationId: orgId,
-        
-        // 备注
-        note: note,
-        
-        // 时间戳
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+    // 计算金额
+    const collectionAmount = isSpecialCase ? parseFloat(actualAmount) : parseFloat(amount);
+    const pointsValue = parseFloat(amount);
+    const finalDiscrepancy = isSpecialCase ? discrepancy : 0;
 
-      // 2. 更新 Seller cashFlow
-      const sellerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.id}`);
-      
-      if (!isSpecialCase) {
-        // 正常收款
-        batch.update(sellerRef, {
-          'pointsStats.cashFlow.submittedToManager': increment(collectionAmount),
-          'pointsStats.cashFlow.cashOnHand': increment(-collectionAmount),
-          'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
-          'updatedAt': serverTimestamp()
-        });
-      } else {
-        // 特殊情况处理
-        const updates = {
-          'pointsStats.cashFlow.submittedToManager': increment(collectionAmount),
-          'pointsStats.cashFlow.cashOnHand': increment(-collectionAmount),
-          'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
-          'updatedAt': serverTimestamp()
-        };
+    // 1. 创建 cashCollection 记录
+    const collectionRef = doc(collection(db, `organizations/${orgId}/events/${eventId}/cashCollections`));
+    
+    // ⚠️ 准备创建的数据
+    const collectionData = {
+      collectionId: collectionRef.id,
+      type: 'sellerToManager',
 
-        if (discrepancyType === 'pointsRecovery') {
-          // 点数回收：退还点数
-          const recoveryAmount = Math.abs(finalDiscrepancy);
-          updates['seller.availablePoints'] = increment(recoveryAmount);
-          updates['pointsStats.pendingCollection'] = increment(-recoveryAmount);
-        } else if (discrepancyType === 'waiver') {
-          // 豁免：直接减少待收款
-          const waiverAmount = Math.abs(finalDiscrepancy);
-          updates['pointsStats.pendingCollection'] = increment(-waiverAmount);
-          updates['pointsStats.cashFlow.cashOnHand'] = increment(-waiverAmount);
-        }
-        // partial 不需要额外处理，学生后续补交
+      // 收款方
+      collectedBy: smInfo.userId,  // ⚠️ 关键字段！
+      collectedByName: smInfo.basicInfo?.chineseName || 'Seller Manager',
+      collectedByRole: 'sellerManager',
+      collectedByDepartment: smInfo.identityInfo?.department || '',
 
-        batch.update(sellerRef, updates);
-      }
+      // 提交方
+      submittedBy: seller.id,
+      submittedByName: seller.basicInfo?.chineseName || '未知',
+      submittedByRole: 'seller',
+      submittedByDepartment: seller.identityInfo?.department || '',
 
-      // 3. 更新 SellerManager cashFlow
-      const smRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${smInfo.userId}`);
-      batch.update(smRef, {
-        'pointsStats.cashFlow.collectedFromSellers': increment(collectionAmount),
-        'pointsStats.cashFlow.cashHolding': increment(collectionAmount),
-        'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+      // 金额
+      amount: collectionAmount,
+      pointsValue: pointsValue,
+      discrepancy: finalDiscrepancy,
+      discrepancyReason: isSpecialCase ? discrepancyReason : '',
+      discrepancyType: isSpecialCase ? discrepancyType : '',
+
+      // 状态
+      status: 'collected',
+      collectedAt: serverTimestamp(),
+      submittedAt: null,
+      confirmedAt: null,
+
+      // 关联
+      submissionId: null,
+      sellerId: seller.id,
+      sellerDepartment: seller.identityInfo?.department || '',
+      eventId: eventId,
+      organizationId: orgId,
+
+      // 备注
+      note: note,
+
+      // 时间戳
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+
+    batch.set(collectionRef, collectionData);
+
+    // 2. 更新 Seller
+    const sellerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.id}`);
+    
+    if (!isSpecialCase) {
+      // 正常收款
+      batch.update(sellerRef, {
+        'seller.pendingCollection': increment(-collectionAmount),
+        'seller.totalCashCollected': increment(collectionAmount),
         'updatedAt': serverTimestamp()
       });
+    } else {
+      // 特殊情况处理
+      const updates = {
+        'seller.pendingCollection': increment(-collectionAmount),
+        'seller.totalCashCollected': increment(collectionAmount),
+        'updatedAt': serverTimestamp()
+      };
 
-      await batch.commit();
+      if (discrepancyType === 'pointsRecovery') {
+        const recoveryAmount = Math.abs(finalDiscrepancy);
+        updates['seller.availablePoints'] = increment(recoveryAmount);
+      }
 
-      alert('✅ 收款成功！');
-      onClose();
-    } catch (err) {
-      console.error('收款失败:', err);
-      setError('收款失败: ' + err.message);
-    } finally {
-      setSubmitting(false);
+      batch.update(sellerRef, updates);
     }
-  };
+
+    // 3. 更新 SellerManager cashFlow
+    const smRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${smInfo.userId}`);
+    batch.update(smRef, {
+      'pointsStats.cashFlow.collectedFromSellers': increment(collectionAmount),
+      'pointsStats.cashFlow.cashHolding': increment(collectionAmount),
+      'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+      'updatedAt': serverTimestamp()
+    });
+
+    await batch.commit();
+
+    alert('✅ 收款成功！');
+    onClose();
+  } catch (err) {
+    setError('收款失败: ' + err.message);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
