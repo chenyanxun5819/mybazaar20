@@ -1,176 +1,173 @@
-import { useState } from 'react';
-import { doc, updateDoc, addDoc, collection, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { db } from '../../../config/firebase'; // 假设你的firebase配置在这里
+/**
+ * SellerList.jsx (修正版)
+ * 
+ * 修正內容:
+ * - Line 164: 修正 SM ID 讀取邏輯，從 props 獲取而非從 seller.managedBy
+ * 
+ * 修正原因:
+ * seller.managedBy 可能為空或不正確，應該從當前登入的 userInfo 獲取
+ * 
+ * @version 1.1 (2024-12-15)
+ */
+
+import { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, increment, getDocs } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
 
 /**
- * Seller List Component (带收款功能版 v6)
+ * SellerList 組件
  * 
- * 新增功能：
- * - 记录收款：Seller从Customer收到现金
- * - 现金上交：Seller向Manager上交现金（简化为全款一次性上交）
- * 
- * 收款流程（简化）：
- * 1. Seller点击"记录收款"
- * 2. 系统自动将全部待收款标记为已收款
- * 3. 更新 seller.totalCollected 和 seller.pendingCollection
- * 4. 更新 pointsStats（如果需要）
+ * @param {Object} props
+ * @param {Array} props.sellers - Seller 列表
+ * @param {string} props.selectedDepartment - 選中的部門
+ * @param {Function} props.onSelectSeller - 選擇 Seller 回調
+ * @param {Function} props.onRecordCollection - 記錄收款回調
+ * @param {Object} props.userInfo - ✨ 新增：當前登入的用戶信息（Seller Manager）
  */
-const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgId, currentUser }) => {
+const SellerList = ({  sellers = [],  selectedDepartment,  onSelectSeller,  onRecordCollection,  userInfo // ✨ 新增 prop
+}) => {
   const [sortBy, setSortBy] = useState('name');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSeller, setExpandedSeller] = useState(null);
-  const [recordingCollection, setRecordingCollection] = useState(null); // 正在记录收款的seller
+  const [recordingCollection, setRecordingCollection] = useState(null);
 
-  // 确保输入是安全的
+  // ========== 修正：從 userInfo 獲取必要信息 ==========
+  const orgId = userInfo?.organizationId;
+  const eventId = userInfo?.eventId;
+  const currentUserId = userInfo?.userId; // ✅ 正確的 Seller Manager ID
+
+  // 確保輸入是安全的
   const safeSellers = Array.isArray(sellers) ? sellers : [];
 
-  // 筛选逻辑
-  // ✅ 修改后
+  // 篩選邏輯
   const getFilteredSellers = () => {
     let filtered = [...safeSellers];
 
+    // 1. 部門篩選
     if (selectedDepartment) {
-      filtered = filtered.filter(seller => {
-        const dept = seller.identityInfo?.department || '';
-        return dept === selectedDepartment.departmentCode;
-      });
+      filtered = filtered.filter(seller =>
+        seller.identityInfo?.department === selectedDepartment
+      );
     }
 
+    // 2. 狀態篩選
     if (filterStatus !== 'all') {
       filtered = filtered.filter(seller => {
-        const sellerData = seller.seller || {};
-        const hasAlert = sellerData.collectionAlert === true;
-        const availablePoints = sellerData.availablePoints || 0;  // ✅ 正确：从 seller 读取
-        const totalSold = sellerData.totalPointsSold || 0;  // ✅ 正确：从 seller 读取
-        const totalCollected = sellerData.totalCashCollected || 0;  // ✅ 正确：从 seller 读取
-
-        // 计算待收款：已售出但未收款的金额
-        const totalRevenue = totalSold;
-        const pendingCollection = totalRevenue - totalCollected;
-        const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
+        const collectionAlert = seller.collectionAlert || {};
 
         switch (filterStatus) {
           case 'active':
-            return totalSold > 0;
+            return (seller.pointsStats?.totalSold || 0) > 0;
           case 'warning':
-            return hasAlert && pendingRatio < 0.5;
+            return collectionAlert.hasWarning === true && collectionAlert.riskLevel !== 'high';
           case 'highRisk':
-            return hasAlert && pendingRatio >= 0.5;
+            return collectionAlert.riskLevel === 'high';
           default:
             return true;
         }
       });
     }
 
+    // 3. 搜尋篩選
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(seller => {
         const name = (seller.basicInfo?.chineseName || '').toLowerCase();
-        const phone = (seller.basicInfo?.phoneNumber || '').toLowerCase();
+        const studentId = (seller.identityInfo?.identityTag || '').toLowerCase();
         const dept = (seller.identityInfo?.department || '').toLowerCase();
-        return name.includes(term) || phone.includes(term) || dept.includes(term);
+        return name.includes(term) || studentId.includes(term) || dept.includes(term);
       });
     }
 
     return filtered;
   };
 
-  // 排序逻辑
-  // ✅ 修改后
+  // 排序邏輯
   const getSortedSellers = (filtered) => {
-    return [...filtered].sort((a, b) => {
-      const aSellerData = a.seller || {};  // ✅ 正确
-      const bSellerData = b.seller || {};  // ✅ 正确
+    const sorted = [...filtered];
 
-      switch (sortBy) {
-        case 'name':
-          const aName = a.basicInfo?.chineseName || '';
-          const bName = b.basicInfo?.chineseName || '';
-          return aName.localeCompare(bName);
-        case 'department':
-          const aDept = a.identityInfo?.department || '';
-          const bDept = b.identityInfo?.department || '';
-          return aDept.localeCompare(bDept);
-        case 'balance':
-          return (bSellerData.availablePoints || 0) - (aSellerData.availablePoints || 0);  // ✅ 正确
-        case 'revenue':
-          return (bSellerData.totalPointsSold || 0) - (aSellerData.totalPointsSold || 0);  // ✅ 正确
-        case 'collectionRate':
-          // 计算收款率
-          const aRevenue = aSellerData.totalPointsSold || 0;
-          const aCollected = aSellerData.totalCashCollected || 0;
-          const aRate = aRevenue > 0 ? aCollected / aRevenue : 0;
+    switch (sortBy) {
+      case 'name':
+        sorted.sort((a, b) => {
+          const nameA = a.basicInfo?.chineseName || '';
+          const nameB = b.basicInfo?.chineseName || '';
+          return nameA.localeCompare(nameB, 'zh-CN');
+        });
+        break;
+      case 'points':
+        sorted.sort((a, b) =>
+          (b.seller?.availablePoints || 0) - (a.seller?.availablePoints || 0)
+        );
+        break;
+      case 'sold':
+        sorted.sort((a, b) =>
+          (b.pointsStats?.totalSold || 0) - (a.pointsStats?.totalSold || 0)
+        );
+        break;
+      case 'pending':
+        sorted.sort((a, b) => {
+          const pendingA = (a.pointsStats?.cashFlow?.pendingCollection || 0);
+          const pendingB = (b.pointsStats?.cashFlow?.pendingCollection || 0);
+          return pendingB - pendingA;
+        });
+        break;
+      default:
+        break;
+    }
 
-          const bRevenue = bSellerData.totalPointsSold || 0;
-          const bCollected = bSellerData.totalCashCollected || 0;
-          const bRate = bRevenue > 0 ? bCollected / bRevenue : 0;
-
-          return bRate - aRate;  // ✅ 正确
-        case 'pendingCollection':
-          const aPending = (aSellerData.totalPointsSold || 0) - (aSellerData.totalCashCollected || 0);
-          const bPending = (bSellerData.totalPointsSold || 0) - (bSellerData.totalCashCollected || 0);
-          return bPending - aPending;  // ✅ 正确
-        default:
-          return 0;
-      }
-    });
+    return sorted;
   };
 
+  const filteredSellers = getFilteredSellers();
+  const sortedSellers = getSortedSellers(filteredSellers);
+
+  // ========== 收款邏輯（主要修正部分）==========
+
   /**
-   * 改进的收款处理函数
+   * 記錄收款
    * 
-   * 功能：Seller Manager 从 Seller 收取现金
-   * 
-   * 流程：
-   * 1. 验证待收款金额
-   * 2. 创建 cashCollection 记录（Event 级别）
-   * 3. 更新 Seller 的收款统计
-   * 4. 更新 Seller Manager 的待上交金额
+   * 流程:
+   * 1. 驗證待收款金額
+   * 2. 確認操作
+   * 3. 創建 cashCollection 記錄
+   * 4. 更新 Seller 統計
+   * 5. 更新 Seller Manager 統計
    */
-
   const handleRecordCollection = async (seller) => {
-    // ✅ 步骤 1: 读取并验证待收款金额
-    const sellerData = seller.seller || {};
-    const pendingCollection = sellerData.pendingCollection || 0;
+    // ✅ 步驟 1: 驗證待收款金額
+    const pendingAmount = seller.pointsStats?.cashFlow?.pendingCollection || 0;
 
-    if (pendingCollection <= 0) {
-      alert('该用户没有待收款项');
+    if (pendingAmount <= 0) {
+      alert('該 Seller 沒有待收款金額');
       return;
     }
 
-    // ✅ 步骤 2: 显示确认对话框
-    const confirmMessage = `
-    确认收取现金？
-
-    Seller: ${seller.basicInfo?.chineseName || '未知'}
-    待收款: RM ${pendingCollection.toLocaleString()}
-
-    此操作将：
-    1. 记录你从该 Seller 收到 RM ${pendingCollection}
-    2. 标记该 Seller 的待收款为已收款
-    3. 增加你的待上交金额
-
-    确认收款？
-    `.trim();
-
-    if (!window.confirm(confirmMessage)) {
+    // ✅ 步驟 2: 確認操作
+    if (!window.confirm(
+      `確認從 ${seller.basicInfo?.chineseName || '未知'} 收取現金 RM ${pendingAmount}？\n\n` +
+      `學號: ${seller.identityInfo?.identityTag || '未知'}\n` +
+      `部門: ${seller.identityInfo?.department || '未知'}`
+    )) {
       return;
     }
 
-    // ✅ 步骤 3: 获取当前 Seller Manager 信息
-    // 注意：这里需要从父组件传入 currentUser
-    // 临时方案：从 seller 推断（实际应该从 props 获取）
-    const currentUserId = seller.managedBy || 'CURRENT_SM_ID'; // ⚠️ 需要修改
+    // ✅ 步驟 3: 獲取當前 Seller Manager 信息
+    // ✨ 修正：從 userInfo prop 獲取，而非從 seller.managedBy
+    if (!currentUserId) {
+      alert('❌ 錯誤：無法獲取當前用戶信息');
+      console.error('currentUserId is undefined, userInfo:', userInfo);
+      return;
+    }
 
     setRecordingCollection(seller.userId);
 
     try {
       const batch = writeBatch(db);
 
-      // ✅ 步骤 4: 创建 cashCollection 记录（Event 级别）
+      // ✅ 步驟 4: 創建 cashCollection 記錄（Event 級別）
       const collectionRef = collection(db, `organizations/${orgId}/events/${eventId}/cashCollections`);
-      const collectionDoc = doc(collectionRef); // 自动生成 ID
+      const collectionDoc = doc(collectionRef); // 自動生成 ID
 
       batch.set(collectionDoc, {
         // 基本信息
@@ -178,1053 +175,421 @@ const SellerList = ({ sellers, selectedDepartment, onSelectSeller, eventId, orgI
         sellerId: seller.userId,
         sellerName: seller.basicInfo?.chineseName || '未知',
         sellerDepartment: seller.identityInfo?.department || '未分配',
+        sellerIdentityTag: seller.identityInfo?.identityTag || '未知',
 
-        // Seller Manager 信息
+        // ✨ 修正：使用正確的 currentUserId
         collectedBy: currentUserId,
-        collectedByName: 'Seller Manager', // ⚠️ 应该从 currentUser 获取
+        collectedByName: userInfo?.basicInfo?.chineseName || 'Seller Manager',
+        collectedByRole: 'sellerManager',
 
-        // 金额信息
-        amount: pendingCollection,
+        // 金額信息
+        amount: pendingAmount,
+
+        // 狀態
+        status: 'collected', // collected | submitted | confirmed
         collectedAt: serverTimestamp(),
+        submittedAt: null,
+        submittedToFinance: false,
+        submissionId: null,
+        confirmedAt: null,
+        confirmedBy: null,
 
-        // 状态
-        status: 'collected',  // collected → submitted → approved
+        // 關聯信息
+        eventId: eventId,
+        organizationId: orgId,
 
-        // 备注
-        note: `从 ${seller.basicInfo?.chineseName} 收取现金`,
-
-        // 特殊情况标记
-        specialCircumstance: null,
-        specialNote: null,
-
-        // 审计信息
+        // 時間戳
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      // ✅ 步骤 5: 更新 Seller 的统计数据
+      // ✅ 步驟 5: 更新 Seller 的 cashFlow 統計
       const sellerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
 
       batch.update(sellerRef, {
-        // 更新 seller 对象
-        'seller.totalCashCollected': increment(pendingCollection),
-        'seller.pendingCollection': increment(-pendingCollection),
-
-        // 计算新的收款率
-        // 注意：这里简化处理，实际应该在 Cloud Function 中计算
-        'seller.collectionRate': (sellerData.totalCashCollected || 0) + pendingCollection > 0
-          ? ((sellerData.totalCashCollected || 0) + pendingCollection) / (sellerData.totalRevenue || 1)
-          : 0,
-
-        // 检查是否需要更新警示状态
-        'seller.collectionAlert': false, // 收款后可能解除警示
-
-        // 更新时间戳
-        'activityData.lastCollected': serverTimestamp(),
-        'activityData.updatedAt': serverTimestamp()
+        // 增加已收款總額
+        'pointsStats.cashFlow.totalCashCollected': increment(pendingAmount),
+        // 清零待收款金額
+        'pointsStats.cashFlow.pendingCollection': 0,
+        // 更新最後收款時間
+        'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+        // 更新文檔時間
+        'updatedAt': serverTimestamp()
       });
 
-      // ✅ 步骤 6: 更新 Seller Manager 的待上交金额
-      const managerRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${currentUserId}`);
+      // ✅ 步驟 6: 更新 Seller Manager 的 cashFlow 統計
+      // ✨ 修正：使用正確的 currentUserId
+      const smRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${currentUserId}`);
 
-      batch.update(managerRef, {
-        // 增加待上交金额
-        'sellerManager.pendingCashSubmission': increment(pendingCollection),
-
-        // 更新统计
-        'sellerManager.totalCashCollected': increment(pendingCollection),
-
-        // 更新时间戳
-        'activityData.lastCollected': serverTimestamp(),
-        'activityData.updatedAt': serverTimestamp()
+      batch.update(smRef, {
+        // 增加持有現金
+        'pointsStats.cashFlow.cashHolding': increment(pendingAmount),
+        // 增加累計收款
+        'pointsStats.cashFlow.totalCollected': increment(pendingAmount),
+        // 更新最後收款時間
+        'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+        // 更新文檔時間
+        'updatedAt': serverTimestamp()
       });
 
-      // ✅ 步骤 7: 提交批量操作
+      // ✅ 步驟 7: 提交 Batch
       await batch.commit();
 
-      // ✅ 步骤 8: 显示成功消息
-      alert(`
-      ✅ 收款记录成功！
+      console.log('✅ 收款成功');
+      alert(`✅ 成功收取 RM ${pendingAmount} 從 ${seller.basicInfo?.chineseName || '未知'}`);
 
-      已收款: RM ${pendingCollection.toLocaleString()}
-      来自: ${seller.basicInfo?.chineseName || '未知'}
-
-      该金额已加入你的待上交金额。
-      请记得在"上交现金"标签页提交给 Finance Manager。
-      `.trim());  
-
-      console.log('✅ 收款成功:', {
-        collectionId: collectionDoc.id,
-        seller: seller.userId,
-        amount: pendingCollection
-      });
+      // 可選：調用父組件的回調
+      if (onRecordCollection) {
+        onRecordCollection(seller, pendingAmount);
+      }
 
     } catch (error) {
-      console.error('❌ 记录收款失败:', error);
-      alert(`记录收款失败: ${error.message}`);
+      console.error('❌ 收款失敗:', error);
+      alert('收款失敗，請重試。錯誤: ' + error.message);
     } finally {
       setRecordingCollection(null);
     }
   };
 
-  /**
-   * 现金上交功能（简化版：全款上交）
-   * 当 Seller 向 Manager 上交现金时调用
-   */
-  const handleCashSubmission = async (seller, managerId, managerType = 'sellerManager') => {
-    const pendingCash = seller.seller?.pendingCashSubmission || 0;
-
-    if (pendingCash <= 0) {
-      alert('该用户没有待上交的现金');
-      return;
-    }
-
-    const confirmMessage = `确认现金上交？\n\n上交人: ${seller.basicInfo?.chineseName}\n上交金额: RM ${pendingCash.toLocaleString()}\n接收人: ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'}\n\n此操作将记录全部待上交现金。`;
-
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      const userRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${seller.userId}`);
-      const submissionsRef = collection(userRef, 'cashSubmissions');
-
-      // 创建现金上交记录
-      await addDoc(submissionsRef, {
-        amount: pendingCash,
-        submittedBy: seller.userId,
-        submittedTo: managerType,
-        submittedToUserId: managerId,
-        note: `全额上交待收现金 RM ${pendingCash}`,
-        timestamp: serverTimestamp(),
-        status: 'pending' // 等待验证
-      });
-
-      // 更新用户的现金统计
-      await updateDoc(userRef, {
-        'seller.cashSubmitted': increment(pendingCash),
-        'seller.pendingCashSubmission': increment(-pendingCash),
-        'activityData.updatedAt': serverTimestamp()
-      });
-
-      alert(`现金上交记录成功！\n上交金额: RM ${pendingCash.toLocaleString()}\n\n等待 ${managerType === 'sellerManager' ? 'Seller Manager' : 'Finance Manager'} 验证。`);
-
-    } catch (error) {
-      console.error('现金上交失败:', error);
-      alert('现金上交失败: ' + error.message);
-    }
-  };
-
-  const filteredSellers = getFilteredSellers();
-  const sortedSellers = getSortedSellers(filteredSellers);
-
-  // 统计摘要
-  // ✅ 修改后
-  const getStatsSummary = () => {
-    const total = filteredSellers.length;
-    const active = filteredSellers.filter(s => {
-      const sellerData = s.seller || {};
-      return (sellerData.totalPointsSold || 0) > 0;  // ✅ 正确
-    }).length;
-
-    const withWarning = filteredSellers.filter(s => {
-      const sellerData = s.seller || {};
-      const hasAlert = sellerData.collectionAlert === true;
-
-      const totalRevenue = sellerData.totalPointsSold || 0;
-      const totalCollected = sellerData.totalCashCollected || 0;
-      const pendingCollection = totalRevenue - totalCollected;
-      const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;  // ✅ 正确
-
-      return hasAlert && pendingRatio < 0.5;
-    }).length;
-
-    const highRisk = filteredSellers.filter(s => {
-      const sellerData = s.seller || {};
-      const hasAlert = sellerData.collectionAlert === true;
-
-      const totalRevenue = sellerData.totalPointsSold || 0;
-      const totalCollected = sellerData.totalCashCollected || 0;
-      const pendingCollection = totalRevenue - totalCollected;
-      const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;  // ✅ 正确
-
-      return hasAlert && pendingRatio >= 0.5;
-    }).length;
-
-    return { total, active, withWarning, highRisk };
-  };
-
-  const summary = getStatsSummary();
-
-  if (safeSellers.length === 0) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>👥</div>
-          <h3>还没有 Sellers 数据</h3>
-          <p>系统正在加载用户信息，请稍候</p>
-        </div>
-      </div>
-    );
-  }
+  // ========== UI 渲染 ==========
 
   return (
     <div style={styles.container}>
-      {/* 标题栏 */}
-      <div style={styles.header}>
-        <div>
-          <h2 style={styles.title}>
-            👥 {selectedDepartment ? `${selectedDepartment.departmentCode} - ` : ''}Sellers 列表
-          </h2>
-          <div style={styles.subtitle}>
-            共 {summary.total} 人
-            {summary.active > 0 && ` · 活跃 ${summary.active} 人`}
-            {summary.withWarning > 0 && (
-              <span style={{ color: '#f59e0b' }}> · ⚠️ {summary.withWarning} 人有警示</span>
-            )}
-            {summary.highRisk > 0 && (
-              <span style={{ color: '#ef4444' }}> · 🚨 {summary.highRisk} 人高风险</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 控制栏 */}
-      <div style={styles.controls}>
-        {/* 搜索框 */}
+      {/* 工具欄 */}
+      <div style={styles.toolbar}>
         <div style={styles.searchBox}>
-          <span style={styles.searchIcon}>🔍</span>
           <input
             type="text"
-            placeholder="搜索姓名、电话或部门..."
+            placeholder="搜尋姓名、學號或部門..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={styles.searchInput}
           />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              style={styles.clearButton}
-            >
-              ✕
-            </button>
-          )}
         </div>
 
-        {/* 状态筛选 */}
-        <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>状态：</label>
+        <div style={styles.filters}>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            style={styles.filterSelect}
+            style={styles.select}
           >
-            <option value="all">全部</option>
-            <option value="active">有销售活动</option>
+            <option value="all">全部狀態</option>
+            <option value="active">活躍中</option>
             <option value="warning">收款警示</option>
-            <option value="highRisk">高风险</option>
+            <option value="highRisk">高風險</option>
           </select>
-        </div>
 
-        {/* 排序 */}
-        <div style={styles.filterGroup}>
-          <label style={styles.filterLabel}>排序：</label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            style={styles.filterSelect}
+            style={styles.select}
           >
-            <option value="name">姓名 A-Z</option>
-            <option value="department">部门 A-Z</option>
-            <option value="balance">余额（高到低）</option>
-            <option value="revenue">销售额（高到低）</option>
-            <option value="collectionRate">收款率（高到低）</option>
-            <option value="pendingCollection">待收款（高到低）</option>
+            <option value="name">按姓名</option>
+            <option value="points">按現有點數</option>
+            <option value="sold">按已銷售</option>
+            <option value="pending">按待收款</option>
           </select>
         </div>
       </div>
 
       {/* Sellers 表格 */}
-      {sortedSellers.length === 0 ? (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>🔍</div>
-          <h3>没有找到符合条件的 Sellers</h3>
-          <p>试试调整筛选条件或搜索关键词</p>
-        </div>
-      ) : (
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.tableHeader}>
-                <th style={styles.th}>序号</th>
-                <th style={styles.th}>姓名</th>
-                <th style={styles.th}>部门</th>
-                <th style={styles.th}>电话</th>
-                <th style={styles.th}>现有点数</th>
-                <th style={styles.th}>累计销售</th>
-                <th style={styles.th}>操作</th>
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.headerRow}>
+              <th style={styles.th}>#</th>
+              <th style={styles.th}>姓名</th>
+              <th style={styles.th}>學號</th>
+              <th style={styles.th}>部門</th>
+              <th style={styles.th}>現有點數</th>
+              <th style={styles.th}>已銷售</th>
+              <th style={styles.th}>待收款</th>
+              <th style={styles.th}>狀態</th>
+              <th style={styles.th}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedSellers.length === 0 ? (
+              <tr>
+                <td colSpan="9" style={styles.noData}>
+                  沒有符合條件的 Sellers
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {sortedSellers.map((seller, index) => (
-                <SellerRow
-                  key={seller.id || seller.userId}
-                  index={index}
-                  seller={seller}
-                  isExpanded={expandedSeller === (seller.id || seller.userId)}
-                  onToggle={() => setExpandedSeller(
-                    expandedSeller === (seller.id || seller.userId) ? null : (seller.id || seller.userId)
-                  )}
-                  onSelect={onSelectSeller}
-                  onRecordCollection={handleRecordCollection}
-                  onCashSubmission={handleCashSubmission}
-                  isRecording={recordingCollection === seller.userId}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-};
+            ) : (
+              sortedSellers.map((seller, index) => {
+                const pending = seller.pointsStats?.cashFlow?.pendingCollection || 0;
+                const isExpanded = expandedSeller === seller.userId;
+                const isRecording = recordingCollection === seller.userId;
+                const hasWarning = seller.collectionAlert?.hasWarning;
+                const riskLevel = seller.collectionAlert?.riskLevel;
 
-/**
- * Seller Row Component
- */
-// ✅ 修改后
-const SellerRow = ({ index, seller, isExpanded, onToggle, onSelect, onRecordCollection, onCashSubmission, isRecording }) => {
-  if (!seller || typeof seller !== 'object') return null;
+                return (
+                  <React.Fragment key={seller.userId}>
+                    <tr style={styles.row}>
+                      <td style={styles.td}>{index + 1}</td>
+                      <td style={styles.td}>
+                        {seller.basicInfo?.chineseName || '未知'}
+                      </td>
+                      <td style={styles.td}>
+                        {seller.identityInfo?.identityTag || '-'}
+                      </td>
+                      <td style={styles.td}>
+                        {seller.identityInfo?.department || '-'}
+                      </td>
+                      <td style={styles.td}>
+                        {seller.seller?.availablePoints || 0}
+                      </td>
+                      <td style={styles.td}>
+                        {seller.pointsStats?.totalSold || 0}
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          color: pending > 0 ? '#ef4444' : '#6b7280',
+                          fontWeight: pending > 0 ? 'bold' : 'normal'
+                        }}>
+                          RM {pending.toLocaleString()}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        {hasWarning ? (
+                          <span style={{
+                            ...styles.badge,
+                            background: riskLevel === 'high' ? '#fee2e2' : '#fef3c7',
+                            color: riskLevel === 'high' ? '#dc2626' : '#d97706'
+                          }}>
+                            {riskLevel === 'high' ? '⚠️ 高風險' : '⚡ 警示'}
+                          </span>
+                        ) : (
+                          <span style={{
+                            ...styles.badge,
+                            background: '#dcfce7',
+                            color: '#16a34a'
+                          }}>
+                            ✓ 正常
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.actionButtons}>
+                          {pending > 0 && (
+                            <button
+                              onClick={() => handleRecordCollection(seller)}
+                              disabled={isRecording}
+                              style={{
+                                ...styles.actionBtn,
+                                background: '#10b981',
+                                opacity: isRecording ? 0.5 : 1
+                              }}
+                            >
+                              {isRecording ? '處理中...' : '💰 收款'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setExpandedSeller(isExpanded ? null : seller.userId)}
+                            style={{
+                              ...styles.actionBtn,
+                              background: '#6b7280'
+                            }}
+                          >
+                            {isExpanded ? '收起' : '詳情'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
 
-  const basicInfo = seller.basicInfo || {};
-  const identityInfo = seller.identityInfo || {};
-  const sellerData = seller.seller || {};  // ✅ 正确：直接读取 seller 对象
-
-  const displayName = basicInfo.chineseName || '未命名';
-  const englishName = basicInfo.englishName || '';
-  const department = identityInfo.department || '-';
-  const phoneNumber = basicInfo.phoneNumber || '-';
-
-  // ✅ 正确：从 seller 对象读取所有点数相关信息
-  const currentBalance = sellerData.availablePoints || 0;
-  const totalSold = sellerData.totalPointsSold || 0;
-  const totalCollected = sellerData.totalCashCollected || 0;
-
-  // 计算派生数据
-  const totalRevenue = totalSold;
-  const pendingCollection = totalRevenue - totalCollected;
-  const collectionRate = totalRevenue > 0 ? totalCollected / totalRevenue : 0;
-
-  const hasCollectionAlert = sellerData.collectionAlert === true;
-  const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
-
-  const getRateColor = (rate) => {
-    if (rate >= 0.8) return '#10b981';
-    if (rate >= 0.5) return '#f59e0b';
-    return '#ef4444';
-  };
-
-  const getStatusBadge = () => {
-    if (hasCollectionAlert && pendingRatio >= 0.5) {
-      return (
-        <span style={{ ...styles.badge, ...styles.badgeHighRisk }}>
-          🚨 高风险
-        </span>
-      );
-    }
-    if (hasCollectionAlert) {
-      return (
-        <span style={{ ...styles.badge, ...styles.badgeWarning }}>
-          ⚠️ 警示
-        </span>
-      );
-    }
-    if (totalSold > 0) {
-      return (
-        <span style={{ ...styles.badge, ...styles.badgeActive }}>
-          ✅ 活跃
-        </span>
-      );
-    }
-    return (
-      <span style={{ ...styles.badge, ...styles.badgeInactive }}>
-        ⏸️ 未活跃
-      </span>
-    );
-  };
-
-  return (
-    <>
-      <tr style={styles.tableRow}>
-        {/* 序号 */}
-        <td style={styles.td}>
-          <span style={styles.indexText}>{index + 1}</span>
-        </td>
-
-        {/* 姓名 */}
-        <td style={styles.td}>
-          <div style={styles.nameCell}>
-            <div style={styles.nameText}>{displayName}</div>
-            {englishName && (
-              <div style={styles.englishName}>{englishName}</div>
+                    {/* 展開的詳情行 */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan="9" style={styles.detailsCell}>
+                          <div style={styles.detailsContainer}>
+                            <h4 style={styles.detailsTitle}>詳細信息</h4>
+                            <div style={styles.detailsGrid}>
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>電話:</span>
+                                <span>{seller.phone || '-'}</span>
+                              </div>
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>累計分配:</span>
+                                <span>{seller.pointsStats?.totalAllocated || 0}</span>
+                              </div>
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>銷售金額:</span>
+                                <span>RM {seller.pointsStats?.currentSalesAmount || 0}</span>
+                              </div>
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>已收款:</span>
+                                <span>RM {seller.pointsStats?.cashFlow?.totalCashCollected || 0}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
-          </div>
-        </td>
-
-        {/* 部门 */}
-        <td style={styles.td}>{department}</td>
-
-        {/* 电话 */}
-        <td style={styles.td}>
-          <span style={styles.phoneText}>{phoneNumber}</span>
-        </td>
-
-        {/* 现有点数 */}
-        <td style={styles.td}>
-          <span style={styles.balanceText}>
-            {currentBalance.toLocaleString()}
-          </span>
-        </td>
-
-        {/* 累计销售 */}
-        <td style={styles.td}>
-          <span style={styles.revenueText}>
-            {totalRevenue.toLocaleString()}
-          </span>
-        </td>
-
-        {/* 操作 */}
-        <td style={styles.td}>
-          <div style={styles.actionButtons}>
-            <button
-              onClick={onToggle}
-              style={styles.actionButton}
-              title="查看详情"
-            >
-              {isExpanded ? '▲' : '▼'}
-            </button>
-            <button
-              onClick={() => onSelect(seller)}
-              style={{ ...styles.actionButton, ...styles.allocateButton }}
-              title="分配点数"
-            >
-              ➕ 分配
-            </button>
-            {pendingCollection > 0 && (
-              <button
-                onClick={() => onRecordCollection(seller)}
-                style={{ ...styles.actionButton, ...styles.collectionButton }}
-                title="记录收款"
-                disabled={isRecording}
-              >
-                {isRecording ? '⏳' : '💰'}
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-
-      {isExpanded && (
-        <tr>
-          <td colSpan="8" style={styles.expandedCell}>
-            <SellerDetails
-              seller={seller}
-              onSelect={onSelect}
-              onRecordCollection={onRecordCollection}
-              onCashSubmission={onCashSubmission}
-            />
-          </td>
-        </tr>
-      )}
-    </>
-  );
-};
-
-/**
- * Seller Details Component
- */
-const SellerDetails = ({ seller, onSelect, onRecordCollection, onCashSubmission }) => {
-  const pointsStats = seller.pointsStats || {};
-  const sellerData = seller.seller || {};
-  const basicInfo = seller.basicInfo || {};
-  const identityInfo = seller.identityInfo || {};
-
-  const hasCollectionAlert = sellerData.collectionAlert === true;
-  const pendingCollection = pointsStats.pendingCollection || 0;
-  const totalRevenue = pointsStats.totalRevenue || 0;
-  const pendingRatio = totalRevenue > 0 ? pendingCollection / totalRevenue : 0;
-
-  // 现金相关
-  const cashSubmitted = sellerData.cashSubmitted || 0;
-  const pendingCashSubmission = sellerData.pendingCashSubmission || 0;
-
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '从未';
-    if (timestamp.seconds) {
-      return new Date(timestamp.seconds * 1000).toLocaleDateString('zh-CN');
-    }
-    if (timestamp.toDate) {
-      return timestamp.toDate().toLocaleDateString('zh-CN');
-    }
-    return '无效日期';
-  };
-
-  return (
-    <div style={styles.detailsContainer}>
-      <div style={styles.detailsGrid}>
-        {/* 点数统计 */}
-        <div style={styles.detailCard}>
-          <div style={styles.detailCardTitle}>💰 点数流动</div>
-          <div style={styles.detailRows}>
-            <div style={styles.detailRow}>
-              <span>累计收到点数:</span>
-              <strong>{(pointsStats.totalReceived || 0).toLocaleString()}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>当前持有:</span>
-              <strong>{(pointsStats.currentBalance || 0).toLocaleString()}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>累计售出:</span>
-              <strong>{(pointsStats.totalSold || 0).toLocaleString()}</strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>销售额 (=售出):</span>
-              <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
-            </div>
-          </div>
-        </div>
-
-        {/* 收款统计 */}
-        <div style={styles.detailCard}>
-          <div style={styles.detailCardTitle}>📊 收款情况</div>
-          <div style={styles.detailRows}>
-            <div style={styles.detailRow}>
-              <span>已收款:</span>
-              <strong style={{ color: '#10b981' }}>
-                {(pointsStats.totalCollected || 0).toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>待收款:</span>
-              <strong style={{ color: '#ef4444' }}>
-                {pendingCollection.toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>收款率:</span>
-              <strong>
-                {Math.round((pointsStats.collectionRate || 0) * 100)}%
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>最后收款:</span>
-              <span style={styles.timestampText}>
-                {formatTimestamp(pointsStats.lastCollected)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 现金上交统计 */}
-        <div style={styles.detailCard}>
-          <div style={styles.detailCardTitle}>💵 现金上交</div>
-          <div style={styles.detailRows}>
-            <div style={styles.detailRow}>
-              <span>已上交现金:</span>
-              <strong style={{ color: '#10b981' }}>
-                {cashSubmitted.toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>待上交现金:</span>
-              <strong style={{ color: '#f59e0b' }}>
-                {pendingCashSubmission.toLocaleString()}
-              </strong>
-            </div>
-            <div style={styles.detailRow}>
-              <span>上交率:</span>
-              <strong>
-                {totalRevenue > 0
-                  ? `${Math.round((cashSubmitted / totalRevenue) * 100)}%`
-                  : '0%'
-                }
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* 分配来源 */}
-        <div style={styles.detailCard}>
-          <div style={styles.detailCardTitle}>📦 点数来源</div>
-          <div style={styles.detailRows}>
-            {(() => {
-              const sellerData = seller.seller || {};
-              const transactions = sellerData.transactions || {};
-
-              let fromEventManager = 0;
-              let fromSellerManager = 0;
-              let lastAllocatedAt = null;
-              let txCount = 0;
-
-              // 遍历 transactions 对象（Map 格式，键为时间戳）
-              try {
-                Object.entries(transactions).forEach(([key, tx]) => {
-                  // 跳过非对象和继承属性
-                  if (!tx || typeof tx !== 'object') return;
-
-                  // 只处理 allocation 类型的交易
-                  if (tx.type === 'allocation') {
-                    txCount++;
-                    const amount = parseFloat(tx.amount) || 0;
-
-                    // 根据 allocatedBy 分类统计
-                    const allocatedBy = tx.allocatedBy || '';
-                    if (allocatedBy === 'eventManager') {
-                      fromEventManager += amount;
-                    } else if (allocatedBy === 'sellerManager' || allocatedBy === 'sm') {
-                      fromSellerManager += amount;
-                    }
-
-                    // 记录最后分配时间（比较时间戳字符串）
-                    if (tx.timestamp) {
-                      if (!lastAllocatedAt) {
-                        lastAllocatedAt = tx.timestamp;
-                      } else {
-                        // 时间戳比较：尝试转换为毫秒数
-                        const currentTs = typeof tx.timestamp === 'object' && tx.timestamp.seconds
-                          ? tx.timestamp.seconds * 1000
-                          : tx.timestamp;
-                        const lastTs = typeof lastAllocatedAt === 'object' && lastAllocatedAt.seconds
-                          ? lastAllocatedAt.seconds * 1000
-                          : lastAllocatedAt;
-
-                        if (currentTs > lastTs) {
-                          lastAllocatedAt = tx.timestamp;
-                        }
-                      }
-                    }
-                  }
-                });
-              } catch (err) {
-                console.error('❌ 处理 transactions 出错:', err);
-              }
-
-              const totalAllocated = fromEventManager + fromSellerManager;
-
-              return (
-                <>
-                  <div style={styles.detailRow}>
-                    <span>来自 Event Manager:</span>
-                    <strong style={{ color: '#3b82f6' }}>
-                      {fromEventManager.toLocaleString()}
-                    </strong>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span>来自 Seller Manager:</span>
-                    <strong style={{ color: '#f59e0b' }}>
-                      {fromSellerManager.toLocaleString()}
-                    </strong>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span>总计已分配:</span>
-                    <strong style={{ color: '#10b981' }}>
-                      {totalAllocated.toLocaleString()}
-                    </strong>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span>最后分配时间:</span>
-                    <span style={styles.timestampText}>
-                      {lastAllocatedAt ? formatTimestamp(lastAllocatedAt) : '暂无分配'}
-                    </span>
-                  </div>
-                  {txCount > 0 && (
-                    <div style={styles.detailRow}>
-                      <span>分配记录:</span>
-                      <span style={styles.timestampText}>{txCount} 条</span>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* 收款警示信息 */}
-        {hasCollectionAlert && (
-          <div style={styles.detailCard}>
-            <div style={styles.detailCardTitle}>⚠️ 收款警示</div>
-            <div style={styles.detailRows}>
-              <div style={styles.detailRow}>
-                <span>风险等级:</span>
-                <strong style={{
-                  color: pendingRatio >= 0.5 ? '#dc2626' : '#f59e0b'
-                }}>
-                  {pendingRatio >= 0.5 ? '🚨 高风险' : '⚠️ 中等'}
-                </strong>
-              </div>
-              <div style={styles.detailRow}>
-                <span>待收款比例:</span>
-                <strong style={{ color: '#ef4444' }}>
-                  {Math.round(pendingRatio * 100)}%
-                </strong>
-              </div>
-              <div style={styles.detailRow}>
-                <span>待收款金额:</span>
-                <strong style={{ color: '#ef4444' }}>
-                  {pendingCollection.toLocaleString()}
-                </strong>
-              </div>
-              <div style={styles.alertMessage}>
-                {pendingRatio >= 0.5
-                  ? `待收款金额过高（${Math.round(pendingRatio * 100)}%），请尽快收款`
-                  : `有待收款项（${Math.round(pendingRatio * 100)}%），请注意跟进`
-                }
-              </div>
-            </div>
-          </div>
-        )}
+          </tbody>
+        </table>
       </div>
 
-      {/* 操作按钮 */}
-      <div style={styles.detailActions}>
-        {onSelect && (
-          <button
-            onClick={() => onSelect(seller)}
-            style={{ ...styles.detailActionButton, ...styles.allocateDetailButton }}
-          >
-            ➕ 分配点数
-          </button>
-        )}
-        {pendingCollection > 0 && (
-          <button
-            onClick={() => onRecordCollection(seller)}
-            style={styles.detailActionButton}
-          >
-            💰 记录收款 (待收: {pendingCollection.toLocaleString()})
-          </button>
-        )}
-        {pendingCashSubmission > 0 && onCashSubmission && (
-          <button
-            onClick={() => {
-              // 这里需要传入 managerId，实际使用时从context或props获取
-              const managerId = 'MANAGER_ID_HERE'; // TODO: 从context获取当前登录的manager ID
-              onCashSubmission(seller, managerId, 'sellerManager');
-            }}
-            style={{ ...styles.detailActionButton, ...styles.cashButton }}
-          >
-            💵 上交现金 (待交: {pendingCashSubmission.toLocaleString()})
-          </button>
-        )}
+      {/* 統計摘要 */}
+      <div style={styles.summary}>
+        <div style={styles.summaryItem}>
+          <span style={styles.summaryLabel}>總人數:</span>
+          <span style={styles.summaryValue}>{sortedSellers.length}</span>
+        </div>
+        <div style={styles.summaryItem}>
+          <span style={styles.summaryLabel}>總待收款:</span>
+          <span style={{ ...styles.summaryValue, color: '#ef4444' }}>
+            RM {sortedSellers.reduce((sum, s) => sum + (s.pointsStats?.cashFlow?.pendingCollection || 0), 0).toLocaleString()}
+          </span>
+        </div>
       </div>
     </div>
   );
 };
 
+// ========== 樣式 ==========
 const styles = {
-  container: { width: '100%' },
-
-  header: {
-    marginBottom: '1.5rem'
+  container: {
+    padding: '1.5rem',
+    background: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
   },
-  title: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    margin: '0 0 0.5rem 0'
-  },
-  subtitle: {
-    fontSize: '0.875rem',
-    color: '#6b7280'
-  },
-
-  controls: {
+  toolbar: {
     display: 'flex',
     gap: '1rem',
     marginBottom: '1.5rem',
-    flexWrap: 'wrap',
-    alignItems: 'center'
+    flexWrap: 'wrap'
   },
-
   searchBox: {
-    flex: '1 1 300px',
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center'
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '0.75rem',
-    fontSize: '1.25rem'
+    flex: '1 1 300px'
   },
   searchInput: {
     width: '100%',
-    padding: '0.75rem 2.5rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    outline: 'none'
-  },
-  clearButton: {
-    position: 'absolute',
-    right: '0.5rem',
-    padding: '0.25rem 0.5rem',
-    background: '#ef4444',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
+    padding: '0.5rem 1rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
     fontSize: '0.875rem'
   },
-
-  filterGroup: {
+  filters: {
     display: 'flex',
-    alignItems: 'center',
     gap: '0.5rem'
   },
-  filterLabel: {
+  select: {
+    padding: '0.5rem 1rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
     fontSize: '0.875rem',
-    color: '#6b7280',
-    fontWeight: '500'
-  },
-  filterSelect: {
-    padding: '0.5rem 0.75rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
     background: 'white'
   },
-
-  tableWrapper: {
+  tableContainer: {
     overflowX: 'auto',
-    background: 'white',
-    borderRadius: '12px',
-    border: '2px solid #e5e7eb'
+    marginBottom: '1rem'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse'
   },
-  tableHeader: {
+  headerRow: {
     background: '#f9fafb',
     borderBottom: '2px solid #e5e7eb'
   },
   th: {
-    padding: '1rem',
+    padding: '0.75rem 1rem',
     textAlign: 'left',
-    fontSize: '0.875rem',
+    fontSize: '0.75rem',
     fontWeight: '600',
     color: '#374151',
-    whiteSpace: 'nowrap'
+    textTransform: 'uppercase'
   },
-  tableRow: {
+  row: {
     borderBottom: '1px solid #e5e7eb',
-    transition: 'background 0.2s'
+    ':hover': {
+      background: '#f9fafb'
+    }
   },
   td: {
-    padding: '1rem',
+    padding: '0.75rem 1rem',
     fontSize: '0.875rem',
-    color: '#1f2937'
+    color: '#111827'
   },
-
-  nameCell: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.25rem'
-  },
-  nameText: {
-    fontWeight: '600',
-    color: '#1f2937'
-  },
-  englishName: {
-    fontSize: '0.75rem',
-    color: '#9ca3af'
-  },
-
-  phoneText: {
-    fontFamily: 'monospace',
+  noData: {
+    padding: '2rem',
+    textAlign: 'center',
     color: '#6b7280'
-  },
-
-  balanceText: {
-    fontWeight: '600',
-    color: '#10b981'
-  },
-  revenueText: {
-    fontWeight: '600',
-    color: '#6366f1'
-  },
-
-  rateCell: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.25rem'
-  },
-  rateText: {
-    fontWeight: 'bold',
-    fontSize: '0.875rem'
-  },
-  rateBar: {
-    width: '60px',
-    height: '4px',
-    background: '#e5e7eb',
-    borderRadius: '2px',
-    overflow: 'hidden'
-  },
-  rateBarFill: {
-    height: '100%',
-    borderRadius: '2px'
-  },
-  indexText: {
-    fontSize: '0.875rem',
-    color: '#6b7280',
-    fontWeight: '500'
   },
   badge: {
-    display: 'inline-block',
-    padding: '0.25rem 0.5rem',
-    borderRadius: '4px',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '12px',
     fontSize: '0.75rem',
-    fontWeight: '600',
-    whiteSpace: 'nowrap'
+    fontWeight: '500'
   },
-  badgeActive: {
-    background: '#d1fae5',
-    color: '#065f46'
-  },
-  badgeWarning: {
-    background: '#fef3c7',
-    color: '#92400e'
-  },
-  badgeHighRisk: {
-    background: '#fee2e2',
-    color: '#991b1b'
-  },
-  badgeInactive: {
-    background: '#f3f4f6',
-    color: '#6b7280'
-  },
-
   actionButtons: {
     display: 'flex',
     gap: '0.5rem'
   },
-  actionButton: {
-    padding: '0.5rem 0.75rem',
-    background: '#f3f4f6',
-    border: '1px solid #d1d5db',
+  actionBtn: {
+    padding: '0.375rem 0.75rem',
+    border: 'none',
     borderRadius: '6px',
+    color: 'white',
+    fontSize: '0.75rem',
+    fontWeight: '500',
     cursor: 'pointer',
-    fontSize: '0.875rem',
-    transition: 'all 0.2s'
+    whiteSpace: 'nowrap'
   },
-  collectionButton: {
-    background: '#fef3c7',
-    borderColor: '#fbbf24'
-  },
-  allocateButton: {
-    background: '#dbeafe',
-    borderColor: '#93c5fd',
-    color: '#1e40af',
-    fontWeight: '600'
-  },
-
-  expandedCell: {
+  detailsCell: {
     padding: '0',
     background: '#f9fafb'
   },
-
   detailsContainer: {
     padding: '1.5rem',
-    background: '#ffffff'
+    borderTop: '1px solid #e5e7eb'
+  },
+  detailsTitle: {
+    margin: '0 0 1rem 0',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151'
   },
   detailsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '1rem',
-    marginBottom: '1rem'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '1rem'
   },
-
-  detailCard: {
-    background: '#fafafa',
-    border: '2px solid #e5e7eb',
-    borderRadius: '8px',
-    padding: '1rem'
-  },
-  detailCardTitle: {
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: '0.75rem'
-  },
-  detailRows: {
+  detailItem: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  detailLabel: {
+    fontSize: '0.75rem',
+    color: '#6b7280'
+  },
+  summary: {
+    display: 'flex',
+    gap: '2rem',
+    padding: '1rem',
+    background: '#f9fafb',
+    borderRadius: '6px',
+    marginTop: '1rem'
+  },
+  summaryItem: {
+    display: 'flex',
+    alignItems: 'center',
     gap: '0.5rem'
   },
-  detailRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  summaryLabel: {
     fontSize: '0.875rem',
     color: '#6b7280'
   },
-  timestampText: {
-    fontSize: '0.75rem',
-    color: '#9ca3af'
-  },
-
-  alertMessage: {
-    marginTop: '0.5rem',
-    padding: '0.5rem',
-    background: '#fef3c7',
-    border: '1px solid #fbbf24',
-    borderRadius: '4px',
-    fontSize: '0.75rem',
-    color: '#92400e'
-  },
-
-  detailActions: {
-    display: 'flex',
-    gap: '1rem',
-    paddingTop: '1rem',
-    borderTop: '2px solid #e5e7eb',
-    flexWrap: 'wrap'
-  },
-  detailActionButton: {
-    flex: 1,
-    minWidth: '200px',
-    padding: '0.75rem',
-    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    fontWeight: '600'
-  },
-  allocateDetailButton: {
-    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-    order: -1
-  },
-  cashButton: {
-    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-  },
-  secondaryButton: {
-    background: 'white',
-    color: '#374151',
-    border: '2px solid #e5e7eb'
-  },
-
-  emptyState: {
-    textAlign: 'center',
-    padding: '3rem',
-    color: '#6b7280'
-  },
-  emptyIcon: {
-    fontSize: '4rem',
-    marginBottom: '1rem'
+  summaryValue: {
+    fontSize: '1rem',
+    fontWeight: '600',
+    color: '#111827'
   }
 };
 

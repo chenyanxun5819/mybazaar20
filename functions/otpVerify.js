@@ -7,10 +7,9 @@ require('dotenv').config();
 // ===========================================
 // 🔧 开发模式配置
 // ===========================================
-// 设置为 true：使用固定 OTP 223344（节省测试费用）
-// 设置为 false：使用真实 SMS OTP（生产环境）
-const USE_DEV_OTP = process.env.USE_DEV_OTP === 'true' || true; // 默认开启开发模式
-const DEV_OTP_CODE = '223344'; // 固定的开发 OTP
+// 注意：这些环境变量会被 platform_settings 覆盖
+const USE_DEV_OTP = process.env.USE_DEV_OTP === 'true' || true;
+const DEV_OTP_CODE = '223344';
 
 console.log('[SMS Config] USE_DEV_OTP:', USE_DEV_OTP);
 if (USE_DEV_OTP) {
@@ -28,6 +27,30 @@ const INFOBIP_API_BASE_URL = process.env.INFOBIP_API_BASE_URL || '51w5lj.api.inf
 const INFOBIP_SENDER_NUMBER = process.env.INFOBIP_SENDER_NUMBER || 'MyBazaar';
 
 console.log('[SMS Config] SMS_PROVIDER:', SMS_PROVIDER);
+
+// ===========================================
+// 🔧 读取 Platform Settings
+// ===========================================
+async function getPlatformSettings() {
+  try {
+    const db = admin.firestore();
+    const settingsDoc = await db.collection('platform_settings').doc('config').get();
+    
+    if (!settingsDoc.exists) {
+      console.warn('[getPlatformSettings] ⚠️ platform_settings/config 不存在，使用默认配置');
+      return null;
+    }
+    
+    return settingsDoc.data();
+  } catch (error) {
+    console.error('[getPlatformSettings] 读取配置失败:', error);
+    return null;
+  }
+}
+
+// ===========================================
+// 📱 SMS 发送函数
+// ===========================================
 
 /**
  * 使用 360 API 发送 SMS
@@ -142,14 +165,26 @@ function sendSmsViaHttps(phoneNumber, message) {
   });
 }
 
+// ===========================================
+// 🔐 OTP 工具函数
+// ===========================================
+
 /**
  * 生成 OTP 码
  */
-function generateOtpCode() {
+function generateOtpCode(settings = null) {
+  // 优先使用 platform_settings 的配置
+  if (settings && settings.otp && settings.otp.devMode && settings.otp.devMode.enabled) {
+    console.log('[generateOtpCode] 🔧 开发模式（platform_settings）：返回固定 OTP');
+    return settings.otp.devMode.fixedCode || DEV_OTP_CODE;
+  }
+  
+  // 回退到环境变量
   if (USE_DEV_OTP) {
-    console.log('[generateOtpCode] 🔧 开发模式：返回固定 OTP');
+    console.log('[generateOtpCode] 🔧 开发模式（环境变量）：返回固定 OTP');
     return DEV_OTP_CODE;
   }
+  
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
@@ -161,9 +196,66 @@ function sha256(str) {
 }
 
 /**
+ * 格式化 OTP 消息
+ * 替换消息模板中的变量
+ */
+function formatOtpMessage(template, scenarioData) {
+  let message = template;
+  
+  // 替换所有 {变量名}
+  for (const [key, value] of Object.entries(scenarioData || {})) {
+    const placeholder = `{${key}}`;
+    message = message.replace(new RegExp(placeholder, 'g'), value);
+  }
+  
+  return message;
+}
+
+/**
+ * 检查是否应该跳过 SMS 发送（测试号码）
+ */
+function shouldBypassSms(phoneNumber, settings) {
+  if (!settings || !settings.otp || !settings.otp.devMode) {
+    return false;
+  }
+  
+  const bypassNumbers = settings.otp.devMode.bypassForTestNumbers || [];
+  
+  // 标准化号码进行比较
+  const normalizePhone = (p) => {
+    if (!p) return '';
+    return String(p).replace(/[^\d]/g, '');
+  };
+  
+  const normalized = normalizePhone(phoneNumber);
+  
+  return bypassNumbers.some(testNumber => {
+    return normalizePhone(testNumber) === normalized;
+  });
+}
+
+// ===========================================
+// 📤 HTTP 函数：发送 OTP（扩展版）
+// ===========================================
+
+/**
  * HTTP 函数：发送 OTP
+ * 
+ * 支持两种模式：
+ * 1. 登录场景（向后兼容）
+ *    Body: { phoneNumber, orgCode, eventCode, loginType }
+ * 
+ * 2. 通用场景（新增）
+ *    Body: { phoneNumber, userId, scenario, scenarioData }
+ * 
+ * @example 登录场景
  * POST /api/sendOtpHttp
- * Body: { phoneNumber, orgCode, eventCode, loginType }
+ * { phoneNumber: "+60123456789", orgCode: "chhs", eventCode: "ban", loginType: "universal" }
+ * 
+ * @example Customer付款
+ * POST /api/sendOtpHttp
+ * { phoneNumber: "+60123456789", userId: "user123", scenario: "customerPayment", 
+ *   scenarioData: { amount: 50, merchantName: "小红的摊位" } }
  */
 exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -176,81 +268,205 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const { phoneNumber, orgCode, eventCode, loginType } = req.body;
+    const { 
+      phoneNumber, 
+      
+      // 登录场景（兼容）
+      orgCode, 
+      eventCode, 
+      loginType,
+      
+      // 通用场景（新增）
+      userId,
+      scenario,
+      scenarioData 
+    } = req.body;
 
     if (!phoneNumber) {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码' } });
     }
 
-    const effectiveLoginType = loginType || 'universal';
-    console.log('[sendOtpHttp] 登录类型:', effectiveLoginType);
+    // 读取 Platform Settings
+    const settings = await getPlatformSettings();
+    
+    // 判断场景类型
+    const isLoginScenario = (orgCode || eventCode) && !scenario;
+    const effectiveScenario = scenario || 'login';
+    
+    console.log('[sendOtpHttp] 场景:', effectiveScenario, isLoginScenario ? '（登录）' : '（通用）');
 
-    const otpCode = generateOtpCode();
+    // === 新功能：检查该场景是否需要 OTP ===
+    if (!isLoginScenario && settings) {
+      const otpEnabled = settings.otp?.enabled || false;
+      const scenarioRequired = settings.otpRequired?.[effectiveScenario] || false;
+      
+      console.log('[sendOtpHttp] OTP配置:', { otpEnabled, scenarioRequired, scenario: effectiveScenario });
+      
+      // 如果OTP系统关闭，或该场景不需要OTP
+      if (!otpEnabled || !scenarioRequired) {
+        console.log('[sendOtpHttp] ✅ 该场景不需要OTP，直接返回');
+        return res.status(200).json({
+          success: true,
+          otpRequired: false,
+          message: '该场景不需要验证',
+          scenario: effectiveScenario
+        });
+      }
+      
+      // 检查金额触发条件
+      if (scenarioData && scenarioData.amount !== undefined) {
+        const scenarioConfig = settings.otpScenarios?.[effectiveScenario];
+        if (scenarioConfig && scenarioConfig.triggerCondition) {
+          const { minAmount, maxAmount } = scenarioConfig.triggerCondition;
+          const amount = parseFloat(scenarioData.amount);
+          
+          // 低于最小金额，不需要OTP
+          if (minAmount && amount < minAmount) {
+            console.log('[sendOtpHttp] ✅ 金额低于触发阈值，不需要OTP');
+            return res.status(200).json({
+              success: true,
+              otpRequired: false,
+              message: `金额低于 ${minAmount}，不需要验证`,
+              scenario: effectiveScenario
+            });
+          }
+          
+          // 超过最大金额，不允许（如果设置了maxAmount）
+          if (maxAmount && amount > maxAmount) {
+            console.log('[sendOtpHttp] ❌ 金额超过最大限制');
+            return res.status(400).json({
+              error: { code: 'invalid-argument', message: `金额不能超过 ${maxAmount}` }
+            });
+          }
+        }
+      }
+    }
+
+    // === 生成 OTP ===
+    const otpCode = generateOtpCode(settings);
     const otpCodeHash = sha256(otpCode);
-    const sessionId = crypto.randomUUID();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const sessionId = userId 
+      ? `${userId}_${effectiveScenario}_${Date.now()}` 
+      : crypto.randomUUID();
+    
+    const validityMinutes = settings?.otp?.validityMinutes || 5;
+    const expiresAt = Date.now() + validityMinutes * 60 * 1000;
 
+    // === 保存 OTP Session ===
     const db = admin.firestore();
-    await db.collection('otp_sessions').doc(sessionId).set({
+    const otpSession = {
       sessionId,
       phoneNumber,
-      orgCode: orgCode || '',
-      eventCode: eventCode || '',
-      loginType: effectiveLoginType,
       otpCodeHash,
       expiresAt,
       attempts: 0,
       createdAt: new Date(),
-      devMode: USE_DEV_OTP
-    });
+      status: 'pending',
+      
+      // 通用场景数据（新增）
+      userId: userId || null,
+      scenario: effectiveScenario,
+      scenarioData: scenarioData || {},
+      
+      // 登录场景数据（兼容）
+      orgCode: orgCode || '',
+      eventCode: eventCode || '',
+      loginType: loginType || 'universal',
+      
+      // 开发模式标记
+      devMode: settings?.otp?.devMode?.enabled || USE_DEV_OTP
+    };
+    
+    await db.collection('otp_sessions').doc(sessionId).set(otpSession);
+    console.log('[sendOtpHttp] ✅ OTP Session 已保存:', sessionId);
 
-    if (USE_DEV_OTP) {
-      console.log('[sendOtpHttp] 🔧 开发模式：跳过真实 SMS 发送');
-      console.log('[sendOtpHttp] 🔧 请使用固定 OTP:', DEV_OTP_CODE);
+    // === 开发模式：跳过真实 SMS ===
+    const devModeEnabled = settings?.otp?.devMode?.enabled || USE_DEV_OTP;
+    const isBypassNumber = shouldBypassSms(phoneNumber, settings);
+    
+    if (devModeEnabled || isBypassNumber) {
+      console.log('[sendOtpHttp] 🔧 开发模式或测试号码：跳过真实 SMS 发送');
+      console.log('[sendOtpHttp] 🔧 请使用验证码:', otpCode);
       
       return res.status(200).json({
         success: true,
+        otpRequired: true,
         sessionId,
-        message: `🔧 开发模式：请输入固定验证码 ${DEV_OTP_CODE}`,
-        expiresIn: 300,
+        message: `🔧 开发模式：请输入验证码 ${otpCode}`,
+        expiresIn: validityMinutes * 60,
+        scenario: effectiveScenario,
         devMode: true,
-        devOtp: DEV_OTP_CODE
+        devOtp: otpCode  // 仅开发模式返回
       });
     }
 
-    // 生产模式：发送真实 SMS
-    const message = `您的 MyBazaar 验证码是: ${otpCode}。有效期5分钟，请勿泄露。`;
+    // === 生产模式：发送真实 SMS ===
+    
+    // 获取消息模板
+    let message = `您的 MyBazaar 验证码是: ${otpCode}。有效期${validityMinutes}分钟，请勿泄露。`;
+    
+    // 如果有场景配置，使用场景消息
+    if (!isLoginScenario && settings && settings.otpScenarios && settings.otpScenarios[effectiveScenario]) {
+      const template = settings.otpScenarios[effectiveScenario].message;
+      if (template) {
+        // 添加 OTP 到场景数据
+        const messageData = { ...scenarioData, otp: otpCode, validityMinutes };
+        const scenarioMessage = formatOtpMessage(template, messageData);
+        message = `${scenarioMessage} 验证码：${otpCode}（${validityMinutes}分钟内有效）`;
+      }
+    }
+    
+    console.log('[sendOtpHttp] 📱 准备发送 SMS:', { phoneNumber, message: message.substring(0, 50) + '...' });
+    
     let smsResult;
-
-    if (SMS_PROVIDER === '360') {
+    const provider = settings?.otp?.provider || SMS_PROVIDER;
+    
+    if (provider === '360' || provider === '360sms') {
       smsResult = await sendSmsVia360(phoneNumber, message);
     } else {
       smsResult = await sendSmsViaHttps(phoneNumber, message);
     }
 
-    console.log('[sendOtpHttp] SMS 发送成功:', smsResult);
+    console.log('[sendOtpHttp] ✅ SMS 发送成功:', smsResult);
 
     return res.status(200).json({
       success: true,
+      otpRequired: true,
       sessionId,
       message: '验证码已发送',
-      expiresIn: 300
+      expiresIn: validityMinutes * 60,
+      scenario: effectiveScenario
     });
 
   } catch (error) {
-    console.error('[sendOtpHttp] 错误:', error);
+    console.error('[sendOtpHttp] ❌ 错误:', error);
     return res.status(500).json({
       error: { code: 'internal', message: error.message || '发送失败' }
     });
   }
 });
 
+// ===========================================
+// ✅ HTTP 函数：验证 OTP（扩展版）
+// ===========================================
+
 /**
  * HTTP 函数：验证 OTP
- * POST /api/verifyOtpHttp
- * Body: { phoneNumber, otp, orgCode, eventCode }
  * 
- * ✅ 新架构：Event Manager 在 users 集合中，通过 roles=['eventManager'] 识别
+ * 支持两种验证方式：
+ * 1. 使用 sessionId 验证（推荐，新方式）
+ *    Body: { sessionId, otp }
+ * 
+ * 2. 使用 phoneNumber + orgCode + eventCode 验证（兼容旧方式）
+ *    Body: { phoneNumber, otp, orgCode, eventCode }
+ * 
+ * @example 新方式（推荐）
+ * POST /api/verifyOtpHttp
+ * { sessionId: "user123_customerPayment_1234567890", otp: "223344" }
+ * 
+ * @example 旧方式（登录场景兼容）
+ * POST /api/verifyOtpHttp
+ * { phoneNumber: "+60123456789", otp: "223344", orgCode: "chhs", eventCode: "ban" }
  */
 exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -263,202 +479,280 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const { phoneNumber, otp, orgCode, eventCode } = req.body;
+    const { 
+      sessionId,      // 新方式：直接使用 sessionId
+      phoneNumber,    // 旧方式：手机号
+      otp,            // OTP 码
+      orgCode,        // 旧方式：组织代码
+      eventCode       // 旧方式：活动代码
+    } = req.body;
 
-    if (!phoneNumber || !otp) {
-      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码或验证码' } });
+    if (!otp) {
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少验证码' } });
     }
 
     if (otp.length !== 6 || !/^\d+$/.test(otp)) {
       return res.status(400).json({ error: { code: 'invalid-argument', message: '验证码格式不正确' } });
     }
 
-    console.log('[verifyOtpHttp] 开始验证 OTP:', { phoneNumber, orgCode, eventCode });
-
     const db = admin.firestore();
+    let otpDoc = null;
+    let otpData = null;
 
-    // 查询 OTP Session
-    const otpSnapshot = await db.collection('otp_sessions')
-      .where('phoneNumber', '==', phoneNumber)
-      .where('orgCode', '==', orgCode || '')
-      .where('eventCode', '==', eventCode || '')
-      .orderBy('createdAt', 'desc')
-      .limit(1)
-      .get();
-
-    if (otpSnapshot.empty) {
-      console.warn('[verifyOtpHttp] OTP Session 不存在');
-      return res.status(404).json({ error: { code: 'not-found', message: '验证码不存在或已过期' } });
+    // === 方式1：使用 sessionId 查询（新方式，推荐）===
+    if (sessionId) {
+      console.log('[verifyOtpHttp] 使用 sessionId 验证:', sessionId);
+      
+      const docSnap = await db.collection('otp_sessions').doc(sessionId).get();
+      if (docSnap.exists) {
+        otpDoc = docSnap;
+        otpData = docSnap.data();
+      }
     }
-
-    const otpDoc = otpSnapshot.docs[0];
-    const otpData = otpDoc.data();
-
-    // 检查过期
-    if (Date.now() > otpData.expiresAt) {
-      console.warn('[verifyOtpHttp] OTP 已过期');
-      return res.status(400).json({ error: { code: 'deadline-exceeded', message: '验证码已过期，请重新申请' } });
-    }
-
-    // 检查尝试次数
-    if ((otpData.attempts || 0) >= 5) {
-      console.warn('[verifyOtpHttp] OTP 尝试次数过多');
-      return res.status(429).json({ error: { code: 'resource-exhausted', message: '尝试次数过多，请重新申请验证码' } });
-    }
-
-    // 验证 OTP
-    const inputOtpHash = sha256(otp);
-    if (inputOtpHash !== otpData.otpCodeHash) {
-      await otpDoc.ref.update({ attempts: (otpData.attempts || 0) + 1 });
-      console.warn('[verifyOtpHttp] OTP 错误');
-      return res.status(403).json({ error: { code: 'permission-denied', message: '验证码错误' } });
-    }
-
-    console.log('[verifyOtpHttp] ✅ OTP 验证通过');
-
-    // 查找组织
-    const orgQuery = await db.collection('organizations')
-      .where('orgCode', '==', orgCode)
-      .limit(1)
-      .get();
-    
-    if (orgQuery.empty) {
-      console.warn('[verifyOtpHttp] 组织不存在:', orgCode);
-      return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
-    }
-    
-    const organizationId = orgQuery.docs[0].id;
-    console.log('[verifyOtpHttp] ✅ 组织找到:', organizationId);
-    
-    // 查找活动
-    const eventQuery = await db
-      .collection('organizations').doc(organizationId)
-      .collection('events')
-      .where('eventCode', '==', eventCode)
-      .limit(1)
-      .get();
-    
-    if (eventQuery.empty) {
-      console.warn('[verifyOtpHttp] 活动不存在:', eventCode);
-      return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
-    }
-    
-    const eventId = eventQuery.docs[0].id;
-    console.log('[verifyOtpHttp] ✅ 活动找到:', eventId);
-
-    // 在 users 集合中查找用户（包括 Event Manager）
-    const normalizePhone = (p) => {
-      if (!p) return '';
-      let digits = String(p).replace(/[^0-9]/g, '');
-      if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
-      if (digits.startsWith('0')) digits = digits.substring(1);
-      return digits; 
-    };
-
-    const targetPhone = normalizePhone(phoneNumber);
-    const variants = [
-      targetPhone,
-      `0${targetPhone}`,
-      `60${targetPhone}`,
-      `+60${targetPhone}`,
-      phoneNumber
-    ];
-
-    console.log('[verifyOtpHttp] 尝试的电话号码变体:', variants);
-
-    let userData = null;
-    let userId = null;
-    let userDoc = null;
-
-    for (const variant of variants) {
-      const userSnapshot = await db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('users')
-        .where('basicInfo.phoneNumber', '==', variant)
+    // === 方式2：使用 phoneNumber 查询（旧方式，兼容）===
+    else if (phoneNumber) {
+      console.log('[verifyOtpHttp] 使用 phoneNumber 验证（兼容模式）');
+      
+      const otpSnapshot = await db.collection('otp_sessions')
+        .where('phoneNumber', '==', phoneNumber)
+        .where('orgCode', '==', orgCode || '')
+        .where('eventCode', '==', eventCode || '')
+        .orderBy('createdAt', 'desc')
         .limit(1)
         .get();
 
-      if (!userSnapshot.empty) {
-        userDoc = userSnapshot.docs[0];
-        userData = userDoc.data();
-        userId = userDoc.id;
-        console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, variant, roles: userData.roles });
-        break;
+      if (!otpSnapshot.empty) {
+        otpDoc = otpSnapshot.docs[0];
+        otpData = otpDoc.data();
       }
     }
 
-    if (!userData) {
-      console.warn('[verifyOtpHttp] ❌ 用户不存在');
-      return res.status(404).json({ error: { code: 'not-found', message: '该手机号未在此活动中注册' } });
+    // === 验证 OTP Session 是否存在 ===
+    if (!otpDoc || !otpData) {
+      console.warn('[verifyOtpHttp] ❌ OTP Session 不存在');
+      return res.status(404).json({ 
+        error: { code: 'not-found', message: '验证码不存在或已过期' } 
+      });
     }
 
-    // 验证角色
-    const userRoles = userData.roles || [];
-    const allowedRoles = [
-      'eventManager', 'financeManager', 'sellerManager', 
-      'merchantManager', 'customerManager', 
-      'seller', 'merchant', 'customer'
-    ];
+    // === 检查过期 ===
+    if (Date.now() > otpData.expiresAt) {
+      console.warn('[verifyOtpHttp] ❌ OTP 已过期');
+      await otpDoc.ref.update({ status: 'expired' });
+      return res.status(400).json({ 
+        error: { code: 'deadline-exceeded', message: '验证码已过期，请重新申请' } 
+      });
+    }
 
-    const hasValidRole = userRoles.some(role => allowedRoles.includes(role));
+    // === 检查状态 ===
+    if (otpData.status === 'verified') {
+      console.warn('[verifyOtpHttp] ❌ OTP 已使用');
+      return res.status(400).json({ 
+        error: { code: 'failed-precondition', message: '验证码已使用，请重新申请' } 
+      });
+    }
 
-    if (!hasValidRole || userRoles.length === 0) {
-      console.warn('[verifyOtpHttp] ❌ 用户没有有效角色:', { userId, roles: userRoles });
+    if (otpData.status === 'locked') {
+      console.warn('[verifyOtpHttp] ❌ OTP 已锁定');
+      return res.status(429).json({ 
+        error: { code: 'resource-exhausted', message: '尝试次数过多，请重新申请验证码' } 
+      });
+    }
+
+    // === 检查尝试次数 ===
+    const settings = await getPlatformSettings();
+    const maxAttempts = settings?.otp?.maxAttempts || 5;
+    
+    if ((otpData.attempts || 0) >= maxAttempts) {
+      console.warn('[verifyOtpHttp] ❌ OTP 尝试次数过多');
+      await otpDoc.ref.update({ status: 'locked' });
+      return res.status(429).json({ 
+        error: { code: 'resource-exhausted', message: '尝试次数过多，请重新申请验证码' } 
+      });
+    }
+
+    // === 验证 OTP 码 ===
+    const inputOtpHash = sha256(otp);
+    if (inputOtpHash !== otpData.otpCodeHash) {
+      const newAttempts = (otpData.attempts || 0) + 1;
+      await otpDoc.ref.update({ attempts: newAttempts });
+      
+      console.warn('[verifyOtpHttp] ❌ OTP 错误, 尝试次数:', newAttempts);
       return res.status(403).json({ 
         error: { 
-          code: 'permission-denied',
-          message: `您没有访问此活动的权限。当前角色: ${userRoles.join(', ') || '无'}` 
+          code: 'permission-denied', 
+          message: `验证码错误，剩余尝试次数：${maxAttempts - newAttempts}` 
         } 
       });
     }
 
-    console.log('[verifyOtpHttp] ✅ 用户权限验证通过:', { userId, roles: userRoles });
+    console.log('[verifyOtpHttp] ✅ OTP 验证通过');
 
-    // 提取信息
-    const managedDepartments = userData.sellerManager?.managedDepartments || 
-                               userData.roleSpecificData?.sellerManager?.managedDepartments || [];
-    
-    // 🔥 关键修复：使用 userId（Firestore 文档 ID）作为 Custom Token 的 uid
-    // userId 就是用户在 Firestore 中的唯一标识符
-    const customClaims = {
-      organizationId, eventId, userId,
-      roles: userRoles,
-      managedDepartments,
-      department: userData.identityInfo?.department || '',
-      identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
-      orgCode, eventCode
-    };
-    
-    console.log('[verifyOtpHttp] Custom Claims:', customClaims);
-    console.log('[verifyOtpHttp] 使用 userId 生成 Custom Token:', userId);
-    const customToken = await admin.auth().createCustomToken(userId, customClaims);
-    console.log('[verifyOtpHttp] ✅ Custom Token 生成成功');
-
-    // 更新最后登录
-    await userDoc.ref.update({
-      'accountStatus.lastLogin': admin.firestore.FieldValue.serverTimestamp()
+    // === 标记为已验证 ===
+    await otpDoc.ref.update({
+      status: 'verified',
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // 删除 OTP
-    await otpDoc.ref.delete();
-    console.log('[verifyOtpHttp] ✅ OTP Session 已删除');
+    // === 判断场景类型 ===
+    const isLoginScenario = otpData.scenario === 'login' || (otpData.orgCode && otpData.eventCode);
 
+    // === 登录场景：生成 Custom Token（兼容旧逻辑）===
+    if (isLoginScenario) {
+      console.log('[verifyOtpHttp] 登录场景，执行完整用户验证...');
+      
+      // 查找组织
+      const orgQuery = await db.collection('organizations')
+        .where('orgCode', '==', otpData.orgCode)
+        .limit(1)
+        .get();
+      
+      if (orgQuery.empty) {
+        console.warn('[verifyOtpHttp] ❌ 组织不存在:', otpData.orgCode);
+        return res.status(404).json({ error: { code: 'not-found', message: '组织不存在' } });
+      }
+      
+      const organizationId = orgQuery.docs[0].id;
+      
+      // 查找活动
+      const eventQuery = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events')
+        .where('eventCode', '==', otpData.eventCode)
+        .limit(1)
+        .get();
+      
+      if (eventQuery.empty) {
+        console.warn('[verifyOtpHttp] ❌ 活动不存在:', otpData.eventCode);
+        return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
+      }
+      
+      const eventId = eventQuery.docs[0].id;
+
+      // 查找用户（保留原有逻辑）
+      const normalizePhone = (p) => {
+        if (!p) return '';
+        let digits = String(p).replace(/[^0-9]/g, '');
+        if (digits.startsWith('60') && digits.length > 9) digits = digits.substring(2); 
+        if (digits.startsWith('0')) digits = digits.substring(1);
+        return digits; 
+      };
+
+      const targetPhone = normalizePhone(otpData.phoneNumber);
+      const variants = [
+        targetPhone,
+        `0${targetPhone}`,
+        `60${targetPhone}`,
+        `+60${targetPhone}`,
+        otpData.phoneNumber
+      ];
+
+      let userData = null;
+      let userId = null;
+      let userDoc = null;
+
+      for (const variant of variants) {
+        const userSnapshot = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('users')
+          .where('basicInfo.phoneNumber', '==', variant)
+          .limit(1)
+          .get();
+
+        if (!userSnapshot.empty) {
+          userDoc = userSnapshot.docs[0];
+          userData = userDoc.data();
+          userId = userDoc.id;
+          console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, roles: userData.roles });
+          break;
+        }
+      }
+
+      if (!userData) {
+        console.warn('[verifyOtpHttp] ❌ 用户不存在');
+        return res.status(404).json({ error: { code: 'not-found', message: '该手机号未在此活动中注册' } });
+      }
+
+      // 验证角色
+      const userRoles = userData.roles || [];
+      const allowedRoles = [
+        'eventManager', 'financeManager', 'sellerManager', 
+        'merchantManager', 'customerManager', 
+        'seller', 'merchant', 'customer'
+      ];
+
+      const hasValidRole = userRoles.some(role => allowedRoles.includes(role));
+
+      if (!hasValidRole || userRoles.length === 0) {
+        console.warn('[verifyOtpHttp] ❌ 用户没有有效角色');
+        return res.status(403).json({ 
+          error: { code: 'permission-denied', message: '您没有访问此活动的权限' } 
+        });
+      }
+
+      // 生成 Custom Token
+      const managedDepartments = userData.sellerManager?.managedDepartments || 
+                                 userData.roleSpecificData?.sellerManager?.managedDepartments || [];
+      
+      const customClaims = {
+        organizationId, eventId, userId,
+        roles: userRoles,
+        managedDepartments,
+        department: userData.identityInfo?.department || '',
+        identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
+        orgCode: otpData.orgCode, 
+        eventCode: otpData.eventCode
+      };
+      
+      const customToken = await admin.auth().createCustomToken(userId, customClaims);
+
+      // 更新最后登录时间
+      await userDoc.ref.update({
+        'accountStatus.lastLogin': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 删除 OTP Session
+      await otpDoc.ref.delete();
+
+      return res.status(200).json({
+        success: true,
+        verified: true,
+        message: '验证成功',
+        scenario: 'login',
+        
+        // 登录信息
+        customToken,
+        userId,
+        organizationId,
+        eventId,
+        roles: userRoles,
+        englishName: userData.basicInfo?.englishName || '',
+        chineseName: userData.basicInfo?.chineseName || '',
+        managedDepartments,
+        department: userData.identityInfo?.department || '',
+        identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
+        
+        phoneNumber: otpData.phoneNumber,
+        devMode: otpData.devMode || false
+      });
+    }
+
+    // === 通用场景：返回验证成功和场景数据 ===
+    console.log('[verifyOtpHttp] ✅ 通用场景验证成功:', otpData.scenario);
+    
+    // 不删除 OTP Session，让调用方业务函数负责删除
+    // 这样可以防止重复使用
+    
     return res.status(200).json({
       success: true,
-      message: '验证成功',
-      phoneNumber,
       verified: true,
-      customToken,
-      userId,
-      organizationId,
-      eventId,
-      roles: userRoles,
-      englishName: userData.basicInfo?.englishName || '',
-      chineseName: userData.basicInfo?.chineseName || '',
-      managedDepartments,
-      department: userData.identityInfo?.department || '',
-      identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
+      message: '验证成功',
+      sessionId: otpDoc.id,
+      scenario: otpData.scenario,
+      scenarioData: otpData.scenarioData || {},
+      userId: otpData.userId,
+      phoneNumber: otpData.phoneNumber,
       devMode: otpData.devMode || false
     });
 

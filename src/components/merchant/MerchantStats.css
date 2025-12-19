@@ -1,0 +1,182 @@
+/* MerchantStats.css */
+
+/* 统计卡片网格 */
+.merchant-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .merchant-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .merchant-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* 单个统计卡片 */
+.stat-card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  transition: box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* 卡片顶部 */
+.stat-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+/* 图标区域 */
+.stat-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* 图标颜色变体 */
+.stat-icon.purple {
+  background-color: #f3e8ff;
+}
+
+.stat-icon.purple svg {
+  color: #9333ea;
+}
+
+.stat-icon.blue {
+  background-color: #dbeafe;
+}
+
+.stat-icon.blue svg {
+  color: #2563eb;
+}
+
+.stat-icon.green {
+  background-color: #d1fae5;
+}
+
+.stat-icon.green svg {
+  color: #059669;
+}
+
+.stat-icon.orange {
+  background-color: #fed7aa;
+}
+
+.stat-icon.orange svg {
+  color: #ea580c;
+}
+
+/* 趋势标签 */
+.stat-trend {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.stat-trend.positive {
+  color: #059669;
+}
+
+.stat-trend.neutral {
+  color: #6b7280;
+}
+
+/* 卡片内容 */
+.stat-card-content p:first-child {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin: 0 0 0.25rem 0;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.stat-subvalue {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0.25rem 0 0 0;
+}
+
+/* Loading 骨架屏 */
+.stat-skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .stat-skeleton-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .stat-skeleton-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.stat-skeleton {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeleton-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  background-color: #e5e7eb;
+  border-radius: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-label {
+  height: 1rem;
+  background-color: #e5e7eb;
+  border-radius: 0.25rem;
+  width: 5rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-value {
+  height: 2rem;
+  background-color: #e5e7eb;
+  border-radius: 0.25rem;
+  width: 6rem;
+}

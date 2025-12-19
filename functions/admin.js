@@ -1,5 +1,6 @@
 ﻿const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { onRequest } = require('firebase-functions/v2/https');
 const crypto = require('crypto');
 const cors = require('cors');
 
@@ -1546,6 +1547,129 @@ exports.deleteEventHttp = functions.https.onRequest(async (req, res) => {
       console.error('[deleteEventHttp] Error deleting sellerManagerStats:', err);
     }
 
+    // 9. Delete cashCollections subcollection (新增)
+    console.log('[deleteEventHttp] Starting deletion of cashCollections');
+    try {
+      const cashCollectionsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('cashCollections')
+        .get();
+
+      if (cashCollectionsSnapshot.size > 0) {
+        const ccBatch = db.batch();
+        let ccBatchOps = 0;
+
+        cashCollectionsSnapshot.docs.forEach(doc => {
+          ccBatch.delete(doc.ref);
+          ccBatchOps++;
+        });
+
+        await ccBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${ccBatchOps} cashCollections documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting cashCollections:', err);
+    }
+
+    // 10. Delete cashSubmissions subcollection (新增)
+    console.log('[deleteEventHttp] Starting deletion of cashSubmissions');
+    try {
+      const cashSubmissionsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('cashSubmissions')
+        .get();
+
+      if (cashSubmissionsSnapshot.size > 0) {
+        const csaBatch = db.batch();
+        let csaBatchOps = 0;
+
+        cashSubmissionsSnapshot.docs.forEach(doc => {
+          csaBatch.delete(doc.ref);
+          csaBatchOps++;
+        });
+
+        await csaBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${csaBatchOps} cashSubmissions documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting cashSubmissions:', err);
+    }
+
+    // 11. Delete merchants subcollection (新增)
+    console.log('[deleteEventHttp] Starting deletion of merchants');
+    try {
+      const merchantsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('merchants')
+        .get();
+
+      if (merchantsSnapshot.size > 0) {
+        // 对每个 merchant，删除其 transactions 子集合
+        const deleteMerchantsPromises = merchantsSnapshot.docs.map(async (merchantDoc) => {
+          try {
+            const transactionsSnapshot = await merchantDoc.ref
+              .collection('transactions')
+              .get();
+
+            if (transactionsSnapshot.size > 0) {
+              const txBatch = db.batch();
+              let txBatchOps = 0;
+
+              transactionsSnapshot.docs.forEach(txDoc => {
+                txBatch.delete(txDoc.ref);
+                txBatchOps++;
+              });
+
+              await txBatch.commit();
+              console.log(`[deleteEventHttp] Deleted ${txBatchOps} transactions for merchant ${merchantDoc.id}`);
+            }
+          } catch (err) {
+            console.error(`[deleteEventHttp] Error deleting transactions for merchant ${merchantDoc.id}:`, err);
+          }
+        });
+
+        await Promise.all(deleteMerchantsPromises);
+
+        // 删除 merchants 文档本身
+        const merchantBatch = db.batch();
+        merchantsSnapshot.docs.forEach(doc => {
+          merchantBatch.delete(doc.ref);
+        });
+        await merchantBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${merchantsSnapshot.size} merchants documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting merchants:', err);
+    }
+
+    // 12. Delete transactions subcollection (如果直接在 event 下也有) (新增)
+    console.log('[deleteEventHttp] Starting deletion of transactions');
+    try {
+      const transactionsSnapshot = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('transactions')
+        .get();
+
+      if (transactionsSnapshot.size > 0) {
+        const txBatch = db.batch();
+        let txBatchOps = 0;
+
+        transactionsSnapshot.docs.forEach(doc => {
+          txBatch.delete(doc.ref);
+          txBatchOps++;
+        });
+
+        await txBatch.commit();
+        console.log(`[deleteEventHttp] Deleted ${txBatchOps} transactions documents`);
+      }
+    } catch (err) {
+      console.error('[deleteEventHttp] Error deleting transactions:', err);
+    }
+
     // 進行 department userCount 回沖（減少） - 使用 transaction 保證一致性
     try {
       await db.runTransaction(async (tx) => {
@@ -2922,6 +3046,11 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       });
     }
 
+// ============================================================================
+// 修改后的 updateUserRoles 函数 - merchant 角色部分
+// 替换 admin.js 中第 2950-2961 行
+// ============================================================================
+
     // ============================================================================
     // 🔹 步骤 6: 构建更新数据
     // ============================================================================
@@ -2952,7 +3081,74 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
       additionalUpdateData['seller.transactions'] = {};
     }
 
+    // ⭐⭐⭐ 修改：merchant 角色 - 创建 merchants 集合文档 ⭐⭐⭐
     if (roles.merchant && !previousRoles?.includes('merchant')) {
+      console.log('[updateUserRoles] 检测到新增 merchant 角色，准备创建 merchants 文档');
+      
+      // 生成 merchantId
+      const merchantId = `merchant_${userId}`;
+      
+      // 创建 merchants 集合文档
+      const merchantRef = eventRef.collection('merchants').doc(merchantId);
+      
+      // 检查是否已存在
+      const merchantSnap = await merchantRef.get();
+      
+      if (!merchantSnap.exists) {
+        console.log('[updateUserRoles] 创建新的 merchants 文档:', merchantId);
+        
+        // 创建 merchants 文档
+        await merchantRef.set({
+          merchantId: merchantId,
+          userId: userId,
+          stallName: userData.basicInfo?.englishName || userData.basicInfo?.chineseName || '未命名摊位',
+          description: '',
+          
+          contactInfo: {
+            phone: userData.basicInfo?.phoneNumber || '',
+            email: '',
+            note: ''
+          },
+          
+          qrCodeData: {
+            type: 'MERCHANT_PAYMENT',
+            version: '1.0',
+            merchantId: merchantId,
+            eventId: eventId,
+            organizationId: organizationId,
+            generatedAt: new Date()
+          },
+          
+          revenueStats: {
+            totalRevenue: 0,
+            todayRevenue: 0,
+            transactionCount: 0,
+            todayTransactionCount: 0,
+            lastTransactionAt: null,
+            averageTransactionAmount: 0
+          },
+          
+          operationStatus: {
+            isActive: true,
+            lastStatusChange: new Date(),
+            pauseReason: ''
+          },
+          
+          metadata: {
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            createdBy: 'updateUserRoles',
+            lastUpdatedBy: 'updateUserRoles'
+          }
+        });
+        
+        console.log('[updateUserRoles] ✅ Merchants 文档创建成功');
+      } else {
+        console.log('[updateUserRoles] Merchants 文档已存在，跳过创建');
+      }
+      
+      // ⭐ 在 users 文档中设置 merchant.id
+      additionalUpdateData['merchant.id'] = merchantId;
       additionalUpdateData['merchant.availablePoints'] = 0;
       additionalUpdateData['merchant.totalPointsSold'] = 0;
       additionalUpdateData['merchant.transactions'] = {};
@@ -3504,3 +3700,334 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
     }
   });
 });
+
+/**
+ * submitCashToFinance Cloud Function
+ * 
+ * 用途：處理 Seller Manager 上交現金給 Finance Manager
+ * 
+ * 為什麼需要這個 Cloud Function？
+ * - Firestore Security Rules 不允許 Seller Manager 直接更新 Finance Manager 的文檔
+ * - Cloud Function 使用 Admin SDK，擁有完全權限
+ * - 可以實現複雜的驗證和業務邏輯
+ * 
+ * 添加到 functions/admin.js 中
+ */
+
+/**
+ * 上交現金給 Finance Manager
+ * 
+ * HTTP Endpoint: POST
+ * 
+ * Request Body:
+ * {
+ *   organizationId: string,
+ *   eventId: string,
+ *   financeManagerId: string,
+ *   selectedCollections: string[],
+ *   totalAmount: number,
+ *   note: string (optional)
+ * }
+ * 
+ * Response:
+ * {
+ *   success: boolean,
+ *   message: string,
+ *   submissionId: string
+ * }
+ */
+exports.submitCashToFinanceHttp = onRequest(
+  { region: 'asia-southeast1' },
+  (req, res) => {
+    corsHandler(req, res, async () => {
+      // 只允許 POST（OPTIONS 由 corsHandler 自動處理）
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
+      try {
+        // ========== 步驟 1: 驗證 Authorization ==========
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return res.status(401).json({ error: '未提供授權 Token' });
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const callerUid = decodedToken.uid;
+
+        console.log('[submitCashToFinance] 調用者 UID:', callerUid);
+
+        // ========== 步驟 2: 解析請求參數 ==========
+        const {
+          organizationId,
+          eventId,
+          financeManagerId,
+          selectedCollections,
+          totalAmount,
+          note
+        } = req.body;
+
+        // 參數驗證
+        if (!organizationId || !eventId || !financeManagerId) {
+          return res.status(400).json({ 
+            error: '缺少必要參數：organizationId, eventId, financeManagerId' 
+          });
+        }
+
+        if (!selectedCollections || selectedCollections.length === 0) {
+          return res.status(400).json({ 
+            error: '至少需要選擇一筆收款記錄' 
+          });
+        }
+
+        if (!totalAmount || totalAmount <= 0) {
+          return res.status(400).json({ 
+            error: '總金額必須大於 0' 
+          });
+        }
+
+        console.log('[submitCashToFinance] 參數驗證通過');
+        console.log('  - organizationId:', organizationId);
+        console.log('  - eventId:', eventId);
+        console.log('  - financeManagerId:', financeManagerId);
+        console.log('  - 收款記錄數:', selectedCollections.length);
+        console.log('  - 總金額:', totalAmount);
+
+        // ========== 步驟 3: 驗證調用者是 Seller Manager ==========
+        const db = getDb();
+        const smDocRef = db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('users').doc(callerUid);
+
+        const smDoc = await smDocRef.get();
+
+        if (!smDoc.exists) {
+          return res.status(403).json({ 
+            error: '找不到用戶記錄' 
+          });
+        }
+
+        const smData = smDoc.data();
+        if (!smData.roles || !smData.roles.includes('sellerManager')) {
+          return res.status(403).json({ 
+            error: '只有 Seller Manager 可以上交現金' 
+          });
+        }
+
+        console.log('[submitCashToFinance] Seller Manager 驗證通過:', smData.basicInfo?.chineseName);
+
+        // ========== 步驟 4: 驗證 Finance Manager 存在 ==========
+        const fmDocRef = db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('users').doc(financeManagerId);
+
+        const fmDoc = await fmDocRef.get();
+
+        if (!fmDoc.exists) {
+          return res.status(404).json({ 
+            error: '找不到指定的 Finance Manager' 
+          });
+        }
+
+        const fmData = fmDoc.data();
+        if (!fmData.roles || !fmData.roles.includes('financeManager')) {
+          return res.status(400).json({ 
+            error: '指定的用戶不是 Finance Manager' 
+          });
+        }
+
+        console.log('[submitCashToFinance] Finance Manager 驗證通過:', fmData.basicInfo?.chineseName);
+
+        // ========== 步驟 5: 驗證 cashCollections 存在且狀態正確 ==========
+        const collectionsSnapshot = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('cashCollections')
+          .where(admin.firestore.FieldPath.documentId(), 'in', selectedCollections)
+          .get();
+
+        if (collectionsSnapshot.size !== selectedCollections.length) {
+          return res.status(400).json({ 
+            error: `找不到所有指定的收款記錄（找到 ${collectionsSnapshot.size}/${selectedCollections.length}）` 
+          });
+        }
+
+        // 檢查狀態
+        const invalidCollections = [];
+        collectionsSnapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.status !== 'collected') {
+            invalidCollections.push(doc.id);
+          }
+          if (data.collectedBy !== callerUid) {
+            invalidCollections.push(`${doc.id} (不是由您收款的)`);
+          }
+        });
+
+        if (invalidCollections.length > 0) {
+          return res.status(400).json({ 
+            error: `部分收款記錄無效或狀態不正確：${invalidCollections.join(', ')}` 
+          });
+        }
+
+        console.log('[submitCashToFinance] 收款記錄驗證通過');
+
+        // ========== 步驟 6: 計算明細統計 ==========
+        const breakdown = {
+          normalCollections: 0,
+          partialCollections: 0,
+          pointsRecovery: 0,
+          waivers: 0,
+          totalDiscrepancy: 0
+        };
+
+        collectionsSnapshot.forEach(doc => {
+          const data = doc.data();
+          const amount = data.amount || 0;
+
+          if (!data.discrepancy || data.discrepancy === 0) {
+            breakdown.normalCollections += amount;
+          } else {
+            switch (data.discrepancyType) {
+              case 'partial':
+                breakdown.partialCollections += amount;
+                break;
+              case 'pointsRecovery':
+                breakdown.pointsRecovery += amount;
+                break;
+              case 'waiver':
+                breakdown.waivers += amount;
+                break;
+            }
+            breakdown.totalDiscrepancy += (data.discrepancy || 0);
+          }
+        });
+
+        // ========== 步驟 7: 執行 Batch 操作 ==========
+        const batch = db.batch();
+
+        // 7.1 創建 cashSubmission 記錄
+        const submissionRef = db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('cashSubmissions').doc();
+
+        const managedDepartments = smData.sellerManager?.managedDepartments || [];
+
+        batch.set(submissionRef, {
+          submissionId: submissionRef.id,
+          type: 'managerToFinance',
+
+          // 提交方
+          submittedBy: callerUid,
+          submittedByName: smData.basicInfo?.chineseName || 'Seller Manager',
+          submittedByRole: 'sellerManager',
+          submittedByDepartments: managedDepartments,
+
+          // 接收方
+          receivedBy: financeManagerId,
+          receivedByName: fmData.basicInfo?.chineseName || fmData.displayName || 'Finance Manager',
+          receivedByRole: 'financeManager',
+
+          // 金額信息
+          totalAmount: totalAmount,
+          collectionCount: selectedCollections.length,
+          includedCollections: selectedCollections,
+
+          // 明細統計
+          breakdown: breakdown,
+
+          // 狀態
+          status: 'pending',
+          submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+          confirmedAt: null,
+          rejectedAt: null,
+          rejectionReason: null,
+
+          // 關聯
+          eventId: eventId,
+          organizationId: organizationId,
+
+          // 備註
+          note: note || '',
+          financeNote: null,
+
+          // 時間戳
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('[submitCashToFinance] 創建 cashSubmission:', submissionRef.id);
+
+        // 7.2 更新每個 cashCollection 的狀態
+        selectedCollections.forEach(collectionId => {
+          const collectionRef = db
+            .collection('organizations').doc(organizationId)
+            .collection('events').doc(eventId)
+            .collection('cashCollections').doc(collectionId);
+
+          batch.update(collectionRef, {
+            status: 'submitted',
+            submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+            submissionId: submissionRef.id,
+            submittedToFinanceManager: financeManagerId,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        });
+
+        console.log('[submitCashToFinance] 更新 cashCollections:', selectedCollections.length, '筆');
+
+        // 7.3 更新 Seller Manager 的 cashFlow 統計
+        batch.update(smDocRef, {
+          'pointsStats.cashFlow.cashHolding': admin.firestore.FieldValue.increment(-totalAmount),
+          'pointsStats.cashFlow.submittedToFinance': admin.firestore.FieldValue.increment(totalAmount),
+          'pointsStats.cashFlow.lastSubmissionAt': admin.firestore.FieldValue.serverTimestamp(),
+          'updatedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('[submitCashToFinance] 更新 Seller Manager 統計');
+
+        // 7.4 更新 Finance Manager 的統計
+        // ✨ 這是關鍵！Admin SDK 有權限更新 FM 文檔
+        batch.update(fmDocRef, {
+          'financeManager.totalCashReceived': admin.firestore.FieldValue.increment(totalAmount),
+          'financeManager.pendingVerification': admin.firestore.FieldValue.increment(totalAmount),
+          'financeManager.submissionsReceived': admin.firestore.FieldValue.increment(1),
+          'financeManager.lastSubmissionReceived': admin.firestore.FieldValue.serverTimestamp(),
+          'updatedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('[submitCashToFinance] 更新 Finance Manager 統計');
+
+        // ========== 步驟 8: 提交 Batch ==========
+        await batch.commit();
+
+        console.log('[submitCashToFinance] ✅ Batch 提交成功');
+
+        // ========== 步驟 9: 返回成功響應 ==========
+        return res.status(200).json({
+          success: true,
+          message: '上交成功',
+          submissionId: submissionRef.id,
+          data: {
+            submittedBy: smData.basicInfo?.chineseName,
+            receivedBy: fmData.basicInfo?.chineseName,
+            totalAmount: totalAmount,
+            collectionCount: selectedCollections.length
+          }
+        });
+
+      } catch (error) {
+        console.error('[submitCashToFinance] ❌ 錯誤:', error);
+        return res.status(500).json({
+          error: '上交失敗',
+          message: error.message,
+          details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+      }
+    });
+  }
+);

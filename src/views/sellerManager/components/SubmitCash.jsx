@@ -13,7 +13,19 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import {collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, increment, orderBy} from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  doc,
+  writeBatch,
+  serverTimestamp,
+  increment,
+  orderBy,
+  getDocs  // ✨ 添加這個
+} from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '../../../config/firebase';
 
 const SubmitCash = ({ userInfo, eventData }) => {
@@ -23,6 +35,11 @@ const SubmitCash = ({ userInfo, eventData }) => {
   const [selectedCollections, setSelectedCollections] = useState([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState('collected');
+
+  // ✨ 新增：Finance Manager 相關狀態
+  const [financeManagers, setFinanceManagers] = useState([]);
+  const [selectedFM, setSelectedFM] = useState('');
+  const [loadingFMs, setLoadingFMs] = useState(true);
 
   const orgId = userInfo.organizationId;
   const eventId = userInfo.eventId;
@@ -62,35 +79,51 @@ const SubmitCash = ({ userInfo, eventData }) => {
     return () => unsubscribe();
   }, [orgId, eventId, smId]);
 
-  // 加载上交历史
+  // ✨ 新增：加載 Finance Managers
   useEffect(() => {
-    if (!orgId || !eventId || !smId) return;
+    const fetchFinanceManagers = async () => {
+      if (!orgId || !eventId) return;
 
-    const submissionsQuery = query(
-      collection(db, `organizations/${orgId}/events/${eventId}/cashSubmissions`),
-      where('submittedBy', '==', smId),
-      orderBy('submittedAt', 'desc')
-    );
+      setLoadingFMs(true);
+      try {
+        const usersRef = collection(
+          db,
+          'organizations', orgId,
+          'events', eventId,
+          'users'
+        );
 
-    const unsubscribe = onSnapshot(
-      submissionsQuery,
-      (snapshot) => {
-        const submissionsData = [];
-        snapshot.forEach(doc => {
-          submissionsData.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-        setSubmissions(submissionsData);
-      },
-      (error) => {
-        console.error('加载上交历史失败:', error);
+        // 查詢所有有 financeManager 角色的用戶
+        const q = query(
+          usersRef,
+          where('roles', 'array-contains', 'financeManager')
+        );
+
+        const snapshot = await getDocs(q);
+        const fmList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        console.log('[SubmitCash] 查詢到 Finance Managers:', fmList.length, '位');
+        setFinanceManagers(fmList);
+
+        // 如果只有一位 FM，自動選中
+        if (fmList.length === 1) {
+          setSelectedFM(fmList[0].id);
+          console.log('[SubmitCash] 自動選中唯一的 FM:', fmList[0].basicInfo?.chineseName);
+        }
+
+      } catch (error) {
+        console.error('[SubmitCash] 獲取 Finance Manager 失敗:', error);
+        alert('無法加載 Finance Manager 列表，請重試');
+      } finally {
+        setLoadingFMs(false);
       }
-    );
+    };
 
-    return () => unsubscribe();
-  }, [orgId, eventId, smId]);
+    fetchFinanceManagers();
+  }, [orgId, eventId]);
 
   // ========== 数据计算 ==========
 
@@ -121,7 +154,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
     const cashHolding = userInfo.pointsStats?.cashFlow?.cashHolding || 0;
     const submittedToFinance = userInfo.pointsStats?.cashFlow?.submittedToFinance || 0;
     const confirmedByFinance = userInfo.pointsStats?.cashFlow?.confirmedByFinance || 0;
-    
+
     const availableCount = collections.filter(c => c.status === 'collected').length;
     const pendingCount = collections.filter(c => c.status === 'submitted').length;
 
@@ -230,7 +263,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
             <button onClick={deselectAll} style={styles.actionButton}>
               取消选择
             </button>
-            <button 
+            <button
               onClick={handleOpenSubmitModal}
               style={{
                 ...styles.submitBtn,
@@ -298,18 +331,22 @@ const SubmitCash = ({ userInfo, eventData }) => {
 
       {/* 上交弹窗 */}
       {showSubmitModal && (
-        <SubmitCashModal
+        <SubmitModal
           selectedCollections={selectedCollections}
           collections={collections}
-          smInfo={userInfo}
-          orgId={orgId}
-          eventId={eventId}
           onClose={handleCloseSubmitModal}
           onSuccess={() => {
             setSelectedCollections([]);
-            handleCloseSubmitModal();
+            setSelectedFM(''); // ✨ 重置選擇
           }}
+          smInfo={userInfo}
+          // ✨ 新增 props
+          financeManagers={financeManagers}
+          selectedFM={selectedFM}
+          setSelectedFM={setSelectedFM}
+          loadingFMs={loadingFMs}
         />
+
       )}
     </div>
   );
@@ -330,7 +367,7 @@ const StatCard = ({ icon, title, value, color, description }) => (
 // ========== 子组件: CollectionCard ==========
 const CollectionCard = ({ collection, isSelected, onToggle }) => {
   const isAvailable = collection.status === 'collected';
-  
+
   const getStatusBadge = () => {
     switch (collection.status) {
       case 'collected':
@@ -360,7 +397,7 @@ const CollectionCard = ({ collection, isSelected, onToggle }) => {
           style={styles.checkbox}
         />
       )}
-      
+
       <div style={styles.collectionContent}>
         <div style={styles.collectionHeader}>
           <div style={styles.sellerInfo}>
@@ -389,7 +426,7 @@ const CollectionCard = ({ collection, isSelected, onToggle }) => {
           <div style={styles.detailRow}>
             <span>收款时间:</span>
             <span style={styles.dateText}>
-              {collection.collectedAt?.toDate ? 
+              {collection.collectedAt?.toDate ?
                 new Date(collection.collectedAt.toDate()).toLocaleString('zh-CN') :
                 '时间未知'
               }
@@ -446,7 +483,7 @@ const SubmissionCard = ({ submission, collections }) => {
             📤 上交批次 #{submission.id.slice(-6)}
           </div>
           <div style={styles.submissionDate}>
-            {submission.submittedAt?.toDate ? 
+            {submission.submittedAt?.toDate ?
               new Date(submission.submittedAt.toDate()).toLocaleString('zh-CN') :
               '时间未知'
             }
@@ -501,39 +538,84 @@ const SubmissionCard = ({ submission, collections }) => {
   );
 };
 
-// ========== 子组件: SubmitCashModal ==========
-const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, eventId, onClose, onSuccess }) => {
-  const [note, setNote] = useState('');
+
+// ========================================
+// 第3部分：完全替換 SubmitModal 組件（第 595-735 行）
+// ========================================
+
+/**
+ * SubmitModal - 上交確認對話框
+ * 
+ * ✨ 主要改動：
+ * 1. 添加 Finance Manager 選擇下拉列表
+ * 2. 驗證 FM 選擇
+ * 3. 將選中的 FM 傳遞給 handleSubmit
+ */
+const SubmitModal = ({
+  selectedCollections,
+  collections,
+  onClose,
+  onSuccess,
+  smInfo,
+  // ✨ 新增 props
+  financeManagers,
+  selectedFM,
+  setSelectedFM,
+  loadingFMs
+}) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
 
-  const selectedDetails = useMemo(() => {
-    return selectedCollections
-      .map(id => collections.find(c => c.id === id))
-      .filter(Boolean);
-  }, [selectedCollections, collections]);
+  const orgId = smInfo.organizationId;
+  const eventId = smInfo.eventId;
 
-  const totalAmount = useMemo(() => {
-    return selectedDetails.reduce((sum, c) => sum + c.amount, 0);
-  }, [selectedDetails]);
+  // 獲取選中的詳細信息
+  const selectedDetails = collections.filter(c =>
+    selectedCollections.includes(c.id)
+  );
 
-  const breakdown = useMemo(() => {
-    const normal = selectedDetails.filter(c => !c.discrepancy || c.discrepancy === 0);
-    const partial = selectedDetails.filter(c => c.discrepancyType === 'partial');
-    const recovery = selectedDetails.filter(c => c.discrepancyType === 'pointsRecovery');
-    const waiver = selectedDetails.filter(c => c.discrepancyType === 'waiver');
+  // 計算總金額
+  const totalAmount = selectedDetails.reduce((sum, c) => sum + c.amount, 0);
 
-    return {
-      normalCollections: normal.reduce((sum, c) => sum + c.amount, 0),
-      partialCollections: partial.reduce((sum, c) => sum + c.amount, 0),
-      pointsRecovery: recovery.reduce((sum, c) => sum + c.amount, 0),
-      waivers: waiver.reduce((sum, c) => sum + c.amount, 0),
-      totalDiscrepancy: selectedDetails.reduce((sum, c) => sum + (c.discrepancy || 0), 0)
-    };
-  }, [selectedDetails]);
+  // 計算明細統計
+  const breakdown = {
+    normalCollections: selectedDetails.reduce((sum, c) =>
+      c.type === 'normal' ? sum + c.amount : sum, 0
+    ),
+    partialCollections: selectedDetails.reduce((sum, c) =>
+      c.type === 'partial' ? sum + c.amount : sum, 0
+    ),
+    pointsRecovery: selectedDetails.reduce((sum, c) =>
+      c.type === 'recovery' ? sum + c.amount : sum, 0
+    ),
+    waivers: selectedDetails.reduce((sum, c) =>
+      c.type === 'waiver' ? sum + c.amount : sum, 0
+    ),
+    totalDiscrepancy: 0 // 可以後續計算差額
+  };
 
+  // ✨ 修改後的 handleSubmit
   const handleSubmit = async () => {
-    if (!confirm(`确认上交 ${selectedCollections.length} 笔收款记录，总金额 RM ${totalAmount.toLocaleString()}？`)) {
+    // ========== 步驟 1: 驗證 FM 選擇 ==========
+    if (!selectedFM) {
+      setError('請選擇接收的 Finance Manager');
+      return;
+    }
+
+    // ========== 步驟 2: 獲取 FM 信息 ==========
+    const fmInfo = financeManagers.find(fm => fm.id === selectedFM);
+    if (!fmInfo) {
+      setError('找不到選中的 Finance Manager');
+      return;
+    }
+
+    // ========== 步驟 3: 二次確認 ==========
+    if (!confirm(
+      `確認上交 ${selectedCollections.length} 筆收款記錄，` +
+      `總金額 RM ${totalAmount.toLocaleString()}？\n\n` +
+      `接收方：${fmInfo.basicInfo?.chineseName || fmInfo.displayName || '未知'}`
+    )) {
       return;
     }
 
@@ -541,83 +623,83 @@ const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, even
     setError('');
 
     try {
-      const batch = writeBatch(db);
+      // ========== 步驟 4: 獲取 Firebase Auth Token ==========
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
 
-      // 获取所有管理的部门
-      const managedDepartments = smInfo.sellerManager?.managedDepartments || [];
+      if (!currentUser) {
+        throw new Error('用戶未登入');
+      }
 
-      // 1. 创建 cashSubmission 记录
-      const submissionRef = doc(collection(db, `organizations/${orgId}/events/${eventId}/cashSubmissions`));
-      batch.set(submissionRef, {
-        submissionId: submissionRef.id,
-        type: 'managerToFinance',
-        
-        // 提交方
-        submittedBy: smInfo.userId,
-        submittedByName: smInfo.basicInfo?.chineseName || 'Seller Manager',
-        submittedByRole: 'sellerManager',
-        submittedByDepartments: managedDepartments,
-        
-        // 接收方（暂时为空，Finance Manager 确认时填写）
-        receivedBy: null,
-        receivedByName: null,
-        receivedByRole: 'financeManager',
-        
-        // 金额信息
-        totalAmount: totalAmount,
-        collectionCount: selectedCollections.length,
-        includedCollections: selectedCollections,
-        
-        // 明细统计
-        breakdown: breakdown,
-        
-        // 状态
-        status: 'pending',
-        submittedAt: serverTimestamp(),
-        confirmedAt: null,
-        rejectedAt: null,
-        rejectionReason: null,
-        
-        // 关联
-        eventId: eventId,
-        organizationId: orgId,
-        
-        // 备注
-        note: note,
-        financeNote: null,
-        
-        // 时间戳
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+      const idToken = await currentUser.getIdToken();
+      console.log('[SubmitCash] 獲取 ID Token 成功');
+
+      // ========== 步驟 5: 調用 Cloud Function ==========
+      const functionUrl = 'https://submitcashtofinancehttp-zgmq4nw2bq-as.a.run.app';
+
+      console.log('[SubmitCash] 開始調用 Cloud Function...');
+      console.log('  - URL:', functionUrl);
+      console.log('  - 收款記錄數:', selectedCollections.length);
+      console.log('  - 總金額:', totalAmount);
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId: orgId,
+          eventId: eventId,
+          financeManagerId: selectedFM,
+          selectedCollections: selectedCollections,
+          totalAmount: totalAmount,
+          note: note
+        })
       });
 
-      // 2. 更新每个 cashCollection 的状态
-      selectedCollections.forEach(collectionId => {
-        const collectionRef = doc(db, `organizations/${orgId}/events/${eventId}/cashCollections/${collectionId}`);
-        batch.update(collectionRef, {
-          status: 'submitted',
-          submittedAt: serverTimestamp(),
-          submissionId: submissionRef.id,
-          updatedAt: serverTimestamp()
-        });
-      });
+      console.log('[SubmitCash] Cloud Function 響應狀態:', response.status);
 
-      // 3. 更新 SellerManager cashFlow
-      const smRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${smInfo.userId}`);
-      batch.update(smRef, {
-        'pointsStats.cashFlow.cashHolding': increment(-totalAmount),
-        'pointsStats.cashFlow.submittedToFinance': increment(totalAmount),
-        'pointsStats.cashFlow.lastSubmissionAt': serverTimestamp(),
-        'updatedAt': serverTimestamp()
-      });
+      // ========== 步驟 6: 處理響應 ==========
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[SubmitCash] Cloud Function 返回錯誤:', errorData);
+        throw new Error(errorData.error || errorData.message || '上交失敗');
+      }
 
-      await batch.commit();
+      const data = await response.json();
+      console.log('[SubmitCash] ✅ Cloud Function 成功:', data);
 
-      alert('✅ 上交成功！等待 Finance Manager 确认');
-      onSuccess();
+      // ========== 步驟 7: 顯示成功訊息 ==========
+      alert(
+        `✅ 上交成功！\n\n` +
+        `金額：RM ${totalAmount.toLocaleString()}\n` +
+        `接收方：${fmInfo.basicInfo?.chineseName || fmInfo.displayName}\n` +
+        `提交編號：${data.submissionId}\n\n` +
+        `等待 Finance Manager 確認`
+      );
+
+      // ========== 步驟 8: 清理並關閉 ==========
+      onSuccess(); // 清空選擇
+      onClose();   // 關閉 Modal
+
     } catch (err) {
-      console.error('上交失败:', err);
-      setError('上交失败: ' + err.message);
+      console.error('[SubmitCash] ❌ 上交失敗:', err);
+
+      // 詳細的錯誤訊息
+      let errorMessage = '上交失敗: ' + err.message;
+
+      if (err.message.includes('Failed to fetch')) {
+        errorMessage = '網絡錯誤，請檢查網絡連接後重試';
+      } else if (err.message.includes('unauthorized') || err.message.includes('401')) {
+        errorMessage = '授權失敗，請重新登入';
+      } else if (err.message.includes('403')) {
+        errorMessage = '沒有權限執行此操作';
+      }
+
+      setError(errorMessage);
+      alert('❌ ' + errorMessage);
+
     } finally {
       setSubmitting(false);
     }
@@ -627,28 +709,62 @@ const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, even
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <h2>📤 上交现金</h2>
+          <h2>📤 上交現金給 Finance Manager</h2>
           <button onClick={onClose} style={styles.closeButton}>✕</button>
         </div>
 
         <div style={styles.modalBody}>
-          {/* 汇总信息 */}
+          {/* 匯總信息 */}
           <div style={styles.summaryBox}>
             <div style={styles.summaryRow}>
-              <span>选中笔数:</span>
-              <strong>{selectedCollections.length} 笔</strong>
+              <span>選中筆數:</span>
+              <strong>{selectedCollections.length} 筆</strong>
             </div>
             <div style={styles.summaryRow}>
-              <span>总金额:</span>
+              <span>總金額:</span>
               <strong style={{ fontSize: '1.5rem', color: '#10b981' }}>
                 RM {totalAmount.toLocaleString()}
               </strong>
             </div>
           </div>
 
-          {/* 明细统计 */}
+          {/* ✨ 新增：Finance Manager 選擇 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              選擇接收的 Finance Manager <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            {loadingFMs ? (
+              <div style={styles.loadingText}>加載 Finance Managers...</div>
+            ) : financeManagers.length === 0 ? (
+              <div style={styles.warningBox}>
+                ⚠️ 沒有找到 Finance Manager，請先在 Event Manager Dashboard 創建一位 Finance Manager。
+              </div>
+            ) : (
+              <select
+                value={selectedFM}
+                onChange={(e) => setSelectedFM(e.target.value)}
+                style={styles.select}
+                required
+              >
+                <option value="">-- 請選擇 Finance Manager --</option>
+                {financeManagers.map(fm => (
+                  <option key={fm.id} value={fm.id}>
+                    {fm.basicInfo?.chineseName || fm.displayName || '未命名'}
+                    {' - '}
+                    {fm.basicInfo?.phoneNumber || fm.phone || '無電話'}
+                    {fm.identityInfo?.department ? ` (${fm.identityInfo.department})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div style={styles.hint}>
+              💡 提示：上交後需要 Finance Manager 登入確認才算完成
+            </div>
+          </div>
+
+          {/* 明細統計 */}
           <div style={styles.breakdownBox}>
-            <h4 style={styles.breakdownTitle}>明细统计</h4>
+            <h4 style={styles.breakdownTitle}>明細統計</h4>
             <div style={styles.breakdownItem}>
               <span>正常收款:</span>
               <strong>RM {breakdown.normalCollections.toLocaleString()}</strong>
@@ -661,7 +777,7 @@ const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, even
             )}
             {breakdown.pointsRecovery > 0 && (
               <div style={styles.breakdownItem}>
-                <span>点数回收:</span>
+                <span>點數回收:</span>
                 <strong style={{ color: '#3b82f6' }}>RM {breakdown.pointsRecovery.toLocaleString()}</strong>
               </div>
             )}
@@ -671,33 +787,32 @@ const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, even
                 <strong style={{ color: '#8b5cf6' }}>RM {breakdown.waivers.toLocaleString()}</strong>
               </div>
             )}
-            {breakdown.totalDiscrepancy !== 0 && (
-              <div style={styles.breakdownItem}>
-                <span>总差额:</span>
-                <strong style={{ color: '#ef4444' }}>RM {Math.abs(breakdown.totalDiscrepancy).toLocaleString()}</strong>
-              </div>
-            )}
           </div>
 
-          {/* 明细列表 */}
+          {/* 明細列表 */}
           <div style={styles.detailsList}>
-            <h4 style={styles.detailsTitle}>包含的收款记录</h4>
+            <h4 style={styles.detailsTitle}>包含的收款記錄</h4>
             {selectedDetails.map(collection => (
               <div key={collection.id} style={styles.detailListItem}>
-                <span>{collection.submittedByName}</span>
+                <span>
+                  {collection.sellerName ||
+                    collection.submittedByName ||
+                    collection.seller?.basicInfo?.chineseName ||
+                    '未知'}
+                </span>
                 <span style={{ color: '#10b981' }}>RM {collection.amount.toLocaleString()}</span>
               </div>
             ))}
           </div>
 
-          {/* 备注 */}
+          {/* 備註 */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>备注给 Finance Manager</label>
+            <label style={styles.label}>備註給 Finance Manager</label>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               style={styles.textarea}
-              placeholder="选填，如有特殊情况请说明..."
+              placeholder="選填，如有特殊情況請說明..."
               rows={3}
             />
           </div>
@@ -721,12 +836,12 @@ const SubmitCashModal = ({ selectedCollections, collections, smInfo, orgId, even
             onClick={handleSubmit}
             style={{
               ...styles.submitButton,
-              opacity: submitting ? 0.6 : 1,
-              cursor: submitting ? 'not-allowed' : 'pointer'
+              opacity: (submitting || !selectedFM) ? 0.6 : 1,
+              cursor: (submitting || !selectedFM) ? 'not-allowed' : 'pointer'
             }}
-            disabled={submitting}
+            disabled={submitting || !selectedFM}
           >
-            {submitting ? '处理中...' : '✅ 确认上交'}
+            {submitting ? '處理中...' : '✅ 確認上交'}
           </button>
         </div>
       </div>
@@ -1199,7 +1314,24 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600'
+  },
+  loadingText: {
+    padding: '0.75rem',
+    textAlign: 'center',
+    color: '#6b7280',
+    background: '#f9fafb',
+    borderRadius: '6px'
+  },
+  warningBox: {
+    padding: '1rem',
+    background: '#fef3c7',
+    border: '1px solid #fbbf24',
+    borderRadius: '6px',
+    color: '#92400e',
+    fontSize: '0.875rem'
   }
+
+
 };
 
 export default SubmitCash;

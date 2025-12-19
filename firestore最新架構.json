@@ -1,18 +1,26 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version":"2025-12-08-v4",
-    "lastUpdated": "2025-12-08",
+    "version": "2025-12-17-v5",
+    "lastUpdated": "2025-12-17",
     "architectureChanges": {
-      "version_2025-12-08-v3": [
+      "version_2025-12-17-v5": [
+        "新增 platform_settings 顶层集合（Platform级别OTP配置）",
+        "新增 pointCards Event子集合（不记名点数卡）",
+        "扩充 otp_sessions 集合为通用OTP系统",
+        "大幅扩充 users.customer 数据结构",
+        "transactions 新增三种交易类型：customer_transfer, point_card_payment, point_card_topup",
+        "Event.roleStats.customers 新增详细统计字段",
+        "新增6个Customer相关Cloud Functions",
+        "完整支持CustomerDashboard功能"
+      ],
       "version_2025-12-08-v4": [
         "完全移除 Event.contactPerson 字段",
         "Event Manager 本身就是活动联络人，其 basicInfo 即为对外联络信息",
         "users.identityInfo 新增 position 字段（职位）",
         "Organization.contact 在创建组织时填写（组织主要联系人）",
         "创建 Event 时同时创建 Event Manager（活动负责人即联络人）",
-        "简化架构：不需要额外的 contactPerson 或 contactPersons 数组"
-        "Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
+        "简化架构：不需要额外的 contactPerson 或 contactPersons 数组""Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
         "Event Manager 从 Event.eventManager 对象移到 users 集合",
         "Event 文档中移除 eventManager 对象，改为 contactPerson（纯联络用途）",
         "Event Manager 成为 users 集合中的特殊角色，与 Finance Manager 形成制衡",
@@ -197,9 +205,14 @@
                   "totalRevenue": "number (累计销售额)"
                 },
                 "customers": {
-                  "count": "number (Customer 总数)",
-                  "activeCount": "number (有交易记录的 Customer 数)",
-                  "totalSpent": "number (累计消费额)"
+                  "count": "number (Customer总数)",
+                  "activeCount": "number (有交易记录的Customer数)",
+                  "totalSpent": "number (累计消费额)",
+                  "totalTransferred": "number (累计转让点数)",
+                  "totalPointCardsRedeemed": "number (累计兑换点数卡数量)",
+                  "averageBalance": "number (平均余额)",
+                  "totalBalance": "number (所有Customer的点数总和)",
+                  "lastUpdated": "timestamp"
                 }
               },
               "departmentOverview": {
@@ -271,7 +284,9 @@
                     "email": "string (邮箱，可选)",
                     "passwordHash": "string (密码哈希)",
                     "passwordSalt": "string (密码盐值)",
-                    "isPhoneVerified": "boolean (电话是否验证)"
+                    "isPhoneVerified": "boolean (电话是否验证)",
+                    "pinHash": "string (交易PIN码哈希)",
+                    "pinSalt": "string (交易PIN码盐值)"
                   },
                   "pointsStats": {
                     "description": "点数统计（实时维护，主要用于 seller 角色）",
@@ -304,16 +319,48 @@
                     }
                   },
                   "merchant": {
-                    "availablePoints": "number",
-                    "totalPointsReceived": "number",
-                    "totalSpent": "number",
-                    "transactions": "object"
+                    "merchantId": "string (關聯的 merchant 文檔 ID)",
+                    "stallName": "string (攤位名稱，冗余字段)",
+                    "permissions": {
+                      "canViewAllTransactions": "boolean (可查看所有交易)",
+                      "canEditProfile": "boolean (可編輯攤位資料)",
+                      "canToggleStatus": "boolean (可切換營業狀態)"
+                    },
+                    "statistics": {
+                      "totalRevenue": "number (總收入，與 merchants 同步)",
+                      "transactionCount": "number (交易筆數)",
+                      "lastSyncAt": "timestamp (最後同步時間)"
+                    }
                   },
                   "customer": {
-                    "availablePoints": "number",
-                    "totalPointsReceived": "number",
-                    "totalSpent": "number",
-                    "transactions": "object"
+                    "pointsAccount": {
+                      "availablePoints": "number (可用点数)",
+                      "reservedPoints": "number (预留点数)",
+                      "totalReceived": "number (累计获得)",
+                      "totalSpent": "number (累计消费)",
+                      "totalTransferredOut": "number (累计转出)",
+                      "totalTransferredIn": "number (累计接收转入)"
+                    },
+                    "qrCodeData": {
+                      "type": "string (固定值 'CUSTOMER_RECEIVE_POINTS')",
+                      "version": "string",
+                      "userId": "string",
+                      "eventId": "string",
+                      "organizationId": "string",
+                      "generatedAt": "timestamp"
+                    },
+                    "stats": {
+                      "transactionCount": "number (总交易次数)",
+                      "merchantPaymentCount": "number (支付给Merchant次数)",
+                      "merchantsVisited": [
+                        "array<string> (消费过的商家ID列表)"
+                      ],
+                      "pointCardsRedeemed": "number (兑换的点数卡数量)",
+                      "pointCardsTopupAmount": "number (点数卡充值总额)",
+                      "transfersSent": "number (转让次数)",
+                      "transfersReceived": "number (接收转让次数)",
+                      "lastActivityAt": "timestamp"
+                    }
                   },
                   "eventManager": {
                     "description": "Event Manager 角色专用数据",
@@ -523,31 +570,145 @@
                   "sellerManagerId"
                 ]
               },
+              "firestoreArchitectureAddendum": {
+                "description": "MyBazaar MerchantManager 功能 - Firestore 架構補充",
+                "version": "2025-12-15-merchant-v1",
+                "addedCollections": {
+                  "merchants": {
+                    "path": "organizations/{organizationId}/events/{eventId}/merchants/{merchantId}",
+                    "description": "商家（攤位）資訊",
+                    "level": "Event",
+                    "documentStructure": {
+                      "merchantId": "string (自動生成的文檔ID)",
+                      "userId": "string (關聯的用戶 ID，來自 users 集合)",
+                      "stallName": "string (攤位名稱，如 '美食天地')",
+                      "description": "string (攤位描述/簡介)",
+                      "contactInfo": {
+                        "phone": "string (聯絡電話)",
+                        "email": "string (聯絡郵箱，可選)",
+                        "note": "string (備註，可選)"
+                      },
+                      "qrCodeData": {
+                        "type": "string (固定值 'MERCHANT_PAYMENT')",
+                        "version": "string (QR Code 版本)",
+                        "merchantId": "string (商家ID)",
+                        "eventId": "string (活動ID)",
+                        "organizationId": "string (組織ID)",
+                        "generatedAt": "timestamp (生成時間)"
+                      },
+                      "revenueStats": {
+                        "totalRevenue": "number (總收入，points)",
+                        "todayRevenue": "number (今日收入)",
+                        "transactionCount": "number (總交易筆數)",
+                        "todayTransactionCount": "number (今日交易筆數)",
+                        "lastTransactionAt": "timestamp (最後交易時間)",
+                        "averageTransactionAmount": "number (平均交易金額)"
+                      },
+                      "operationStatus": {
+                        "isActive": "boolean (營業狀態，true=營業中)",
+                        "lastStatusChange": "timestamp (最後狀態變更時間)",
+                        "pauseReason": "string (暫停原因，可選)"
+                      },
+                      "metadata": {
+                        "createdAt": "timestamp (創建時間)",
+                        "updatedAt": "timestamp (最後更新時間)",
+                        "createdBy": "string (創建者 UID)",
+                        "lastUpdatedBy": "string (最後更新者 UID)"
+                      }
+                    },
+                    "indexes": [
+                      "userId",
+                      "operationStatus.isActive",
+                      "revenueStats.totalRevenue (desc)",
+                      "metadata.createdAt (desc)"
+                    ],
+                    "securityRules": {
+                      "read": [
+                        "Merchant Manager 可以讀取自己的商家資料 (userId == request.auth.uid)",
+                        "Event Manager 可以讀取所有商家資料",
+                        "Customer 可以讀取營業中的商家基本資訊（用於掃碼付款）"
+                      ],
+                      "write": [
+                        "Merchant Manager 可以更新特定欄位（stallName, description, contactInfo, isActive）",
+                        "Event Manager 可以創建和修改商家資料",
+                        "totalRevenue 等統計欄位只能由 Cloud Functions 更新"
+                      ]
+                    }
+                  }
+                }
+              },
               "transactions": {
                 "path": "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
-                "description": "交易记录（Seller/Merchant 售出点数给 Customer）",
+                "description": "所有交易记录（Seller售出点数给 Customer；Merchant向 Customer 收取点数）",
                 "documentStructure": {
-                  "transactionId": "string (交易ID)",
-                  "type": "string ('sale' | 'refund')",
-                  "sellerId": "string (卖家userId，Seller或Merchant)",
-                  "sellerRole": "string ('seller' | 'merchant')",
-                  "sellerName": "string (卖家名称)",
-                  "sellerDepartment": "string (卖家部门)",
-                  "customerId": "string (买家userId)",
-                  "customerName": "string (买家名称)",
-                  "points": "number (交易点数)",
-                  "amount": "number (交易金额 RM，1:1比例)",
-                  "collectionStatus": "string ('collected' | 'pending')",
-                  "collectedAmount": "number (已收款金额)",
-                  "collectedAt": "timestamp (收款时间，可选)",
-                  "transactionAt": "timestamp (交易时间)",
-                  "remarks": "string (备注，可选)"
+                  "transactionId": "string (自動生成)",
+                  "eventId": "string",
+                  "organizationId": "string",
+                  "// 交易雙方": "根據類型不同而異",
+                  "sellerId": "string (POINTS_SALE 時使用)",
+                  "customerId": "string (兩種類型都有)",
+                  "amount": "number (交易金額，points)",
+                  "status": "string ('completed' | 'failed' | 'pending' | 'refunded')",
+                  "timestamp": "timestamp (交易時間)",
+                  "metadata": {
+                    "deviceInfo": "string (設備資訊，可選)",
+                    "ipAddress": "string (IP地址，可選)",
+                    "location": "object (地理位置，可選)"
+                  },
+                  "transactionType": {
+                    "type": "string",
+                    "values": [
+                      "POINTS_SALE",
+                      "MERCHANT_PAYMENT",
+                      "customer_transfer",
+                      "point_card_payment",
+                      "point_card_topup"
+                    ],
+                    "description": "POINTS_SALE: Seller卖点给Customer; MERCHANT_PAYMENT: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
+                  },
+                  "merchantId": {
+                    "type": "string",
+                    "description": "商家ID（僅 MERCHANT_PAYMENT 類型有值），MERCHANT_PAYMENT 時使用",
+                    "nullable": true
+                  },
+                  "customerPhone": {
+                    "type": "string",
+                    "description": "顧客電話（脫敏顯示，如 +601****789）",
+                    "note": "用於商家查看交易記錄"
+                  },
+                  "paymentMethod": {
+                    "type": "string",
+                    "values": [
+                      "POINTS"
+                    ],
+                    "description": "付款方式（當前只支援 points）"
+                  },
+                  "// === customer_transfer 特有字段 ===": "",
+                  "fromUser": {
+                    "userId": "string",
+                    "userName": "string",
+                    "phone": "string"
+                  },
+                  "toUser": {
+                    "userId": "string",
+                    "userName": "string",
+                    "phone": "string"
+                  },
+                  "otpVerified": "boolean (是否通过OTP验证)",
+                  "otpSessionId": "string (OTP会话ID)",
+                  "// === point_card 相关字段 ===": "",
+                  "cardId": "string (点数卡ID)",
+                  "cardNumber": "string (点数卡编号)",
+                  "cardBalanceBefore": "number",
+                  "cardBalanceAfter": "number",
+                  "cardDestroyed": "boolean"
                 },
                 "indexes": [
-                  "sellerId",
-                  "customerId",
-                  "transactionAt",
-                  "collectionStatus"
+                  "transactionType",
+                  "merchantId + timestamp (desc)",
+                  "customerId + timestamp (desc)",
+                  "sellerId + timestamp (desc)",
+                  "status"
                 ]
               },
               "cashCollections": {
@@ -651,6 +812,95 @@
                   "departmentCode",
                   "isActive"
                 ]
+              },
+              "pointCards": {
+                "path": "organizations/{orgId}/events/{eventId}/pointCards/{cardId}",
+                "description": "点数卡管理（不记名点数卡）",
+                "level": "Event Subcollection",
+                "documentStructure": {
+                  "// === 基本信息 ===": "",
+                  "cardId": "string (自动生成的文档ID)",
+                  "cardNumber": "string (打印在卡上的编号，如 'CARD-2025-001')",
+                  "// === 点数信息 ===": "",
+                  "balance": {
+                    "initial": "number (初始点数)",
+                    "current": "number (当前余额)",
+                    "spent": "number (已消费)",
+                    "reserved": "number (预留，交易进行中)"
+                  },
+                  "// === 状态信息 ===": "",
+                  "status": {
+                    "isActive": "boolean (是否有效)",
+                    "isExpired": "boolean (是否过期)",
+                    "isDestroyed": "boolean (是否已销毁，Customer充值后为true)",
+                    "isEmpty": "boolean (余额是否为零)",
+                    "expiresAt": "timestamp (过期时间，活动结束时间)",
+                    "lastUsedAt": "timestamp (最后使用时间)",
+                    "destroyedAt": "timestamp (销毁时间，可选)",
+                    "destroyedBy": {
+                      "userId": "string (销毁者ID)",
+                      "reason": "string ('customer_topup' | 'expired' | 'manual')"
+                    }
+                  },
+                  "// === QR Code信息 ===": "",
+                  "qrCodeData": {
+                    "type": "string (固定值 'POINT_CARD')",
+                    "version": "string (版本号)",
+                    "cardId": "string (点数卡ID)",
+                    "eventId": "string (活动ID)",
+                    "organizationId": "string (组织ID)",
+                    "generatedAt": "timestamp (生成时间)"
+                  },
+                  "// === 发行信息 ===": "",
+                  "issuer": {
+                    "pointSellerId": "string (PointSeller用户ID)",
+                    "pointSellerName": "string (PointSeller姓名)",
+                    "issuedAt": "timestamp (发行时间)",
+                    "cashReceived": "number (收到的现金RM，1:1比例)",
+                    "receiptNumber": "string (收据编号)"
+                  },
+                  "// === 使用记录 ===": "",
+                  "usageStats": {
+                    "transactionCount": "number (使用次数)",
+                    "merchantsUsed": [
+                      "array<string> (使用过的商家ID列表)"
+                    ],
+                    "firstUsedAt": "timestamp (首次使用时间)",
+                    "lastUsedAt": "timestamp (最后使用时间)"
+                  },
+                  "// === 元数据 ===": "",
+                  "metadata": {
+                    "createdAt": "timestamp",
+                    "createdBy": "string (PointSeller UID)",
+                    "eventId": "string (冗余字段)",
+                    "organizationId": "string (冗余字段)"
+                  }
+                },
+                "indexes": [
+                  "cardNumber (unique)",
+                  "status.isActive",
+                  "status.expiresAt",
+                  "issuer.pointSellerId",
+                  "metadata.createdAt (desc)"
+                ],
+                "securityRules": {
+                  "read": [
+                    "任何人扫描QR Code可读取（用于验证和查询余额）",
+                    "PointSeller可读取自己发行的卡片",
+                    "Event Manager可读取所有卡片"
+                  ],
+                  "write": [
+                    "仅Cloud Functions可写（创建、更新余额、销毁）",
+                    "PointSeller不能直接修改"
+                  ]
+                },
+                "notes": [
+                  "点数卡为不记名，任何人持有即可使用",
+                  "QR Code统一格式，根据扫描者身份执行不同逻辑",
+                  "Customer扫描 → 充值到账户并销毁卡片",
+                  "Merchant扫描 → 从卡片扣款",
+                  "活动结束后自动过期"
+                ]
               }
             }
           }
@@ -658,24 +908,173 @@
       },
       "otp_sessions": {
         "path": "otp_sessions/{sessionId}",
-        "description": "OTP 验证会话（临时数据，用于登录验证）",
+        "description": "OTP验证会话（扩充为通用OTP系统，不仅限于登录）",
         "level": "Platform",
-        "documentStructure": {
-          "sessionId": "string (会话ID)",
+        "changes": "扩充字段，支持多种验证场景",
+        "newDocumentStructure": {
+          "sessionId": "string (会话ID，格式：{userId}_{scenario}_{timestamp})",
+          "userId": "string (用户UID)",
           "phoneNumber": "string (手机号)",
-          "orgCode": "string (组织代码)",
-          "eventCode": "string (活动代码)",
-          "otpCodeHash": "string (OTP哈希值)",
-          "expiresAt": "number (过期时间戳)",
-          "attempts": "number (尝试次数)",
-          "createdAt": "timestamp",
-          "devMode": "boolean (是否为开发模式)"
+          "otpCode": "string (OTP码，纯文本存储，devMode时为固定码)",
+          "// === 场景信息 ===": "",
+          "scenario": "string (场景标识，如 'customerPayment', 'customerTransfer')",
+          "scenarioData": {
+            "description": "场景相关数据，用于验证和消息生成",
+            "example": {
+              "amount": "number",
+              "recipient": "string",
+              "merchantName": "string"
+            }
+          },
+          "// === 状态信息 ===": "",
+          "status": "string ('pending' | 'verified' | 'expired' | 'locked')",
+          "attempts": "number (已尝试次数)",
+          "maxAttempts": "number (最大尝试次数)",
+          "// === 时间信息 ===": "",
+          "createdAt": "timestamp (创建时间)",
+          "expiresAt": "timestamp (过期时间)",
+          "verifiedAt": "timestamp (验证成功时间，可选)",
+          "updatedAt": "timestamp (最后更新时间)",
+          "// === 废弃字段（保留兼容）===": "",
+          "orgCode": "string (组织代码，登录场景使用)",
+          "eventCode": "string (活动代码，登录场景使用)",
+          "otpCodeHash": "string (OTP哈希值，旧版本使用)",
+          "devMode": "boolean (是否为开发模式，已移到platform_settings)"
         },
         "indexes": [
+          "userId",
           "phoneNumber",
-          "expiresAt"
+          "status",
+          "expiresAt",
+          "scenario"
         ],
-        "securityRules": "只读；由 Cloud Functions 创建和管理"
+        "securityRules": "只读；由Cloud Functions创建和管理",
+        "notes": [
+          "通用OTP系统，支持所有需要验证的场景",
+          "sessionId格式统一为：{userId}_{scenario}_{timestamp}",
+          "status='verified'后不可重复使用",
+          "过期session应定期清理（Cloud Scheduler）"
+        ]
+      },
+      "platform_settings": {
+        "path": "platform_settings/config",
+        "description": "平台级别配置（单文档集合）",
+        "level": "Platform",
+        "documentId": "config (固定文档ID)",
+        "documentStructure": {
+          "// === OTP配置 ===": "",
+          "otp": {
+            "enabled": "boolean (OTP系统总开关)",
+            "provider": "string ('360sms' | 'twilio' | 'firebase')",
+            "validityMinutes": "number (OTP有效期，分钟)",
+            "maxAttempts": "number (最大尝试次数)",
+            "smsConfig": {
+              "description": "360 SMS配置",
+              "apiKey": "string (360 API Key)",
+              "apiSecret": "string (360 API Secret)",
+              "baseUrl": "string (API端点)",
+              "sender": "string (发送者名称，如 'MyBazaar')"
+            },
+            "devMode": {
+              "enabled": "boolean (开发模式开关)",
+              "fixedCode": "string (固定OTP码，如 '223344')",
+              "bypassForTestNumbers": [
+                "array<string> (测试号码列表，不发送真实SMS)"
+              ]
+            }
+          },
+          "// === OTP验证场景开关（Platform Admin统一控制）===": "",
+          "otpRequired": {
+            "// --- Customer相关 ---": "",
+            "customerPayment": "boolean (Customer付款给Merchant)",
+            "customerTransfer": "boolean (Customer转让点数)",
+            "pointCardTopup": "boolean (Customer扫点数卡充值，通常为false)",
+            "// --- SellerManager相关 ---": "",
+            "sellerManagerAllocate": "boolean (SellerManager分配点数)",
+            "sellerManagerCollectCash": "boolean (SellerManager收款确认)",
+            "// --- Seller相关 ---": "",
+            "sellerSellPoints": "boolean (Seller出售点数)",
+            "sellerSubmitCash": "boolean (Seller上缴现金)",
+            "// --- EventManager相关 ---": "",
+            "eventManagerBatchAllocate": "boolean (EventManager批量分配)",
+            "eventManagerApproval": "boolean (EventManager审批大额操作)",
+            "// --- PointSeller相关 ---": "",
+            "pointSellerIssueCard": "boolean (PointSeller发行点数卡)",
+            "pointSellerReceiveCash": "boolean (PointSeller收款确认)",
+            "// --- FinanceManager相关 ---": "",
+            "financeManagerVerify": "boolean (FinanceManager财务核实)",
+            "// --- Merchant相关 ---": "",
+            "merchantPayment": "boolean (Merchant收款，通常为false)"
+          },
+          "// === OTP场景配置（每个场景的具体规则）===": "",
+          "otpScenarios": {
+            "customerPayment": {
+              "description": "string (场景描述)",
+              "triggerCondition": {
+                "minAmount": "number (触发OTP的最小金额，0表示任何金额)",
+                "maxAmount": "number (最大金额，null表示无上限)"
+              },
+              "message": "string (OTP消息模板，支持变量 {amount}, {recipient} 等)"
+            },
+            "customerTransfer": {
+              "description": "Customer转让点数",
+              "triggerCondition": {
+                "minAmount": 10,
+                "maxAmount": null
+              },
+              "message": "您正在转让 {amount} 点给 {recipient}，请输入验证码确认。"
+            },
+            "sellerManagerAllocate": {
+              "description": "SellerManager分配点数",
+              "triggerCondition": {
+                "minAmount": 100,
+                "maxAmount": null
+              },
+              "message": "您正在分配 {amount} 点给 {recipient}，请输入验证码确认。"
+            },
+            "sellerSellPoints": {
+              "description": "Seller出售点数",
+              "triggerCondition": {
+                "minAmount": 50,
+                "maxAmount": null
+              },
+              "message": "您正在售出 {amount} 点，请输入验证码确认。"
+            },
+            "pointSellerIssueCard": {
+              "description": "PointSeller发行点数卡",
+              "triggerCondition": {
+                "minAmount": 100,
+                "maxAmount": null
+              },
+              "message": "您正在发行面额 {amount} 点的点数卡，请输入验证码确认。"
+            },
+            "eventManagerBatchAllocate": {
+              "description": "EventManager批量分配",
+              "triggerCondition": {
+                "minAmount": 500,
+                "maxAmount": null
+              },
+              "message": "您正在批量分配共 {amount} 点，请输入验证码确认。"
+            }
+          },
+          "// === 元数据 ===": "",
+          "metadata": {
+            "createdAt": "timestamp",
+            "updatedAt": "timestamp",
+            "updatedBy": "string (Platform Admin UID)"
+          }
+        },
+        "indexes": [],
+        "securityRules": {
+          "read": "Platform Admin和Event Manager可读",
+          "write": "仅Platform Admin可写"
+        },
+        "notes": [
+          "这是单文档集合，文档ID固定为 'config'",
+          "所有Event共享此配置",
+          "Platform Admin通过专门的管理页面修改",
+          "前端应缓存此配置以减少读取"
+        ]
       }
     },
     "cloudFunctions": {
@@ -820,100 +1219,396 @@
           "relatedFiles": [
             "functions/scheduledFunctions.js"
           ]
+        },
+        "processPayment": {
+          "trigger": "Cloud Function (HTTPS Callable)",
+          "description": "處理 Customer 向 Merchant 付款",
+          "input": {
+            "organizationId": "string",
+            "eventId": "string",
+            "merchantId": "string",
+            "customerId": "string (從 auth 取得)",
+            "amount": "number (付款金額)"
+          },
+          "validation": [
+            "驗證用戶已登入（request.auth）",
+            "驗證 Customer 角色",
+            "驗證 Merchant 存在且營業中",
+            "驗證 Customer 餘額充足（availablePoints >= amount）",
+            "驗證金額合理性（amount > 0 且為整數）"
+          ],
+          "operations": [
+            "使用 Firestore Transaction 確保原子性",
+            "扣除 Customer 的 availablePoints",
+            "增加 Customer 的 totalSpent 和 merchantTransactionCount",
+            "增加 Merchant 的 totalRevenue 和 transactionCount",
+            "創建交易記錄（transactionType: 'MERCHANT_PAYMENT'）",
+            "更新 Event 的 globalPointsStats（如需要）"
+          ],
+          "output": {
+            "success": "boolean",
+            "transactionId": "string",
+            "newBalance": "number (Customer 新餘額)",
+            "message": "string"
+          },
+          "errorHandling": [
+            "餘額不足 -> 'INSUFFICIENT_BALANCE'",
+            "商家未營業 -> 'MERCHANT_INACTIVE'",
+            "交易失敗 -> 'TRANSACTION_FAILED'"
+          ],
+          "relatedFiles": [
+            "functions/src/transactions.js"
+          ]
+        },
+        "onMerchantTransaction": {
+          "trigger": "Firestore onCreate: transactions/{transactionId}",
+          "description": "當創建商家交易記錄時觸發（更新統計）",
+          "conditions": [
+            "transactionType == 'MERCHANT_PAYMENT'",
+            "status == 'completed'"
+          ],
+          "tasks": [
+            "更新 Merchant 的 revenueStats",
+            "更新 Merchant 的 todayRevenue（如果是今天）",
+            "更新 Merchant 的 lastTransactionAt",
+            "計算並更新 averageTransactionAmount",
+            "觸發即時通知（如果需要）"
+          ],
+          "relatedFiles": [
+            "functions/src/merchantTriggers.js"
+          ]
+        },
+        "sendOTP": {
+          "name": "sendOTP",
+          "trigger": "HTTP Callable",
+          "description": "通用OTP发送函数（支持所有场景）",
+          "parameters": {
+            "phoneNumber": "string (接收方手机号)",
+            "scenario": "string (场景标识，如 'customerPayment')",
+            "scenarioData": "object (场景数据，如 {amount, recipient})"
+          },
+          "logic": [
+            "1. 验证用户身份（context.auth）",
+            "2. 读取platform_settings/config",
+            "3. 检查OTP总开关（otp.enabled）",
+            "4. 检查该场景是否需要OTP（otpRequired[scenario]）",
+            "5. 检查金额是否触发OTP（otpScenarios[scenario].triggerCondition）",
+            "6. 生成OTP码（devMode时使用固定码，否则随机6位）",
+            "7. 根据场景模板生成消息（替换变量）",
+            "8. 发送SMS（通过360 API，测试号码跳过）",
+            "9. 创建otp_sessions文档",
+            "10. 返回sessionId和expiresAt"
+          ],
+          "returns": {
+            "success": "boolean",
+            "otpRequired": "boolean (该场景是否需要OTP)",
+            "sessionId": "string (会话ID，如果需要OTP)",
+            "expiresAt": "number (有效期秒数)",
+            "message": "string (提示信息)"
+          },
+          "errorHandling": [
+            "unauthenticated: 未登录",
+            "unavailable: OTP系统未启用",
+            "internal: SMS发送失败"
+          ]
+        },
+        "verifyOTP": {
+          "name": "verifyOTP",
+          "trigger": "HTTP Callable",
+          "description": "通用OTP验证函数",
+          "parameters": {
+            "sessionId": "string (OTP会话ID)",
+            "otpCode": "string (6位OTP码)"
+          },
+          "logic": [
+            "1. 验证用户身份",
+            "2. 读取otp_sessions/{sessionId}",
+            "3. 验证所有权（session.userId == context.auth.uid）",
+            "4. 检查状态（不能是verified/expired/locked）",
+            "5. 检查是否过期",
+            "6. 检查尝试次数",
+            "7. 验证OTP码",
+            "8. 更新状态为verified或增加attempts"
+          ],
+          "returns": {
+            "success": "boolean",
+            "sessionId": "string",
+            "scenario": "string (场景标识)",
+            "scenarioData": "object (场景数据)"
+          },
+          "errorHandling": [
+            "not-found: 会话不存在",
+            "permission-denied: 无权验证此OTP",
+            "failed-precondition: 已验证/已过期",
+            "deadline-exceeded: OTP已过期",
+            "resource-exhausted: 尝试次数用完",
+            "invalid-argument: OTP码错误"
+          ]
+        },
+        "createCustomer": {
+          "name": "createCustomer",
+          "trigger": "HTTP Callable",
+          "description": "创建Customer账户（注册）",
+          "parameters": {
+            "orgId": "string",
+            "eventId": "string",
+            "phoneNumber": "string",
+            "displayName": "string",
+            "password": "string"
+          },
+          "logic": [
+            "1. 验证phoneNumber格式",
+            "2. 检查手机号在该Event下是否已存在",
+            "3. 创建Firebase Auth账户",
+            "4. 在users集合创建Customer文档",
+            "5. 初始化customer对象（所有统计字段为0）",
+            "6. 生成个人QR Code数据",
+            "7. 更新Event.roleStats.customers.count"
+          ],
+          "returns": {
+            "success": "boolean",
+            "userId": "string",
+            "message": "string"
+          }
+        },
+        "processCustomerPayment": {
+          "name": "processCustomerPayment",
+          "trigger": "HTTP Callable",
+          "description": "Customer付款给Merchant",
+          "parameters": {
+            "merchantId": "string",
+            "amount": "number",
+            "otpSessionId": "string (如果需要OTP验证)"
+          },
+          "logic": [
+            "1. 如果有otpSessionId，验证OTP已通过",
+            "2. 使用Firestore Transaction:",
+            "   a. 读取Customer文档，检查余额",
+            "   b. 读取Merchant文档",
+            "   c. 扣除Customer points",
+            "   d. 增加Merchant revenue",
+            "   e. 创建transaction记录（type='MERCHANT_PAYMENT'）",
+            "3. 触发器更新统计数据"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string",
+            "remainingBalance": "number"
+          }
+        },
+        "transferPoints": {
+          "name": "transferPoints",
+          "trigger": "HTTP Callable",
+          "description": "Customer转让点数",
+          "parameters": {
+            "toPhoneNumber": "string (接收方手机号)",
+            "amount": "number",
+            "otpSessionId": "string (如果需要OTP验证)"
+          },
+          "logic": [
+            "1. 查询接收方Customer（通过phoneNumber）",
+            "2. 如果有otpSessionId，验证OTP已通过",
+            "3. 使用Firestore Transaction:",
+            "   a. 扣除转出方余额",
+            "   b. 增加接收方余额",
+            "   c. 更新双方统计数据",
+            "   d. 创建transaction记录（type='customer_transfer'）"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string"
+          }
+        },
+        "topupFromPointCard": {
+          "name": "topupFromPointCard",
+          "trigger": "HTTP Callable",
+          "description": "Customer扫点数卡充值",
+          "parameters": {
+            "cardId": "string"
+          },
+          "logic": [
+            "1. 读取pointCard文档",
+            "2. 验证卡片有效（isActive && !isExpired && !isDestroyed）",
+            "3. 使用Firestore Transaction:",
+            "   a. 将卡片余额转入Customer账户",
+            "   b. 销毁卡片（isActive=false, isDestroyed=true）",
+            "   c. 创建transaction记录（type='point_card_topup'）",
+            "   d. 更新Customer统计"
+          ],
+          "returns": {
+            "success": "boolean",
+            "amount": "number (充值金额)",
+            "transactionId": "string"
+          }
+        },
+        "processPointCardPayment": {
+          "name": "processPointCardPayment",
+          "trigger": "HTTP Callable",
+          "description": "点数卡支付给Merchant",
+          "parameters": {
+            "cardId": "string",
+            "merchantId": "string",
+            "amount": "number"
+          },
+          "logic": [
+            "1. 读取pointCard文档",
+            "2. 验证卡片有效且余额充足",
+            "3. 使用Firestore Transaction:",
+            "   a. 扣除卡片余额",
+            "   b. 增加Merchant revenue",
+            "   c. 创建transaction记录（type='point_card_payment'）",
+            "   d. 更新卡片使用统计",
+            "4. 如果余额为0，标记isEmpty=true"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string",
+            "remainingBalance": "number (卡片剩余余额)"
+          }
         }
-      }
-    },
-    "securityRules": {
-      "description": "Firestore Security Rules 概览",
-      "principles": [
-        "三层权限架构：Platform Admin（平台级）-> Organization（组织级）-> Event（活动级，由 Event Manager 管理）",
-        "Platform Admin 权限：可以创建和管理所有 Organization；可以创建 Event 并指定 Event Manager",
-        "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据；不分配点数；不兼任其他角色；纯监控所有人员数据",
-        "完全数据隔离：不同 Organization 和 Event 之间的数据完全隔离",
-        "角色权限：基于用户角色（Platform Admin, Event Manager, Seller Manager, Seller, Merchant, Customer, Finance）控制访问",
-        "所有权验证：用户只能访问自己的数据或管理范围内的数据",
-        "Seller Manager 权限：只能管理 managedDepartments 内的用户数据",
-        "统计数据保护：统计文档只能由系统（Cloud Functions）写入，用户只读"
-      ],
-      "ruleExamples": {
-        "admin_uids": {
-          "read": "已认证的 Platform Admin 可读",
-          "write": "仅超级管理员权限（通过 Cloud Functions）"
-        },
-        "organizations": {
-          "read": "Platform Admin 可以读取所有组织；Event Manager 可以读取自己所在组织",
-          "write": "仅 Platform Admin 可以创建和修改组织信息"
-        },
-        "organizations/{orgId}/events": {
-          "read": "Platform Admin 和对应的 Event Manager 可读",
-          "write": "Platform Admin 可以创建 Event；Event Manager 可以修改自己管理的 Event"
-        },
-        "organizations/{orgId}/events/{eventId}/users": {
-          "read": "用户可以读取自己的数据；Event Manager 可以读取所有用户；Seller Manager 可以读取 managedDepartments 内的用户",
-          "write": "用户只能更新自己的基本信息；Event Manager 可以创建/更新用户；Seller Manager 可以更新管理范围内的用户"
-        },
-        "organizations/{orgId}/events/{eventId}/users/{eventManagerId}": {
-          "read": "Event Manager 可以读取自己的数据；Platform Admin 可读；其他用户不可读",
-          "write": "Platform Admin 可以创建/修改 Event Manager；Event Manager 不能修改自己的 roles；不能删除自己",
-          "note": "Event Manager 通过 roles=['eventManager'] 识别，每个 Event 只能有一个"
-        },
-        "organizations/{orgId}/events/{eventId}/departmentStats": {
-          "read": "Event Manager 和相关 Seller Manager 可读",
-          "write": "仅 Cloud Functions 可写"
-        },
-        "organizations/{orgId}/events/{eventId}/transactions": {
-          "read": "交易双方和 Event Manager 可读",
-          "write": "Seller/Merchant 可以创建交易；Event Manager 可以修改交易"
-        }
-      }
-    },
-    "dataFlowExamples": {
-      "platformAdminCreatesEvent": {
-        "description": "Platform Admin 创建 Event 并指定 Event Manager",
-        "steps": [
-          "1. Platform Admin 在 frontend 输入 Event 基本信息",
-          "2. Platform Admin 手动输入 contactPerson 信息（姓名、电话、邮箱、职位）",
-          "3. Platform Admin 输入 Event Manager 的基本信息（姓名、电话、密码等）",
-          "4. Frontend 调用 Cloud Function: createEvent",
-          "5. Cloud Function 创建 Event 文档（包含 contactPerson）",
-          "6. Cloud Function 在 users 集合中创建 Event Manager 文档：",
-          "   organizations/{orgId}/events/{eventId}/users/{eventManagerId}",
-          "7. Event Manager 文档包含：",
-          "   - roles: ['eventManager']",
-          "   - eventManager: { permissions, restrictions, monitoringScope }",
-          "   - basicInfo: { 姓名、电话、邮箱等 }",
-          "8. Cloud Function 为 Event Manager 生成登录凭证",
-          "9. 返回成功，Platform Admin 可以通知 Event Manager 登录信息"
+      },
+      "securityRules": {
+        "description": "Firestore Security Rules 概览",
+        "principles": [
+          "三层权限架构：Platform Admin（平台级）-> Organization（组织级）-> Event（活动级，由 Event Manager 管理）",
+          "Platform Admin 权限：可以创建和管理所有 Organization；可以创建 Event 并指定 Event Manager",
+          "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据；不分配点数；不兼任其他角色；纯监控所有人员数据",
+          "完全数据隔离：不同 Organization 和 Event 之间的数据完全隔离",
+          "角色权限：基于用户角色（Platform Admin, Event Manager, Seller Manager, Seller, Merchant, Customer, Finance）控制访问",
+          "所有权验证：用户只能访问自己的数据或管理范围内的数据",
+          "Seller Manager 权限：只能管理 managedDepartments 内的用户数据",
+          "统计数据保护：统计文档只能由系统（Cloud Functions）写入，用户只读"
         ],
-        "note": "contactPerson 与 Event Manager 可以是同一人，也可以是不同人"
+        "ruleExamples": {
+          "admin_uids": {
+            "read": "已认证的 Platform Admin 可读",
+            "write": "仅超级管理员权限（通过 Cloud Functions）"
+          },
+          "organizations": {
+            "read": "Platform Admin 可以读取所有组织；Event Manager 可以读取自己所在组织",
+            "write": "仅 Platform Admin 可以创建和修改组织信息"
+          },
+          "organizations/{orgId}/events": {
+            "read": "Platform Admin 和对应的 Event Manager 可读",
+            "write": "Platform Admin 可以创建 Event；Event Manager 可以修改自己管理的 Event"
+          },
+          "organizations/{orgId}/events/{eventId}/users": {
+            "read": "用户可以读取自己的数据；Event Manager 可以读取所有用户；Seller Manager 可以读取 managedDepartments 内的用户",
+            "write": "用户只能更新自己的基本信息；Event Manager 可以创建/更新用户；Seller Manager 可以更新管理范围内的用户"
+          },
+          "organizations/{orgId}/events/{eventId}/users/{eventManagerId}": {
+            "read": "Event Manager 可以读取自己的数据；Platform Admin 可读；其他用户不可读",
+            "write": "Platform Admin 可以创建/修改 Event Manager；Event Manager 不能修改自己的 roles；不能删除自己",
+            "note": "Event Manager 通过 roles=['eventManager'] 识别，每个 Event 只能有一个"
+          },
+          "organizations/{orgId}/events/{eventId}/departmentStats": {
+            "read": "Event Manager 和相关 Seller Manager 可读",
+            "write": "仅 Cloud Functions 可写"
+          },
+          "organizations/{orgId}/events/{eventId}/transactions": {
+            "read": "交易双方和 Event Manager 可读",
+            "write": "Seller/Merchant 可以创建交易；Event Manager 可以修改交易"
+          }
+        }
       },
-      "sellerManagerAllocatesPoints": {
-        "description": "Seller Manager 分配点数给部门内的 Seller",
-        "steps": [
-          "1. Seller Manager 在 frontend 输入分配信息",
-          "2. Frontend 调用 Cloud Function: allocatePointsBySellerManager",
-          "3. Cloud Function 验证权限（检查 managedDepartments）",
-          "4. Cloud Function 检查限额（pointAllocationRules.sellerManager.maxPerAllocation）",
-          "5. Cloud Function 创建文档：organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
-          "6. Firestore 触发器：onSellerManagerAllocation",
-          "7. 更新接收者的 pointsStats",
-          "8. 更新 departmentStats",
-          "9. 更新 sellerManagerStats",
-          "10. 检查收款警示"
-        ]
+      "dataFlowExamples": {
+        "platformAdminCreatesEvent": {
+          "description": "Platform Admin 创建 Event 并指定 Event Manager",
+          "steps": [
+            "1. Platform Admin 在 frontend 输入 Event 基本信息",
+            "2. Platform Admin 手动输入 contactPerson 信息（姓名、电话、邮箱、职位）",
+            "3. Platform Admin 输入 Event Manager 的基本信息（姓名、电话、密码等）",
+            "4. Frontend 调用 Cloud Function: createEvent",
+            "5. Cloud Function 创建 Event 文档（包含 contactPerson）",
+            "6. Cloud Function 在 users 集合中创建 Event Manager 文档：",
+            "   organizations/{orgId}/events/{eventId}/users/{eventManagerId}",
+            "7. Event Manager 文档包含：",
+            "   - roles: ['eventManager']",
+            "   - eventManager: { permissions, restrictions, monitoringScope }",
+            "   - basicInfo: { 姓名、电话、邮箱等 }",
+            "8. Cloud Function 为 Event Manager 生成登录凭证",
+            "9. 返回成功，Platform Admin 可以通知 Event Manager 登录信息"
+          ],
+          "note": "contactPerson 与 Event Manager 可以是同一人，也可以是不同人"
+        },
+        "sellerManagerAllocatesPoints": {
+          "description": "Seller Manager 分配点数给部门内的 Seller",
+          "steps": [
+            "1. Seller Manager 在 frontend 输入分配信息",
+            "2. Frontend 调用 Cloud Function: allocatePointsBySellerManager",
+            "3. Cloud Function 验证权限（检查 managedDepartments）",
+            "4. Cloud Function 检查限额（pointAllocationRules.sellerManager.maxPerAllocation）",
+            "5. Cloud Function 创建文档：organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
+            "6. Firestore 触发器：onSellerManagerAllocation",
+            "7. 更新接收者的 pointsStats",
+            "8. 更新 departmentStats",
+            "9. 更新 sellerManagerStats",
+            "10. 检查收款警示"
+          ]
+        },
+        "sellerSellsToCustomer": {
+          "description": "Seller 售出点数给 Customer",
+          "steps": [
+            "1. Seller 在 frontend 扫描 Customer 二维码，输入点数",
+            "2. Frontend 调用 Cloud Function: createTransaction",
+            "3. Cloud Function 验证：Seller 有足够的点数余额（currentBalance）",
+            "4. Cloud Function 创建交易：organizations/{orgId}/events/{eventId}/transactions/{transactionId}",
+            "5. Firestore 触发器：onTransaction",
+            "6. 更新 Seller 的 pointsStats（减少 currentBalance，增加 totalSold）",
+            "7. 更新 Customer 的 customer.availablePoints（增加）",
+            "8. 更新 departmentStats",
+            "9. 更新 Event.globalPointsStats"
+          ]
+        },
+        "customerPaysMerchant": {
+          "description": "Customer 掃描商家 QR Code 並付款",
+          "steps": [
+            "1. Merchant 在 MerchantManager Dashboard 顯示 QR Code",
+            "2. Customer 使用手機掃描 QR Code",
+            "3. Customer 進入付款頁面，顯示商家資訊和自己的餘額",
+            "4. Customer 輸入付款金額並確認",
+            "5. Frontend 調用 Cloud Function: processPayment",
+            "6. Cloud Function 執行交易（使用 Firestore Transaction）：",
+            "   - 扣除 Customer points",
+            "   - 增加 Merchant revenue",
+            "   - 創建交易記錄",
+            "7. Firestore 觸發器：onMerchantTransaction",
+            "8. 更新各種統計數據",
+            "9. 返回成功，顯示交易完成畫面",
+            "10. Merchant Dashboard 即時更新收入統計"
+          ]
+        },
+        "merchantViewsTransactions": {
+          "description": "Merchant Manager 查看交易記錄",
+          "steps": [
+            "1. Merchant Manager 登入並進入 Dashboard",
+            "2. Frontend 訂閱 transactions 集合（where merchantId == currentMerchantId）",
+            "3. 使用 Firestore onSnapshot 實時監聽新交易",
+            "4. 顯示交易列表（脫敏顯示顧客電話）",
+            "5. 可篩選時間範圍（今日/本週/全部）",
+            "6. 顯示統計卡片（總收入、今日收入、交易筆數）"
+          ]
+        }
       },
-      "sellerSellsToCustomer": {
-        "description": "Seller 售出点数给 Customer",
-        "steps": [
-          "1. Seller 在 frontend 扫描 Customer 二维码，输入点数",
-          "2. Frontend 调用 Cloud Function: createTransaction",
-          "3. Cloud Function 验证：Seller 有足够的点数余额（currentBalance）",
-          "4. Cloud Function 创建交易：organizations/{orgId}/events/{eventId}/transactions/{transactionId}",
-          "5. Firestore 触发器：onTransaction",
-          "6. 更新 Seller 的 pointsStats（减少 currentBalance，增加 totalSold）",
-          "7. 更新 Customer 的 customer.availablePoints（增加）",
-          "8. 更新 departmentStats",
-          "9. 更新 Event.globalPointsStats"
+      "integrationNotes": {
+        "existingSystemIntegration": [
+          "Merchant 和 Customer 都是 users 集合中的角色",
+          "transactions 集合統一管理所有交易（用 transactionType 區分）",
+          "統計資料分散在多處（merchant文檔、users文檔、departmentStats）需保持一致性",
+          "使用 Cloud Functions 確保原子性操作和資料一致性"
+        ],
+        "securityConsiderations": [
+          "Customer 付款時必須驗證身份（request.auth）",
+          "不能讓 Customer 直接修改 Merchant 收入",
+          "交易記錄只能透過 Cloud Function 創建",
+          "電話號碼必須脫敏顯示",
+          "QR Code 可加入時效性驗證（可選）"
+        ],
+        "performanceConsiderations": [
+          "transactions 集合會快速增長，需要適當的索引",
+          "考慮分頁載入交易記錄（limit + startAfter）",
+          "統計資料使用 increment() 而非讀取-修改-寫入",
+          "Dashboard 統計可以緩存 30 秒減少查詢"
         ]
       }
     },
@@ -922,7 +1617,8 @@
       "topLevelCollections": [
         "admin_uids/{adminUid}",
         "organizations/{organizationId}",
-        "otp_sessions/{sessionId}"
+        "otp_sessions/{sessionId}",
+        "platform_settings/config"
       ],
       "organizationSubcollections": [
         "organizations/{organizationId}/events/{eventId}"
@@ -932,10 +1628,12 @@
         "organizations/{organizationId}/events/{eventId}/departmentStats/{departmentCode}",
         "organizations/{organizationId}/events/{eventId}/sellerManagerStats/{sellerManagerId}",
         "organizations/{organizationId}/events/{eventId}/financeManagerStats/{financeManagerId}",
+        "organizations/{organizationId}/events/{eventId}/merchants/{merchantId}",
         "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
         "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
         "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
-        "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}"
+        "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}",
+        "organizations/{organizationId}/events/{eventId}/pointCards/{cardId}"
       ],
       "userSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",

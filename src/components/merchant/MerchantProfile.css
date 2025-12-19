@@ -1,0 +1,351 @@
+/* MerchantProfile.css */
+
+/* 主容器 */
+.merchant-profile-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* 營業狀態卡片 */
+.merchant-status-card {
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.merchant-status-card.active {
+  background: linear-gradient(to right, #d1fae5, #a7f3d0);
+  border: 1px solid #6ee7b7;
+}
+
+.merchant-status-card.inactive {
+  background: linear-gradient(to right, #fed7aa, #fef3c7);
+  border: 1px solid #fdba74;
+}
+
+.merchant-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.merchant-status-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-status-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.merchant-status-icon.active {
+  background-color: #d1fae5;
+}
+
+.merchant-status-icon.active svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #059669;
+}
+
+.merchant-status-icon.inactive {
+  background-color: #fed7aa;
+}
+
+.merchant-status-icon.inactive svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #ea580c;
+}
+
+.merchant-status-text p:first-child {
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.merchant-status-text p:last-child {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin: 0;
+}
+
+.merchant-status-toggle {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-status-toggle.to-pause {
+  background-color: #ea580c;
+  color: white;
+}
+
+.merchant-status-toggle.to-pause:hover {
+  background-color: #c2410c;
+}
+
+.merchant-status-toggle.to-start {
+  background-color: #059669;
+  color: white;
+}
+
+.merchant-status-toggle.to-start:hover {
+  background-color: #047857;
+}
+
+.merchant-status-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 基本資料卡片 */
+.merchant-profile-card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  padding: 1.5rem;
+}
+
+/* 卡片標題 */
+.merchant-profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.merchant-profile-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-profile-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  background-color: #f3e8ff;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.merchant-profile-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #9333ea;
+}
+
+.merchant-profile-title h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.merchant-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  color: #9333ea;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-edit-btn:hover {
+  background-color: #faf5ff;
+}
+
+.merchant-edit-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* 錯誤提示 */
+.merchant-error-alert {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.merchant-error-alert svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #dc2626;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.merchant-error-alert p {
+  font-size: 0.875rem;
+  color: #991b1b;
+  margin: 0;
+}
+
+/* 表單內容 */
+.merchant-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.merchant-form-field label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.merchant-form-field label svg {
+  display: inline;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.25rem;
+}
+
+.merchant-form-field .required {
+  color: #dc2626;
+}
+
+.merchant-form-field input,
+.merchant-form-field textarea {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+}
+
+.merchant-form-field input:focus,
+.merchant-form-field textarea:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px #9333ea;
+}
+
+.merchant-form-field .view-only {
+  color: #111827;
+  margin: 0;
+}
+
+/* 操作按鈕 */
+.merchant-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.merchant-save-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #9333ea;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-save-btn:hover {
+  background-color: #7e22ce;
+}
+
+.merchant-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.merchant-save-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.merchant-cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-cancel-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.merchant-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.merchant-cancel-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* 其他信息 */
+.merchant-meta-info {
+  background-color: #f9fafb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.merchant-meta-info > p:first-child {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin: 0 0 0.5rem 0;
+}
+
+.merchant-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.merchant-meta-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.merchant-meta-row span:first-child {
+  color: #6b7280;
+}
+
+.merchant-meta-row span:last-child {
+  color: #111827;
+  font-family: monospace;
+}

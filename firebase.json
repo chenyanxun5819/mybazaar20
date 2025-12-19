@@ -79,6 +79,7 @@
     }
   ],
   "hosting": {
+    "site": "mybazaar-c4881",
     "public": "dist",
     "ignore": [
       "firebase.json",

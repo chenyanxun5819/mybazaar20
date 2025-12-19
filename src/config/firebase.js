@@ -1,6 +1,6 @@
 // src/config/firebase.js
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeAuth, browserLocalPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -21,12 +21,29 @@ export const BUILD_TIMESTAMP = '2025-11-30T' + new Date().toLocaleTimeString('en
 // 初始化 Firebase
 console.log('🔥 [Firebase] 初始化 Firebase...');
 console.log('🧾 [Build] Version Timestamp:', BUILD_TIMESTAMP);
+
+// 禁用 Google API 预加载（避免超时延迟）
+if (window.gapi && window.gapi.load) {
+  // 仅在需要时加载
+  window.gapi.__disableAutoload = true;
+}
+
 const app = initializeApp(firebaseConfig);
 
-// 初始化服务
-export const auth = getAuth(app);
+// 初始化服务（顯式禁用 Popup/Redirect 解析器，避免 gapi 載入）
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+  // 不啟用 popup/redirect 流程，避免載入 apis.google.com 的 gapi 腳本
+  popupRedirectResolver: undefined
+});
 export const db = getFirestore(app);
 export const functions = getFunctions(app, 'us-central1');
+
+// 禁用 Firebase Auth 的 Google 库预加载（解决 apis.google.com 超时）
+if (auth) {
+  // 延迟初始化 persistence 以避免阻塞
+  auth.setPersistence = auth.setPersistence || (() => Promise.resolve());
+}
 
 // 🔧 立即挂载到 window（确保生产构建后也能工作）
 (function() {

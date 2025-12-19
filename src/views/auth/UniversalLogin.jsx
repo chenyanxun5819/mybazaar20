@@ -269,7 +269,7 @@ const UniversalLogin = () => {
         }
       }
     } else {
-      const priority = ['eventManager', 'financeManager', 'sellerManager', 'merchantManager', 'customerManager'];
+      const priority = ['eventManager', 'financeManager', 'sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
       for (const role of priority) {
         if (roles.includes(role)) {
           console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);

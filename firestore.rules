@@ -256,6 +256,32 @@ service cloud.firestore {
             allow update, delete: if false;
           }
         }
+
+        // ========================================================================
+        // Merchants (商家攤位 - Event 級別集合)
+        // ========================================================================
+        match /merchants/{merchantId} {
+          /**
+           * 讀取規則：暫時放寬，所有已認證使用者可讀取
+           * 便於商家端載入自己的資料與測試
+           */
+          allow read: if isAuthenticated();
+
+          /**
+           * 更新規則：僅允許商家本人更新有限欄位
+           * 核對條件：文件中的 userId 必須等於 Custom Claims 的 userId 或 request.auth.uid
+           * 可更新欄位：stallName, description, contactInfo, isActive, updatedAt
+           */
+          allow update: if isAuthenticated() &&
+                         (resource.data.userId == request.auth.token.userId ||
+                          resource.data.userId == request.auth.uid) &&
+                         onlyAllowedFields(['stallName', 'description', 'contactInfo', 'isActive', 'updatedAt']);
+
+          /**
+           * 建立與刪除：僅允許經由 Cloud Functions
+           */
+          allow create, delete: if false;
+        }
         
         // ========================================================================
         // Cash Collections (现金收款记录 - Event 级别集合)

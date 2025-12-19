@@ -92,10 +92,13 @@ function MakeSale() {
         ...customerDoc.data()
       };
 
+      // ✅ 修复：使用新架构读取点数
+      const currentPoints = customerData.customer?.pointsAccount?.availablePoints || 0;
+
       console.log('[MakeSale] 找到客户:', {
         id: customerData.id,
         name: customerData.basicInfo?.chineseName || customerData.basicInfo?.englishName,
-        currentPoints: customerData.customer?.availablePoints || 0
+        currentPoints: currentPoints
       });
 
       setCustomer(customerData);
@@ -167,24 +170,25 @@ function MakeSale() {
           `organizations/${organizationId}/events/${eventId}/transactions`
         )
       );
-      // 🔍 路徑提示：交易文件
       console.log('[MakeSale] 將寫入 transaction 路徑:', transactionRef.path);
+      
       const transactionData = {
         transactionId: transactionRef.id,
         organizationId: organizationId,
         eventId: eventId,
-        type: 'seller_to_customer',                    // 🔥 新类型：Seller → Customer
+        type: 'seller_to_customer',
         sellerId: userProfile.userId,
         sellerName: userProfile.basicInfo?.chineseName || userProfile.basicInfo?.englishName || 'Unknown',
         customerId: customer.id,
         customerName: customer.basicInfo?.chineseName || customer.basicInfo?.englishName || 'Unknown',
         points: saleAmount,
-        amount: saleAmount,                            // RM 金额（1点 = RM 1）
-        paymentMethod: 'cash',                         // 现金支付
+        amount: saleAmount,
+        paymentMethod: 'cash',
         status: 'completed',
         timestamp: serverTimestamp(),
         createdAt: serverTimestamp()
       };
+      
       try {
         await setDoc(transactionRef, transactionData);
         console.log('[MakeSale] ✅ 交易寫入成功');
@@ -195,21 +199,22 @@ function MakeSale() {
         return;
       }
 
-      // 2. 🔥 更新 Seller（减少点数库存，增加现金收入）- 單步提交
+      // 2. 🔥 更新 Seller（减少点数库存，增加现金收入）
       const sellerRef = doc(
         db,
         `organizations/${organizationId}/events/${eventId}/users/${userProfile.userId}`
       );
-      // 🔍 路徑提示：更新 seller 文件
       console.log('[MakeSale] 將更新 seller 路徑:', sellerRef.path);
+      
       const sellerUpdate = {
-        'seller.availablePoints': increment(-saleAmount),        // 减少点数库存
-        'seller.totalPointsSold': increment(saleAmount),         // 累计售出点数
-        'seller.totalRevenue': increment(saleAmount),            // 累计销售额（RM）
-        'seller.totalCashCollected': increment(saleAmount),      // 累计收到现金
-        'seller.pendingCollection': increment(saleAmount),       // 手上现金（待上交给 SM）
+        'seller.availablePoints': increment(-saleAmount),
+        'seller.totalPointsSold': increment(saleAmount),
+        'seller.totalRevenue': increment(saleAmount),
+        'seller.totalCashCollected': increment(saleAmount),
+        'seller.pendingCollection': increment(saleAmount),
         'updatedAt': serverTimestamp()
       };
+      
       try {
         await updateDoc(sellerRef, sellerUpdate);
         console.log('[MakeSale] ✅ Seller 更新成功');
@@ -220,18 +225,20 @@ function MakeSale() {
         return;
       }
 
-      // 3. 🔥 更新 Customer（增加点数）- 單步提交
+      // 3. ✅ 修复：更新 Customer（使用新架构）
       const customerRef = doc(
         db,
         `organizations/${organizationId}/events/${eventId}/users/${customer.id}`
       );
-      // 🔍 路徑提示：更新 customer 文件
       console.log('[MakeSale] 將更新 customer 路徑:', customerRef.path);
+      
       const customerUpdate = {
-        'customer.availablePoints': increment(saleAmount),       // 增加可用点数
-        'customer.totalPointsReceived': increment(saleAmount),   // 累计收到点数
+        // ✅ 新架构：嵌套在 pointsAccount 下
+        'customer.pointsAccount.availablePoints': increment(saleAmount),
+        'customer.pointsAccount.totalReceived': increment(saleAmount),
         'updatedAt': serverTimestamp()
       };
+      
       try {
         await updateDoc(customerRef, customerUpdate);
         console.log('[MakeSale] ✅ Customer 更新成功');
@@ -241,6 +248,7 @@ function MakeSale() {
         setLoading(false);
         return;
       }
+      
       console.log('[MakeSale] ✅ 銷售三步驟全部成功');
 
       // 成功提示
@@ -336,7 +344,8 @@ function MakeSale() {
               ✓ 找到客户: <strong>{customer.basicInfo?.chineseName || customer.basicInfo?.englishName}</strong>
             </div>
             <div className="customer-balance">
-              客户当前点数: <strong>{customer.customer?.availablePoints || 0}</strong> 点
+              {/* ✅ 修复：使用新架构显示点数 */}
+              客户当前点数: <strong>{customer.customer?.pointsAccount?.availablePoints || 0}</strong> 点
             </div>
           </div>
         )}

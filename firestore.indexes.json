@@ -221,6 +221,26 @@
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },
+    // 新增：商家統計所需索引（merchantId + status + timestamp >=）
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "merchantId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    // 新增：商家交易列表索引（含排序）merchantId ==, status ==, orderBy timestamp desc
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "merchantId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
     // 新增：支援依 sellerId 與 status 過濾並依 createdAt 排序（若前端有條件）
     {
       "collectionGroup": "transactions",

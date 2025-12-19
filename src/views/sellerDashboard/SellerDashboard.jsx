@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
@@ -6,12 +7,18 @@ import { TransactionHistory } from './components/TransactionHistory';
 import './SellerDashboard.css';
 
 function SellerDashboard() {
-  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
+  const { currentUser, logout, userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
 
   const handleLogout = async () => {
     try {
       await logout();
+      // 从 userProfile 获取组织和活动 ID
+      const orgId = userProfile?.organizationId?.replace('organization_', '') || '';
+      const evtId = userProfile?.eventId?.replace('event_', '') || '';
+      const orgEventCode = `${orgId}-${evtId}`;
+      navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('登出失败:', error);
       alert('登出失败，请重试');

@@ -14,6 +14,14 @@ import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
+import MerchantDashboard from './views/merchant/MerchantDashboard';
+import CustomerDashboard from './views/customer/CustomerDashboard';
+// ✅ 新增：导入其他Customer页面
+import CustomerRegister from './views/customer/CustomerRegister';
+import CustomerPayment from './views/customer/CustomerPayment';
+import CustomerTransfer from './views/customer/CustomerTransfer';
+import CustomerTransactions from './views/customer/CustomerTransactions';
+import PointCardTopup from './views/customer/PointCardTopup';
 
 // Placeholder 组件
 const PhonePlaceholder = () => (
@@ -47,7 +55,7 @@ function App() {
       {/* 📄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
 
-      {/* ✅ 旧路由重定向相容 */}
+      {/* ✅ 旧路由重定向兼容 */}
       <Route path="/event-admin/:combinedCode/login" element={<RedirectToLogin />} />
 
       {/* 🆕 Platform Admin 登录页面 */}
@@ -108,7 +116,7 @@ function App() {
 
       {/* 🆕 Event Manager 仪表板 */}
       <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
-      
+
       {/* ✅ 向后兼容 */}
       <Route path="/event-admin/:orgEventCode" element={<EventManagerDashboard />} />
 
@@ -144,19 +152,93 @@ function App() {
           </AuthProvider>
         </EventProvider>
       } />
-      
+
       <Route path="/merchant/:orgEventCode/dashboard" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h2>Merchant Dashboard</h2>
-          <p>功能开发中...</p>
-        </div>
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["merchant"]}>
+                <MerchantDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
       } />
-      
+
+      {/* ✅ Customer Dashboard */}
       <Route path="/customer/:orgEventCode/dashboard" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h2>Customer Dashboard</h2>
-          <p>功能开发中...</p>
-        </div>
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customer"]}>
+                <CustomerDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* ✅ 新增：Customer 注册页面 */}
+      <Route path="/customer/:orgEventCode/register" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <CustomerRegister />
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* ✅ 新增：Customer 扫码付款 */}
+      <Route path="/customer/:orgEventCode/payment" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customer"]}>
+                <CustomerPayment />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* ✅ 新增：Customer 点数转让 */}
+      <Route path="/customer/:orgEventCode/transfer" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customer"]}>
+                <CustomerTransfer />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* ✅ 新增：Customer 点数卡充值 */}
+      <Route path="/customer/:orgEventCode/topup" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customer"]}>
+                <PointCardTopup />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* ✅ 新增：Customer 交易记录 */}
+      <Route path="/customer/:orgEventCode/transactions" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customer"]}>
+                <CustomerTransactions />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
       } />
 
       {/* ✅ 保留：简易路由（用于测试或直接访问） */}

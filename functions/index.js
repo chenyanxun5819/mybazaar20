@@ -15,7 +15,7 @@ if (!admin.apps.length) {
 
 // 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp } = require('./admin');
+  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
@@ -27,7 +27,8 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
-
+//导入customer的云函数
+const { customerFunctions } = require('./customerFunctions');
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -66,7 +67,11 @@ exports.onSellerManagerAllocation = onSellerManagerAllocation;
 
 // 导出 Seller Manager HTTP Functions
 exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
-exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp; 
+exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
+
+// 导出 Finance Manager 相关 HTTP Functions
+exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
+exports.customerFunctions = customerFunctions;
 
 // CORS 中间件配置
 const allowedOrigins = [
