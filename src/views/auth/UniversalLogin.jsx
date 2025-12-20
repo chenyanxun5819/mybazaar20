@@ -199,6 +199,13 @@ const UniversalLogin = () => {
       console.log('[UniversalLogin] OTP 已发送');
       setOtpTimer(300);
       startOtpTimer();
+
+      // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
+      if (data?.devMode && data?.testOtp) {
+        console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', data.testOtp);
+        setOtpStep(true);
+        setOtp(String(data.testOtp));
+      }
       
     } catch (error) {
       console.error('[UniversalLogin] 发送 OTP 错误:', error);

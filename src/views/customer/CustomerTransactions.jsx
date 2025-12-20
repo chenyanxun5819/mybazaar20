@@ -227,27 +227,34 @@ const CustomerTransfer = () => {
     setError(null);
 
     try {
-      // 调用sendOtpHttp检查是否需要OTP
-      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
-      
-      const result = await sendOtpHttp({
-        phoneNumber: customerData.identityInfo.phoneNumber,
-        userId: customerData.userId,
-        scenario: 'customerTransfer',
-        scenarioData: {
-          amount: parseFloat(amount),
-          recipientName: recipientData.identityInfo.displayName,
-          recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-        }
+      // 调用 sendOtpHttp 检查是否需要 OTP
+      const response = await fetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: customerData.identityInfo.phoneNumber,
+          userId: customerData.userId,
+          scenario: 'customerTransfer',
+          scenarioData: {
+            amount: parseFloat(amount),
+            recipientName: recipientData.identityInfo.displayName,
+            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
+          }
+        })
       });
 
-      console.log('[CustomerTransfer] sendOTP结果:', result.data);
+      const result = await response.json();
+      console.log('[CustomerTransfer] sendOTP结果:', result);
 
-      if (result.data.otpRequired) {
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '发送 OTP 失败');
+      }
+
+      if (result.otpRequired) {
         // 需要OTP验证
         setOtpRequired(true);
-        setOtpSessionId(result.data.sessionId);
-        setOtpExpiresIn(result.data.expiresIn || 300);
+        setOtpSessionId(result.sessionId);
+        setOtpExpiresIn(result.expiresIn || 300);
         setStep('otp');
       } else {
         // 不需要OTP，直接转让
@@ -267,19 +274,16 @@ const CustomerTransfer = () => {
   const handleOTPComplete = async (otp) => {
     setLoading(true);
     setError(null);
-
     try {
-      // 验证OTP
-      const verifyOtpHttp = httpsCallable(functions, 'verifyOtpHttp');
-      
-      const result = await verifyOtpHttp({
-        sessionId: otpSessionId,
-        otp: otp
+      // 验证OTP（HTTP）
+      const resp = await fetch('/api/verifyOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: otpSessionId, otp })
       });
-
-      console.log('[CustomerTransfer] OTP验证成功:', result.data);
-
-      if (result.data.success) {
+      const result = await resp.json();
+      console.log('[CustomerTransfer] OTP验证結果:', result);
+      if (resp.ok && result.success) {
         // OTP验证成功，执行转让
         await executeTransfer(otpSessionId);
       } else {
@@ -299,21 +303,29 @@ const CustomerTransfer = () => {
     setError(null);
 
     try {
-      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
-      
-      const result = await sendOtpHttp({
-        phoneNumber: customerData.identityInfo.phoneNumber,
-        userId: customerData.userId,
-        scenario: 'customerTransfer',
-        scenarioData: {
-          amount: parseFloat(amount),
-          recipientName: recipientData.identityInfo.displayName,
-          recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-        }
+      const response = await fetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: customerData.identityInfo.phoneNumber,
+          userId: customerData.userId,
+          scenario: 'customerTransfer',
+          scenarioData: {
+            amount: parseFloat(amount),
+            recipientName: recipientData.identityInfo.displayName,
+            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
+          }
+        })
       });
 
-      setOtpSessionId(result.data.sessionId);
-      setOtpExpiresIn(result.data.expiresIn || 300);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '重新发送失败');
+      }
+
+      setOtpSessionId(result.sessionId);
+      setOtpExpiresIn(result.expiresIn || 300);
 
       console.log('[CustomerTransfer] OTP重新发送成功');
 

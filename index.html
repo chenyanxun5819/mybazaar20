@@ -1,13 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mybazaar20</title>
-    <!-- 禁用 Google API 自动加载以提高首屏加载速度 -->
+    <title>MyBazaar</title>
+    
+    <!-- ✅ 添加 Eruda 调试工具 - 在手机上显示控制台 -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>
-      window.__gapi = { __disableAutoload: true };
+      // 只在移动设备上启用 Eruda
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        eruda.init();
+        console.log('[Eruda] 调试工具已启动');
+      }
     </script>
   </head>
   <body>

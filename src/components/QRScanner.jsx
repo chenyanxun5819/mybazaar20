@@ -1,196 +1,392 @@
 import { useState, useEffect, useRef } from 'react';
-import { Html5QrcodeScanner, Html5QrcodeSupportedFormats, Html5QrcodeScanType } from 'html5-qrcode';
+import { Html5QrcodeScanner, Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 /**
- * QR扫描组件
+ * QR扫描组件 - 完全简化版
  * 
- * 功能：
- * - 调用摄像头扫描QR Code
- * - 支持文件上传扫描
- * - 自动解析QR Code数据
- * 
- * @param {Object} props
- * @param {Function} props.onScan - 扫描成功回调
- * @param {Function} props.onError - 扫描错误回调
- * @param {string} props.expectedType - 期待的QR Code类型（可选）
+ * ✅ 修复：
+ * 1. 隐藏所有 html5-qrcode 的控制按钮
+ * 2. 直接使用后置相机，无选项
+ * 3. 自动开始扫描
  */
-const QRScanner = ({ onScan, onError, expectedType = null, autoStart = false }) => {
+const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart = false, helpText }) => {
   const [scanning, setScanning] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
-  const scannerRef = useRef(null);
   const qrScannerRef = useRef(null);
 
-  // 添加调试日志到状态
   const addDebugLog = (message) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev.slice(-19), `[${timestamp}] ${message}`]);
-    console.log(message);
+    try {
+      const timestamp = new Date().toLocaleTimeString();
+      const logMsg = `[${timestamp}] ${message}`;
+      setDebugLogs(prev => [...prev.slice(-19), logMsg]);
+      console.log('[QRScanner]', message);
+    } catch (error) {
+      console.error('[QRScanner] 添加日志失败:', error);
+    }
   };
 
   useEffect(() => {
-    // 检查摄像头权限
     checkCameraPermission();
-
     return () => {
-      // 清理扫描器
       if (qrScannerRef.current) {
-        qrScannerRef.current.clear().catch(console.error);
+        try {
+          // 兼容直接模式：若存在 stop() 先停止，再清理
+          if (typeof qrScannerRef.current.stop === 'function') {
+            try {
+              qrScannerRef.current.stop();
+            } catch (e) {
+              console.warn('[QRScanner] stop() 失敗，改用 clear():', e?.message);
+            }
+          }
+          qrScannerRef.current.clear?.();
+        } catch (e) {
+          console.error('清理扫描器失败:', e);
+        }
       }
     };
   }, []);
 
-  // 检查摄像头权限
   const checkCameraPermission = async () => {
     try {
-      addDebugLog('检查摄像头权限...');
-      addDebugLog(`navigator.mediaDevices 存在? ${!!navigator.mediaDevices}`);
-      addDebugLog(`getUserMedia 存在? ${!!navigator.mediaDevices?.getUserMedia}`);
+      addDebugLog('🔍 检查摄像头权限...');
       
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      addDebugLog('✅ 摄像头权限检查成功');
-      stream.getTracks().forEach(track => track.stop());
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        addDebugLog('❌ 浏览器不支持 getUserMedia');
+        setCameraPermission('denied');
+        return;
+      }
+      
+      addDebugLog('📱 请求后置摄像头权限...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }  // 强制后置相机
+      });
+      addDebugLog('✅ 后置摄像头权限获取成功');
+      
+      stream.getTracks().forEach(track => {
+        addDebugLog(`🎥 关闭测试流: ${track.kind}`);
+        track.stop();
+      });
+      
       setCameraPermission('granted');
-      // 若設為自動啟動，權限通過後直接開啟掃描
+      
       if (autoStart) {
-        addDebugLog('autoStart 生效，直接開始掃描');
-        setScanning(true);
+        addDebugLog('⚡ autoStart=true，延迟启动扫描');
+        setTimeout(() => {
+          addDebugLog('🚀 触发自动扫描');
+          setScanning(true);
+        }, 100);
       }
     } catch (error) {
-      addDebugLog(`❌ 摄像头权限检查失败: ${error.name}`);
-      addDebugLog(`错误信息: ${error.message}`);
-      addDebugLog(`错误代码: ${error.code}`);
+      addDebugLog(`❌ 权限检查失败: ${error.name} - ${error.message}`);
       setCameraPermission('denied');
     }
   };
 
-  // 扫描成功處理（供掃描器回調使用）
-  const handleScanSuccess = (decodedText) => {
-    console.log('[QRScanner] 扫描成功:', decodedText);
-    try {
-      const qrData = JSON.parse(decodedText);
-      if (expectedType && qrData.type !== expectedType) {
-        throw new Error(`QR Code类型不匹配。期待：${expectedType}，实际：${qrData.type}`);
+  const validateQRType = (qrType) => {
+    if (!expectedType) {
+      return true;
+    }
+
+    const normalize = (str) => String(str || '').toLowerCase().trim();
+    const qrTypeNorm = normalize(qrType);
+    
+    if (Array.isArray(expectedType)) {
+      const isValid = expectedType.some(type => normalize(type) === qrTypeNorm);
+      if (!isValid) {
+        const expected = expectedType.map(t => String(t)).join(' 或 ');
+        throw new Error(`QR Code类型不匹配。期待：${expected}，实际：${qrType || '未知'}`);
       }
+      return true;
+    } else {
+      if (normalize(expectedType) !== qrTypeNorm) {
+        throw new Error(`QR Code类型不匹配。期待：${expectedType}，实际：${qrType || '未知'}`);
+      }
+      return true;
+    }
+  };
+
+  const handleScanSuccess = (decodedText) => {
+    try {
+      addDebugLog('📸 扫描到内容');
+      
+      if (!decodedText) {
+        addDebugLog('❌ 扫描内容为空');
+        if (onScanError) onScanError('扫描到的数据为空');
+        return;
+      }
+
+      const preview = decodedText.length > 50 ? decodedText.substring(0, 50) + '...' : decodedText;
+      addDebugLog(`📄 数据预览: ${preview}`);
+      
+      let qrData;
+      try {
+        qrData = JSON.parse(decodedText);
+        addDebugLog(`✅ JSON解析成功`);
+      } catch (parseError) {
+        addDebugLog(`❌ JSON解析失败: ${parseError.message}`);
+        throw new Error('无效的QR Code格式（非JSON）');
+      }
+
+      const qrType = qrData?.type || '未知';
+      addDebugLog(`🏷️ QR Code类型: ${qrType}`);
+      
+      try {
+        validateQRType(qrType);
+        addDebugLog('✅ 类型验证通过');
+      } catch (typeError) {
+        addDebugLog(`❌ ${typeError.message}`);
+        throw typeError;
+      }
+      
+      addDebugLog('🛑 停止扫描');
       stopScanning();
-      onScan(qrData);
+      
+      addDebugLog('📤 调用 onScanSuccess');
+      if (onScanSuccess) {
+        onScanSuccess(qrData);
+      }
+      
     } catch (error) {
-      console.error('[QRScanner] 解析失败:', error);
-      if (onError) {
-        onError(error.message || '无效的QR Code格式');
+      const errorMessage = error?.message || '扫描处理失败';
+      addDebugLog(`❌ 处理失败: ${errorMessage}`);
+      if (onScanError) {
+        onScanError(errorMessage);
       }
     }
   };
 
-  const handleScanFailure = (_error) => {
-    // 靜默忽略逐幀失敗
+  const handleScanFailure = (error) => {
+    // 忽略逐帧扫描失败
   };
 
-  // 开始扫描
   const startScanning = () => {
-    addDebugLog('🟢 开始扫描方法被调用');
+    addDebugLog('🟢 startScanning() 被调用');
     setScanning(true);
   };
 
-  // 當 scanning=true 時，等待 DOM 出現後初始化掃描器
   useEffect(() => {
-    if (!scanning) return;
+    if (!scanning) {
+      addDebugLog('⏸️ scanning=false，不初始化扫描器');
+      return;
+    }
+
+    addDebugLog('🎬 scanning=true，开始初始化...');
 
     const init = () => {
       const el = document.getElementById('qr-reader');
       if (!el) {
-        addDebugLog('⚠️ qr-reader 容器尚未渲染，100ms 后重试');
+        addDebugLog('⚠️ #qr-reader 元素未找到，100ms后重试');
         setTimeout(init, 100);
         return;
       }
+
       try {
-        addDebugLog('正在创建 Html5QrcodeScanner...');
+        addDebugLog('🔧 开始创建 Html5QrcodeScanner...');
+        
+        // ✅ 简化配置，强制后置相机
+        const config = {
+          fps: 8,
+          qrbox: 250,
+          // ✅ 关键：强制使用后置相机
+          videoConstraints: {
+            facingMode: { exact: "environment" }
+          },
+          // ✅ 关键：禁用相机切换
+          showTorchButtonIfSupported: false,
+          disableFlip: true  // 禁用翻转按钮
+        };
+        
+        addDebugLog(`📋 配置: ${JSON.stringify(config)}`);
+        
         qrScannerRef.current = new Html5QrcodeScanner(
           'qr-reader',
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0,
-            showTorchButtonIfSupported: true,
-            showZoomSliderIfSupported: true,
-            // 僅啟用相機掃描並隱藏圖片上傳 UI
-            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-            showImageUploadUI: false,
-            rememberLastUsedCamera: true,
-            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-            videoConstraints: { facingMode: 'environment' }
-          },
-          true
+          config,
+          false  // verbose = false
         );
-        addDebugLog('✅ Html5QrcodeScanner 创建成功');
-        addDebugLog('正在调用 render()...');
-        qrScannerRef.current.render(handleScanSuccess, handleScanFailure);
-        addDebugLog('✅ render() 成功，相机應該啟動');
+        
+        addDebugLog('✅ Html5QrcodeScanner 实例创建成功');
+        addDebugLog('🎨 调用 render()...');
+        
+        qrScannerRef.current.render(
+          handleScanSuccess,
+          handleScanFailure
+        );
+        
+        addDebugLog('✅ render() 调用成功');
+        addDebugLog('📷 等待后置相机启动...');
+        
+        // ✅ 隐藏 html5-qrcode 的控制按钮
+        setTimeout(() => {
+          hideHtml5QrcodeButtons();
+        }, 500);
+        
       } catch (error) {
-        addDebugLog(`❌ 创建或渲染失败: ${error?.message || error}`);
+        addDebugLog(`❌ 创建或渲染失败: ${error.name}`);
+        addDebugLog(`❌ 错误信息: ${error.message}`);
+
+        // iOS Safari 有時會拋出 "AbortError: Fetch is aborted"（來源於底層資源抓取）
+        // 這裡回退到直接使用 Html5Qrcode.start()，避開 Scanner 包裝 UI。
+        const msg = `${error?.name || ''} ${error?.message || ''}`.toLowerCase();
+        if (msg.includes('abort') || msg.includes('fetch is aborted')) {
+          addDebugLog('🔁 檢測到 AbortError，嘗試回退為直接模式 Html5Qrcode.start(...)');
+          try {
+            initDirectHtml5qrcode();
+            return;
+          } catch (fbError) {
+            addDebugLog(`❌ 回退模式啟動失敗: ${fbError?.message || fbError}`);
+          }
+        }
+
         setScanning(false);
+        if (onScanError) {
+          onScanError(`扫描器初始化失败: ${error.message}`);
+        }
       }
     };
 
     init();
   }, [scanning]);
 
-  // 停止扫描
+  // ✅ 隐藏 html5-qrcode 的所有控制按钮
+  const hideHtml5QrcodeButtons = () => {
+    try {
+      addDebugLog('🎨 开始隐藏控制按钮...');
+      
+      // 隐藏所有按钮
+      const buttons = document.querySelectorAll('#qr-reader button');
+      buttons.forEach(btn => {
+        const text = btn.textContent.toLowerCase();
+        // 隐藏 Start Scanning, Stop Scanning, Select Camera 等按钮
+        if (text.includes('start') || text.includes('stop') || text.includes('select') || 
+            text.includes('camera') || text.includes('torch') || text.includes('switch')) {
+          btn.style.display = 'none';
+          addDebugLog(`🚫 隐藏按钮: ${btn.textContent}`);
+        }
+      });
+      
+      // 隐藏相机选择下拉框
+      const selects = document.querySelectorAll('#qr-reader select');
+      selects.forEach(select => {
+        select.style.display = 'none';
+        addDebugLog(`🚫 隐藏下拉框`);
+      });
+      
+      // 隐藏可能的错误提示
+      const errorDivs = document.querySelectorAll('#qr-reader div[style*="red"]');
+      errorDivs.forEach(div => {
+        div.style.display = 'none';
+      });
+      
+      addDebugLog('✅ 控制按钮已隐藏');
+    } catch (error) {
+      addDebugLog(`⚠️ 隐藏按钮失败: ${error.message}`);
+    }
+  };
+
   const stopScanning = () => {
+    addDebugLog('🛑 stopScanning() 被调用');
     if (qrScannerRef.current) {
-      qrScannerRef.current.clear().catch(console.error);
+      try {
+        if (typeof qrScannerRef.current.stop === 'function') {
+          // 直接模式（Html5Qrcode）需要先 stop()
+          try {
+            qrScannerRef.current.stop();
+            addDebugLog('✅ stop() 成功');
+          } catch (e) {
+            addDebugLog(`⚠️ stop() 失败: ${e.message}`);
+          }
+        }
+        qrScannerRef.current.clear?.();
+        addDebugLog('✅ 扫描器已清理');
+      } catch (e) {
+        addDebugLog(`⚠️ 清理扫描器失败: ${e.message}`);
+      }
       qrScannerRef.current = null;
     }
     setScanning(false);
   };
 
-  // 请求摄像头权限
+  // 🔁 直接模式回退：避開 Scanner 包裝的 UI 與某些瀏覽器 Bug
+  const initDirectHtml5qrcode = () => {
+    const el = document.getElementById('qr-reader');
+    if (!el) {
+      throw new Error('#qr-reader 元素未找到');
+    }
+
+    addDebugLog('🧩 使用直接模式初始化 Html5Qrcode...');
+    const html5Qr = new Html5Qrcode('qr-reader');
+    qrScannerRef.current = html5Qr;
+
+    const constraints = { facingMode: 'environment' }; // 避免 exact，增加兼容性
+    const config = {
+      fps: 10,
+      qrbox: 250,
+      disableFlip: true,
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+    };
+
+    addDebugLog(`🛠️ 直接模式配置: ${JSON.stringify({ constraints, config })}`);
+
+    return html5Qr.start(
+      constraints,
+      config,
+      handleScanSuccess,
+      handleScanFailure
+    ).then(() => {
+      addDebugLog('✅ 直接模式啟動成功，攝像頭應該已打開');
+    }).catch((e) => {
+      addDebugLog(`❌ 直接模式啟動失敗: ${e?.message || e}`);
+      throw e;
+    });
+  };
+
   const requestCameraPermission = async () => {
     try {
-      const constraints = {
-        video: {
-          facingMode: 'environment', // 优先后置摄像头（手机）
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      addDebugLog('🔐 请求后置摄像头权限...');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: 'environment' } }  // 强制后置
+      });
+      
+      addDebugLog('✅ 权限获取成功');
       stream.getTracks().forEach(track => track.stop());
+      
       setCameraPermission('granted');
-      if (autoStart) {
-        setScanning(true);
-      } else {
-        startScanning();
-      }
+      startScanning();
+      
     } catch (error) {
-      console.error('[QRScanner] 摄像头权限请求失败:', error);
-      console.error('[QRScanner] 错误名称:', error.name);
-      console.error('[QRScanner] 错误信息:', error.message);
+      addDebugLog(`❌ 权限请求失败: ${error.name}`);
       
-      setCameraPermission('denied');
-      
-      // 根据不同的错误类型提供具体的错误信息
-      let errorMessage = '无法访问摄像头';
+      let userMessage = '无法访问后置摄像头';
       
       if (error.name === 'NotAllowedError') {
-        errorMessage = '❌ 摄像头权限被拒绝。请在浏览器设置中允许访问摄像头，然后重新加载页面。';
-      } else if (error.name === 'NotFoundError') {
-        errorMessage = '❌ 设备上找不到摄像头。请确保您的设备有摄像头。';
-      } else if (error.name === 'NotReadableError') {
-        errorMessage = '❌ 摄像头被其他应用占用。请关闭其他使用摄像头的应用后重试。';
-      } else if (error.name === 'SecurityError') {
-        errorMessage = '❌ 由于安全限制无法访问摄像头。请在 HTTPS 连接下使用此功能。';
-      } else if (error.name === 'TypeError') {
-        errorMessage = '❌ 浏览器不支持摄像头访问，或者此页面缺少必要的权限。';
+        userMessage = '❌ 摄像头权限被拒绝。请在浏览器设置中允许访问摄像头。';
+      } else if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+        userMessage = '❌ 找不到后置摄像头。将尝试使用任意可用摄像头...';
+        // 降级：尝试任意摄像头
+        try {
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          fallbackStream.getTracks().forEach(track => track.stop());
+          setCameraPermission('granted');
+          startScanning();
+          return;
+        } catch (fallbackError) {
+          userMessage = '❌ 设备上找不到可用的摄像头。';
+        }
       }
       
-      if (onError) {
-        onError(errorMessage);
+      setCameraPermission('denied');
+      if (onScanError) {
+        onScanError(userMessage);
       }
     }
+  };
+
+  const getInstructionText = () => {
+    if (helpText) return helpText;
+    return '请将商家的收款QR Code对准摄像头';
   };
 
   return (
@@ -198,18 +394,8 @@ const QRScanner = ({ onScan, onError, expectedType = null, autoStart = false }) 
       {!scanning ? (
         <div style={styles.startContainer}>
           <div style={styles.iconContainer}>
-            <svg
-              style={styles.icon}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
-              />
+            <svg style={styles.icon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
           </div>
 
@@ -217,93 +403,96 @@ const QRScanner = ({ onScan, onError, expectedType = null, autoStart = false }) 
           
           {cameraPermission === 'denied' && (
             <div style={styles.alert}>
-              <p style={styles.alertText}>
-                ⚠️ 无法访问摄像头，请检查浏览器权限设置
-              </p>
+              <p style={styles.alertText}>⚠️ 无法访问摄像头，请检查浏览器权限设置</p>
             </div>
           )}
 
           <div style={styles.instructions}>
-            <p style={styles.instructionText}>
-              {expectedType === 'MERCHANT' && '请扫描商家收款QR Code'}
-              {expectedType === 'POINT_CARD' && '请扫描点数卡QR Code'}
-              {expectedType === 'CUSTOMER_RECEIVE_POINTS' && '请扫描Customer收款QR Code'}
-              {!expectedType && '请将QR Code对准摄像头'}
-            </p>
+            <p style={styles.instructionText}>{getInstructionText()}</p>
           </div>
 
           <button
-            onClick={cameraPermission === 'granted' ? startScanning : requestCameraPermission}
+            onClick={requestCameraPermission}
             style={styles.startButton}
           >
             <span style={styles.buttonIcon}>📷</span>
-            {cameraPermission === 'granted' ? '开始扫描' : '允许摄像头访问'}
+            允许使用后置摄像头
           </button>
-
-          <div style={styles.tips}>
-            <p style={styles.tipTitle}>💡 扫描提示：</p>
-            <ul style={styles.tipList}>
-              <li>确保QR Code在扫描框内</li>
-              <li>保持摄像头稳定和焦距清晰</li>
-              <li>确保光线充足</li>
-              <li>也可以上传QR Code图片</li>
-            </ul>
-          </div>
         </div>
       ) : (
         <div style={styles.scannerContainer}>
           <div style={styles.scannerHeader}>
-            <h3 style={styles.scannerTitle}>正在扫描...</h3>
-            <button onClick={stopScanning} style={styles.cancelButton}>
-              取消
-            </button>
+            <h3 style={styles.scannerTitle}>请对准QR Code</h3>
+            <button onClick={stopScanning} style={styles.cancelButton}>取消</button>
           </div>
 
-          {/* QR扫描器容器 */}
+          {/* ✅ QR 扫描器容器 */}
           <div id="qr-reader" style={styles.readerContainer}></div>
 
           <div style={styles.scannerTips}>
-            <p style={styles.scannerTipText}>
-              请将QR Code对准摄像头中央的方框
-            </p>
+            <p style={styles.scannerTipText}>{getInstructionText()}</p>
           </div>
         </div>
       )}
 
       {/* 调试面板 */}
-      <div style={styles.debugToggle}>
-        <button 
-          onClick={() => setShowDebug(!showDebug)}
-          style={styles.debugToggleButton}
-        >
-          🐛 调试日志 ({debugLogs.length})
-        </button>
-      </div>
-
-      {showDebug && (
-        <div style={styles.debugPanel}>
-          <div style={styles.debugHeader}>
-            <h4 style={styles.debugTitle}>实时调试日志</h4>
-            <button 
-              onClick={() => setDebugLogs([])}
-              style={styles.debugClearButton}
-            >
-              清空
+      <div style={styles.debugPanel}>
+        <div style={styles.debugHeader}>
+          <h4 style={styles.debugTitle}>🐛 调试日志</h4>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={() => setDebugLogs([])} style={styles.debugClearButton}>清空</button>
+            <button onClick={() => setShowDebug(!showDebug)} style={styles.debugToggleButton}>
+              {showDebug ? '隐藏' : '显示'}
             </button>
           </div>
+        </div>
+        {showDebug && (
           <div style={styles.debugContent}>
             {debugLogs.length === 0 ? (
               <div style={styles.debugEmpty}>没有日志</div>
             ) : (
               debugLogs.map((log, index) => (
-                <div key={index} style={styles.debugLine}>
-                  {log}
-                </div>
+                <div key={index} style={styles.debugLine}>{log}</div>
               ))
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* ✅ 添加CSS来隐藏按钮 */}
+      <style>{`
+        /* 隐藏 html5-qrcode 的所有控制按钮 */
+        #qr-reader button {
+          display: none !important;
+        }
+        
+        /* 隐藏相机选择下拉框 */
+        #qr-reader select {
+          display: none !important;
+        }
+        
+        /* 隐藏红色错误提示 */
+        #qr-reader div[style*="red"],
+        #qr-reader div[style*="Red"],
+        #qr-reader div[style*="color: rgb(255, 0, 0)"] {
+          display: none !important;
+        }
+        
+        /* 隐藏 "Select Camera" 文字 */
+        #qr-reader__dashboard_section_csr,
+        #qr-reader__dashboard_section {
+          display: none !important;
+        }
+        
+        /* 只显示视频和扫描框 */
+        #qr-reader video {
+          display: block !important;
+        }
+        
+        #qr-reader__scan_region {
+          display: block !important;
+        }
+      `}</style>
     </div>
   );
 };
@@ -372,33 +561,13 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '0.5rem',
-    marginBottom: '1.5rem'
+    gap: '0.5rem'
   },
   buttonIcon: {
     fontSize: '1.2rem'
-  },
-  tips: {
-    backgroundColor: '#f8f9fa',
-    padding: '1rem',
-    borderRadius: '8px',
-    textAlign: 'left'
-  },
-  tipTitle: {
-    margin: '0 0 0.5rem 0',
-    fontWeight: '600',
-    color: '#666',
-    fontSize: '0.9rem'
-  },
-  tipList: {
-    margin: 0,
-    paddingLeft: '1.5rem',
-    color: '#666',
-    fontSize: '0.85rem'
   },
   scannerContainer: {
     backgroundColor: '#fff',
@@ -425,8 +594,7 @@ const styles = {
     color: '#f44336',
     border: '1px solid #f44336',
     borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
   readerContainer: {
     width: '100%',
@@ -442,20 +610,6 @@ const styles = {
     margin: 0,
     fontSize: '0.85rem',
     color: '#666'
-  },
-  debugToggle: {
-    marginTop: '1rem',
-    textAlign: 'center'
-  },
-  debugToggleButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.85rem',
-    backgroundColor: '#333',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontFamily: 'monospace'
   },
   debugPanel: {
     marginTop: '1rem',
@@ -477,6 +631,15 @@ const styles = {
     color: '#fff',
     fontSize: '0.9rem',
     fontWeight: '600'
+  },
+  debugToggleButton: {
+    padding: '0.25rem 0.75rem',
+    fontSize: '0.8rem',
+    backgroundColor: '#4CAF50',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer'
   },
   debugClearButton: {
     padding: '0.25rem 0.75rem',

@@ -73,3 +73,32 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* 
+ * MyBazaar - 扫描器错误提示隐藏
+ * 
+ * 添加到 src/index.css 或 src/App.css 的末尾
+ */
+
+/* 隐藏 html5-qrcode 的 toString 错误提示 */
+#html5-qrcode-anchor-scan-type-change {
+  display: none !important;
+}
+
+/* 备用方案：隐藏所有 html5-qrcode 的错误元素 */
+.html5-qrcode-element[style*="color: rgb(255, 0, 0)"] {
+  display: none !important;
+}
+
+/* 如果上面都不行，用这个 */
+#qr-reader > div[style*="color: rgb(255, 0, 0)"],
+#qr-reader > div[style*="color:#ff0000"] {
+  display: none !important;
+}
+
+/* 隐藏所有红色文字的错误提示（最后的手段） */
+#qr-reader div[style*="red"],
+#qr-reader div[style*="Red"],
+#qr-reader div[style*="RED"] {
+  /* display: none !important; */  /* 注释掉，因为可能隐藏其他内容 */
+}
