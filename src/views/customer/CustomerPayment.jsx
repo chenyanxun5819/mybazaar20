@@ -30,6 +30,22 @@ const CustomerPayment = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // 取得可用的手機號：優先 Firestore，其次 Firebase Auth，再次 localStorage
+  const getEffectivePhoneNumber = () => {
+    const fromProfile = customerData?.identityInfo?.phoneNumber || customerData?.basicInfo?.phoneNumber;
+    if (fromProfile) return fromProfile;
+    const fromAuth = auth.currentUser?.phoneNumber;
+    if (fromAuth) return fromAuth;
+    try {
+      const stored = localStorage.getItem('customerInfo');
+      if (stored) {
+        const data = JSON.parse(stored);
+        return data?.phoneNumber || null;
+      }
+    } catch (_) {}
+    return null;
+  };
+
   useEffect(() => {
     console.log('[CustomerPayment] ========== 组件初始化 ==========');
     console.log('[CustomerPayment] orgEventCode:', orgEventCode);
@@ -244,7 +260,7 @@ const CustomerPayment = () => {
 
     try {
       // ✅ 前置檢查：必須有手機號
-      const phone = customerData?.identityInfo?.phoneNumber;
+      const phone = getEffectivePhoneNumber();
       if (!phone) {
         throw new Error('未綁定手機號，無法發送驗證碼');
       }
@@ -329,7 +345,7 @@ const CustomerPayment = () => {
     setError(null);
 
     try {
-      const phone = customerData?.identityInfo?.phoneNumber;
+      const phone = getEffectivePhoneNumber();
       if (!phone) {
         throw new Error('未綁定手機號，無法重新發送驗證碼');
       }
@@ -467,7 +483,7 @@ const CustomerPayment = () => {
           </div>
 
           {/* 若未綁定手機，顯示固定警示並提供快捷綁定入口 */}
-          {!customerData?.identityInfo?.phoneNumber && (
+          {!getEffectivePhoneNumber() && (
             <div style={styles.errorBanner}>
               <span>未綁定手機號，無法發送驗證碼</span>
               <button onClick={() => navigate('/universal-login')} style={styles.closeButton}>去綁定</button>
@@ -523,7 +539,7 @@ const CustomerPayment = () => {
                 ...styles.primaryButton,
                 ...(loading ? styles.buttonDisabled : {})
               }}
-              disabled={loading || !customerData?.identityInfo?.phoneNumber}
+              disabled={loading || !getEffectivePhoneNumber()}
             >
               {loading ? '处理中...' : '确认付款'}
             </button>
@@ -537,14 +553,12 @@ const CustomerPayment = () => {
             onComplete={handleOTPComplete}
             onResend={handleResendOTP}
             expiresIn={otpExpiresIn}
-            phoneNumber={customerData?.identityInfo?.phoneNumber}
+            phoneNumber={getEffectivePhoneNumber()}
             disabled={loading}
           />
 
           <div style={styles.otpInfo}>
-            <p style={styles.otpInfoText}>
-              📱 验证码已发送至 {customerData?.identityInfo?.phoneNumber}
-            </p>
+            <p style={styles.otpInfoText}>📱 验证码已发送至 {getEffectivePhoneNumber()}</p>
             <p style={styles.otpInfoText}>
               💡 付款金额：{amount} 点
             </p>
