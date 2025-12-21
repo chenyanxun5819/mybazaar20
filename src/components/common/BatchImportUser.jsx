@@ -3,6 +3,7 @@ import { db } from '../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, setDoc, serverTimestamp, updateDoc, increment, getDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import { safeFetch } from '../../services/safeFetch';
 
 const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   const [importMode, setImportMode] = useState('upload');
@@ -360,7 +361,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
       console.log('[BatchImportUser] 默认密码:', defaultPassword);
 
-      const response = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/batchImportUsersHttp', {
+      const response = await safeFetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/batchImportUsersHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

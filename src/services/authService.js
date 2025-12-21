@@ -1,5 +1,6 @@
 // src/services/authService.js
 import { auth, db, functions } from '../config/firebase';
+import { safeFetch } from './safeFetch';
 import { signInWithCustomToken, signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { query, where, collection, getDocs } from 'firebase/firestore';
@@ -78,7 +79,7 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
     
     const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/loginWithPin';
     
-    const response = await fetch(functionUrl, {
+    const response = await safeFetch(functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

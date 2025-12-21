@@ -27,8 +27,13 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
-//导入customer的云函数
-const { customerFunctions } = require('./customerFunctions');
+// 導入 Customer 相關 callable 函式
+const {
+  createCustomer,
+  processCustomerPayment,
+  transferPoints,
+  topupFromPointCard
+} = require('./customerFunctions');
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -71,7 +76,11 @@ exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
-exports.customerFunctions = customerFunctions;
+// 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
+exports.createCustomer = createCustomer;
+exports.processCustomerPayment = processCustomerPayment;
+exports.transferPoints = transferPoints;
+exports.topupFromPointCard = topupFromPointCard;
 
 // CORS 中间件配置
 const allowedOrigins = [

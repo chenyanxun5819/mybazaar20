@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { auth } from '../../../config/firebase';  // 确保导入 auth
+import { safeFetch } from '../../../services/safeFetch';
 /**
  * Allocate Points Modal (重构版 - Cloud Functions API)
  * 
@@ -136,7 +137,7 @@ const AllocatePoints = ({
 
       // ========== 第4步: 调用 Cloud Function ==========
       // 使用相对路径，会自动转向 Firebase Hosting 的 /api 端点
-      const response = await fetch('/api/allocatePointsBySellerManager', {
+      const response = await safeFetch('/api/allocatePointsBySellerManager', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

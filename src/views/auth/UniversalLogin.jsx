@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { auth } from '../../config/firebase';
+import { auth,functions } from '../../config/firebase';
+import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 
 /**
  * 统一登录页面 - 支持所有角色（包括 Event Manager）+ SMS OTP 验证
@@ -91,7 +93,7 @@ const UniversalLogin = () => {
       };
 
       const startTime = Date.now();
-      const resp = await fetch(url, {
+      const resp = await safeFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -162,56 +164,46 @@ const UniversalLogin = () => {
     }
   };
 
-  /**
-   * 发送 OTP 到手机
-   */
-  const sendOtp = async (phoneNumber) => {
-    try {
-      console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
-      
-      const url = '/api/sendOtpHttp';
-      const payload = {
-        phoneNumber: phoneNumber,
-        orgCode: orgCode.toLowerCase(),
-        eventCode: eventCode,
-        loginType: 'universal'
-      };
+/**
+ * 发送 OTP 到手机
+ */
+const sendOtp = async (phoneNumber) => {
+  try {
+    console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
+    
+    // ✅ 改为使用 httpsCallable
+    const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
+    
+    const result = await sendOtpHttp({
+      phoneNumber: phoneNumber,
+      orgCode: orgCode.toLowerCase(),
+      eventCode: eventCode,
+      loginType: 'universal'
+    });
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+    console.log('[UniversalLogin] sendOTP结果:', result.data);
 
-      const text = await resp.text();
-      let data = null;
-      
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch (_) {
-        console.warn('[UniversalLogin] 发送 OTP 响应非 JSON');
-      }
-
-      if (!resp.ok || !data?.success) {
-        throw new Error(data?.error?.message || `发送 OTP 失败 (HTTP ${resp.status})`);
-      }
-
-      console.log('[UniversalLogin] OTP 已发送');
-      setOtpTimer(300);
-      startOtpTimer();
-
-      // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
-      if (data?.devMode && data?.testOtp) {
-        console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', data.testOtp);
-        setOtpStep(true);
-        setOtp(String(data.testOtp));
-      }
-      
-    } catch (error) {
-      console.error('[UniversalLogin] 发送 OTP 错误:', error);
-      throw new Error('发送验证码失败，请重试');
+    // ✅ 使用 result.data 而不是 result
+    if (!result.data?.success) {
+      throw new Error(result.data?.error?.message || '发送 OTP 失败');
     }
-  };
+
+    console.log('[UniversalLogin] OTP 已发送');
+    setOtpTimer(300);
+    startOtpTimer();
+
+    // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
+    if (result.data?.devMode && result.data?.testOtp) {
+      console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', result.data.testOtp);
+      setOtpStep(true);
+      setOtp(String(result.data.testOtp));
+    }
+    
+  } catch (error) {
+    console.error('[UniversalLogin] 发送 OTP 错误:', error);
+    throw new Error('发送验证码失败，请重试');
+  }
+};
 
   /**
    * OTP 倒计时
@@ -314,7 +306,7 @@ const UniversalLogin = () => {
         eventCode: eventCode
       };
 
-      const resp = await fetch(url, {
+      const resp = await safeFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

@@ -6,6 +6,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import QRScanner from '../../components/QRScanner';
 import OTPInput from '../../components/OTPInput';
+import { safeFetch } from '../../services/safeFetch';
 
 /**
  * Customer付款页面 - 完全重写版本
@@ -18,7 +19,7 @@ import OTPInput from '../../components/OTPInput';
 const CustomerPayment = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
-  
+
   const [step, setStep] = useState('scan');
   const [customerData, setCustomerData] = useState(null);
   const [merchantData, setMerchantData] = useState(null);
@@ -29,6 +30,8 @@ const CustomerPayment = () => {
   const [otpRequired, setOtpRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [paymentDebug, setPaymentDebug] = useState(null);
+  const [lastErrorJson, setLastErrorJson] = useState(null);
 
   // 取得可用的手機號：優先 Firestore，其次 Firebase Auth，再次 localStorage
   const getEffectivePhoneNumber = () => {
@@ -42,14 +45,14 @@ const CustomerPayment = () => {
         const data = JSON.parse(stored);
         return data?.phoneNumber || null;
       }
-    } catch (_) {}
+    } catch (_) { }
     return null;
   };
 
   useEffect(() => {
     console.log('[CustomerPayment] ========== 组件初始化 ==========');
     console.log('[CustomerPayment] orgEventCode:', orgEventCode);
-    
+
     if (!orgEventCode || !orgEventCode.includes('-')) {
       const errorMsg = `URL 格式错误: 链接应为 /customer/orgCode-eventCode/payment`;
       console.error('[CustomerPayment]', errorMsg);
@@ -63,7 +66,7 @@ const CustomerPayment = () => {
     try {
       console.log('[CustomerPayment] 开始加载用户数据...');
       const user = auth.currentUser;
-      
+
       if (!user) {
         console.error('[CustomerPayment] 用户未登录');
         navigate('/universal-login');
@@ -92,7 +95,7 @@ const CustomerPayment = () => {
 
       console.log('[CustomerPayment] 读取用户文档...');
       const customerSnap = await getDoc(customerRef);
-      
+
       if (customerSnap.exists()) {
         console.log('[CustomerPayment] 用户数据加载成功');
         setCustomerData({
@@ -128,7 +131,7 @@ const CustomerPayment = () => {
       if (!qrData) {
         throw new Error('QR Code 数据为空');
       }
-      
+
       if (typeof qrData !== 'object') {
         throw new Error('QR Code 数据格式错误');
       }
@@ -145,7 +148,7 @@ const CustomerPayment = () => {
 
       // 步骤3：提取必要信息
       console.log('[CustomerPayment] 步骤3：提取信息');
-      
+
       // 支持多种字段名
       const organizationId = qrData.organizationId || qrData.orgId || null;
       const eventId = qrData.eventId || qrData.evtId || null;
@@ -179,7 +182,7 @@ const CustomerPayment = () => {
 
       console.log('[CustomerPayment] 商家文档路径:', merchantRef.path);
       const merchantSnap = await getDoc(merchantRef);
-      
+
       if (!merchantSnap.exists()) {
         throw new Error('找不到该商家，请确认 QR Code 是否正确');
       }
@@ -201,7 +204,7 @@ const CustomerPayment = () => {
         organizationId,
         eventId
       });
-      
+
       console.log('[CustomerPayment] ========== 扫描处理完成，进入确认页面 ==========');
       setStep('confirm');
 
@@ -211,11 +214,11 @@ const CustomerPayment = () => {
       console.error('[CustomerPayment] 错误类型:', error.name);
       console.error('[CustomerPayment] 错误信息:', error.message);
       console.error('[CustomerPayment] 错误堆栈:', error.stack);
-      
+
       // ✅ 设置友好的错误信息
       const userMessage = error.message || '处理 QR Code 时出错，请重试';
       setError(userMessage);
-      
+
       // ✅ 保持在扫描页面，让用户可以重试
       setStep('scan');
     } finally {
@@ -249,7 +252,7 @@ const CustomerPayment = () => {
 
   const handleConfirmPayment = async () => {
     console.log('[CustomerPayment] ========== 开始确认付款 ==========');
-    
+
     if (!validateAmount()) {
       console.log('[CustomerPayment] 金额验证失败');
       return;
@@ -265,33 +268,32 @@ const CustomerPayment = () => {
         throw new Error('未綁定手機號，無法發送驗證碼');
       }
       console.log('[CustomerPayment] 调用 sendOtpHttp...');
-      
-      const response = await fetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: phone,
-          userId: customerData.userId,
-          scenario: 'customerPayment',
-          scenarioData: {
-            amount: parseFloat(amount),
-            merchantName: merchantData.stallName || '商家'
-          }
-        })
+
+      // ✅ 使用 httpsCallable
+      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
+
+      const result = await sendOtpHttp({
+        phoneNumber: phone,
+        userId: customerData.userId,
+        scenario: 'customerPayment',
+        scenarioData: {
+          amount: parseFloat(amount),
+          merchantName: merchantData.stallName || '商家'
+        }
       });
 
-      const result = await response.json();
-      console.log('[CustomerPayment] sendOTP结果:', result);
+      console.log('[CustomerPayment] sendOTP结果:', result.data);
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '发送 OTP 失败');
+      // ✅ 使用 result.data
+      if (!result.data?.success) {
+        throw new Error(result.data?.error?.message || '发送 OTP 失败');
       }
 
-      if (result.otpRequired) {
+      if (result.data.otpRequired) {
         console.log('[CustomerPayment] OTP 验证必需');
         setOtpRequired(true);
-        setOtpSessionId(result.sessionId);
-        setOtpExpiresIn(result.expiresIn || 300);
+        setOtpSessionId(result.data.sessionId);
+        setOtpExpiresIn(result.data.expiresIn || 300);
         setStep('otp');
       } else {
         console.log('[CustomerPayment] 无需 OTP，直接执行付款');
@@ -314,7 +316,7 @@ const CustomerPayment = () => {
 
     try {
       console.log('[CustomerPayment] 验证 OTP...');
-      const resp = await fetch('/api/verifyOtpHttp', {
+      const resp = await safeFetch('/api/verifyOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -349,28 +351,26 @@ const CustomerPayment = () => {
       if (!phone) {
         throw new Error('未綁定手機號，無法重新發送驗證碼');
       }
-      const response = await fetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: phone,
-          userId: customerData.userId,
-          scenario: 'customerPayment',
-          scenarioData: {
-            amount: parseFloat(amount),
-            merchantName: merchantData.stallName || '商家'
-          }
-        })
+      // ✅ 使用 httpsCallable
+      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
+
+      const result = await sendOtpHttp({
+        phoneNumber: phone,
+        userId: customerData.userId,
+        scenario: 'customerPayment',
+        scenarioData: {
+          amount: parseFloat(amount),
+          merchantName: merchantData.stallName || '商家'
+        }
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '重新发送失败');
+      // ✅ 使用 result.data
+      if (!result.data?.success) {
+        throw new Error(result.data?.error?.message || '重新发送失败');
       }
 
-      setOtpSessionId(result.sessionId);
-      setOtpExpiresIn(result.expiresIn || 300);
+      setOtpSessionId(result.data.sessionId);
+      setOtpExpiresIn(result.data.expiresIn || 300);
 
       console.log('[CustomerPayment] OTP重新发送成功');
 
@@ -388,13 +388,77 @@ const CustomerPayment = () => {
     setLoading(true);
 
     try {
+      // === 第1步：確保使用者已登入 ===
+      const user = auth.currentUser;
+      if (!user) {
+        console.warn('[CustomerPayment] ❌ 使用者未登入，取消付款');
+        setError('请先登录');
+        setStep('confirm');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[CustomerPayment] ✅ 使用者已登入:', user.uid);
+
+      // === 第2步：刷新 ID Token 並驗證 ===
+      let idToken = null;
+      let tokenResult = null;
+      
+      try {
+        idToken = await user.getIdToken(true);
+        tokenResult = await user.getIdTokenResult();
+        
+        if (!idToken || idToken.length === 0) {
+          throw new Error('getIdToken 返回空值');
+        }
+        
+        console.log('[CustomerPayment] ✅ Token 刷新成功，長度:', idToken.length);
+      } catch (tokenError) {
+        console.error('[CustomerPayment] ❌ Token 刷新失敗:', tokenError?.message);
+        setError('认证信息过期，请重新登录');
+        setStep('confirm');
+        setLoading(false);
+        // 導向登入頁面
+        setTimeout(() => navigate('/universal-login'), 1500);
+        return;
+      }
+
+      // === 第3步：記錄 Token 狀態以便除錯 ===
+      const tokenMeta = {
+        uid: user.uid,
+        tokenLength: idToken?.length || 0,
+        issuedAtTime: tokenResult?.issuedAtTime || null,
+        expirationTime: tokenResult?.expirationTime || null,
+        authTime: tokenResult?.authTime || null,
+        hasOrgEventClaims: !!(tokenResult?.claims?.organizationId && tokenResult?.claims?.eventId),
+        organizationId: tokenResult?.claims?.organizationId || customerData?.organizationId,
+        eventId: tokenResult?.claims?.eventId || customerData?.eventId
+      };
+      
+      setPaymentDebug({
+        step: 'executePayment',
+        merchantId: merchantData?.merchantId,
+        organizationId: merchantData?.organizationId,
+        eventId: merchantData?.eventId,
+        amount: parseFloat(amount),
+        hasOtpSessionId: !!otpSessionId,
+        otpSessionId: otpSessionId || null,
+        idTokenMeta: tokenMeta
+      });
+
+      console.log('[CustomerPayment] 調試資訊:', tokenMeta);
+
+      // === 第4步：呼叫後端 ===
       console.log('[CustomerPayment] 调用 processCustomerPayment...');
       const processCustomerPayment = httpsCallable(functions, 'processCustomerPayment');
-      
+
       const result = await processCustomerPayment({
         merchantId: merchantData.merchantId,
         amount: parseFloat(amount),
-        otpSessionId: otpSessionId || null
+        otpSessionId: otpSessionId || null,
+        organizationId: customerData.organizationId,
+        eventId: customerData.eventId
+        // ❌ 不传 idToken，让 SDK 自动处理认证
       });
 
       console.log('[CustomerPayment] 付款成功:', result.data);
@@ -407,7 +471,25 @@ const CustomerPayment = () => {
 
     } catch (error) {
       console.error('[CustomerPayment] 付款失败:', error);
-      setError(error.message || '付款失败，请重试');
+      try {
+        const serialized = JSON.stringify(error, Object.getOwnPropertyNames(error));
+        setLastErrorJson(serialized);
+        console.log('[CustomerPayment] 付款失败詳細(JSON):', serialized);
+      } catch (_) {
+        // ignore
+      }
+      const code = error?.code || '';
+      if (code === 'functions/unauthenticated' || code === 'unauthenticated') {
+        setError('会话已过期，请重新登录后再尝试。');
+      } else if (code === 'functions/failed-precondition') {
+        setError(error.message || '条件不足，无法完成付款');
+      } else if (code === 'functions/invalid-argument') {
+        setError(error.message || '参数错误');
+      } else if (code === 'functions/not-found') {
+        setError(error.message || '数据不存在');
+      } else {
+        setError(error.message || '付款失败，请重试');
+      }
       setStep('confirm');
     } finally {
       setLoading(false);
@@ -416,7 +498,7 @@ const CustomerPayment = () => {
 
   const handleBack = () => {
     console.log('[CustomerPayment] 返回按钮，当前step:', step);
-    
+
     if (step === 'scan') {
       navigate(`/customer/${orgEventCode}/dashboard`);
     } else if (step === 'confirm') {
@@ -453,6 +535,47 @@ const CustomerPayment = () => {
         <div style={styles.errorBanner}>
           <span>{error}</span>
           <button onClick={() => setError(null)} style={styles.closeButton}>✕</button>
+        </div>
+      )}
+
+      {/* 🔎 調試資訊：當有錯誤或進入處理階段時顯示，協助定位 unauthenticated */}
+      {(paymentDebug || lastErrorJson) && (
+        <div style={{
+          margin: '0 1rem 1rem',
+          padding: '1rem',
+          backgroundColor: '#eef6ff',
+          border: '1px solid #90caf9',
+          borderRadius: '8px',
+          color: '#0d47a1'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <strong>調試資訊（僅本機顯示）</strong>
+            <button
+              onClick={async () => {
+                const text = JSON.stringify({ paymentDebug, lastError: lastErrorJson }, null, 2);
+                try { await navigator.clipboard.writeText(text); } catch (_) { }
+              }}
+              style={{
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.85rem',
+                backgroundColor: '#fff',
+                color: '#0d47a1',
+                border: '1px solid #90caf9',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >複製詳細</button>
+          </div>
+          {paymentDebug && (
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+              {JSON.stringify(paymentDebug, null, 2)}
+            </pre>
+          )}
+          {lastErrorJson && (
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+              {lastErrorJson}
+            </pre>
+          )}
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { auth } from '../../config/firebase';
+import { safeFetch } from '../../services/safeFetch';
 
 const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -80,7 +81,7 @@ const AssignEventManager = ({ organization, event, onClose, onSuccess }) => {
         throw new Error('需要登录');
       }
 
-      const resp = await fetch('/api/createEventManagerHttp', {
+      const resp = await safeFetch('/api/createEventManagerHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

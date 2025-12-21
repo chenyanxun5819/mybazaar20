@@ -15,6 +15,8 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 
+import { safeFetch } from '../../services/safeFetch';
+
 // 统一的角色配置
 const ROLE_CONFIG = {
   sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
@@ -308,7 +310,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         idToken
       };
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
+      const resp = await safeFetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -365,7 +367,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
+      const resp = await safeFetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -427,7 +429,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
+      const resp = await safeFetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

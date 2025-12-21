@@ -27,6 +27,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db } from '../../../config/firebase';
+import { safeFetch } from '../../../services/safeFetch';
 
 const SubmitCash = ({ userInfo, eventData }) => {
   const [collections, setCollections] = useState([]);
@@ -642,7 +643,7 @@ const SubmitModal = ({
       console.log('  - 收款記錄數:', selectedCollections.length);
       console.log('  - 總金額:', totalAmount);
 
-      const response = await fetch(functionUrl, {
+      const response = await safeFetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

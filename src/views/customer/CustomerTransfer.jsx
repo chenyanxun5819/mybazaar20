@@ -4,6 +4,7 @@ import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
+import { safeFetch } from '../../services/safeFetch';
 import OTPInput from '../../components/OTPInput';
 
 /**
@@ -228,7 +229,7 @@ const CustomerTransfer = () => {
 
     try {
       // 调用 sendOtpHttp 检查是否需要 OTP
-      const response = await fetch('/api/sendOtpHttp', {
+      const response = await safeFetch('/api/sendOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -276,7 +277,7 @@ const CustomerTransfer = () => {
     setError(null);
     try {
       // 验证OTP（HTTP）
-      const resp = await fetch('/api/verifyOtpHttp', {
+      const resp = await safeFetch('/api/verifyOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: otpSessionId, otp })
@@ -303,7 +304,7 @@ const CustomerTransfer = () => {
     setError(null);
 
     try {
-      const response = await fetch('/api/sendOtpHttp', {
+      const response = await safeFetch('/api/sendOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

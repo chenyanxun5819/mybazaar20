@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
+import { safeFetch } from '../../services/safeFetch';
 
 const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
   const [departments, setDepartments] = useState([]);
@@ -42,7 +43,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departmentsHttp', {
+      const response = await safeFetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -73,7 +74,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departmentsHttp', {
+      const response = await safeFetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,7 +108,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departmentsHttp', {
+      const response = await safeFetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,7 +167,7 @@ const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
     setLoading(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const response = await fetch('/api/departmentsHttp', {
+      const response = await safeFetch('/api/departmentsHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

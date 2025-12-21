@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { safeFetch } from '../../services/safeFetch';
 
 /**
  * 通用的用户创建组件
@@ -260,7 +261,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       const auth = getAuth();
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
-      const response = await fetch(
+      const response = await safeFetch(
         'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
         {
           method: 'POST',

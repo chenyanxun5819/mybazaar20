@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, functions } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth } from '../../config/firebase';
+import { safeFetch } from '../../services/safeFetch';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -390,7 +391,7 @@ const EventCard = ({ event, organization, onReload }) => {
       // 3️⃣ 调用 Cloud Function
       const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
 
-      const resp = await fetch(functionUrl, {
+      const resp = await safeFetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -735,7 +736,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
       const idToken = await user.getIdToken();
 
       // 使用 Hosting API 路徑（透過 firebase.json rewrites）
-      const response = await fetch('/api/createEventByPlatformAdminHttp', {
+      const response = await safeFetch('/api/createEventByPlatformAdminHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1325,7 +1326,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       const idToken = await user.getIdToken();
       const apiUrl = '/api/createEventByPlatformAdminHttp';
 
-      const response = await fetch(apiUrl, {
+      const response = await safeFetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
