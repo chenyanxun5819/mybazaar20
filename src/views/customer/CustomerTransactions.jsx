@@ -20,27 +20,27 @@ import OTPInput from '../../components/OTPInput';
  */
 const CustomerTransfer = () => {
   const navigate = useNavigate();
-  
+
   // 页面状态
   const [step, setStep] = useState('input'); // input | confirm | otp | processing | success
-  
+
   // 用户数据
   const [customerData, setCustomerData] = useState(null);
-  
+
   // 接收方数据
   const [recipientData, setRecipientData] = useState(null);
   const [recipientPhone, setRecipientPhone] = useState('');
   const [phoneError, setPhoneError] = useState('');
-  
+
   // 转让数据
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState('');
-  
+
   // OTP数据
   const [otpSessionId, setOtpSessionId] = useState(null);
   const [otpExpiresIn, setOtpExpiresIn] = useState(300);
   const [otpRequired, setOtpRequired] = useState(false);
-  
+  const [orgEventCode, setOrgEventCode] = useState('');
   // 加载状态
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -76,6 +76,12 @@ const CustomerTransfer = () => {
           eventId,
           userId: user.uid
         });
+        // ✅ 构建orgEventCode用于导航
+        const orgId = organizationId?.replace('organization_', '') || '';
+        const evtId = eventId?.replace('event_', '') || '';
+        const code = `${orgId}-${evtId}`;
+        setOrgEventCode(code);
+        console.log('[CustomerTransactions] orgEventCode设置为:', code);
       }
     } catch (error) {
       console.error('[CustomerTransfer] 加载Customer数据失败:', error);
@@ -86,7 +92,7 @@ const CustomerTransfer = () => {
   // 标准化手机号
   const normalizePhoneNumber = (phone) => {
     let cleaned = phone.replace(/[\s\-\(\)]/g, '');
-    
+
     if (cleaned.startsWith('+60')) {
       return cleaned;
     } else if (cleaned.startsWith('60')) {
@@ -96,7 +102,7 @@ const CustomerTransfer = () => {
     } else if (cleaned.startsWith('1')) {
       return '+60' + cleaned;
     }
-    
+
     return '+60' + cleaned;
   };
 
@@ -345,7 +351,7 @@ const CustomerTransfer = () => {
 
     try {
       const transferPoints = httpsCallable(functions, 'transferPoints');
-      
+
       const result = await transferPoints({
         toPhoneNumber: recipientData.identityInfo.phoneNumber,
         amount: parseFloat(amount),
@@ -358,7 +364,7 @@ const CustomerTransfer = () => {
 
       // 3秒后返回主页
       setTimeout(() => {
-        navigate('/customer/dashboard');
+        navigate(`/customer/${orgEventCode}/dashboard`);
       }, 3000);
 
     } catch (error) {
@@ -384,7 +390,7 @@ const CustomerTransfer = () => {
 
   // 取消转让
   const handleCancel = () => {
-    navigate('/customer/dashboard');
+    navigate(`/customer/${orgEventCode}/dashboard`);
   };
 
   if (!customerData) {
@@ -563,7 +569,7 @@ const CustomerTransfer = () => {
             expiresIn={otpExpiresIn}
             loading={loading}
           />
-          
+
           <div style={styles.otpInfo}>
             <p style={styles.otpInfoText}>
               转让金额：<strong>{amount} 点</strong>
@@ -615,7 +621,7 @@ const CustomerTransfer = () => {
           </div>
           <p style={styles.successSubtext}>3秒后自动返回...</p>
           <button
-            onClick={() => navigate('/customer/dashboard')}
+            onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
             style={styles.returnButton}
           >
             立即返回

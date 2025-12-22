@@ -238,42 +238,35 @@ function shouldBypassSms(phoneNumber, settings) {
  * 1. 登录场景（UniversalLogin）- 参数：{ phoneNumber, orgCode, eventCode, loginType }
  * 2. 付款场景（CustomerPayment）- 参数：{ phoneNumber, userId, scenario, scenarioData }
  */
-exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
+exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
+  // CORS 與方法檢查
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: { code: 'method-not-allowed', message: '只支持 POST' } });
+  }
+
   console.log('[sendOtpHttp] ========== 开始处理 ==========');
-  
-  // ✅ 安全的日志输出
+
+  // 標準 HTTP 請求：直接從 req.body 讀取
+  const requestData = req.body || {};
+
   console.log('[sendOtpHttp] 请求参数:', {
-    phoneNumber: data?.phoneNumber || 'missing',
-    userId: data?.userId || 'none',
-    scenario: data?.scenario || 'none',
-    orgCode: data?.orgCode || 'none',
-    eventCode: data?.eventCode || 'none',
-    loginType: data?.loginType || 'none',
-    scenarioData: data?.scenarioData || 'none'
+    phoneNumber: requestData?.phoneNumber || 'missing',
+    userId: requestData?.userId || 'none',
+    scenario: requestData?.scenario || 'none',
+    orgCode: requestData?.orgCode || 'none',
+    eventCode: requestData?.eventCode || 'none',
+    loginType: requestData?.loginType || 'none',
+    hasScenarioData: !!requestData?.scenarioData
   });
-  
-  console.log('[sendOtpHttp] 认证信息:', context.auth ? {
-    uid: context.auth.uid,
-    hasToken: !!context.auth.token
-  } : '未认证');
 
   try {
-    let rawData = data || {};
+    let rawData = requestData;
 
-    // 常見情況容錯：前端或代理可能把參數包在 data 或 body 裡
-    if (rawData && typeof rawData === 'object') {
-      // callable SDK 正常會直接傳物件，但某些呼叫方式會把 payload 包在 rawData.data
-      if (rawData.data && typeof rawData.data === 'object') {
-        rawData = rawData.data;
-      } else if (rawData.body && typeof rawData.body === 'string') {
-        try {
-          const parsed = JSON.parse(rawData.body);
-          if (parsed && typeof parsed === 'object') rawData = parsed;
-        } catch (e) {
-          // 忽略解析錯誤，保留原始 rawData
-        }
-      }
-    }
     const phoneNumber = rawData.phoneNumber || rawData.phone || rawData.mobile || rawData.msisdn || rawData.tel || rawData.phone_number;
     const userId = rawData.userId || rawData.user_id || rawData.uid;
     const scenario = rawData.scenario;
@@ -299,11 +292,10 @@ exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
       } catch (e) {
         console.error('[sendOtpHttp] Raw data preview: <非序列化物件，包含循環結構或 Socket/HTTPParser>');
       }
-      throw new functions.https.HttpsError('invalid-argument', '缺少手机号码');
+      return res.status(400).json({ error: { code: 'invalid-argument', message: '缺少手机号码' } });
     }
 
     console.log('[sendOtpHttp] ✅ 参数验证通过');
-
 
     // 测试 getPlatformSettings
     console.log('[sendOtpHttp] 调用 getPlatformSettings...');
@@ -314,8 +306,6 @@ exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
     console.log('[sendOtpHttp] 调用 generateOtpCode...');
     const otpCode = generateOtpCode(settings);
     console.log('[sendOtpHttp] OTP Code:', otpCode);
-
-    // ... 其余代码
 
     // 生成 session ID
     const sessionId = `otp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -350,6 +340,7 @@ exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
     await db.collection('otp_sessions').doc(sessionId).set(otpDoc);
     console.log('[sendOtpHttp] ✅ OTP Session 已保存');
 
+    // ✅ 后面的 SMS 发送代码保持不变...
     // 检查是否需要发送 SMS
     const bypassSms = shouldBypassSms(phoneNumber, settings);
 
@@ -420,7 +411,7 @@ exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
     }
 
     console.log('[sendOtpHttp] Response:', response);
-    return response;
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error('[sendOtpHttp] ========== 错误 ==========');
@@ -428,13 +419,23 @@ exports.sendOtpHttp = functions.https.onCall(async (data, context) => {
     console.error('[sendOtpHttp] Error message:', error.message);
     console.error('[sendOtpHttp] Error stack:', error.stack);
 
-    // ✅ 如果已经是 HttpsError，直接抛出
+    // 轉換為 HTTP 錯誤回應
     if (error instanceof functions.https.HttpsError) {
-      throw error;
+      const code = error.code || 'internal';
+      const statusMap = {
+        'invalid-argument': 400,
+        'failed-precondition': 400,
+        'permission-denied': 403,
+        'not-found': 404,
+        'deadline-exceeded': 408,
+        'resource-exhausted': 429,
+        'internal': 500
+      };
+      const status = statusMap[code] || 500;
+      return res.status(status).json({ error: { code, message: error.message } });
     }
 
-    // ✅ 其他错误包装为 HttpsError
-    throw new functions.https.HttpsError('internal', `发送 OTP 失败: ${error.message}`);
+    return res.status(500).json({ error: { code: 'internal', message: `发送 OTP 失败: ${error.message}` } });
   }
 });
 

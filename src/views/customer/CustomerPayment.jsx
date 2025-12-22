@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../config/firebase';
+// 移除 httpsCallable；統一使用 HTTP + safeFetch
 import QRScanner from '../../components/QRScanner';
 import OTPInput from '../../components/OTPInput';
 import { safeFetch } from '../../services/safeFetch';
@@ -269,31 +268,33 @@ const CustomerPayment = () => {
       }
       console.log('[CustomerPayment] 调用 sendOtpHttp...');
 
-      // ✅ 使用 httpsCallable
-      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
-
-      const result = await sendOtpHttp({
-        phoneNumber: phone,
-        userId: customerData.userId,
-        scenario: 'customerPayment',
-        scenarioData: {
-          amount: parseFloat(amount),
-          merchantName: merchantData.stallName || '商家'
-        }
+      // ✅ 統一使用 HTTP（safeFetch）呼叫後端 onRequest 端點
+      const resp = await safeFetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: phone,
+          userId: customerData.userId,
+          scenario: 'customerPayment',
+          scenarioData: {
+            amount: parseFloat(amount),
+            merchantName: merchantData.stallName || '商家'
+          }
+        })
       });
 
-      console.log('[CustomerPayment] sendOTP结果:', result.data);
+      const data = await resp.json();
+      console.log('[CustomerPayment] sendOTP结果:', data);
 
-      // ✅ 使用 result.data
-      if (!result.data?.success) {
-        throw new Error(result.data?.error?.message || '发送 OTP 失败');
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || '发送 OTP 失败');
       }
 
-      if (result.data.otpRequired) {
+      if (data.otpRequired) {
         console.log('[CustomerPayment] OTP 验证必需');
         setOtpRequired(true);
-        setOtpSessionId(result.data.sessionId);
-        setOtpExpiresIn(result.data.expiresIn || 300);
+        setOtpSessionId(data.sessionId);
+        setOtpExpiresIn(data.expiresIn || 300);
         setStep('otp');
       } else {
         console.log('[CustomerPayment] 无需 OTP，直接执行付款');
@@ -351,26 +352,27 @@ const CustomerPayment = () => {
       if (!phone) {
         throw new Error('未綁定手機號，無法重新發送驗證碼');
       }
-      // ✅ 使用 httpsCallable
-      const sendOtpHttp = httpsCallable(functions, 'sendOtpHttp');
-
-      const result = await sendOtpHttp({
-        phoneNumber: phone,
-        userId: customerData.userId,
-        scenario: 'customerPayment',
-        scenarioData: {
-          amount: parseFloat(amount),
-          merchantName: merchantData.stallName || '商家'
-        }
+      const resp = await safeFetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: phone,
+          userId: customerData.userId,
+          scenario: 'customerPayment',
+          scenarioData: {
+            amount: parseFloat(amount),
+            merchantName: merchantData.stallName || '商家'
+          }
+        })
       });
 
-      // ✅ 使用 result.data
-      if (!result.data?.success) {
-        throw new Error(result.data?.error?.message || '重新发送失败');
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || '重新发送失败');
       }
 
-      setOtpSessionId(result.data.sessionId);
-      setOtpExpiresIn(result.data.expiresIn || 300);
+      setOtpSessionId(data.sessionId);
+      setOtpExpiresIn(data.expiresIn || 300);
 
       console.log('[CustomerPayment] OTP重新发送成功');
 

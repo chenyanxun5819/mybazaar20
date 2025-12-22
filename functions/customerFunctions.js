@@ -349,12 +349,13 @@ exports.processCustomerPayment = functions.https.onCall(async (data, context) =>
     });
 
     // ✅ 安全地记录参数值
+    const requestData = data?.data || data || {};
     console.log('[processCustomerPayment] 参数值:', {
-      merchantId: data.merchantId || 'missing',
-      amount: data.amount || 'missing',
-      otpSessionId: data.otpSessionId ? 'exists' : 'missing',
-      organizationId: data.organizationId || 'missing',
-      eventId: data.eventId || 'missing'
+      merchantId: requestData.merchantId || 'missing',
+      amount: requestData.amount || 'missing',
+      otpSessionId: requestData.otpSessionId ? 'exists' : 'missing',
+      organizationId: requestData.organizationId || 'missing',
+      eventId: requestData.eventId || 'missing'
     });
   } else {
     console.error('[processCustomerPayment] ❌ data 是 null 或 undefined！');
@@ -368,8 +369,18 @@ exports.processCustomerPayment = functions.https.onCall(async (data, context) =>
 
   try {
     // === 验证身份（支援 OTP 回退）===
-    const { merchantId, amount, otpSessionId, organizationId, eventId } = data || {};
+    // ✅ Firebase httpsCallable 将参数包装在 data.data 中
+    const requestData = data?.data || data || {};
+    const { merchantId, amount, otpSessionId, organizationId, eventId } = requestData;
     let customerId = context.auth?.uid || null;
+
+    console.log('[processCustomerPayment] ✅ 提取的参数:', {
+      merchantId: merchantId || 'missing',
+      amount: amount || 'missing',
+      organizationId: organizationId || 'missing',
+      eventId: eventId || 'missing',
+      otpSessionId: otpSessionId || 'missing'
+    });
 
     // ✅ 验证必要参数
     if (!merchantId) {
@@ -578,11 +589,12 @@ exports.processCustomerPayment = functions.https.onCall(async (data, context) =>
         transactionId,
         eventId,
         organizationId,
-        transactionType: 'MERCHANT_PAYMENT',
+        transactionType: 'customer_to_merchant',
 
         // 交易双方
         customerId,
-        customerPhone: customerData.identityInfo?.phoneNumber || '',
+        customerPhone: customerData.basicInfo?.phoneNumber || '',
+        customerName: customerData.basicInfo?.chineseName || customerData.basicInfo?.englishName || '',
         merchantId,
         merchantName: merchantData.stallName || '',
 

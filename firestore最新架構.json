@@ -659,12 +659,12 @@
                     "type": "string",
                     "values": [
                       "POINTS_SALE",
-                      "MERCHANT_PAYMENT",
+                      "customer_to_merchant",
                       "customer_transfer",
                       "point_card_payment",
                       "point_card_topup"
                     ],
-                    "description": "POINTS_SALE: Seller卖点给Customer; MERCHANT_PAYMENT: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
+                    "description": "POINTS_SALE: Seller卖点给Customer; Mcustomer_to_merchant: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
                   },
                   "merchantId": {
                     "type": "string",

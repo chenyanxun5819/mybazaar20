@@ -18,16 +18,16 @@ import QRScanner from '../../components/QRScanner';
  */
 const PointCardTopup = () => {
   const navigate = useNavigate();
-  
+
   // 页面状态
   const [step, setStep] = useState('scan'); // scan | confirm | processing | success
-  
+
   // 用户数据
   const [customerData, setCustomerData] = useState(null);
-  
+  const [orgEventCode, setOrgEventCode] = useState('');
   // 点数卡数据
   const [cardData, setCardData] = useState(null);
-  
+
   // 加载状态
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -63,6 +63,12 @@ const PointCardTopup = () => {
           eventId,
           userId: user.uid
         });
+        // ✅ 构建orgEventCode用于导航
+        const orgId = organizationId?.replace('organization_', '') || '';
+        const evtId = eventId?.replace('event_', '') || '';
+        const code = `${orgId}-${evtId}`;
+        setOrgEventCode(code);
+        console.log('[PointCardTopup] orgEventCode设置为:', code);
       }
     } catch (error) {
       console.error('[PointCardTopup] 加载Customer数据失败:', error);
@@ -73,7 +79,7 @@ const PointCardTopup = () => {
   // 扫描成功
   const handleScanSuccess = async (qrData) => {
     console.log('[PointCardTopup] 扫描成功:', qrData);
-    
+
     // 验证QR Code类型
     if (qrData.type !== 'POINT_CARD') {
       setError('QR Code类型错误，请扫描点数卡');
@@ -93,7 +99,7 @@ const PointCardTopup = () => {
       );
 
       const cardSnap = await getDoc(cardRef);
-      
+
       if (!cardSnap.exists()) {
         throw new Error('点数卡不存在');
       }
@@ -121,7 +127,7 @@ const PointCardTopup = () => {
         ...card,
         cardId: qrData.cardId
       });
-      
+
       setStep('confirm');
 
     } catch (error) {
@@ -145,7 +151,7 @@ const PointCardTopup = () => {
 
     try {
       const topupFromPointCard = httpsCallable(functions, 'topupFromPointCard');
-      
+
       const result = await topupFromPointCard({
         cardId: cardData.cardId
       });
@@ -156,7 +162,7 @@ const PointCardTopup = () => {
 
       // 3秒后返回主页
       setTimeout(() => {
-        navigate('/customer/dashboard');
+        navigate(`/customer/${orgEventCode}/dashboard`);
       }, 3000);
 
     } catch (error) {
@@ -177,7 +183,7 @@ const PointCardTopup = () => {
 
   // 取消充值
   const handleCancel = () => {
-    navigate('/customer/dashboard');
+    navigate(`/customer/${orgEventCode}/dashboard`);
   };
 
   // 格式化时间
@@ -229,7 +235,7 @@ const PointCardTopup = () => {
             onError={handleScanError}
             expectedType="POINT_CARD"
           />
-          
+
           {/* 提示 */}
           <div style={styles.tips}>
             <p style={styles.tipTitle}>💡 充值提示：</p>
@@ -302,8 +308,8 @@ const PointCardTopup = () => {
           <div style={styles.afterTopupCard}>
             <p style={styles.afterTopupLabel}>充值后余额</p>
             <p style={styles.afterTopupAmount}>
-              {(customerData.customer?.pointsAccount?.availablePoints || 0) + 
-               (cardData.balance?.current || 0)} 点
+              {(customerData.customer?.pointsAccount?.availablePoints || 0) +
+                (cardData.balance?.current || 0)} 点
             </p>
           </div>
 
@@ -360,7 +366,7 @@ const PointCardTopup = () => {
         <div style={styles.successContainer}>
           <div style={styles.successIcon}>✅</div>
           <h2 style={styles.successTitle}>充值成功！</h2>
-          
+
           <div style={styles.successDetails}>
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>充值金额：</span>
@@ -369,8 +375,8 @@ const PointCardTopup = () => {
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>当前余额：</span>
               <span style={styles.detailValue}>
-                {(customerData.customer?.pointsAccount?.availablePoints || 0) + 
-                 (cardData.balance?.current || 0)} 点
+                {(customerData.customer?.pointsAccount?.availablePoints || 0) +
+                  (cardData.balance?.current || 0)} 点
               </span>
             </p>
             <p style={styles.successDetail}>
@@ -387,9 +393,9 @@ const PointCardTopup = () => {
           </div>
 
           <p style={styles.successSubtext}>3秒后自动返回...</p>
-          
+
           <button
-            onClick={() => navigate('/customer/dashboard')}
+            onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
             style={styles.returnButton}
           >
             立即返回
