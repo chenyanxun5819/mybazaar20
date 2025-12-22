@@ -209,12 +209,14 @@ const CustomerDashboard = () => {
         <div style={styles.qrCodeSection}>
           <QRCodeDisplay
             qrData={{
-              type: 'customer_points',
-              userId: auth.currentUser?.uid,
-              organizationId: customerData.organizationId,
-              eventId: customerData.eventId,
+              type: 'CUSTOMER_RECEIVE_POINTS',  // ✅ 改为大写
+              v: '1.0',                          // ✅ 添加版本号
+              orgId: orgId,                      // ✅ 使用无前缀的orgId
+              eventId: evtId,                    // ✅ 使用无前缀的eventId
+              customerId: auth.currentUser?.uid, // ✅ 改用customerId
               displayName: displayName,
-              phoneNumber: phoneNumber
+              phoneNumber: phoneNumber,
+              ts: Date.now()                     // ✅ 添加时间戳
             }}
             userName={displayName}
             subtitle="Customer收点数QR Code"

@@ -589,7 +589,7 @@ exports.processCustomerPayment = functions.https.onCall(async (data, context) =>
         transactionId,
         eventId,
         organizationId,
-        transactionType: 'customer_to_merchant',
+        Type: 'customer_to_merchant',
 
         // 交易双方
         customerId,
@@ -815,7 +815,7 @@ exports.transferPoints = functions.https.onCall(async (data, context) => {
         transactionId,
         eventId,
         organizationId,
-        transactionType: 'customer_transfer',
+        Type: 'customer_transfer',
 
         // 转出方
         fromUser: {
@@ -1002,7 +1002,7 @@ exports.topupFromPointCard = functions.https.onCall(async (data, context) => {
         transactionId,
         eventId,
         organizationId,
-        transactionType: 'point_card_topup',
+        Type: 'point_card_topup',
 
         // 点数卡信息
         cardId,
@@ -1010,8 +1010,8 @@ exports.topupFromPointCard = functions.https.onCall(async (data, context) => {
 
         // Customer信息
         customerId,
-        customerName: customerData.identityInfo?.displayName || '',
-
+        customerName: customerData.basicInfo?.chineseName || customerData.basicInfo?.englishName || '',  // ✅ 添加
+        customerPhone: customerData.basicInfo?.phoneNumber || '',  // ✅ 修复
         // 金额和状态
         amount: currentBalance,
         cardDestroyed: true,

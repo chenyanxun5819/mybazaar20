@@ -238,3 +238,27 @@ export const formatQRDisplayText = (qrData) => {
 
   return lines.join('\n');
 };
+
+/**
+ * 生成Customer收款 QR Code 的資料字串
+ * @param {string} organizationId - 組織 ID（无前缀）
+ * @param {string} eventId - 活動 ID（无前缀）
+ * @param {string} customerId - Customer ID
+ * @param {string} displayName - 显示名称
+ * @param {string} phoneNumber - 电话号码
+ * @returns {string} QR Code 資料字串
+ */
+export const generateCustomerReceivePointsQR = (organizationId, eventId, customerId, displayName, phoneNumber) => {
+  const qrData = {
+    type: 'CUSTOMER_RECEIVE_POINTS',
+    v: '1.0',
+    orgId: organizationId,
+    eventId: eventId,
+    customerId: customerId,
+    displayName: displayName,
+    phoneNumber: phoneNumber,
+    ts: Date.now()
+  };
+
+  return JSON.stringify(qrData);
+};
