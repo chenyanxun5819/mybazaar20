@@ -4,7 +4,7 @@ import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import QRCodeDisplay from '../../components/QRCodeDisplay';
-
+import { generateCustomerReceivePointsQR } from '../../utils/qrCodeGenerator';
 /**
  * Customer Dashboard 主页
  * 

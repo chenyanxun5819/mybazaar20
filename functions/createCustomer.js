@@ -14,6 +14,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 const { hashPassword, hashPin } = require('./utils/bcryptHelper');
 const { 
   validateLoginPassword, 
@@ -21,6 +22,24 @@ const {
   validatePhoneNumber,
   validateEmail 
 } = require('./utils/validators');
+
+/**
+ * 标准化手机号为 +60XXXXXXXXX 或仅保留核心数字
+ * @param {string} phoneNumber 
+ * @returns {string} 标准化后的手机号
+ */
+function normalizePhoneNumber(phoneNumber) {
+  if (!phoneNumber) return '';
+  let cleaned = String(phoneNumber).replace(/[\s\-()]/g, '');
+  if (cleaned.startsWith('+60')) cleaned = cleaned.slice(3);
+  else if (cleaned.startsWith('60')) cleaned = cleaned.slice(2);
+  if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+  return cleaned;
+}
+
+function sha256(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
 
 exports.createCustomer = onCall(async (request) => {
   const { data } = request;
@@ -87,6 +106,10 @@ exports.createCustomer = onCall(async (request) => {
     // ========== 4. 检查组织和活动是否存在 ==========
     const db = admin.firestore();
     
+    // ========== 5. 标准化手机号 ==========
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    console.log('[createCustomer] 手机号标准化:', { original: phoneNumber, normalized: normalizedPhone });
+
     const eventRef = db
       .collection('organizations').doc(organizationId)
       .collection('events').doc(eventId);
@@ -97,18 +120,30 @@ exports.createCustomer = onCall(async (request) => {
       throw new HttpsError('not-found', '活动不存在');
     }
 
-    // ========== 5. 检查手机号是否已注册 ==========
+    // ========== 6. 检查手机号是否已注册（使用标准化的手机号查询） ==========
     const usersRef = eventRef.collection('users');
-    const existingUserQuery = await usersRef
-      .where('basicInfo.phoneNumber', '==', phoneNumber)
-      .limit(1)
-      .get();
+    
+    // 尝试多个手机号格式来确保兼容性
+    const phoneVariants = [
+      normalizedPhone,
+      `0${normalizedPhone}`,
+      `60${normalizedPhone}`,
+      `+60${normalizedPhone}`,
+      phoneNumber  // 原始格式也查询一遍
+    ];
 
-    if (!existingUserQuery.empty) {
-      throw new HttpsError('already-exists', '该手机号已注册，请直接登录');
+    for (const variant of phoneVariants) {
+      const existingUserQuery = await usersRef
+        .where('basicInfo.phoneNumber', '==', variant)
+        .limit(1)
+        .get();
+
+      if (!existingUserQuery.empty) {
+        throw new HttpsError('already-exists', '该手机号已注册，请直接登录');
+      }
     }
 
-    // ========== 6. 创建 Firebase Auth 用户 ==========
+    // ========== 7. 创建 Firebase Auth 用户 ==========
     let authUser;
     try {
       authUser = await admin.auth().createUser({
@@ -128,11 +163,11 @@ exports.createCustomer = onCall(async (request) => {
       throw new HttpsError('internal', '创建用户失败，请重试');
     }
 
-    // ========== 7. 加密密码和 PIN ==========
+    // ========== 8. 加密密码和 PIN ==========
     const { hash: passwordHash, salt: passwordSalt } = await hashPassword(password);
     const { hash: pinHash, salt: pinSalt } = await hashPin(transactionPin);
 
-    // ========== 8. 创建 Firestore 用户文档 ==========
+    // ========== 9. 创建 Firestore 用户文档（使用标准化的手机号） ==========
     const userId = authUser.uid;
     const userRef = usersRef.doc(userId);
 
@@ -149,7 +184,7 @@ exports.createCustomer = onCall(async (request) => {
       },
 
       basicInfo: {
-        phoneNumber: phoneNumber,
+        phoneNumber: normalizedPhone,  // ✅ 使用标准化的手机号
         englishName: displayName,
         chineseName: displayName, // 如果没有中文名，使用 displayName
         email: email || null,

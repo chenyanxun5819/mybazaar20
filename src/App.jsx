@@ -16,6 +16,7 @@ import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
+import InitialSetup from './pages/InitialSetup/InitialSetup';
 // ✅ 新增：导入其他Customer页面
 import CustomerRegister from './views/customer/CustomerRegister';
 import CustomerPayment from './views/customer/CustomerPayment';
@@ -102,7 +103,7 @@ function App() {
           </EventProvider>
         </DesktopGuard>
       } />
-
+      <Route path="/initial-setup" element={<InitialSetup />} />
       {/* 活动路由 - 桌面版首页 */}
       <Route path="/:eventSlug/desktop" element={
         <DesktopGuard>
@@ -181,11 +182,7 @@ function App() {
       {/* ✅ 新增：Customer 注册页面 */}
       <Route path="/customer/:orgEventCode/register" element={
         <MobileGuard>
-          <EventProvider>
-            <AuthProvider>
-              <CustomerRegister />
-            </AuthProvider>
-          </EventProvider>
+          <CustomerRegister />
         </MobileGuard>
       } />
 

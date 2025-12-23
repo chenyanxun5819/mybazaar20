@@ -45,12 +45,13 @@ export const EventProvider = ({ children }) => {
       let platform = null;
 
       if (segments.length >= 2) {
-        // 兼容普通用户 dashboard 路徑
+        // 兼容普通用户路徑（dashboard, register, payment 等）
         const first = segments[0].toLowerCase();
         if (['seller','merchant','customer'].includes(first)) {
           const orgEvent = segments[1];
-          const dash = segments[2]?.toLowerCase();
-          if (orgEvent && dash === 'dashboard') {
+          const third = segments[2]?.toLowerCase();
+          // 支持 /customer/:orgEventCode/dashboard, /customer/:orgEventCode/register, 等
+          if (orgEvent && third && ['dashboard','register','payment','transfer','topup','transactions'].includes(third)) {
             const idx = orgEvent.indexOf('-');
             if (idx > 0) {
               parsedOrgCode = orgEvent.substring(0, idx);
@@ -76,12 +77,11 @@ export const EventProvider = ({ children }) => {
       }
 
       if (!parsedOrgCode || !parsedEventCode) {
-        console.warn('[EventContext] URL 格式无法识别:', urlPath);
-        console.log('[EventContext] 预期格式: /orgCode-eventCode/platform 或 /seller/:orgEventCode/dashboard');
-        console.log('[EventContext] 例如: /xhessbn-2025/desktop/login 或 /seller/xhessbn-2025/dashboard');
+        console.warn('[EventContext] URL 格式无法识别！: ' + urlPath);
+        console.log('[EventContext] 预期格式: /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...)');
         const hints = [
           'URL 格式不正确，请使用正确的链接',
-          '例如: /xhessbn-2025/desktop/login 或 /seller/xhessbn-2025/dashboard',
+          '例如: /login/xhessbn-2025 或 /seller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
           '',
           '可能原因：',
           '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',

@@ -17,6 +17,7 @@ if (!admin.apps.length) {
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
   createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
+const { resolveOrgEventHttp } = require('./auth/resolveOrgEventHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
 const { onCashCollection } = require('./onCashCollection');
@@ -28,8 +29,9 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
 // 導入 Customer 相關 callable 函式
+// 注：createCustomer 从 createCustomer.js 导入（支持 transactionPin）
+const createCustomerNew = require('./createCustomer').createCustomer;
 const {
-  createCustomer,
   processCustomerPayment,
   transferPoints,
   topupFromPointCard
@@ -61,6 +63,7 @@ exports.updateUserRoles = updateUserRoles;
 exports.allocatePointsHttp = allocatePointsHttp;
 exports.recallPointsHttp = recallPointsHttp;
 exports.loginUniversalHttp = loginUniversalHttp;
+exports.resolveOrgEventHttp = resolveOrgEventHttp;
 exports.sendOtpHttp = sendOtpHttp;
 exports.verifyOtpHttp = verifyOtpHttp;
 
@@ -83,7 +86,7 @@ exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
-exports.createCustomer = createCustomer;
+exports.createCustomer = createCustomerNew;
 exports.processCustomerPayment = processCustomerPayment;
 exports.transferPoints = transferPoints;
 exports.topupFromPointCard = topupFromPointCard;

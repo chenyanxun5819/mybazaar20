@@ -1,31 +1,98 @@
-import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
+import safeFetch from '../../services/safeFetch';
 
 /**
  * Customer注册页面
  * 
- * URL参数：
- * - orgId: 组织ID
- * - eventId: 活动ID
+ * 路由参数：
+ * - orgEventCode: 组织-活动代码 (格式: orgCode-eventCode, 例如: fch-2025)
  * 
  * 路由示例：
- * /customer/register?orgId=xxx&eventId=yyy
+ * /customer/fch-2025/register
  */
 const CustomerRegister = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  
-  const organizationId = searchParams.get('orgId');
-  const eventId = searchParams.get('eventId');
+  const { orgEventCode } = useParams();
+
+  // 解析 orgEventCode
+  const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
+  const [resolvedIds, setResolvedIds] = useState({
+    loading: true,
+    error: '',
+    organizationId: null,
+    eventId: null
+  });
+
+  useEffect(() => {
+    const run = async () => {
+      if (!orgCode || !eventCode) {
+        setResolvedIds({
+          loading: false,
+          error: '无效的活动链接（缺少 orgCode-eventCode）',
+          organizationId: null,
+          eventId: null
+        });
+        return;
+      }
+
+      try {
+        setResolvedIds(prev => ({ ...prev, loading: true, error: '' }));
+
+        const resp = await safeFetch('/api/resolveOrgEventHttp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orgCode, eventCode })
+        });
+
+        const text = await resp.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          data = null;
+        }
+
+        if (!resp.ok || !data?.success) {
+          const msg = data?.error?.message || '无法解析组织/活动信息，请稍后重试';
+          setResolvedIds({
+            loading: false,
+            error: msg,
+            organizationId: null,
+            eventId: null
+          });
+          return;
+        }
+
+        setResolvedIds({
+          loading: false,
+          error: '',
+          organizationId: data.organizationId,
+          eventId: data.eventId
+        });
+      } catch (e) {
+        setResolvedIds({
+          loading: false,
+          error: e?.message || '网络错误，请检查连接后重试',
+          organizationId: null,
+          eventId: null
+        });
+      }
+    };
+
+    run();
+  }, [orgCode, eventCode]);
 
   const [formData, setFormData] = useState({
     phoneNumber: '',
     displayName: '',
     password: '',
     confirmPassword: '',
-    email: ''
+    email: '',
+    transactionPin: '',
+    confirmPin: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -41,7 +108,7 @@ const CustomerRegister = () => {
   // 格式化手机号为+60格式
   const formatPhoneNumber = (phone) => {
     let cleaned = phone.replace(/[\s\-\(\)]/g, '');
-    
+
     if (cleaned.startsWith('+60')) {
       return cleaned;
     } else if (cleaned.startsWith('60')) {
@@ -51,7 +118,7 @@ const CustomerRegister = () => {
     } else if (cleaned.startsWith('1')) {
       return '+60' + cleaned;
     }
-    
+
     return '+60' + cleaned;
   };
 
@@ -62,7 +129,7 @@ const CustomerRegister = () => {
       ...prev,
       [name]: value
     }));
-    
+
     // 清除该字段的错误
     if (errors[name]) {
       setErrors(prev => ({
@@ -106,6 +173,41 @@ const CustomerRegister = () => {
       newErrors.confirmPassword = '两次输入的密码不一致';
     }
 
+    // ========== ✨ 新增：PIN 验证 ========== 
+    if (!formData.transactionPin) {
+      newErrors.transactionPin = '请输入交易密码';
+    } else if (!/^\d{6}$/.test(formData.transactionPin)) {
+      newErrors.transactionPin = '交易密码必须是6位数字';
+    } else {
+      // 检查弱密码
+      const weakPins = ['000000', '111111', '222222', '333333', '444444',
+        '555555', '666666', '777777', '888888', '999999',
+        '123456', '654321', '123123'];
+      
+      if (weakPins.includes(formData.transactionPin)) {
+        newErrors.transactionPin = '请使用更安全的密码组合';
+      } else {
+        // 检查连续数字
+        const digits = formData.transactionPin.split('').map(Number);
+        let isAscending = true;
+        let isDescending = true;
+        for (let i = 1; i < digits.length; i++) {
+          if (digits[i] !== digits[i - 1] + 1) isAscending = false;
+          if (digits[i] !== digits[i - 1] - 1) isDescending = false;
+        }
+        if (isAscending || isDescending) {
+          newErrors.transactionPin = '请不要使用连续数字';
+        }
+      }
+    }
+
+    // 确认 PIN 验证
+    if (!formData.confirmPin) {
+      newErrors.confirmPin = '请确认交易密码';
+    } else if (formData.transactionPin !== formData.confirmPin) {
+      newErrors.confirmPin = '两次输入的交易密码不一致';
+    }
+
     // 邮箱验证（可选）
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = '邮箱格式不正确';
@@ -120,8 +222,8 @@ const CustomerRegister = () => {
     e.preventDefault();
 
     // 验证组织和活动ID
-    if (!organizationId || !eventId) {
-      alert('缺少必要的参数，请从正确的链接访问注册页面');
+    if (!resolvedIds.organizationId || !resolvedIds.eventId) {
+      alert(resolvedIds.error || '缺少必要的活动信息，请从正确的链接访问注册页面');
       return;
     }
 
@@ -134,13 +236,14 @@ const CustomerRegister = () => {
 
     try {
       const createCustomer = httpsCallable(functions, 'createCustomer');
-      
+
       const result = await createCustomer({
-        organizationId,
-        eventId,
+        organizationId: resolvedIds.organizationId,
+        eventId: resolvedIds.eventId,
         phoneNumber: formatPhoneNumber(formData.phoneNumber),
         displayName: formData.displayName.trim(),
         password: formData.password,
+        transactionPin: formData.transactionPin,  // ← ✨ 新增
         email: formData.email.trim() || null
       });
 
@@ -148,21 +251,20 @@ const CustomerRegister = () => {
 
       // 显示成功消息
       alert('注册成功！即将跳转到登录页面');
-
       // 跳转到登录页面
-      navigate(`/universal-login?orgId=${organizationId}&eventId=${eventId}&mode=customer`);
+      navigate(`/login/${orgEventCode}`);
 
     } catch (error) {
       console.error('[CustomerRegister] 注册失败:', error);
-      
+
       let errorMessage = '注册失败，请重试';
-      
+
       if (error.code === 'already-exists') {
         errorMessage = '该手机号已注册，请直接登录';
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       alert(errorMessage);
     } finally {
       setLoading(false);
@@ -171,7 +273,7 @@ const CustomerRegister = () => {
 
   // 跳转到登录页面
   const handleGoToLogin = () => {
-    navigate(`/universal-login?orgId=${organizationId}&eventId=${eventId}&mode=customer`);
+    navigate(`/login/${orgEventCode}`);
   };
 
   return (
@@ -186,6 +288,29 @@ const CustomerRegister = () => {
 
         {/* 注册表单 */}
         <form onSubmit={handleRegister} style={styles.form}>
+          {resolvedIds.loading && (
+            <div style={{
+              padding: '0.75rem 1rem',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              color: '#666'
+            }}>
+              正在载入活动信息...
+            </div>
+          )}
+
+          {!!resolvedIds.error && !resolvedIds.loading && (
+            <div style={{
+              padding: '0.75rem 1rem',
+              backgroundColor: '#fee2e2',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              color: '#991b1b'
+            }}>
+              {resolvedIds.error}
+            </div>
+          )}
           {/* 手机号 */}
           <div style={styles.formGroup}>
             <label style={styles.label}>
@@ -275,6 +400,90 @@ const CustomerRegister = () => {
             {errors.confirmPassword && (
               <p style={styles.errorText}>{errors.confirmPassword}</p>
             )}
+          </div>
+
+          {/* ========== ✨ 新增：交易密码 ========== */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              交易密码 <span style={styles.required}>*</span>
+            </label>
+            <input
+              type="password"
+              name="transactionPin"
+              value={formData.transactionPin}
+              onChange={(e) => {
+                // 只允许数字，最多6位
+                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setFormData(prev => ({ ...prev, transactionPin: value }));
+                if (errors.transactionPin) {
+                  setErrors(prev => ({ ...prev, transactionPin: '' }));
+                }
+              }}
+              placeholder="请输入6位数字"
+              maxLength="6"
+              style={{
+                ...styles.input,
+                fontSize: '1.5rem',
+                letterSpacing: '0.5rem',
+                textAlign: 'center',
+                ...(errors.transactionPin ? styles.inputError : {})
+              }}
+              disabled={loading}
+            />
+            {errors.transactionPin && (
+              <p style={styles.errorText}>{errors.transactionPin}</p>
+            )}
+            <p style={styles.hint}>用于点数转账和支付验证</p>
+          </div>
+
+          {/* 确认交易密码 */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              确认交易密码 <span style={styles.required}>*</span>
+            </label>
+            <input
+              type="password"
+              name="confirmPin"
+              value={formData.confirmPin}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setFormData(prev => ({ ...prev, confirmPin: value }));
+                if (errors.confirmPin) {
+                  setErrors(prev => ({ ...prev, confirmPin: '' }));
+                }
+              }}
+              placeholder="请再次输入6位数字"
+              maxLength="6"
+              style={{
+                ...styles.input,
+                fontSize: '1.5rem',
+                letterSpacing: '0.5rem',
+                textAlign: 'center',
+                ...(errors.confirmPin ? styles.inputError : {})
+              }}
+              disabled={loading}
+            />
+            {errors.confirmPin && (
+              <p style={styles.errorText}>{errors.confirmPin}</p>
+            )}
+          </div>
+
+          {/* 安全提示 */}
+          <div style={{
+            padding: '1rem',
+            backgroundColor: '#e3f2fd',
+            borderRadius: '8px',
+            borderLeft: '4px solid #2196F3'
+          }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: '600', color: '#1976d2' }}>
+              💡 交易密码用途
+            </p>
+            <ul style={{ margin: 0, paddingLeft: '1.5rem', fontSize: '0.85rem', color: '#666' }}>
+              <li>购买点数时验证</li>
+              <li>支付给商家时验证</li>
+              <li>转让点数给他人时验证</li>
+              <li>请勿使用简单密码（如 123456）</li>
+            </ul>
           </div>
 
           {/* 邮箱（可选） */}

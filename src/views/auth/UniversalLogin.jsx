@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { auth } from '../../config/firebase';
+import { db, auth } from '../../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken } from 'firebase/auth';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
@@ -25,20 +26,20 @@ import { signInWithCustomToken } from 'firebase/auth';
 const UniversalLogin = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
-  
+
   // 解析 orgEventCode
   const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
-  
+
   const [formData, setFormData] = useState({
     phoneNumber: '',
     password: ''
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [userData, setUserData] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
-  
+
   // SMS OTP 相关状态
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState('');
@@ -52,10 +53,10 @@ const UniversalLogin = () => {
       setIsMobile(width < 480);
       console.log('[UniversalLogin] 🖥️ 设备检测 - 窗口宽度:', width, 'px, 设备类型:', width < 480 ? 'Mobile 📱' : 'Desktop 💻');
     };
-    
+
     checkDeviceType();
     window.addEventListener('resize', checkDeviceType);
-    
+
     return () => window.removeEventListener('resize', checkDeviceType);
   }, []);
 
@@ -63,28 +64,57 @@ const UniversalLogin = () => {
   const isValidOrgEventCode = orgCode && eventCode;
 
   /**
+   * 根据角色和设备类型获取 Dashboard 路径
+   */
+  const getRoleDashboardPath = (role, isMobile) => {
+    // Desktop 角色路由
+    if (role === 'eventManager') {
+      return `/event-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'sellerManager') {
+      return `/seller-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'merchantManager') {
+      return `/merchant-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'customerManager') {
+      return `/customer-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'financeManager') {
+      return `/finance-manager/${orgEventCode}/dashboard`;
+    }
+    // Mobile 角色路由
+    else if (role === 'seller') {
+      return `/seller/${orgEventCode}/dashboard`;
+    } else if (role === 'merchant') {
+      return `/merchant/${orgEventCode}/dashboard`;
+    } else if (role === 'customer') {
+      return `/customer/${orgEventCode}/dashboard`;
+    } else {
+      console.error('[UniversalLogin] 未知角色:', role);
+      return '/';
+    }
+  };
+
+  /**
    * 处理密码登录提交 - 第一步
    */
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
+
     if (!isValidOrgEventCode) {
       setError('无效的活动链接，请检查网址是否正确');
       return;
     }
-    
+
     setLoading(true);
 
     try {
-      console.log('[UniversalLogin] 密码验证请求:', { 
-        orgCode, 
-        eventCode, 
-        phoneNumber: formData.phoneNumber 
+      console.log('[UniversalLogin] 密码验证请求:', {
+        orgCode,
+        eventCode,
+        phoneNumber: formData.phoneNumber
       });
 
       const url = '/api/loginUniversalHttp';
-      
+
       const payload = {
         orgCode: orgCode.toLowerCase(),
         eventCode: eventCode,
@@ -101,7 +131,7 @@ const UniversalLogin = () => {
 
       const text = await resp.text();
       let data = null;
-      
+
       try {
         data = text ? JSON.parse(text) : null;
       } catch (_) {
@@ -110,7 +140,7 @@ const UniversalLogin = () => {
           throw new Error(`HTTP ${resp.status}: ${text?.substring(0, 200) || '非 JSON 响应'}`);
         }
       }
-      
+
       if (!resp.ok || !data?.success) {
         const serverMsg = data?.error?.message;
         throw new Error(serverMsg || `请求失败 (HTTP ${resp.status})`);
@@ -136,18 +166,18 @@ const UniversalLogin = () => {
       };
 
       setUserData(tempUserData);
-      
+
       // 发送 OTP
       await sendOtp(formData.phoneNumber);
-      
+
       // 切换到 OTP 输入界面
       setOtpStep(true);
       setOtp('');
-      
+
     } catch (error) {
       console.error('[UniversalLogin] 错误:', error);
       const msg = error?.message || '登录失败，请重试';
-      
+
       if (/组织|活动|not[- ]?found/i.test(msg)) {
         setError('找不到该组织或活动');
       } else if (/密码|permission[- ]?denied/i.test(msg)) {
@@ -164,48 +194,48 @@ const UniversalLogin = () => {
     }
   };
 
-/**
- * 发送 OTP 到手机
- */
-const sendOtp = async (phoneNumber) => {
-  try {
-    console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
-    
-    // ✅ 統一走 HTTP（safeFetch）以配合後端 onRequest + rewrites
-    const resp = await safeFetch('/api/sendOtpHttp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phoneNumber: phoneNumber,
-        orgCode: orgCode.toLowerCase(),
-        eventCode: eventCode,
-        loginType: 'universal'
-      })
-    });
+  /**
+   * 发送 OTP 到手机
+   */
+  const sendOtp = async (phoneNumber) => {
+    try {
+      console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
 
-    const data = await resp.json();
-    console.log('[UniversalLogin] sendOTP结果:', data);
+      // ✅ 統一走 HTTP（safeFetch）以配合後端 onRequest + rewrites
+      const resp = await safeFetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: phoneNumber,
+          orgCode: orgCode.toLowerCase(),
+          eventCode: eventCode,
+          loginType: 'universal'
+        })
+      });
 
-    if (!resp.ok || !data?.success) {
-      throw new Error(data?.error?.message || '发送 OTP 失败');
+      const data = await resp.json();
+      console.log('[UniversalLogin] sendOTP结果:', data);
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || '发送 OTP 失败');
+      }
+
+      console.log('[UniversalLogin] OTP 已发送');
+      setOtpTimer(data.expiresIn || 300);
+      startOtpTimer();
+
+      // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
+      if (data?.devMode && data?.testOtp) {
+        console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', data.testOtp);
+        setOtpStep(true);
+        setOtp(String(data.testOtp));
+      }
+
+    } catch (error) {
+      console.error('[UniversalLogin] 发送 OTP 错误:', error);
+      throw new Error('发送验证码失败，请重试');
     }
-
-    console.log('[UniversalLogin] OTP 已发送');
-    setOtpTimer(data.expiresIn || 300);
-    startOtpTimer();
-
-    // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
-    if (data?.devMode && data?.testOtp) {
-      console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', data.testOtp);
-      setOtpStep(true);
-      setOtp(String(data.testOtp));
-    }
-    
-  } catch (error) {
-    console.error('[UniversalLogin] 发送 OTP 错误:', error);
-    throw new Error('发送验证码失败，请重试');
-  }
-};
+  };
 
   /**
    * OTP 倒计时
@@ -230,7 +260,7 @@ const sendOtp = async (phoneNumber) => {
   const filterRolesByDevice = (roles) => {
     console.log('[UniversalLogin] filterRolesByDevice - 输入角色:', roles);
     console.log('[UniversalLogin] filterRolesByDevice - 设备类型:', isMobile ? 'Mobile' : 'Desktop');
-    
+
     if (isMobile) {
       // Mobile: 只支持通用角色
       const phoneRoles = ['customer', 'seller', 'merchant'];
@@ -240,10 +270,10 @@ const sendOtp = async (phoneNumber) => {
     } else {
       // Desktop: 支持所有管理员角色 + 通用角色
       const desktopRoles = [
-        'eventManager', 
-        'sellerManager', 
-        'merchantManager', 
-        'customerManager', 
+        'eventManager',
+        'sellerManager',
+        'merchantManager',
+        'customerManager',
         'financeManager',
         'seller',        // 允许 seller 在 Desktop 上访问 Seller Manager Dashboard
         'customer',      // 允许 customer 在 Desktop 上访问
@@ -260,7 +290,7 @@ const sendOtp = async (phoneNumber) => {
    */
   const getPriorityRole = (roles) => {
     console.log('[UniversalLogin] getPriorityRole - 输入角色:', roles);
-    
+
     if (isMobile) {
       const priority = ['seller', 'merchant', 'customer'];
       for (const role of priority) {
@@ -278,134 +308,174 @@ const sendOtp = async (phoneNumber) => {
         }
       }
     }
-    
+
     console.warn('[UniversalLogin] getPriorityRole - 未找到匹配的角色');
     return null;
   };
 
-  /**
-   * 验证 OTP - 第二步
-   */
-  const handleOtpVerify = async (e) => {
-    e.preventDefault();
-    setError('');
+/**
+ * 验证 OTP - 第二步
+ * 
+ * ✅ 已修正：使用 userData 对象中的正确变量
+ */
+const handleOtpVerify = async (e) => {
+  e.preventDefault();
+  setError('');
 
-    if (!otp || otp.length !== 6) {
-      setError('请输入6位验证码');
+  if (!otp || otp.length !== 6) {
+    setError('请输入6位验证码');
+    return;
+  }
+
+  setOtpLoading(true);
+
+  try {
+    console.log('[UniversalLogin] 验证 OTP:', { phoneNumber: formData.phoneNumber, otp });
+
+    const url = '/api/verifyOtpHttp';
+    const payload = {
+      phoneNumber: formData.phoneNumber,
+      otp: otp,
+      orgCode: orgCode.toLowerCase(),
+      eventCode: eventCode
+    };
+
+    const resp = await safeFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await resp.text();
+    let data = null;
+
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      console.warn('[UniversalLogin] 验证 OTP 响应非 JSON');
+    }
+
+    if (!resp.ok || !data?.success) {
+      throw new Error(data?.error?.message || `验证失败 (HTTP ${resp.status})`);
+    }
+
+    console.log('[UniversalLogin] ✅ OTP 验证成功');
+    
+    // ========== ✨ 新增：首次登录检测 ========== 
+    // 1. 获取用户文档
+    const userDocRef = doc(
+      db,
+      'organizations',
+      userData.organizationId,     // ✅ 修正：使用 userData
+      'events',
+      userData.eventId,            // ✅ 修正：使用 userData
+      'users',
+      userData.userId              // ✅ 修正：使用 userData
+    );
+
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (userDocSnap.exists()) {
+      const userDoc = userDocSnap.data();
+      const basicInfo = userDoc.basicInfo || {};
+
+      // 2. 检查是否需要初始化设置
+      const isFirstLogin = basicInfo.isFirstLogin === true;
+      const hasDefaultPassword = basicInfo.hasDefaultPassword === true;
+
+      if (isFirstLogin || hasDefaultPassword) {
+        console.log('检测到首次登录，跳转到初始化设置页面');
+
+        // 3. 保存临时数据到 localStorage
+        const tempUserData = {
+          userId: userData.userId,                    // ✅ 修正：使用 userData
+          organizationId: userData.organizationId,    // ✅ 修正：使用 userData
+          eventId: userData.eventId,                  // ✅ 修正：使用 userData
+          roles: userDoc.roles || [],
+          displayName: basicInfo.englishName || basicInfo.chineseName || '用户'
+        };
+
+        localStorage.setItem('tempUserData', JSON.stringify(tempUserData));
+
+        // 4. 跳转到初始化设置页面
+        navigate('/initial-setup');
+        return; // 重要：阻止后续的 Dashboard 跳转
+      }
+    }
+    
+    // ========== 原有的登录逻辑继续 ========== 
+    // 使用 verifyOtp 回傳的 customToken（優先）；向後相容使用第1步的 token
+    const customTokenFromVerify = data?.customToken;
+    const tokenToUse = customTokenFromVerify || userData?.customToken;
+    if (!tokenToUse) {
+      throw new Error('登录票据缺失：未取得 Custom Token');
+    }
+    await signInWithCustomToken(auth, tokenToUse);
+    console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
+
+    // 根據 verifyOtp 結果覆蓋/對齊使用者資料（若提供）
+    const verifiedUser = {
+      userId: data?.userId || userData.userId,
+      organizationId: data?.organizationId || userData.organizationId,
+      eventId: data?.eventId || userData.eventId,
+      englishName: data?.englishName || userData.englishName,
+      chineseName: data?.chineseName || userData.chineseName,
+      roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
+      managedDepartments: data?.managedDepartments || userData.managedDepartments || [],
+      orgCode,
+      eventCode,
+      orgEventCode
+    };
+
+    // 根据设备类型过滤角色
+    const availableRoles = filterRolesByDevice(verifiedUser.roles);
+    console.log('[UniversalLogin] 可用角色:', availableRoles);
+
+    if (availableRoles.length === 0) {
+      setError(`您的账户在此设备上没有可用角色。${isMobile ? '请使用桌面设备登录' : '请使用手机设备登录'}`);
+      setOtpLoading(false);
       return;
     }
 
-    setOtpLoading(true);
+    // 获取优先级最高的角色
+    const selectedRole = getPriorityRole(availableRoles);
+    console.log('[UniversalLogin] 选中角色:', selectedRole);
 
-    try {
-      console.log('[UniversalLogin] 验证 OTP:', { phoneNumber: formData.phoneNumber, otp });
-
-      const url = '/api/verifyOtpHttp';
-      const payload = {
-        phoneNumber: formData.phoneNumber,
-        otp: otp,
-        orgCode: orgCode.toLowerCase(),
-        eventCode: eventCode
-      };
-
-      const resp = await safeFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await resp.text();
-      let data = null;
-
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch (_) {
-        console.warn('[UniversalLogin] 验证 OTP 响应非 JSON');
-      }
-
-      if (!resp.ok || !data?.success) {
-        throw new Error(data?.error?.message || `验证失败 (HTTP ${resp.status})`);
-      }
-
-      console.log('[UniversalLogin] ✅ OTP 验证成功');
-
-      // 使用 verifyOtp 回傳的 customToken（優先）；向後相容使用第1步的 token
-      const customTokenFromVerify = data?.customToken;
-      const tokenToUse = customTokenFromVerify || userData?.customToken;
-      if (!tokenToUse) {
-        throw new Error('登录票据缺失：未取得 Custom Token');
-      }
-      await signInWithCustomToken(auth, tokenToUse);
-      console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
-
-      // 根據 verifyOtp 結果覆蓋/對齊使用者資料（若提供）
-      const verifiedUser = {
-        userId: data?.userId || userData.userId,
-        organizationId: data?.organizationId || userData.organizationId,
-        eventId: data?.eventId || userData.eventId,
-        englishName: data?.englishName || userData.englishName,
-        chineseName: data?.chineseName || userData.chineseName,
-        roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
-        managedDepartments: data?.managedDepartments || userData.managedDepartments || [],
-        orgCode,
-        eventCode,
-        orgEventCode
-      };
-
-      // 根据设备类型过滤角色
-      const availableRoles = filterRolesByDevice(verifiedUser.roles);
-      console.log('[UniversalLogin] 可用角色:', availableRoles);
-
-      if (availableRoles.length === 0) {
-        setError(`您的账户在此设备上没有可用角色。${isMobile ? '请使用桌面设备登录' : '请使用手机设备登录'}`);
-        setOtpLoading(false);
-        return;
-      }
-
-      // 自动选择优先级最高的角色
-      const selectedRole = getPriorityRole(availableRoles);
-      console.log('[UniversalLogin] 自动选择角色:', selectedRole);
-
-      if (!selectedRole) {
-        setError('无法确定登录角色，请联系管理员');
-        setOtpLoading(false);
-        return;
-      }
-
-      // 🔥 保存登录信息到 localStorage（AuthContext 会自动读取）
-      const loginInfo = {
-        userId: verifiedUser.userId,
-        organizationId: verifiedUser.organizationId,
-        eventId: verifiedUser.eventId,
-        orgCode: verifiedUser.orgCode,
-        eventCode: verifiedUser.eventCode,
-        orgEventCode: verifiedUser.orgEventCode,
-        englishName: verifiedUser.englishName,
-        chineseName: verifiedUser.chineseName,
-        phoneNumber: userData.phoneNumber,
-        role: selectedRole,
-        roles: verifiedUser.roles,
-        managedDepartments: verifiedUser.managedDepartments,
-        loginTime: new Date().toISOString()
-      };
-
-      const storageKey = selectedRole === 'eventManager' 
-        ? 'eventManagerInfo' 
-        : `${selectedRole}Info`;
-      
-      localStorage.setItem(storageKey, JSON.stringify(loginInfo));
-      console.log(`[UniversalLogin] ✅ 登录信息已保存到 localStorage (key: ${storageKey})`);
-
-      // 🔥 直接跳转（AuthContext 会在目标页面自动恢复数据）
-      handleRoleNavigation(selectedRole, userData.orgEventCode);
-
-    } catch (error) {
-      console.error('[UniversalLogin] OTP 验证错误:', error);
-      setError(error.message || '验证失败，请重试');
-    } finally {
+    if (!selectedRole) {
+      setError('无法确定您的角色，请联系管理员');
       setOtpLoading(false);
+      return;
     }
-  };
+
+    // 保存用户信息到 localStorage (供 AuthContext 读取)
+    const userInfoToSave = {
+      ...verifiedUser,
+      selectedRole,
+      lastLogin: new Date().toISOString()
+    };
+    localStorage.setItem('currentUser', JSON.stringify(userInfoToSave));
+    console.log('[UniversalLogin] ✅ 用户信息已保存到 localStorage');
+
+    // 根据角色和设备类型跳转
+    const dashboardPath = getRoleDashboardPath(selectedRole, isMobile);
+    console.log('[UniversalLogin] 🚀 跳转到:', dashboardPath);
+    navigate(dashboardPath);
+
+  } catch (error) {
+    console.error('[UniversalLogin] OTP 验证错误:', error);
+    const msg = error?.message || 'OTP 验证失败，请重试';
+
+    if (/验证码|otp|invalid/i.test(msg)) {
+      setError('验证码错误或已过期');
+    } else if (/过期|expired/i.test(msg)) {
+      setError('验证码已过期，请重新获取');
+    } else {
+      setError(msg);
+    }
+  } finally {
+    setOtpLoading(false);
+  }
+};
 
   /**
    * 根据角色跳转到对应的 Dashboard
@@ -623,6 +693,36 @@ const sendOtp = async (phoneNumber) => {
           >
             {loading ? '登录中...' : '登录'}
           </button>
+
+          {/* ========== ✨ 新增：注册链接 ========== */}
+          <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+            <p style={{ fontSize: '0.9rem', color: '#666', margin: 0 }}>
+              还没有账号？
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (isValidOrgEventCode) {
+                    navigate(`/customer/${orgEventCode}/register`);
+                  }
+                }}
+                disabled={!isValidOrgEventCode}
+                style={{
+                  marginLeft: '0.5rem',
+                  padding: '0',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  color: isValidOrgEventCode ? '#667eea' : '#ccc',
+                  background: 'none',
+                  border: 'none',
+                  cursor: isValidOrgEventCode ? 'pointer' : 'not-allowed',
+                  textDecoration: 'underline'
+                }}
+              >
+                立即注册
+              </button>
+            </p>
+          </div>
         </form>
 
         {/* 帮助信息 */}
