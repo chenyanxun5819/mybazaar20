@@ -34,6 +34,12 @@ const {
   transferPoints,
   topupFromPointCard
 } = require('./customerFunctions');
+
+// 導入密碼與交易密碼相關函式
+const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
+const { setupTransactionPin: setupTransactionPinFn } = require('./setupTransactionPin');
+const { verifyTransactionPin: verifyTransactionPinFn } = require('./verifyTransactionPin');
+const { resetTransactionPin: resetTransactionPinFn } = require('./resetTransactionPin');
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -81,7 +87,11 @@ exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;
 exports.transferPoints = transferPoints;
 exports.topupFromPointCard = topupFromPointCard;
-
+// 導出密碼與交易密碼相關函式
+exports.changeLoginPassword = changeLoginPasswordFn;
+exports.setupTransactionPin = setupTransactionPinFn;
+exports.verifyTransactionPin = verifyTransactionPinFn;
+exports.resetTransactionPin = resetTransactionPinFn;
 // CORS 中间件配置
 const allowedOrigins = [
   'http://localhost:5173',

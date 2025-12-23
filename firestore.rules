@@ -163,10 +163,15 @@ service cloud.firestore {
         match /users/{userId} {
           /**
            * ✨ 读取规则（使用 Custom Claims）：
-           * 🔥 临时宽松规则：允许所有已认证用户读取
-           * 用于测试和调试
+           * 1. 用户可以读取自己的数据
+           * 2. Event Manager 可以读取所有用户
+           * 3. 其他已认证用户可以读取（暂时放宽以支持销售流程）
            */
-          allow read: if isAuthenticated();
+          allow read: if isAuthenticated() && (
+                         request.auth.token.userId == userId ||
+                         isEventManager(organizationId, eventId)
+                       ) ||
+                       isAuthenticated(); // 暂时放宽以支持销售流程
           
           /**
            * 创建规则：
@@ -177,15 +182,16 @@ service cloud.firestore {
                            (isAuthenticated() && request.auth.token.userId == userId);
           
           /**
-           * ✅ 更新规则（暫時放寬以支持銷售流程）：
-           * 1. 用户可以更新自己的基本信息（排除敏感字段）
+           * ✅ 更新规则：
+           * 1. 用户可以更新自己的数据，但不能修改密码/PIN相关字段
            * 2. Event Manager 可以更新任何用户（但不能修改自己的 roles）
            * 3. Seller Manager 可以更新管理范围内用户的特定字段
-           * 🔥 4. 任何已认证用户可以更新 seller 字段（Seller 销售点数）
-           * 🔥 5. 任何已认证用户可以更新 customer 字段（接收销售点数）
+           * 4. 禁止直接修改密码相关字段（passwordHash, passwordSalt, transactionPinHash, transactionPinSalt）
            */
           allow update: if (isAuthenticated() && request.auth.token.userId == userId && 
-                           onlyAllowedFields(['basicInfo', 'updatedAt'])) ||
+                           onlyAllowedFields(['basicInfo', 'updatedAt']) &&
+                           !request.resource.data.basicInfo.diff(resource.data.basicInfo)
+                             .affectedKeys().hasAny(['passwordHash', 'passwordSalt', 'transactionPinHash', 'transactionPinSalt', 'pinHash', 'pinSalt'])) ||
                            // 允許 Seller Manager 更新自己的現金統計（收款/上交等），僅限 pointsStats 與時間戳
                            (isSellerManager(organizationId, eventId) &&
                             request.auth.token.userId == userId &&

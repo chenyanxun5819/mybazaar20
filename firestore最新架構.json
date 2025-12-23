@@ -20,7 +20,8 @@
         "users.identityInfo 新增 position 字段（职位）",
         "Organization.contact 在创建组织时填写（组织主要联系人）",
         "创建 Event 时同时创建 Event Manager（活动负责人即联络人）",
-        "简化架构：不需要额外的 contactPerson 或 contactPersons 数组""Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
+        "简化架构：不需要额外的 contactPerson 或 contactPersons 数组",
+        "Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
         "Event Manager 从 Event.eventManager 对象移到 users 集合",
         "Event 文档中移除 eventManager 对象，改为 contactPerson（纯联络用途）",
         "Event Manager 成为 users 集合中的特殊角色，与 Finance Manager 形成制衡",
@@ -267,7 +268,7 @@
                   "userId": "string (Firebase Auth UID，文档ID)",
                   "authUid": "string (认证UID，与userId相同)",
                   "roles": [
-                    "string ( 'sellerManager' | 'merchantManager' | 'customerManager' | 'financeManager' | 'seller' | 'merchant' | 'customer')"
+                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'financeManager' | 'seller' | 'merchant' | 'customer')"
                   ],
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
@@ -278,15 +279,23 @@
                     "position": "string (职位，如 '活动负责人'、'班主任'，可选)"
                   },
                   "basicInfo": {
-                    "phoneNumber": "string (电话号码)",
+                    "phoneNumber": "string (电话号码，+60格式)",
                     "englishName": "string (英文名)",
                     "chineseName": "string (中文名)",
                     "email": "string (邮箱，可选)",
-                    "passwordHash": "string (密码哈希)",
-                    "passwordSalt": "string (密码盐值)",
                     "isPhoneVerified": "boolean (电话是否验证)",
-                    "pinHash": "string (交易PIN码哈希)",
-                    "pinSalt": "string (交易PIN码盐值)"
+                    "COMMENT_LOGIN_PASSWORD": "========== 登录密码相关字段 ==========",
+                    "passwordHash": "string (登录密码的哈希值，使用 bcrypt，cost factor 10-12)",
+                    "passwordSalt": "string (登录密码的盐值，bcrypt 自动生成)",
+                    "isFirstLogin": "boolean (是否首次登录，批量导入用户默认 true，注册用户默认 false)",
+                    "hasDefaultPassword": "boolean (是否使用默认密码，批量导入用户默认 true，默认密码为 orgId+eventId)",
+                    "passwordLastChanged": "timestamp (密码最后修改时间，可选)",
+                    "COMMENT_TRANSACTION_PIN": "========== 交易密码相关字段 ==========",
+                    "transactionPinHash": "string (交易密码的哈希值，6位数字，使用 bcrypt)",
+                    "transactionPinSalt": "string (交易密码的盐值，bcrypt 自动生成)",
+                    "pinFailedAttempts": "number (交易密码连续错误次数，默认 0，5次后锁定1小时)",
+                    "pinLockedUntil": "timestamp (交易密码锁定到期时间，可选)",
+                    "pinLastChanged": "timestamp (交易密码最后修改时间，可选)"
                   },
                   "pointsStats": {
                     "description": "点数统计（实时维护，主要用于 seller 角色）",
@@ -319,17 +328,17 @@
                     }
                   },
                   "merchant": {
-                    "merchantId": "string (關聯的 merchant 文檔 ID)",
-                    "stallName": "string (攤位名稱，冗余字段)",
+                    "merchantId": "string (关联的 merchant 文档 ID)",
+                    "stallName": "string (摊位名称，冗余字段)",
                     "permissions": {
                       "canViewAllTransactions": "boolean (可查看所有交易)",
-                      "canEditProfile": "boolean (可編輯攤位資料)",
-                      "canToggleStatus": "boolean (可切換營業狀態)"
+                      "canEditProfile": "boolean (可编辑摊位资料)",
+                      "canToggleStatus": "boolean (可切换营业状态)"
                     },
                     "statistics": {
-                      "totalRevenue": "number (總收入，與 merchants 同步)",
-                      "transactionCount": "number (交易筆數)",
-                      "lastSyncAt": "timestamp (最後同步時間)"
+                      "totalRevenue": "number (总收入，与 merchants 同步)",
+                      "transactionCount": "number (交易笔数)",
+                      "lastSyncAt": "timestamp (最后同步时间)"
                     }
                   },
                   "customer": {
@@ -415,7 +424,7 @@
                       "teacher",
                       "staff",
                       "parent",
-                      "...其他非學生身份"
+                      "...其他非学生身份"
                     ],
                     "permissions": {
                       "canAllocateToIndividual": true,
@@ -425,27 +434,14 @@
                       "canViewAllStats": true
                     },
                     "batchAllocationLimit": 0,
-                    "notes": "所有 FM 都可單人分配；批量分配需特別開啟權限"
-                  },
-                  "cashSubmissions (subcollection)": {
-                    "description": "现金上交记录 - Subcollection to track cash submissions from sellers to managers",
-                    "<submissionId>": {
-                      "amount": "number",
-                      "submittedBy": "userId (seller)",
-                      "submittedTo": "sellerManager | financeManager",
-                      "submittedToUserId": "string",
-                      "note": "string",
-                      "timestamp": "timestamp",
-                      "verifiedBy": "string (optional)",
-                      "verifiedAt": "timestamp (optional)",
-                      "status": "pending | verified | disputed (optional)"
-                    }
+                    "notes": "所有 FM 都可单人分配；批量分配需特别开启权限"
                   },
                   "accountStatus": {
                     "isActive": "boolean (账户是否激活)",
                     "isSuspended": "boolean (是否被暂停)",
                     "suspensionReason": "string (暂停原因，可选)",
-                    "lastLoginAt": "timestamp"
+                    "lastLoginAt": "timestamp (最后登录时间)",
+                    "requirePasswordChange": "boolean (是否需要修改密码，管理员可强制要求，默认 false)"
                   },
                   "activityData": {
                     "lastActiveAt": "timestamp",
