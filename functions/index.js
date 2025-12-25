@@ -29,9 +29,8 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
 // 導入 Customer 相關 callable 函式
-// 注：createCustomer 从 createCustomer.js 导入（支持 transactionPin）
-const createCustomerNew = require('./createCustomer').createCustomer;
 const {
+  createCustomer,
   processCustomerPayment,
   transferPoints,
   topupFromPointCard
@@ -86,7 +85,7 @@ exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
-exports.createCustomer = createCustomerNew;
+exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;
 exports.transferPoints = transferPoints;
 exports.topupFromPointCard = topupFromPointCard;

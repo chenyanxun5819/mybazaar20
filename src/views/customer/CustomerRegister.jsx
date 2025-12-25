@@ -501,6 +501,7 @@ const CustomerRegister = () => {
                 ...styles.input,
                 ...(errors.email ? styles.inputError : {})
               }}
+              autoComplete="off" 
               disabled={loading}
             />
             {errors.email && (

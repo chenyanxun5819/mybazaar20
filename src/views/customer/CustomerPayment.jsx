@@ -2,51 +2,31 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-// 移除 httpsCallable；統一使用 HTTP + safeFetch
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../config/firebase';
 import QRScanner from '../../components/QRScanner';
-import OTPInput from '../../components/OTPInput';
-import { safeFetch } from '../../services/safeFetch';
 
 /**
- * Customer付款页面 - 完全重写版本
+ * Customer付款页面 - 使用交易密码验证
  * 
- * ✅ 修复：
- * 1. 彻底移除所有可能导致 "internal" 错误的代码
- * 2. 清晰的错误处理
- * 3. 详细的日志
+ * ✅ 修改：
+ * 1. 移除 OTP 验证流程
+ * 2. 改用交易密码（6位数字PIN）验证
+ * 3. 后端统一验证 PIN 并执行支付
  */
 const CustomerPayment = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
 
-  const [step, setStep] = useState('scan');
+  const [step, setStep] = useState('scan'); // scan | confirm | pin | processing | success
   const [customerData, setCustomerData] = useState(null);
   const [merchantData, setMerchantData] = useState(null);
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState('');
-  const [otpSessionId, setOtpSessionId] = useState(null);
-  const [otpExpiresIn, setOtpExpiresIn] = useState(300);
-  const [otpRequired, setOtpRequired] = useState(false);
+  const [transactionPin, setTransactionPin] = useState('');
+  const [pinError, setPinError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [paymentDebug, setPaymentDebug] = useState(null);
-  const [lastErrorJson, setLastErrorJson] = useState(null);
-
-  // 取得可用的手機號：優先 Firestore，其次 Firebase Auth，再次 localStorage
-  const getEffectivePhoneNumber = () => {
-    const fromProfile = customerData?.identityInfo?.phoneNumber || customerData?.basicInfo?.phoneNumber;
-    if (fromProfile) return fromProfile;
-    const fromAuth = auth.currentUser?.phoneNumber;
-    if (fromAuth) return fromAuth;
-    try {
-      const stored = localStorage.getItem('customerInfo');
-      if (stored) {
-        const data = JSON.parse(stored);
-        return data?.phoneNumber || null;
-      }
-    } catch (_) { }
-    return null;
-  };
 
   useEffect(() => {
     console.log('[CustomerPayment] ========== 组件初始化 ==========');
@@ -114,12 +94,10 @@ const CustomerPayment = () => {
     }
   };
 
-  // ✅ 完全重写，移除所有可能的 "internal" 错误
   const handleScanSuccess = async (qrData) => {
     console.log('[CustomerPayment] ========== 扫描成功回调 ==========');
     console.log('[CustomerPayment] qrData:', qrData);
 
-    // ✅ 重要：立即清除之前的所有错误
     setError(null);
     setAmountError('');
     setLoading(true);
@@ -148,7 +126,6 @@ const CustomerPayment = () => {
       // 步骤3：提取必要信息
       console.log('[CustomerPayment] 步骤3：提取信息');
 
-      // 支持多种字段名
       const organizationId = qrData.organizationId || qrData.orgId || null;
       const eventId = qrData.eventId || qrData.evtId || null;
       const merchantId = qrData.merchantId || qrData.userId || null;
@@ -208,17 +185,13 @@ const CustomerPayment = () => {
       setStep('confirm');
 
     } catch (error) {
-      // ✅ 统一的错误处理
       console.error('[CustomerPayment] ========== 扫描处理错误 ==========');
       console.error('[CustomerPayment] 错误类型:', error.name);
       console.error('[CustomerPayment] 错误信息:', error.message);
       console.error('[CustomerPayment] 错误堆栈:', error.stack);
 
-      // ✅ 设置友好的错误信息
       const userMessage = error.message || '处理 QR Code 时出错，请重试';
       setError(userMessage);
-
-      // ✅ 保持在扫描页面，让用户可以重试
       setStep('scan');
     } finally {
       setLoading(false);
@@ -249,496 +222,328 @@ const CustomerPayment = () => {
     return true;
   };
 
-  const handleConfirmPayment = async () => {
-    console.log('[CustomerPayment] ========== 开始确认付款 ==========');
+  // 确认金额后，进入 PIN 输入界面
+  const handleConfirmAmount = () => {
+    console.log('[CustomerPayment] ========== 确认金额 ==========');
 
     if (!validateAmount()) {
       console.log('[CustomerPayment] 金额验证失败');
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      // ✅ 前置檢查：必須有手機號
-      const phone = getEffectivePhoneNumber();
-      if (!phone) {
-        throw new Error('未綁定手機號，無法發送驗證碼');
-      }
-      console.log('[CustomerPayment] 调用 sendOtpHttp...');
-
-      // ✅ 統一使用 HTTP（safeFetch）呼叫後端 onRequest 端點
-      const resp = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: phone,
-          userId: customerData.userId,
-          scenario: 'customerPayment',
-          scenarioData: {
-            amount: parseFloat(amount),
-            merchantName: merchantData.stallName || '商家'
-          }
-        })
-      });
-
-      const data = await resp.json();
-      console.log('[CustomerPayment] sendOTP结果:', data);
-
-      if (!resp.ok || !data?.success) {
-        throw new Error(data?.error?.message || '发送 OTP 失败');
-      }
-
-      if (data.otpRequired) {
-        console.log('[CustomerPayment] OTP 验证必需');
-        setOtpRequired(true);
-        setOtpSessionId(data.sessionId);
-        setOtpExpiresIn(data.expiresIn || 300);
-        setStep('otp');
-      } else {
-        console.log('[CustomerPayment] 无需 OTP，直接执行付款');
-        setOtpRequired(false);
-        await executePayment(null);
-      }
-
-    } catch (error) {
-      console.error('[CustomerPayment] 确认付款失败:', error);
-      setError(error.message || '操作失败，请重试');
-    } finally {
-      setLoading(false);
-    }
+    console.log('[CustomerPayment] 金额验证通过，进入 PIN 输入界面');
+    setStep('pin');
+    setTransactionPin('');
+    setPinError('');
   };
 
-  const handleOTPComplete = async (otp) => {
-    console.log('[CustomerPayment] ========== OTP 输入完成 ==========');
+  // 执行支付（包含 PIN 验证）
+  const handleExecutePayment = async () => {
+    console.log('[CustomerPayment] ========== 开始执行支付 ==========');
+
+    // 验证 PIN 格式
+    if (!transactionPin || transactionPin.length !== 6) {
+      setPinError('请输入6位交易密码');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(transactionPin)) {
+      setPinError('交易密码必须是6位数字');
+      return;
+    }
+
     setLoading(true);
     setError(null);
-
-    try {
-      console.log('[CustomerPayment] 验证 OTP...');
-      const resp = await safeFetch('/api/verifyOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: otpSessionId,
-          otp: otp
-        })
-      });
-      const result = await resp.json();
-      console.log('[CustomerPayment] OTP验证结果:', result);
-
-      if (resp.ok && result.success) {
-        console.log('[CustomerPayment] OTP 验证成功，执行付款');
-        await executePayment(otpSessionId);
-      } else {
-        throw new Error('OTP验证失败');
-      }
-
-    } catch (error) {
-      console.error('[CustomerPayment] OTP验证失败:', error);
-      setError(error.message || 'OTP验证失败，请重试');
-      setLoading(false);
-    }
-  };
-
-  const handleResendOTP = async () => {
-    console.log('[CustomerPayment] ========== 重新发送 OTP ==========');
-    setLoading(true);
-    setError(null);
-
-    try {
-      const phone = getEffectivePhoneNumber();
-      if (!phone) {
-        throw new Error('未綁定手機號，無法重新發送驗證碼');
-      }
-      const resp = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: phone,
-          userId: customerData.userId,
-          scenario: 'customerPayment',
-          scenarioData: {
-            amount: parseFloat(amount),
-            merchantName: merchantData.stallName || '商家'
-          }
-        })
-      });
-
-      const data = await resp.json();
-      if (!resp.ok || !data?.success) {
-        throw new Error(data?.error?.message || '重新发送失败');
-      }
-
-      setOtpSessionId(data.sessionId);
-      setOtpExpiresIn(data.expiresIn || 300);
-
-      console.log('[CustomerPayment] OTP重新发送成功');
-
-    } catch (error) {
-      console.error('[CustomerPayment] 重新发送OTP失败:', error);
-      setError(error.message || '重新发送失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const executePayment = async (otpSessionId) => {
-    console.log('[CustomerPayment] ========== 执行付款 ==========');
+    setPinError('');
     setStep('processing');
-    setLoading(true);
 
     try {
-      // === 第1步：確保使用者已登入 ===
-      const user = auth.currentUser;
-      if (!user) {
-        console.warn('[CustomerPayment] ❌ 使用者未登入，取消付款');
-        setError('请先登录');
-        setStep('confirm');
-        setLoading(false);
-        return;
-      }
-      
-      console.log('[CustomerPayment] ✅ 使用者已登入:', user.uid);
-
-      // === 第2步：刷新 ID Token 並驗證 ===
-      let idToken = null;
-      let tokenResult = null;
-      
-      try {
-        idToken = await user.getIdToken(true);
-        tokenResult = await user.getIdTokenResult();
-        
-        if (!idToken || idToken.length === 0) {
-          throw new Error('getIdToken 返回空值');
-        }
-        
-        console.log('[CustomerPayment] ✅ Token 刷新成功，長度:', idToken.length);
-      } catch (tokenError) {
-        console.error('[CustomerPayment] ❌ Token 刷新失敗:', tokenError?.message);
-        setError('认证信息过期，请重新登录');
-        setStep('confirm');
-        setLoading(false);
-        // 導向登入頁面
-        setTimeout(() => navigate('/universal-login'), 1500);
-        return;
-      }
-
-      // === 第3步：記錄 Token 狀態以便除錯 ===
-      const tokenMeta = {
-        uid: user.uid,
-        tokenLength: idToken?.length || 0,
-        issuedAtTime: tokenResult?.issuedAtTime || null,
-        expirationTime: tokenResult?.expirationTime || null,
-        authTime: tokenResult?.authTime || null,
-        hasOrgEventClaims: !!(tokenResult?.claims?.organizationId && tokenResult?.claims?.eventId),
-        organizationId: tokenResult?.claims?.organizationId || customerData?.organizationId,
-        eventId: tokenResult?.claims?.eventId || customerData?.eventId
-      };
-      
-      setPaymentDebug({
-        step: 'executePayment',
-        merchantId: merchantData?.merchantId,
-        organizationId: merchantData?.organizationId,
-        eventId: merchantData?.eventId,
-        amount: parseFloat(amount),
-        hasOtpSessionId: !!otpSessionId,
-        otpSessionId: otpSessionId || null,
-        idTokenMeta: tokenMeta
-      });
-
-      console.log('[CustomerPayment] 調試資訊:', tokenMeta);
-
-      // === 第4步：呼叫後端 ===
       console.log('[CustomerPayment] 调用 processCustomerPayment...');
-      const processCustomerPayment = httpsCallable(functions, 'processCustomerPayment');
 
-      const result = await processCustomerPayment({
+      const processPayment = httpsCallable(functions, 'processCustomerPayment');
+
+      const result = await processPayment({
         merchantId: merchantData.merchantId,
         amount: parseFloat(amount),
-        otpSessionId: otpSessionId || null,
-        organizationId: customerData.organizationId,
-        eventId: customerData.eventId
-        // ❌ 不传 idToken，让 SDK 自动处理认证
+        organizationId: merchantData.organizationId,
+        eventId: merchantData.eventId,
+        transactionPin: transactionPin  // ← 传递交易密码给后端验证
       });
 
-      console.log('[CustomerPayment] 付款成功:', result.data);
+      console.log('[CustomerPayment] 支付成功:', result.data);
+
+      // 显示成功页面
       setStep('success');
 
+      // 3秒后自动返回
       setTimeout(() => {
-        console.log('[CustomerPayment] 自动返回 Dashboard');
         navigate(`/customer/${orgEventCode}/dashboard`);
       }, 3000);
 
     } catch (error) {
-      console.error('[CustomerPayment] 付款失败:', error);
-      try {
-        const serialized = JSON.stringify(error, Object.getOwnPropertyNames(error));
-        setLastErrorJson(serialized);
-        console.log('[CustomerPayment] 付款失败詳細(JSON):', serialized);
-      } catch (_) {
-        // ignore
-      }
-      const code = error?.code || '';
-      if (code === 'functions/unauthenticated' || code === 'unauthenticated') {
-        setError('会话已过期，请重新登录后再尝试。');
-      } else if (code === 'functions/failed-precondition') {
-        setError(error.message || '条件不足，无法完成付款');
-      } else if (code === 'functions/invalid-argument') {
-        setError(error.message || '参数错误');
-      } else if (code === 'functions/not-found') {
-        setError(error.message || '数据不存在');
+      console.error('[CustomerPayment] 支付失败:', error);
+
+      let errorMessage = '支付失败，请重试';
+
+      // 处理交易密码相关错误
+      if (error.code === 'permission-denied') {
+        errorMessage = error.message || '交易密码错误';
+        setPinError(errorMessage);
+        setStep('pin'); // 返回 PIN 输入界面
+      } else if (error.code === 'failed-precondition') {
+        errorMessage = error.message || '操作失败';
+        if (error.message?.includes('锁定')) {
+          setPinError(errorMessage);
+          setStep('pin');
+        } else {
+          setError(errorMessage);
+          setStep('confirm');
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+        setError(errorMessage);
+        setStep('confirm');
       } else {
-        setError(error.message || '付款失败，请重试');
+        setError(errorMessage);
+        setStep('confirm');
       }
-      setStep('confirm');
+
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBack = () => {
-    console.log('[CustomerPayment] 返回按钮，当前step:', step);
-
-    if (step === 'scan') {
-      navigate(`/customer/${orgEventCode}/dashboard`);
-    } else if (step === 'confirm') {
-      setStep('scan');
-      setMerchantData(null);
-      setAmount('');
-      setAmountError('');
-      setError(null);
-    } else if (step === 'otp') {
-      setStep('confirm');
-      setOtpSessionId(null);
-      setError(null);
     }
   };
 
   return (
     <div style={styles.container}>
+      {/* 顶部导航 */}
       <div style={styles.header}>
-        <button onClick={handleBack} style={styles.backButton}>
+        <button
+          onClick={() => {
+            if (step === 'confirm') {
+              setStep('scan');
+            } else if (step === 'pin') {
+              setStep('confirm');
+            } else {
+              navigate(`/customer/${orgEventCode}/dashboard`);
+            }
+          }}
+          style={styles.backButton}
+        >
           ← 返回
         </button>
         <h1 style={styles.title}>
-          {step === 'scan' && '扫码付款'}
-          {step === 'confirm' && '确认付款'}
-          {step === 'otp' && 'OTP验证'}
-          {step === 'processing' && '处理中'}
-          {step === 'success' && '付款成功'}
+          {step === 'scan' && '扫码支付'}
+          {step === 'confirm' && '确认支付'}
+          {step === 'pin' && '输入交易密码'}
+          {step === 'processing' && '处理中...'}
+          {step === 'success' && '支付成功'}
         </h1>
         <div style={{ width: '60px' }}></div>
       </div>
 
-      {/* ✅ 错误显示 - 只显示 error 状态 */}
+      {/* 错误提示 */}
       {error && (
         <div style={styles.errorBanner}>
           <span>{error}</span>
-          <button onClick={() => setError(null)} style={styles.closeButton}>✕</button>
+          <button onClick={() => setError(null)} style={styles.closeButton}>
+            ✕
+          </button>
         </div>
       )}
 
-      {/* 🔎 調試資訊：當有錯誤或進入處理階段時顯示，協助定位 unauthenticated */}
-      {(paymentDebug || lastErrorJson) && (
-        <div style={{
-          margin: '0 1rem 1rem',
-          padding: '1rem',
-          backgroundColor: '#eef6ff',
-          border: '1px solid #90caf9',
-          borderRadius: '8px',
-          color: '#0d47a1'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong>調試資訊（僅本機顯示）</strong>
-            <button
-              onClick={async () => {
-                const text = JSON.stringify({ paymentDebug, lastError: lastErrorJson }, null, 2);
-                try { await navigator.clipboard.writeText(text); } catch (_) { }
-              }}
-              style={{
-                padding: '0.25rem 0.5rem',
-                fontSize: '0.85rem',
-                backgroundColor: '#fff',
-                color: '#0d47a1',
-                border: '1px solid #90caf9',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >複製詳細</button>
-          </div>
-          {paymentDebug && (
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-              {JSON.stringify(paymentDebug, null, 2)}
-            </pre>
-          )}
-          {lastErrorJson && (
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-              {lastErrorJson}
-            </pre>
-          )}
-        </div>
-      )}
-
-      {step === 'scan' && (
-        <div style={styles.content}>
+      <div style={styles.content}>
+        {/* 扫描页面 */}
+        {step === 'scan' && (
           <QRScanner
             onScanSuccess={handleScanSuccess}
             onScanError={handleScanError}
-            expectedType={['MERCHANT', 'MERCHANT_PAYMENT', 'merchant_payment']}
-            autoStart={true}
-            helpText="请将后置摄像头对准商家的收款QR Code"
           />
-        </div>
-      )}
+        )}
 
-      {step === 'confirm' && merchantData && (
-        <div style={styles.content}>
-          <div style={styles.merchantCard}>
-            <div style={styles.merchantHeader}>
-              <div style={styles.merchantIcon}>🏪</div>
-              <div>
-                <h2 style={styles.merchantName}>{merchantData.stallName}</h2>
-                <p style={styles.merchantInfo}>
-                  {merchantData.department || '商家'}
-                </p>
+        {/* 确认支付页面 */}
+        {step === 'confirm' && merchantData && (
+          <>
+            {/* 商家信息卡片 */}
+            <div style={styles.merchantCard}>
+              <div style={styles.merchantHeader}>
+                <div style={styles.merchantIcon}>🏪</div>
+                <div>
+                  <h2 style={styles.merchantName}>{merchantData.stallName || '商家'}</h2>
+                  <p style={styles.merchantInfo}>
+                    {merchantData.stallNumber ? `摊位号：${merchantData.stallNumber}` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 余额显示 */}
+            <div style={styles.balanceCard}>
+              <p style={styles.balanceLabel}>当前余额</p>
+              <p style={styles.balanceAmount}>
+                {customerData?.customer?.pointsAccount?.availablePoints || 0} 点
+              </p>
+            </div>
+
+            {/* 金额输入 */}
+            <div style={styles.inputCard}>
+              <label style={styles.inputLabel}>支付金额</label>
+              <div style={styles.amountInputContainer}>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    setAmountError('');
+                  }}
+                  placeholder="0"
+                  style={{
+                    ...styles.amountInput,
+                    ...(amountError ? styles.inputError : {})
+                  }}
+                  disabled={loading}
+                  min="0"
+                  step="0.01"
+                />
+                <span style={styles.amountUnit}>点</span>
+              </div>
+              {amountError && <p style={styles.errorText}>{amountError}</p>}
+            </div>
+
+            {/* 操作按钮 */}
+            <div style={styles.actions}>
+              <button
+                onClick={() => setStep('scan')}
+                style={{
+                  ...styles.button,
+                  ...styles.secondaryButton
+                }}
+                disabled={loading}
+              >
+                重新扫描
+              </button>
+              <button
+                onClick={handleConfirmAmount}
+                style={{
+                  ...styles.button,
+                  ...styles.primaryButton,
+                  ...(loading ? styles.buttonDisabled : {})
+                }}
+                disabled={loading}
+              >
+                确认支付
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* 交易密码输入页面 */}
+        {step === 'pin' && (
+          <div style={styles.pinContainer}>
+            <div style={styles.pinCard}>
+              <div style={styles.pinIcon}>🔐</div>
+              <h2 style={styles.pinTitle}>请输入交易密码</h2>
+              <p style={styles.pinSubtitle}>
+                向 {merchantData?.stallName || '商家'} 支付 {amount} 点
+              </p>
+
+              {/* PIN 输入框 */}
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength="6"
+                value={transactionPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setTransactionPin(value);
+                  setPinError('');
+                }}
+                placeholder="请输入6位数字"
+                style={{
+                  ...styles.pinInput,
+                  ...(pinError ? styles.inputError : {})
+                }}
+                autoFocus
+                disabled={loading}
+              />
+
+              {pinError && <p style={styles.errorText}>{pinError}</p>}
+
+              <p style={styles.pinHint}>
+                交易密码是您在注册时设置的6位数字密码
+              </p>
+
+              {/* 操作按钮 */}
+              <div style={styles.pinActions}>
+                <button
+                  onClick={() => {
+                    setStep('confirm');
+                    setTransactionPin('');
+                    setPinError('');
+                  }}
+                  style={{
+                    ...styles.button,
+                    ...styles.secondaryButton
+                  }}
+                  disabled={loading}
+                >
+                  返回修改金额
+                </button>
+                <button
+                  onClick={handleExecutePayment}
+                  style={{
+                    ...styles.button,
+                    ...styles.primaryButton,
+                    ...(loading ? styles.buttonDisabled : {})
+                  }}
+                  disabled={loading || transactionPin.length !== 6}
+                >
+                  {loading ? '验证中...' : '确认支付'}
+                </button>
               </div>
             </div>
           </div>
+        )}
 
-          {/* 若未綁定手機，顯示固定警示並提供快捷綁定入口 */}
-          {!getEffectivePhoneNumber() && (
-            <div style={styles.errorBanner}>
-              <span>未綁定手機號，無法發送驗證碼</span>
-              <button onClick={() => navigate('/universal-login')} style={styles.closeButton}>去綁定</button>
-            </div>
-          )}
-
-          <div style={styles.balanceCard}>
-            <p style={styles.balanceLabel}>当前余额</p>
-            <p style={styles.balanceAmount}>
-              {customerData?.customer?.pointsAccount?.availablePoints || 0} 点
-            </p>
+        {/* 处理中页面 */}
+        {step === 'processing' && (
+          <div style={styles.processingContainer}>
+            <div style={styles.spinner}></div>
+            <p style={styles.processingText}>支付处理中...</p>
+            <p style={styles.processingSubtext}>请稍候，不要关闭页面</p>
           </div>
+        )}
 
-          <div style={styles.inputCard}>
-            <label style={styles.inputLabel}>付款金额</label>
-            <div style={styles.amountInputContainer}>
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value);
-                  setAmountError('');
-                }}
-                placeholder="0"
-                style={{
-                  ...styles.amountInput,
-                  ...(amountError ? styles.inputError : {})
-                }}
-                disabled={loading}
-              />
-              <span style={styles.amountUnit}>点</span>
+        {/* 成功页面 */}
+        {step === 'success' && (
+          <div style={styles.successContainer}>
+            <div style={styles.successIcon}>✅</div>
+            <h2 style={styles.successTitle}>支付成功！</h2>
+            <div style={styles.successDetails}>
+              <p style={styles.successDetail}>
+                <span style={styles.detailLabel}>商家：</span>
+                <span style={styles.detailValue}>{merchantData?.stallName || '商家'}</span>
+              </p>
+              <p style={styles.successDetail}>
+                <span style={styles.detailLabel}>支付金额：</span>
+                <span style={styles.detailValue}>{amount} 点</span>
+              </p>
+              <p style={styles.successDetail}>
+                <span style={styles.detailLabel}>剩余余额：</span>
+                <span style={styles.detailValue}>
+                  {(customerData?.customer?.pointsAccount?.availablePoints || 0) - parseFloat(amount)} 点
+                </span>
+              </p>
             </div>
-            {amountError && (
-              <p style={styles.errorText}>{amountError}</p>
-            )}
-          </div>
-
-          <div style={styles.actions}>
+            <p style={styles.successSubtext}>3秒后自动返回...</p>
             <button
-              onClick={handleBack}
-              style={{
-                ...styles.button,
-                ...styles.secondaryButton
-              }}
-              disabled={loading}
+              onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
+              style={styles.returnButton}
             >
-              取消
-            </button>
-            <button
-              onClick={handleConfirmPayment}
-              style={{
-                ...styles.button,
-                ...styles.primaryButton,
-                ...(loading ? styles.buttonDisabled : {})
-              }}
-              disabled={loading || !getEffectivePhoneNumber()}
-            >
-              {loading ? '处理中...' : '确认付款'}
+              立即返回
             </button>
           </div>
-        </div>
-      )}
-
-      {step === 'otp' && (
-        <div style={styles.content}>
-          <OTPInput
-            onComplete={handleOTPComplete}
-            onResend={handleResendOTP}
-            expiresIn={otpExpiresIn}
-            phoneNumber={getEffectivePhoneNumber()}
-            disabled={loading}
-          />
-
-          <div style={styles.otpInfo}>
-            <p style={styles.otpInfoText}>📱 验证码已发送至 {getEffectivePhoneNumber()}</p>
-            <p style={styles.otpInfoText}>
-              💡 付款金额：{amount} 点
-            </p>
-            <p style={styles.otpInfoText}>
-              🏪 商家：{merchantData?.stallName}
-            </p>
-          </div>
-
-          <button
-            onClick={handleBack}
-            style={styles.cancelOtpButton}
-            disabled={loading}
-          >
-            取消付款
-          </button>
-        </div>
-      )}
-
-      {step === 'processing' && (
-        <div style={styles.processingContainer}>
-          <div style={styles.spinner}></div>
-          <p style={styles.processingText}>正在处理付款...</p>
-          <p style={styles.processingSubtext}>请稍候</p>
-        </div>
-      )}
-
-      {step === 'success' && (
-        <div style={styles.successContainer}>
-          <div style={styles.successIcon}>✅</div>
-          <h2 style={styles.successTitle}>付款成功！</h2>
-          <div style={styles.successDetails}>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>商家：</span>
-              <span style={styles.detailValue}>{merchantData.stallName}</span>
-            </p>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>金额：</span>
-              <span style={styles.detailValue}>{amount} 点</span>
-            </p>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>剩余余额：</span>
-              <span style={styles.detailValue}>
-                {(customerData?.customer?.pointsAccount?.availablePoints || 0) - parseFloat(amount)} 点
-              </span>
-            </p>
-          </div>
-          <p style={styles.successSubtext}>3秒后自动返回...</p>
-          <button
-            onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
-            style={styles.returnButton}
-          >
-            立即返回
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
@@ -905,27 +710,56 @@ const styles = {
     opacity: 0.6,
     cursor: 'not-allowed'
   },
-  otpInfo: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px'
+  pinContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 'calc(100vh - 200px)'
   },
-  otpInfoText: {
-    margin: '0.5rem 0',
-    fontSize: '0.9rem',
-    color: '#666'
-  },
-  cancelOtpButton: {
+  pinCard: {
     width: '100%',
-    marginTop: '1rem',
-    padding: '0.75rem',
-    fontSize: '0.9rem',
+    maxWidth: '400px',
+    padding: '2rem',
     backgroundColor: '#fff',
-    color: '#f44336',
-    border: '1px solid #f44336',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    textAlign: 'center'
+  },
+  pinIcon: {
+    fontSize: '3rem',
+    marginBottom: '1rem'
+  },
+  pinTitle: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#333',
+    margin: '0 0 0.5rem 0'
+  },
+  pinSubtitle: {
+    fontSize: '1rem',
+    color: '#666',
+    marginBottom: '2rem'
+  },
+  pinInput: {
+    width: '100%',
+    padding: '1.5rem',
+    fontSize: '2rem',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: '0.5rem',
+    border: '2px solid #ddd',
     borderRadius: '8px',
-    cursor: 'pointer'
+    outline: 'none',
+    marginBottom: '1rem'
+  },
+  pinHint: {
+    fontSize: '0.85rem',
+    color: '#999',
+    marginBottom: '2rem'
+  },
+  pinActions: {
+    display: 'flex',
+    gap: '1rem'
   },
   processingContainer: {
     display: 'flex',

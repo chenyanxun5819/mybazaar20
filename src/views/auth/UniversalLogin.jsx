@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db, auth } from '../../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken } from 'firebase/auth';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
@@ -361,49 +360,10 @@ const handleOtpVerify = async (e) => {
 
     console.log('[UniversalLogin] ✅ OTP 验证成功');
     
-    // ========== ✨ 新增：首次登录检测 ========== 
-    // 1. 获取用户文档
-    const userDocRef = doc(
-      db,
-      'organizations',
-      userData.organizationId,     // ✅ 修正：使用 userData
-      'events',
-      userData.eventId,            // ✅ 修正：使用 userData
-      'users',
-      userData.userId              // ✅ 修正：使用 userData
-    );
-
-    const userDocSnap = await getDoc(userDocRef);
-
-    if (userDocSnap.exists()) {
-      const userDoc = userDocSnap.data();
-      const basicInfo = userDoc.basicInfo || {};
-
-      // 2. 检查是否需要初始化设置
-      const isFirstLogin = basicInfo.isFirstLogin === true;
-      const hasDefaultPassword = basicInfo.hasDefaultPassword === true;
-
-      if (isFirstLogin || hasDefaultPassword) {
-        console.log('检测到首次登录，跳转到初始化设置页面');
-
-        // 3. 保存临时数据到 localStorage
-        const tempUserData = {
-          userId: userData.userId,                    // ✅ 修正：使用 userData
-          organizationId: userData.organizationId,    // ✅ 修正：使用 userData
-          eventId: userData.eventId,                  // ✅ 修正：使用 userData
-          roles: userDoc.roles || [],
-          displayName: basicInfo.englishName || basicInfo.chineseName || '用户'
-        };
-
-        localStorage.setItem('tempUserData', JSON.stringify(tempUserData));
-
-        // 4. 跳转到初始化设置页面
-        navigate('/initial-setup');
-        return; // 重要：阻止后续的 Dashboard 跳转
-      }
-    }
+    // ========== 簡化：移除客戶端 Firestore 讀取（避免權限問題）========== 
+    // 首次登錄檢測應由後端在 verifyOtpHttp 回傳
+    // 目前先簡化邏輯，直接使用 verifyOtpHttp 回傳的信息
     
-    // ========== 原有的登录逻辑继续 ========== 
     // 使用 verifyOtp 回傳的 customToken（優先）；向後相容使用第1步的 token
     const customTokenFromVerify = data?.customToken;
     const tokenToUse = customTokenFromVerify || userData?.customToken;

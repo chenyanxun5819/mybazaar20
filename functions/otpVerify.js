@@ -346,7 +346,11 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 
     if (bypassSms) {
       console.log('[sendOtpHttp] ⚠️ 测试号码，跳过 SMS 发送');
+    } else if (USE_DEV_OTP) {
+      // 🔧 開發模式：不發送真實 SMS，只使用固定 OTP
+      console.log('[sendOtpHttp] 🔧 開發模式：跳過實際 SMS 發送，使用固定 OTP:', DEV_OTP_CODE);
     } else {
+      // 生產模式：發送真實 SMS
       // 准备 SMS 消息
       let smsMessage;
       const scenarioKey = scenario || (loginType ? 'login' : 'universalLogin');
@@ -383,13 +387,8 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
         console.error('[sendOtpHttp] ⚠️ SMS 发送失败:', smsError);
         console.error('[sendOtpHttp] Error details:', smsError.message);
 
-        // ⚠️ 开发模式：SMS 失败不阻止流程
-        if (USE_DEV_OTP) {
-          console.log('[sendOtpHttp] 🔧 开发模式：SMS 失败不阻止，OTP:', otpCode);
-        } else {
-          // 生产模式：SMS 失败抛出错误
-          throw new functions.https.HttpsError('internal', `SMS 发送失败: ${smsError.message}`);
-        }
+        // ⚠️ 生産模式：SMS 失敗要拋錯
+        throw new functions.https.HttpsError('internal', `SMS 发送失败: ${smsError.message}`);
       }
     }
 
