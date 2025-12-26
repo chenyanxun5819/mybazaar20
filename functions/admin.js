@@ -910,7 +910,7 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 验证角色是否有效
-      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'financeManager', 'seller', 'merchant', 'customer', 'pointSeller'];
+      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'seller', 'merchant', 'customer', 'pointSeller'];
       const invalidRoles = roles.filter(role => !validRoles.includes(role));
       if (invalidRoles.length > 0) {
         res.status(400).json({ error: `无效的角色: ${invalidRoles.join(', ')}` });
@@ -2837,7 +2837,7 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       if (roles.sellerManager) { newRoles.push('sellerManager'); managerRoles.push('sellerManager'); }
       if (roles.merchantManager) { newRoles.push('merchantManager'); managerRoles.push('merchantManager'); }
       if (roles.customerManager) { newRoles.push('customerManager'); managerRoles.push('customerManager'); }
-      if (roles.financeManager) { newRoles.push('financeManager'); managerRoles.push('financeManager'); }
+      if (roles.cashier) { newRoles.push('cashier'); managerRoles.push('cashier'); }
       if (roles.seller) { newRoles.push('seller'); participantRoles.push('seller'); }
       if (roles.merchant) { newRoles.push('merchant'); participantRoles.push('merchant'); }
       if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
@@ -3468,7 +3468,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
             cannotHoldOtherManagerRoles: true
           },
           monitoringScope: {
-            canMonitorFinanceManager: true,
+            canMonitorCashier: true,
             canMonitorSellerManager: true,
             canMonitorAllTransactions: true,
             canViewAllStats: true
@@ -3543,10 +3543,10 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
 /**
  * submitCashToFinance Cloud Function
  * 
- * 用途：處理 Seller Manager 上交現金給 Finance Manager
+ * 用途：處理 Seller Manager 上交現金給 Cashier
  * 
  * 為什麼需要這個 Cloud Function？
- * - Firestore Security Rules 不允許 Seller Manager 直接更新 Finance Manager 的文檔
+ * - Firestore Security Rules 不允許 Seller Manager 直接更新 Cashier 的文檔
  * - Cloud Function 使用 Admin SDK，擁有完全權限
  * - 可以實現複雜的驗證和業務邏輯
  * 
@@ -3554,7 +3554,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
  */
 
 /**
- * 上交現金給 Finance Manager
+ * 上交現金給 Cashier
  * 
  * HTTP Endpoint: POST
  * 
@@ -3562,7 +3562,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
  * {
  *   organizationId: string,
  *   eventId: string,
- *   financeManagerId: string,
+ *   cashierId: string,
  *   selectedCollections: string[],
  *   totalAmount: number,
  *   note: string (optional)
@@ -3601,16 +3601,16 @@ exports.submitCashToFinanceHttp = onRequest(
         const {
           organizationId,
           eventId,
-          financeManagerId,
+          cashierId,
           selectedCollections,
           totalAmount,
           note
         } = req.body;
 
         // 參數驗證
-        if (!organizationId || !eventId || !financeManagerId) {
+        if (!organizationId || !eventId || !cashierId) {
           return res.status(400).json({
-            error: '缺少必要參數：organizationId, eventId, financeManagerId'
+            error: '缺少必要參數：organizationId, eventId, cashierId'
           });
         }
 
@@ -3629,7 +3629,7 @@ exports.submitCashToFinanceHttp = onRequest(
         console.log('[submitCashToFinance] 參數驗證通過');
         console.log('  - organizationId:', organizationId);
         console.log('  - eventId:', eventId);
-        console.log('  - financeManagerId:', financeManagerId);
+        console.log('  - cashierId:', cashierId);
         console.log('  - 收款記錄數:', selectedCollections.length);
         console.log('  - 總金額:', totalAmount);
 
@@ -3657,28 +3657,28 @@ exports.submitCashToFinanceHttp = onRequest(
 
         console.log('[submitCashToFinance] Seller Manager 驗證通過:', smData.basicInfo?.chineseName);
 
-        // ========== 步驟 4: 驗證 Finance Manager 存在 ==========
+        // ========== 步驟 4: 驗證 Cashier 存在 ==========
         const fmDocRef = db
           .collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
-          .collection('users').doc(financeManagerId);
+          .collection('users').doc(cashierId);
 
         const fmDoc = await fmDocRef.get();
 
         if (!fmDoc.exists) {
           return res.status(404).json({
-            error: '找不到指定的 Finance Manager'
+            error: '找不到指定的 Cashier'
           });
         }
 
         const fmData = fmDoc.data();
-        if (!fmData.roles || !fmData.roles.includes('financeManager')) {
+        if (!fmData.roles || !fmData.roles.includes('cashier')) {
           return res.status(400).json({
-            error: '指定的用戶不是 Finance Manager'
+            error: '指定的用戶不是 Cashier'
           });
         }
 
-        console.log('[submitCashToFinance] Finance Manager 驗證通過:', fmData.basicInfo?.chineseName);
+        console.log('[submitCashToFinance] Cashier 驗證通過:', fmData.basicInfo?.chineseName);
 
         // ========== 步驟 5: 驗證 cashCollections 存在且狀態正確 ==========
         const collectionsSnapshot = await db
@@ -3767,9 +3767,9 @@ exports.submitCashToFinanceHttp = onRequest(
           submittedByDepartments: managedDepartments,
 
           // 接收方
-          receivedBy: financeManagerId,
-          receivedByName: fmData.basicInfo?.chineseName || fmData.displayName || 'Finance Manager',
-          receivedByRole: 'financeManager',
+          receivedBy: cashierId,
+          receivedByName: fmData.basicInfo?.chineseName || fmData.displayName || 'Cashier',
+          receivedByRole: 'cashier',
 
           // 金額信息
           totalAmount: totalAmount,
@@ -3812,7 +3812,7 @@ exports.submitCashToFinanceHttp = onRequest(
             status: 'submitted',
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
             submissionId: submissionRef.id,
-            submittedToFinanceManager: financeManagerId,
+            submittedToCashier: cashierId,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           });
         });
@@ -3829,17 +3829,17 @@ exports.submitCashToFinanceHttp = onRequest(
 
         console.log('[submitCashToFinance] 更新 Seller Manager 統計');
 
-        // 7.4 更新 Finance Manager 的統計
-        // ✨ 這是關鍵！Admin SDK 有權限更新 FM 文檔
+        // 7.4 更新 Cashier 的統計
+        // ✨ 這是關鍵！Admin SDK 有權限更新 Cashier 文檔
         batch.update(fmDocRef, {
-          'financeManager.totalCashReceived': admin.firestore.FieldValue.increment(totalAmount),
-          'financeManager.pendingVerification': admin.firestore.FieldValue.increment(totalAmount),
-          'financeManager.submissionsReceived': admin.firestore.FieldValue.increment(1),
-          'financeManager.lastSubmissionReceived': admin.firestore.FieldValue.serverTimestamp(),
+          'cashier.totalCashReceived': admin.firestore.FieldValue.increment(totalAmount),
+          'cashier.pendingVerification': admin.firestore.FieldValue.increment(totalAmount),
+          'cashier.submissionsReceived': admin.firestore.FieldValue.increment(1),
+          'cashier.lastSubmissionReceived': admin.firestore.FieldValue.serverTimestamp(),
           'updatedAt': admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log('[submitCashToFinance] 更新 Finance Manager 統計');
+        console.log('[submitCashToFinance] 更新 Cashier 統計');
 
         // ========== 步驟 8: 提交 Batch ==========
         await batch.commit();

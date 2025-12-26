@@ -1,5 +1,5 @@
 /**
- * Finance Manager Cloud Functions (v2) - 修复版
+ * Cashier Cloud Functions (v2) - 修复版
  * 修复：使用 authUid 查询用户文档，而不是直接使用 doc(userId)
  */
 
@@ -195,9 +195,9 @@ exports.confirmCashSubmission = onCall(
 );
 
 /**
- * 获取财务统计数据 (v2) - ⭐ 修复版
+ * 获取收银员统计数据 (v2) - ⭐ 修复版
  */
-exports.getFinanceStats = onCall(
+exports.getCashierStats = onCall(
   { 
     region: 'asia-southeast1',
     cors: true 
@@ -252,23 +252,23 @@ exports.getFinanceStats = onCall(
       const userData = userDoc.data();
       const userId = userDoc.id;
       
-      console.log('[getFinanceStats] ✅ 找到用户:', {
+      console.log('[getCashierStats] ✅ 找到用户:', {
         authUid,
         userId,
         roles: userData.roles,
-        hasFinanceManager: !!userData.financeManager
+        hasCashier: !!userData.cashier
       });
       
-      if (!userData.roles || !userData.roles.includes('financeManager')) {
-        console.warn('[getFinanceStats] ⚠️ 权限不足:', {
+      if (!userData.roles || !userData.roles.includes('cashier')) {
+        console.warn('[getCashierStats] ⚠️ 权限不足:', {
           userId,
           roles: userData.roles
         });
-        throw new Error('只有财务经理可以查看财务统计');
+        throw new Error('只有收银员可以查看财务统计');
       }
 
       // ===== 3. 获取统计数据 =====
-      const financeData = userData.financeManager || {};
+      const financeData = userData.cashier || {};
       
       // 获取待确认列表
       const pendingSnapshot = await db

@@ -85,7 +85,8 @@ export const AuthProvider = ({ children }) => {
           loadedProfile = {
             userId: targetAuthUid,
             ...eventData.eventManager,
-            roles: ['eventManager'],
+            // 修正：不要在這裡強制覆寫 roles，先給予基礎角色，後續與 Firestore/Claims 合併
+            roles: eventData.eventManager.roles || ['eventManager'],
             organizationCode: orgCode,
             eventCode: eventCode,
             organizationId: organizationId,
@@ -106,26 +107,40 @@ export const AuthProvider = ({ children }) => {
       // 繼續執行 Part B
     }
       
-    // B. 如果不是 Manager，嘗試從 users 集合加載
-    if (!loadedProfile) {
-      try {
-        const userDocRef = doc(db, 'organizations', organizationId, 'events', eventId, 'users', targetAuthUid);
-        let userDocSnap = await getDoc(userDocRef);
+    // B. 從 users 集合加載完整資料並合併
+    try {
+      const userDocRef = doc(db, 'organizations', organizationId, 'events', eventId, 'users', targetAuthUid);
+      let userDocSnap = await getDoc(userDocRef);
 
-        if (!userDocSnap.exists()) {
-          const usersRef = collection(db, 'organizations', organizationId, 'events', eventId, 'users');
-          const q = query(usersRef, where('authUid', '==', targetAuthUid), limit(1));
-          const qSnap = await getDocs(q);
-          if (!qSnap.empty) {
-            userDocSnap = qSnap.docs[0];
-          }
+      if (!userDocSnap.exists()) {
+        const usersRef = collection(db, 'organizations', organizationId, 'events', eventId, 'users');
+        const q = query(usersRef, where('authUid', '==', targetAuthUid), limit(1));
+        const qSnap = await getDocs(q);
+        if (!qSnap.empty) {
+          userDocSnap = qSnap.docs[0];
         }
+      }
 
-        if (userDocSnap && userDocSnap.exists()) {
-          const userData = userDocSnap.data();
+      if (userDocSnap && userDocSnap.exists()) {
+        const userData = userDocSnap.data();
+        
+        // 如果已經有 Legacy Profile，則合併 roles
+        if (loadedProfile) {
+          const combinedRoles = Array.from(new Set([
+            ...(loadedProfile.roles || []),
+            ...(userData.roles || [])
+          ]));
+          
+          loadedProfile = {
+            ...loadedProfile,
+            ...userData,
+            roles: combinedRoles,
+            userId: userDocSnap.id
+          };
+        } else {
           loadedProfile = {
             id: userDocSnap.id,
-            userId: userDocSnap.id, // 確保有 userId
+            userId: userDocSnap.id,
             ...userData,
             organizationCode: orgCode,
             eventCode: eventCode,
@@ -133,9 +148,9 @@ export const AuthProvider = ({ children }) => {
             eventId: eventId
           };
         }
-      } catch (err) {
-        console.error('[AuthContext] User profile load failed:', err);
       }
+    } catch (err) {
+      console.error('[AuthContext] User profile load failed:', err);
     }
 
     return loadedProfile;
@@ -271,10 +286,10 @@ export const AuthProvider = ({ children }) => {
       return `/seller-manager/${orgEventCode}/dashboard`;
     }
     
-    // ⭐⭐⭐ Finance Manager 导航 ⭐⭐⭐
-    if (roles.includes('financeManager')) {
-      console.log('[AuthContext] ✅ 导航到 Finance Manager Dashboard');
-      return `/finance-manager/${orgEventCode}/dashboard`;
+    // ⭐⭐⭐ Cashier 导航 ⭐⭐⭐
+    if (roles.includes('cashier')) {
+      console.log('[AuthContext] ✅ 导航到 Cashier Dashboard');
+      return `/cashier/${orgEventCode}/dashboard`;
     }
     
     if (roles.includes('merchantManager')) {
@@ -378,7 +393,26 @@ export const AuthProvider = ({ children }) => {
             return;
           }
 
-          // 步骤 6: 规范化角色名称
+          // 步骤 6: 合併 Claims Roles (確保權限即時性)
+          if (profile && c.roles && Array.isArray(c.roles)) {
+            const currentRoles = Array.isArray(profile.roles) ? profile.roles : [];
+            const combinedRoles = Array.from(new Set([
+              ...currentRoles,
+              ...c.roles
+            ]));
+            
+            // 只有在不同時才更新，避免觸發不必要的渲染
+            if (combinedRoles.length !== currentRoles.length) {
+              console.log('[AuthContext] 🧬 合併 Claims Roles:', {
+                firestore: currentRoles,
+                claims: c.roles,
+                merged: combinedRoles
+              });
+              profile.roles = combinedRoles;
+            }
+          }
+
+          // 步骤 7: 规范化角色名称
           if (profile) {
             const normalized = normalizeProfile(profile);
             setUserProfile(normalized);
@@ -466,7 +500,7 @@ export const AuthProvider = ({ children }) => {
       
       // 清除 localStorage
       ['sellerInfo', 'merchantInfo', 'customerInfo', 'eventManagerInfo', 
-       'sellerManagerInfo', 'financeManagerInfo'].forEach(key => {
+       'sellerManagerInfo', 'cashierInfo'].forEach(key => {
         localStorage.removeItem(key);
       });
       
@@ -493,7 +527,7 @@ export const AuthProvider = ({ children }) => {
       'org_admin', 
       'eventManager',
       'event_manager',
-      'financeManager',      // ⭐ Finance Manager
+      'cashier',      // ⭐ Cashier
       'sellerManager',
       'merchantManager',
       'customerManager',

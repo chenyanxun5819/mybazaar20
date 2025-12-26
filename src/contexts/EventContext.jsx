@@ -100,11 +100,11 @@ export const EventProvider = ({ children }) => {
         
         // ✅ 支持 Manager 路由
         // 格式: /seller-manager/:orgEventCode/dashboard
-        //       /finance-manager/:orgEventCode/dashboard
+        //       /cashier/:orgEventCode/dashboard
         //       /merchant-manager/:orgEventCode/dashboard
         //       /customer-manager/:orgEventCode/dashboard
         //       /event-manager/:orgEventCode/dashboard
-        if (['seller-manager', 'finance-manager', 'merchant-manager', 'customer-manager', 'event-manager'].includes(first)) {
+        if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager', 'event-manager'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
           if (orgEvent && third === 'dashboard') {
@@ -139,7 +139,7 @@ export const EventProvider = ({ children }) => {
         const hints = [
           'URL 格式不正确，请使用正确的链接',
           '例如: /login/xhessbn-2025 或 /seller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
-          '或 /finance-manager/xhessbn-2025/dashboard',
+          '或 /cashier/xhessbn-2025/dashboard',
           '',
           '可能原因：',
           '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',

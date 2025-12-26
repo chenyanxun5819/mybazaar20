@@ -22,21 +22,21 @@ const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { resolveOrgEventHttp } = require('./auth/resolveOrgEventHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
-const { onCashCollection } = require('./onCashCollection');
+const { onCashCollection } = require('./src/sellerManager/onCashCollection');
 
-// Finance Manager callable / triggers
-const financeManagerFunctions = require('./financeManagerFunctions');
+// Cashier callable / triggers
+const financeManagerFunctions = require('./src/cashier/cashierFunction');
 
-const sellerManagerFunctions = require('./sellerManagerFunctions');
-const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
+const sellerManagerFunctions = require('./src/sellerManager/sellerManagerFunctions');
+const sellerManagerHttpFunctions = require('./src/sellerManager/sellerManagerHttpFunctions');
 
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
 const { getCustomerDashboardDataHttp } = require('./src/customer/customerHttpFunctions');
 
-// Finance: claim + confirm cash submission (callable)
-const { claimAndConfirmCashSubmission } = require('./src/finance/Claimandconfirmcashsubmission');
+// Cashier: claim + confirm cash submission (callable)
+const { claimAndConfirmCashSubmission } = require('./src/cashier/Claimandconfirmcashsubmission');
 
 // Cash Submission (callable)
 const { submitCashToFinance } = require('./src/cash/Submitcashtofinance');
@@ -106,6 +106,9 @@ exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
 // 导出 Finance Manager callable functions
 exports.getFinanceStats = financeManagerFunctions.getFinanceStats;
 exports.confirmCashSubmission = financeManagerFunctions.confirmCashSubmission;
+
+// Cashier callable functions
+exports.getCashierStats = financeManagerFunctions.getCashierStats;
 
 // Finance: claim + confirm cash submission (callable)
 exports.claimAndConfirmCashSubmission = claimAndConfirmCashSubmission;

@@ -261,11 +261,11 @@ const InitialPasswordSetup = () => {
         dashboardPath = `/customer/${orgEventCode}/dashboard`;
       }
     } else {
-      // Desktop 优先级: eventManager > financeManager > sellerManager > merchantManager > customerManager
+      // Desktop 优先级: eventManager > cashier > sellerManager > merchantManager > customerManager
       if (roles.includes('eventManager')) {
         dashboardPath = `/event-manager/${orgEventCode}/dashboard`;
-      } else if (roles.includes('financeManager')) {
-        dashboardPath = `/finance-manager/${orgEventCode}/dashboard`;
+      } else if (roles.includes('cashier')) {
+        dashboardPath = `/cashier/${orgEventCode}/dashboard`;
       } else if (roles.includes('sellerManager')) {
         dashboardPath = `/seller-manager/${orgEventCode}/dashboard`;
       } else if (roles.includes('merchantManager')) {

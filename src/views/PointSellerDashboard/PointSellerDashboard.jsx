@@ -6,7 +6,7 @@
  * - 只在义卖会当日6:00-18:00有效
  * - 两种销售方式：1) 发行点数卡  2) 直接销售点数
  * - 需要交易密码验证
- * - 现金需要上交给Finance Manager
+ * - 现金需要上交给Cashier
  * 
  * Tabs:
  * 1. 发行点数卡 - 生成QR Code
@@ -377,13 +377,13 @@ const PointSellerDashboard = () => {
         </button>
         <button
           className={`ps-tab ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => setActiveTab('history')}
+          onClick={() => { setActiveTab('history'); setTimeout(() => handleRefresh(), 1000); }}
         >
           📊 发行记录
         </button>
         <button
           className={`ps-tab ${activeTab === 'cash-submission' ? 'active' : ''}`}
-          onClick={() => setActiveTab('cash-submission')}
+          onClick={() => { setActiveTab('cash-submission'); setTimeout(() => handleRefresh(), 1000); }}
         >
           💰 现金上交
         </button>

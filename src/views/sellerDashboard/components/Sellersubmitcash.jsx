@@ -302,7 +302,7 @@ const SellerSubmitCash = () => {
         console.log('[SellerSubmitCash] ✅ 上交到SellerManager成功:', result.data);
         alert(`✅ 成功上交 RM ${amount} 给 ${sellerManager.name}`);
       } else {
-        console.log('[SellerSubmitCash] 📤 职员/老师上交到Finance Manager待认领池子');
+        console.log('[SellerSubmitCash] 📤 职员/老师上交到Cashier待认领池子');
         
         const submitToFinance = httpsCallable(functions, 'submitCashToFinance');
         result = await submitToFinance({
@@ -312,7 +312,7 @@ const SellerSubmitCash = () => {
           note: submitNote
         });
 
-        console.log('[SellerSubmitCash] ✅ 上交到Finance Manager成功:', result.data);
+        console.log('[SellerSubmitCash] ✅ 上交到Cashier成功:', result.data);
         alert(`✅ 成功上交 RM ${amount} 到待认领池子`);
       }
 
@@ -408,7 +408,7 @@ const SellerSubmitCash = () => {
       }
     : {
         icon: '🏦',
-        description: '上交到 Finance Manager 待认领池子'
+        description: '上交到 Cashier 待认领池子'
       };
 
   return (
@@ -568,7 +568,7 @@ const SubmissionCard = ({ submission, isStudent, formatDate }) => {
         </div>
         <div style={styles.detailRow}>
           <span>上交对象:</span>
-          <strong>{isStudent ? 'Seller Manager' : 'Finance Manager'}</strong>
+          <strong>{isStudent ? 'Seller Manager' : 'Cashier'}</strong>
         </div>
         {submission.receiverName && (
           <div style={styles.detailRow}>

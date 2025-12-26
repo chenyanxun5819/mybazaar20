@@ -17,7 +17,7 @@ const ROLE_CONFIG = {
   sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
   merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
   customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
-  financeManager: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
+  cashier: { label: 'C', fullLabel: 'Cashier', color: '#3b82f6', icon: '💵', category: 'manager' },
   seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
   merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
   customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' },
@@ -44,7 +44,7 @@ const EventManagerDashboard = () => {
     totalSellerManagers: 0,
     totalMerchantManagers: 0,
     totalCustomerManagers: 0,
-    totalFinanceManagers: 0,
+    totalCashiers: 0,
     totalSellers: 0,
     totalMerchants: 0,
     totalCustomers: 0,
@@ -78,7 +78,7 @@ const EventManagerDashboard = () => {
     sellerManager: false,
     merchantManager: false,
     customerManager: false,
-    financeManager: false,
+    cashier: false,
     seller: false,
     merchant: false,
     customer: false,
@@ -149,7 +149,7 @@ const EventManagerDashboard = () => {
       sellerManager: user.roles?.includes('sellerManager') || false,
       merchantManager: user.roles?.includes('merchantManager') || false,
       customerManager: user.roles?.includes('customerManager') || false,
-      financeManager: user.roles?.includes('financeManager') || false,
+      cashier: user.roles?.includes('cashier') || false,
       seller: user.roles?.includes('seller') || false,
       merchant: user.roles?.includes('merchant') || false,
       customer: user.roles?.includes('customer') || false,
@@ -196,7 +196,7 @@ const EventManagerDashboard = () => {
     const hasOtherManagerRoles = selectedRoles.sellerManager ||
       selectedRoles.merchantManager ||
       selectedRoles.customerManager ||
-      selectedRoles.financeManager;
+      selectedRoles.cashier;
 
     // 检查是否是当前用户在修改自己的角色
     const currentUserPhone = auth.currentUser?.phoneNumber?.replace(/^\+60/, '0') || '';
@@ -211,7 +211,7 @@ const EventManagerDashboard = () => {
 
     // 🚫 Event Manager 不能同时拥有其他 manager 角色
     if (hasEventManager && hasOtherManagerRoles) {
-      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Finance Manager');
+      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier');
       return;
     }
 
@@ -375,7 +375,7 @@ const EventManagerDashboard = () => {
             totalSellerManagers: 0,
             totalMerchantManagers: 0,
             totalCustomerManagers: 0,
-            totalFinanceManagers: 0,
+            totalCashiers: 0,
             totalSellers: 0,
             totalMerchants: 0,
             totalCustomers: 0,
@@ -390,7 +390,7 @@ const EventManagerDashboard = () => {
             userList.push({ id: doc.id, ...userData });
 
             if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
-            if (userData.roles?.includes('financeManager')) stats.totalFinanceManagers++;
+            if (userData.roles?.includes('cashier')) stats.totalCashiers++;
             if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
             if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
             if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
@@ -583,8 +583,8 @@ const EventManagerDashboard = () => {
           color="#f59e0b"
         />
         <StatCard
-          title="Finance Managers"
-          value={statistics.totalFinanceManagers}
+          title="Cashiers"
+          value={statistics.totalCashiers}
           icon="💵"
           color="#3b82f6"
         />
@@ -669,7 +669,7 @@ const EventManagerDashboard = () => {
               <option value="sellerManager">Seller Manager</option>
               <option value="merchantManager">Merchant Manager</option>
               <option value="customerManager">Customer Manager</option>
-              <option value="financeManager">Finance Manager</option>
+              <option value="cashier">Cashier</option>
               <option value="seller">Seller</option>
               <option value="merchant">Merchant</option>
               <option value="customer">Customer</option>

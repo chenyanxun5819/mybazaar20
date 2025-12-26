@@ -1,6 +1,6 @@
 /**
  * Cash Submission Component - 修复版 v3.1
- * Tab 4: 现金上交 - 批量选择上交记录，提交到Finance Manager
+ * Tab 4: 现金上交 - 批量选择上交记录，提交到Cashier
  * 
  * 修复：
  * 1. 查询字段从 submitterId 改为 submittedBy
@@ -89,25 +89,115 @@ const CashSubmission = ({
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
 
+  // ✅ 新增：监听发行记录（点数卡 + 直接销售）
+  const [localRecords, setLocalRecords] = useState([]);
+  
+  useEffect(() => {
+    const orgId = userProfile?.organizationId || organizationId;
+    const evtId = userProfile?.eventId || eventId;
+    const userId = userProfile?.userId;
+
+    if (!orgId || !evtId || !userId) return;
+
+    // 监听点数卡发行记录
+    const pointCardsRef = collection(db, 'organizations', orgId, 'events', evtId, 'pointCards');
+    const qCards = query(
+      pointCardsRef,
+      where('issuer.pointSellerId', '==', userId),
+      orderBy('metadata.createdAt', 'desc')
+    );
+
+    const unsubscribeCards = onSnapshot(qCards, (snapshot) => {
+      const cards = snapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'point_card',
+        ...doc.data()
+      }));
+      
+      console.log('[CashSubmission] 监听到点数卡:', cards.length);
+      
+      // 合并到本地记录中
+      setLocalRecords(prev => {
+        const directSales = prev.filter(r => r.type === 'direct_sale');
+        return [...cards, ...directSales].sort((a, b) => {
+          const aTime = a.metadata?.createdAt || a.timestamp;
+          const bTime = b.metadata?.createdAt || b.timestamp;
+          return bTime - aTime;
+        });
+      });
+    }, (error) => {
+      console.error('[CashSubmission] 监听点数卡记录失败:', error);
+    });
+
+    // 监听直接销售记录
+    const transactionsRef = collection(db, 'organizations', orgId, 'events', evtId, 'transactions');
+    const qTransactions = query(
+      transactionsRef,
+      where('sellerId', '==', userId),
+      where('type', '==', 'pointseller_to_customer'),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribeTransactions = onSnapshot(qTransactions, (snapshot) => {
+      const sales = snapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'direct_sale',
+        ...doc.data()
+      }));
+
+      console.log('[CashSubmission] 监听到直接销售:', sales.length);
+
+      // 合并到本地记录中
+      setLocalRecords(prev => {
+        const cards = prev.filter(r => r.type === 'point_card');
+        return [...cards, ...sales].sort((a, b) => {
+          const aTime = a.metadata?.createdAt || a.timestamp;
+          const bTime = b.metadata?.createdAt || b.timestamp;
+          return bTime - aTime;
+        });
+      });
+    }, (error) => {
+      console.error('[CashSubmission] 监听直接销售记录失败:', error);
+    });
+
+    return () => {
+      unsubscribeCards();
+      unsubscribeTransactions();
+    };
+  }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
+
+  // ✅ 使用本地监听的记录，如果没有则使用 props
+  const effectiveRecords = localRecords.length > 0 ? localRecords : records;
+
   // ✅ 修正：可上交的记录（检查 recordIds 数组）
-  const availableRecords = records.filter(record => {
+  const availableRecords = effectiveRecords.filter(record => {
+    console.log(`\n[DEBUG] ========== 开始过滤记录 ${record.id} (${record.type}) ==========`);
+    console.log(`[DEBUG] submittedRecords 数量: ${submittedRecords.length}`);
+    
     // 检查是否已经在任何提交记录中
     const isSubmitted = submittedRecords.some(sub => {
+      console.log(`[DEBUG] 检查提交记录 ${sub.submissionId}, status=${sub.status}`);
+      console.log(`[DEBUG] recordIds:`, sub.recordIds);
+      
       // 主要方法：检查 recordIds 数组
       if (sub.recordIds && Array.isArray(sub.recordIds)) {
         const found = sub.recordIds.includes(record.id);
+        console.log(`[DEBUG] recordIds.includes(${record.id}) = ${found}`);
         if (found) {
-          console.log(`[CashSubmission] 记录 ${record.id} 在提交 ${sub.submissionId} 的 recordIds 中`);
+          console.log(`[CashSubmission] ✅ 记录 ${record.id} 在提交 ${sub.submissionId} 的 recordIds 中`);
         }
         return found;
+      } else {
+        console.log(`[DEBUG] recordIds 不存在或不是数组`);
       }
       
       // 兼容方法1：检查 pointCardInfo.cardIds（点数卡）
       if (record.type === 'point_card' && sub.pointCardInfo?.cardIds) {
         const cardId = record.id || record.cardId;
         const found = sub.pointCardInfo.cardIds.includes(cardId);
+        console.log(`[DEBUG] pointCardInfo.cardIds.includes(${cardId}) = ${found}`);
         if (found) {
-          console.log(`[CashSubmission] 点数卡 ${cardId} 在提交 ${sub.submissionId} 的 cardIds 中`);
+          console.log(`[CashSubmission] ✅ 点数卡 ${cardId} 在提交 ${sub.submissionId} 的 cardIds 中`);
         }
         return found;
       }
@@ -118,32 +208,42 @@ const CashSubmission = ({
         const found = sub.includedSales.some(sale => 
           sale.transactionIds && sale.transactionIds.includes(transactionId)
         );
+        console.log(`[DEBUG] includedSales 检查结果 = ${found}`);
         if (found) {
-          console.log(`[CashSubmission] 直接销售 ${transactionId} 在提交 ${sub.submissionId} 的 includedSales 中`);
+          console.log(`[CashSubmission] ✅ 直接销售 ${transactionId} 在提交 ${sub.submissionId} 的 includedSales 中`);
         }
         return found;
       }
       
+      console.log(`[DEBUG] 此提交记录不匹配，返回 false`);
       return false;
     });
     
+    console.log(`[DEBUG] isSubmitted = ${isSubmitted}`);
+    console.log(`[DEBUG] 返回 ${!isSubmitted} (${!isSubmitted ? '可上交' : '已上交'})`);
+    console.log(`[DEBUG] ========== 结束 ==========\n`);
+    
     if (!isSubmitted) {
-      console.log(`[CashSubmission] 记录 ${record.id} (${record.type}) 可上交`);
+      console.log(`[CashSubmission] 📝 记录 ${record.id} (${record.type}) 可上交`);
     }
     
     return !isSubmitted;
   });
 
-  console.log(`[CashSubmission] 总记录: ${records.length}, 可上交: ${availableRecords.length}, 已提交: ${submittedRecords.length}`);
+  console.log(`[CashSubmission] 总记录: ${effectiveRecords.length}, 可上交: ${availableRecords.length}, 已提交: ${submittedRecords.length}`);
 
   // 已上交的记录
   const pendingSubmissions = submittedRecords.filter(sub => sub.status === 'pending');
   const confirmedSubmissions = submittedRecords.filter(sub => sub.status === 'confirmed');
 
   // ✅ 重新设计统计计算
-  // 1. 今日收现金（总额）
-  const todayTotalCash = statistics.todayStats?.totalCashReceived || 
-                         statistics.cashManagement?.cashOnHand || 0;
+  // 1. 今日收现金（总额）- 从 effectiveRecords 实时计算
+  const todayTotalCash = effectiveRecords.reduce((sum, record) => {
+    const amount = record.type === 'point_card' 
+      ? (record.issuer?.cashReceived || 0)
+      : (record.amount || 0);
+    return sum + amount;
+  }, 0);
   
   // 2. 上交待确认（pending 状态的总额）
   const pendingAmount = pendingSubmissions.reduce((sum, sub) => sum + (sub.amount || 0), 0);
@@ -151,8 +251,16 @@ const CashSubmission = ({
   // 3. 已上交（confirmed 状态的总额）
   const confirmedAmount = confirmedSubmissions.reduce((sum, sub) => sum + (sub.amount || 0), 0);
   
-  // 4. 未上交现金（计算值）
-  const unsubmittedAmount = todayTotalCash - pendingAmount - confirmedAmount;
+  // 4. 未上交现金（可上交记录的总额）
+  const unsubmittedAmount = availableRecords.reduce((sum, record) => {
+    const amount = record.type === 'point_card' 
+      ? (record.issuer?.cashReceived || 0)
+      : (record.amount || 0);
+    console.log(`[DEBUG] 未上交记录 ${record.id}, type=${record.type}, amount=${amount}`);
+    return sum + amount;
+  }, 0);
+  
+  console.log(`[DEBUG] 未上交现金计算: availableRecords=${availableRecords.length}, unsubmittedAmount=${unsubmittedAmount}`);
 
   // 计算选中金额
   const selectedAmount = Array.from(selectedRecords).reduce((sum, recordId) => {
@@ -477,7 +585,7 @@ const CashSubmission = ({
       {showPinDialog && pendingSubmission && (
         <TransactionPinDialog
           title="确认上交现金"
-          message={`即将上交 ${formatAmount(pendingSubmission.amount)}（${pendingSubmission.count} 笔记录）给 Finance Manager`}
+          message={`即将上交 ${formatAmount(pendingSubmission.amount)}（${pendingSubmission.count} 笔记录）给 Cashier`}
           onConfirm={handlePinConfirm}
           onCancel={handlePinCancel}
           confirmButtonText="✅ 确认上交"

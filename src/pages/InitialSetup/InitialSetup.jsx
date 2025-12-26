@@ -247,8 +247,8 @@ const InitialSetup = () => {
       navigate('/merchant-dashboard');
     } else if (roles.includes('sellerManager')) {
       navigate('/seller-manager-dashboard');
-    } else if (roles.includes('financeManager')) {
-      navigate('/finance-manager-dashboard');
+    } else if (roles.includes('cashier')) {
+      navigate('/cashier-dashboard');
     } else if (roles.includes('eventManager')) {
       navigate('/event-manager-dashboard');
     } else {

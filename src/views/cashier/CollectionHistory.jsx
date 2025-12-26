@@ -131,7 +131,7 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
     };
   }, [submissions]);
 
-  // Finance Manager统计
+  // Cashier统计
   const fmStatistics = useMemo(() => {
     const fmMap = new Map();
     
@@ -188,7 +188,7 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
       <div className="history-header">
         <div className="header-title">
           <h2>📋 收款记录</h2>
-          <p className="header-subtitle">所有Finance Manager的收款记录（共 {submissions.length} 笔）</p>
+          <p className="header-subtitle">所有Cashier的收款记录（共 {submissions.length} 笔）</p>
         </div>
         <button className="refresh-button" onClick={onRefresh}>
           🔄 刷新
@@ -220,10 +220,10 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
         </div>
       </div>
 
-      {/* Finance Manager统计行 */}
+      {/* Cashier统计行 */}
       {fmStatistics.length > 0 && (
         <div className="fm-statistics">
-          <h3>👥 Finance Manager 收款统计</h3>
+          <h3>👥 Cashier 收款统计</h3>
           <div className="fm-list">
             {fmStatistics.map((fm, index) => (
               <div key={index} className="fm-item">

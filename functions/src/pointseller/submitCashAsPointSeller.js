@@ -192,6 +192,9 @@ exports.submitCashAsPointSeller = onCall({ region: 'asia-southeast1' }, async (r
           submissionId,
           submissionNumber,  // ✅ 新增流水号
           
+          // ✅ 关键修复：添加 recordIds 数组
+          recordIds: recordIds || [],  // 用于前端过滤已上交记录
+          
           // 提交方信息
           submittedBy: pointSellerId,
           submitterName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',

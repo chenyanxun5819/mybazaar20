@@ -22,7 +22,7 @@ const ROLE_CONFIG = {
   sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
   merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
   customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
-  financeManager: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
+  cashier: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
   seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
   merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
   customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }
@@ -64,7 +64,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     sellerManager: false,
     merchantManager: false,
     customerManager: false,
-    financeManager: false,
+    cashier: false,
     seller: false,
     merchant: false,
     customer: false
@@ -230,7 +230,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       sellerManager: user.roles?.includes('sellerManager') || false,
       merchantManager: user.roles?.includes('merchantManager') || false,
       customerManager: user.roles?.includes('customerManager') || false,
-      financeManager: user.roles?.includes('financeManager') || false,
+      cashier: user.roles?.includes('cashier') || false,
       seller: user.roles?.includes('seller') || false,
       merchant: user.roles?.includes('merchant') || false,
       customer: user.roles?.includes('customer') || false
@@ -286,7 +286,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     const hasOtherManagerRoles = selectedRoles.sellerManager ||
       selectedRoles.merchantManager ||
       selectedRoles.customerManager ||
-      selectedRoles.financeManager;
+      selectedRoles.cashier;
 
     if (hasEventManager && hasOtherManagerRoles) {
       alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Finance Manager');

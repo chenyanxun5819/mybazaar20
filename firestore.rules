@@ -60,10 +60,10 @@ service cloud.firestore {
     }
     
     /**
-     * ✨ 检查用户是否是 Finance Manager（从 Custom Claims 读取）
+     * ✨ 检查用户是否是 Cashier（从 Custom Claims 读取）
      */
-    function isFinanceManager(orgId, eventId) {
-      return isInContext(orgId, eventId) && hasRole('financeManager');
+    function isCashier(orgId, eventId) {
+      return isInContext(orgId, eventId) && hasRole('cashier');
     }
     
     /**
@@ -225,19 +225,19 @@ service cloud.firestore {
              * 1. 分配者可以读取自己的分配记录
              * 2. 接收者可以读取自己收到的分配
              * 3. Event Manager 可以读取所有分配记录
-             * 4. Finance Manager 可以读取所有分配记录
+             * 4. Cashier 可以读取所有分配记录
              */
              allow read: if isAuthenticated() && (
                         resource.data.allocatedBy == request.auth.token.userId ||
                            resource.data.recipientId == request.auth.token.userId ||
                            isEventManager(organizationId, eventId) ||
-                           isFinanceManager(organizationId, eventId)
+                           isCashier(organizationId, eventId)
                         );
             
             /**
              * 创建规则：
              * 1. Seller Manager 可以创建点数分配（分配给管理范围内的用户）
-             * 2. Finance Manager 可以创建点数分配（分配给 Teacher/Staff）
+             * 2. Cashier 可以创建点数分配（分配给 Teacher/Staff）
              * 3. 必须验证 recipientId 和 organizationId/eventId
              */
             allow create: if (isSellerManager(organizationId, eventId) &&
@@ -245,7 +245,7 @@ service cloud.firestore {
                              request.resource.data.organizationId == organizationId &&
                              request.resource.data.eventId == eventId &&
                              isManagedBy(organizationId, eventId, request.resource.data.recipientId, request.auth.token.userId)) ||
-                             (isFinanceManager(organizationId, eventId) &&
+                             (isCashier(organizationId, eventId) &&
                              request.resource.data.allocatedBy == request.auth.token.userId &&
                              request.resource.data.organizationId == organizationId &&
                              request.resource.data.eventId == eventId);
@@ -323,7 +323,7 @@ service cloud.firestore {
           allow update: if (isSellerManager(organizationId, eventId) &&
                            resource.data.collectedBy == request.auth.token.userId &&
                            onlyAllowedFields(['note', 'discrepancyReason', 'updatedAt'])) ||
-                           (isFinanceManager(organizationId, eventId) &&
+                           (isCashier(organizationId, eventId) &&
                            onlyStatusChange());
           
           /**
@@ -341,11 +341,12 @@ service cloud.firestore {
            * ✅ 读取规则（修复版）
            * 1. Seller 可以读取自己提交的记录
            * 2. Seller Manager 可以读取自己提交的和收到的记录
-           * 3. Finance Manager 可以读取所有记录
+           * 3. Cashier 可以读取所有记录
            * 4. Event Manager 可以读取所有记录
            */
           allow read: if isEventManager(organizationId, eventId) ||
-                         isFinanceManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
                          (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId) ||
                          (isSellerManager(organizationId, eventId) && 
                           resource.data.receivedBy == request.auth.token.userId);
@@ -374,7 +375,7 @@ service cloud.firestore {
           /**
            * ✅ 更新规则（修复版）
            * 1. Seller Manager 可以取消自己提交的待审核记录
-           * 2. Finance Manager 可以更新状态（确认/拒绝/争议）
+           * 2. Cashier 可以更新状态（确认/拒绝/争议）
            * 3. 只能修改特定字段
            */
           allow update: if (isSellerManager(organizationId, eventId) &&
@@ -382,7 +383,7 @@ service cloud.firestore {
                            resource.data.status == 'pending' &&
                            request.resource.data.status == 'cancelled' &&
                            onlyAllowedFields(['status', 'updatedAt'])) ||
-                           (isFinanceManager(organizationId, eventId) &&
+                           (isCashier(organizationId, eventId) &&
                            onlyAllowedFields(['status', 'verifiedAt', 'verifiedBy', 'verifiedAmount', 'discrepancy', 'discrepancyReason', 'notes', 'updatedAt', 'confirmationNote', 'receivedBy', 'receiverName']));
           
           /**
@@ -400,10 +401,10 @@ service cloud.firestore {
            * 读取规则：
            * 1. Event Manager 可以读取所有部门统计
            * 2. Seller Manager 可以读取管理的部门统计
-           * 3. Finance Manager 可以读取所有部门统计
+           * 3. Cashier 可以读取所有部门统计
            */
           allow read: if isEventManager(organizationId, eventId) ||
-                         isFinanceManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
                          (isSellerManager(organizationId, eventId) &&
                           managesDepartment(organizationId, eventId, departmentCode));
           
@@ -422,11 +423,11 @@ service cloud.firestore {
            * 读取规则：
            * 1. Seller Manager 可以读取自己的统计
            * 2. Event Manager 可以读取所有 SM 统计
-           * 3. Finance Manager 可以读取所有 SM 统计
+           * 3. Cashier 可以读取所有 SM 统计
            */
           allow read: if (isAuthenticated() && request.auth.token.userId == sellerManagerId) ||
                          isEventManager(organizationId, eventId) ||
-                         isFinanceManager(organizationId, eventId);
+                         isCashier(organizationId, eventId);
           
           /**
            * 写入规则：只能通过 Cloud Functions（自动维护统计）
@@ -435,16 +436,16 @@ service cloud.firestore {
         }
         
         // ========================================================================
-        // Finance Manager Stats (FM 统计 - Event 级别集合)
+        // Cashier Stats (Cashier 统计 - Event 级别集合)
         // ========================================================================
         
-        match /financeManagerStats/{financeManagerId} {
+        match /cashierStats/{cashierId} {
           /**
            * 读取规则：
-           * 1. Finance Manager 可以读取自己的统计
-           * 2. Event Manager 可以读取所有 FM 统计
+           * 1. Cashier 可以读取自己的统计
+           * 2. Event Manager 可以读取所有 Cashier 统计
            */
-          allow read: if (isAuthenticated() && request.auth.token.userId == financeManagerId) ||
+          allow read: if (isAuthenticated() && request.auth.token.userId == cashierId) ||
                          isEventManager(organizationId, eventId);
           
           /**
@@ -515,13 +516,13 @@ service cloud.firestore {
            * 读取规则：
            * 1. PointSeller 可以读取自己发行的点数卡
            * 2. Merchant 可以读取所有点数卡（用于扫码收款验证余额）
-           * 3. Finance Manager 可以读取所有点数卡（用于财务管理）
+           * 3. Cashier 可以读取所有点数卡（用于财务管理）
            * 4. Event Manager 可以读取所有点数卡（用于系统管理）
            */
           allow read: if (isPointSeller() && 
                          resource.data.issuer.pointSellerId == request.auth.uid) ||
                          isMerchant() ||
-                         isFinanceManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
                          isEventManager(organizationId, eventId);
           
           /**
@@ -577,9 +578,9 @@ service cloud.firestore {
                resource.data.submittedBy == request.auth.uid;
       }
       
-      // 检查是否是 Finance Manager
-      function isFinanceManager() {
-        return hasRole('financeManager');
+      // 检查是否是 Cashier
+      function isCashier() {
+        return hasRole('cashier');
       }
       
       // 检查是否是 Event Manager
@@ -595,8 +596,8 @@ service cloud.firestore {
                request.resource.data.status == 'pending';
       }
       
-      // 检查 Finance Manager 是否只更新允许的字段
-      function isValidFinanceUpdate() {
+      // 检查 Cashier 是否只更新允许的字段
+      function isValidCashierUpdate() {
         let allowedFields = ['status', 'confirmedAt', 'receivedBy', 'receiverName', 'confirmationNote', 'metadata'].toSet();
         let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
         return modifiedFields.hasOnly(allowedFields);
@@ -609,17 +610,17 @@ service cloud.firestore {
       
       // READ: 
       // - 提交者可以读取自己的记录
-      // - Finance Manager 可以读取所有记录
+      // - Cashier 可以读取所有记录
       // - Event Manager 可以读取所有记录
       allow read: if isSubmitter() || 
-                     isFinanceManager() || 
+                     isCashier() || 
                      isEventManager();
       
       // UPDATE: 
-      // - Finance Manager 可以更新状态（确认/拒绝）
+      // - Cashier 可以更新状态（确认/拒绝）
       // - 只能修改特定字段
-      allow update: if isFinanceManager() && 
-                       isValidFinanceUpdate();
+      allow update: if isCashier() && 
+                       isValidCashierUpdate();
       
       // DELETE: 不允许删除
       allow delete: if false;

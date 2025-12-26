@@ -684,7 +684,7 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       // 验证角色
       const userRoles = userData.roles || [];
       const allowedRoles = [
-        'eventManager', 'financeManager', 'sellerManager',
+        'eventManager', 'cashier', 'financeManager', 'sellerManager',
         'merchantManager', 'customerManager',
         'seller', 'merchant', 'customer'
       ];

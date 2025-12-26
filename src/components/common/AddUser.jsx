@@ -131,10 +131,10 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
       },
-      financeManager: {
-        value: 'financeManager',
-        label: 'Finance Manager',
-        description: '财务管理员 - 管理现金流和财务报表',
+      cashier: {
+        value: 'cashier',
+        label: 'Cashier',
+        description: '收银员 - 管理现金流和财务报表',
         icon: '💵'
       },
       seller: {

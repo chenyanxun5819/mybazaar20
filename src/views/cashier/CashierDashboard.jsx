@@ -1,10 +1,10 @@
 /**
- * Finance Manager Dashboard
- * 财务经理控制台 - 管理现金收款和财务统计
+ * Cashier Dashboard
+ * 收银员控制台 - 管理现金收款和财务统计
  * 
  * Tabs:
  * 1. 收款概览 - 统计和图表
- * 2. 收款记录 - 历史查询（所有FM可互相查看）
+ * 2. 收款记录 - 历史查询（所有收银员可互相查看）
  */
 
 import React, { useState, useEffect } from 'react';
@@ -20,16 +20,16 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import './FinanceManagerDashboard.css';
+import './CashierDashboard.css';
 
 // 移除旧的 CSS 引用，改用内联样式或新的 CSS 策略
-// import './FinanceManagerDashboard.css';
+// import './CashierDashboard.css';
 
 // 导入子组件
 import CollectionOverview from './CollectionOverview';
 import CollectionHistory from './CollectionHistory';
 
-const FinanceManagerDashboard = () => {
+const CashierDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
   const { currentUser, userProfile, loading: authLoading, logout } = useAuth();
@@ -190,7 +190,7 @@ const FinanceManagerDashboard = () => {
     }
 
     const roles = userProfile?.roles || [];
-    if (!roles.includes('financeManager')) {
+    if (!roles.includes('cashier')) {
       setError('您没有权限访问此页面');
       setLoading(false);
       return;
@@ -215,7 +215,7 @@ const FinanceManagerDashboard = () => {
       }
 
       const result = await callOnCallWithAuthFallback(
-        'getFinanceStats',
+        'getCashierStats',
         { orgId, eventId: evtId },
         12000
       );
@@ -388,7 +388,7 @@ const FinanceManagerDashboard = () => {
         <div className="fm-header-left">
           <h1 className="fm-title">💰 财务管理</h1>
           <p className="fm-welcome-text">
-            欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '财务经理'}
+            欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '收银员'}
           </p>
         </div>
         <div className="fm-header-right">
@@ -444,7 +444,7 @@ const FinanceManagerDashboard = () => {
   );
 };
 
-// // filepath: c:\mybazaar20\src\views\finance\FinanceManagerDashboard.jsx
+// // filepath: c:\mybazaar20\src\views\finance\CashierDashboard.jsx
 // 内联样式定义 (参考 UserList.jsx 风格)
 const styles = {
   container: {
@@ -586,5 +586,5 @@ const styles = {
 
 // 全局動畫已移至外部 CSS 檔案
 
-export default FinanceManagerDashboard;
+export default CashierDashboard;
 

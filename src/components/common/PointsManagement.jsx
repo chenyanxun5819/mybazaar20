@@ -21,7 +21,7 @@ const ROLE_CONFIG = {
   sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
   merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
   customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
-  financeManager: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
+  cashier: { label: 'C', fullLabel: 'Cashier', color: '#3b82f6', icon: '💵', category: 'manager' },
   seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
   merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
   customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }

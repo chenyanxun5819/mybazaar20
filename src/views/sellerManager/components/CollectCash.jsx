@@ -407,7 +407,7 @@ const ConfirmModal = ({ submission, note, onNoteChange, onConfirm, onCancel, con
         </div>
 
         <div style={styles.warningBox}>
-          ⚠️ 确认后，此笔现金将加入您的持有现金中，可上交给Finance Manager
+          ⚠️ 确认后，此笔现金将加入您的持有现金中，可上交给Cashier
         </div>
       </div>
 

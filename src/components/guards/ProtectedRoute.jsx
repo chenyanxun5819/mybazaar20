@@ -16,7 +16,7 @@ const ProtectedRoute = ({ allowedRoles = [], children }) => {
 
   if (!isAuthenticated) {
     // 从当前路由提取 orgEventCode（格式: /seller/{orgEventCode}/dashboard）
-    const pathMatch = location.pathname.match(/\/(seller|merchant|customer|event-manager|seller-manager|finance-manager|customer-manager|merchant-manager)\/([^/]+)/);
+    const pathMatch = location.pathname.match(/\/(seller|merchant|customer|event-manager|seller-manager|cashier|customer-manager|merchant-manager)\/([^/]+)/);
     const orgEventCode = pathMatch ? pathMatch[2] : null;
 
     // 若未登入，导向相应的登入页（而不是 /platform/login）

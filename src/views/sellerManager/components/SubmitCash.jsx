@@ -1,6 +1,6 @@
 /**
  * SubmitCash.jsx (待认领池子模式)
- * Seller Manager 上交现金给 Finance Manager 的界面
+ * Seller Manager 上交现金给 Cashier 的界面
  * 
  * 🆕 更新：改为待认领池子模式（receivedBy=null）
  * - 不再选择特定的FM
@@ -236,7 +236,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
       });
 
       if (result.data.success) {
-        alert('✅ 上交成功！现金已提交到待认领池子，等待Finance Manager确认。');
+        alert('✅ 上交成功！现金已提交到待认领池子，等待Cashier确认。');
         setShowSubmitModal(false);
         setSelectedCollections([]);
         setSubmitNote('');
@@ -338,7 +338,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
         <span style={styles.infoIcon}>ℹ️</span>
         <span style={styles.infoText}>
           <strong>待认领池子模式：</strong>
-          上交的现金将进入待认领池子，任何Finance Manager都可以接单确认，无需指定特定的FM。
+          上交的现金将进入待认领池子，任何Cashier都可以接单确认，无需指定特定的Cashier。
         </span>
       </div>
 
@@ -624,7 +624,7 @@ const SubmitModal = ({
           <div style={styles.modalInfoBanner}>
             <span>ℹ️</span>
             <span>
-              现金将提交到<strong>待认领池子</strong>，任何Finance Manager都可以接单确认。
+              现金将提交到<strong>待认领池子</strong>，任何Cashier都可以接单确认。
             </span>
           </div>
 

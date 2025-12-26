@@ -127,7 +127,7 @@ const UniversalLogin = () => {
          // 临时构造一个 path
          if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
          else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'financeManager') navPath = `/finance-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
          else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
          else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
          
@@ -190,9 +190,9 @@ const UniversalLogin = () => {
           localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
         }
 
-        if (roles.includes('financeManager')) {
-          console.log('[UniversalLogin] 💾 恢复 Finance Manager Legacy Storage (Force)');
-          localStorage.setItem('financeManagerInfo', JSON.stringify(userInfoToSave));
+        if (roles.includes('cashier')) {
+          console.log('[UniversalLogin] 💾 恢复 Cashier Legacy Storage (Force)');
+          localStorage.setItem('cashierInfo', JSON.stringify(userInfoToSave));
         }
       }
 
@@ -220,8 +220,8 @@ const UniversalLogin = () => {
       return `/merchant-manager/${orgEventCode}/dashboard`;
     } else if (role === 'customerManager') {
       return `/customer-manager/${orgEventCode}/dashboard`;
-    } else if (role === 'financeManager') {
-      return `/finance-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'cashier') {
+      return `/cashier/${orgEventCode}/dashboard`;
     }
     // Mobile 角色路由
     else if (role === 'seller') {
@@ -441,7 +441,7 @@ const UniversalLogin = () => {
         'sellerManager',
         'merchantManager',
         'customerManager',
-        'financeManager',
+        'cashier',
         'seller',
         'merchant',
         'pointSeller',
@@ -469,7 +469,7 @@ const UniversalLogin = () => {
         }
       }
     } else {
-      const priority = ['eventManager', 'financeManager', 'sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
+      const priority = ['eventManager', 'cashier', 'sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
       for (const role of priority) {
         if (roles.includes(role)) {
           console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);
@@ -697,8 +697,8 @@ const UniversalLogin = () => {
         localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
         localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
       }
-      if (allRoles.includes('financeManager')) {
-        localStorage.setItem('financeManagerInfo', JSON.stringify(userInfoToSave));
+      if (allRoles.includes('cashier')) {
+        localStorage.setItem('cashierInfo', JSON.stringify(userInfoToSave));
       }
 
       console.log('[UniversalLogin] ✅ 用户信息已保存到 localStorage');
@@ -741,8 +741,8 @@ const UniversalLogin = () => {
       navigate(`/merchant-manager/${orgEventCode}/dashboard`);
     } else if (role === 'customerManager') {
       navigate(`/customer-manager/${orgEventCode}/dashboard`);
-    } else if (role === 'financeManager') {
-      navigate(`/finance-manager/${orgEventCode}/dashboard`);
+    } else if (role === 'cashier') {
+      navigate(`/cashier/${orgEventCode}/dashboard`);
     }
     // Mobile 角色路由
     else if (role === 'seller') {

@@ -6,9 +6,9 @@
     "architectureChanges": {
       "version_2025-12-27-v7": [
         "🆕 新增 pointSeller 角色（点数卡销售员）",
-        "💰 大幅扩充 financeManager 角色统计字段",
+        "💰 大幅扩充 cashier 角色统计字段",
         "📊 events.financeSummary: 完整财务汇总对象",
-        "📈 events.roleStats: 新增 pointSellers 和 financeManagers 统计",
+        "📈 events.roleStats: 新增 pointSellers 和 cashiers 统计",
         "📝 cashSubmissions 集合：完整文档结构定义（第 969 行）",
         "⚡ 新增 8 个 Cloud Functions",
         "🔒 Security Rules 更新",
@@ -45,7 +45,7 @@
         "Event 文档中完全移除 contactPerson，Event Manager 本身就是活动联络人",
         "Event Manager 从 Event.eventManager 对象移到 users 集合",
         "Event 文档中移除 eventManager 对象，改为 contactPerson（纯联络用途）",
-        "Event Manager 成为 users 集合中的特殊角色，与 Finance Manager 形成制衡",
+        "Event Manager 成为 users 集合中的特殊角色，与 Cashier 形成制衡",
         "Event Manager 不分配点数，纯监控所有人员数据",
         "删除 Event 级别的 pointAllocations 集合",
         "Seller Manager 只管理 students，只能单人分配",
@@ -245,9 +245,9 @@
                   "averageCardsPerSeller": "number (平均每位 PointSeller 发行卡数)",
                   "lastUpdated": "timestamp"
                 },
-                "financeManagers": {
-                  "count": "number (FinanceManager 总数)",
-                  "activeCount": "number (活跃的 FinanceManager 数)",
+                "cashiers": {
+                  "count": "number (Cashier 总数)",
+                  "activeCount": "number (活跃的 Cashier 数)",
                   "totalCashCollected": "number (总收款 RM)",
                   "totalCollections": "number (总收款笔数)",
                   "pendingConfirmations": "number (待确认笔数)",
@@ -325,9 +325,9 @@
                   "discrepancy": "number (差异金额 RM)"
                 },
                 "// === 收款分布 ===": "",
-                "collectionsByFinanceManager": {
-                  "<financeManagerId>": {
-                    "managerName": "string (Finance Manager 姓名)",
+                "collectionsByCashier": {
+                  "<cashierId>": {
+                    "managerName": "string (Cashier 姓名)",
                     "totalCollected": "number (总收款 RM)",
                     "collectionsCount": "number (收款笔数)",
                     "lastCollection": "timestamp (最后收款时间)",
@@ -374,7 +374,7 @@
                   "userId": "string (Firebase Auth UID，文档ID)",
                   "authUid": "string (认证UID，与userId相同)",
                   "roles": [
-                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'financeManager' | 'pointSeller' | 'seller' | 'merchant' | 'customer')"
+                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'cashier' | 'pointSeller' | 'seller' | 'merchant' | 'customer')"
                   ],
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
@@ -483,7 +483,7 @@
                     "permissions": {
                       "canManageUsers": "boolean (可以创建、编辑、删除用户)",
                       "canManageRoles": "boolean (可以分配角色给用户)",
-                      "canAssignManagers": "boolean (可以指派 Seller Manager、Finance Manager)",
+                      "canAssignManagers": "boolean (可以指派 Seller Manager、Cashier)",
                       "canViewAllData": "boolean (可以查看所有数据)",
                       "canMonitorAll": "boolean (可以监控所有人员活动)",
                       "canModifyEventSettings": "boolean (可以修改活动设置)"
@@ -495,12 +495,12 @@
                       "cannotHoldOtherRoles": "boolean (不能兼任其他角色)"
                     },
                     "monitoringScope": {
-                      "canMonitorFinanceManager": "boolean (可以监控 Finance Manager 的点数分配)",
+                      "canMonitorCashier": "boolean (可以监控 Cashier 的点数分配)",
                       "canMonitorSellerManager": "boolean (可以监控 Seller Manager 的收款活动)",
                       "canMonitorAllTransactions": "boolean (可以查看所有交易记录)",
                       "canViewAllStats": "boolean (可以查看所有统计数据)"
                     },
-                    "notes": "Event Manager 纯监控角色，不参与点数分配和现金流；与 Finance Manager 形成制衡；每个 Event 只有一个 Event Manager"
+                    "notes": "Event Manager 纯监控角色，不参与点数分配和现金流；与 Cashier 形成制衡；每个 Event 只有一个 Event Manager"
                   },
                   "sellerManager": {
                     "description": "Seller Manager 角色专用数据",
@@ -540,7 +540,7 @@
                     },
                     "lastAllocationAt": "timestamp"
                   },
-                  "financeManager": {
+                  "cashier": {
                     "// === 基本信息 ===": "",
                     "managedIdentityTags": [
                       "teacher",
@@ -675,7 +675,7 @@
                     "notes": [
                       "PointSeller 只在义卖会当日有效",
                       "发行点数卡时必须收取等值现金",
-                      "所有现金必须定期上交给 FinanceManager",
+                      "所有现金必须定期上交给 Cashier",
                       "点数卡发行记录保存在 pointCards 集合"
                     ]
                   },
@@ -990,11 +990,11 @@
                   "sellerId",
                   "status"
                 ],
-                "securityRules": "Seller Manager 可读写自己的记录; Finance Manager 和 Event Manager 可读所有记录"
+                "securityRules": "Seller Manager 可读写自己的记录; Cashier 和 Event Manager 可读所有记录"
               },
               "cashSubmissions": {
                 "path": "organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId}",
-                "description": "现金上交记录（Seller/SellerManager/PointSeller 上交给 FinanceManager）",
+                "description": "现金上交记录（Seller/SellerManager/PointSeller 上交给 Cashier）",
                 "level": "Event Subcollection",
                 "documentStructure": {
                   "// === 基本信息 ===": "",
@@ -1007,9 +1007,9 @@
                   "submitterDepartment": "string (提交者部门，可选)",
                   "submitterPhone": "string (提交者电话)",
                   "// === 接收方信息 ===": "",
-                  "receivedBy": "string (接收者 userId - 可以是SellerManager或FinanceManager，或null表示待认领池子)",
+                  "receivedBy": "string (接收者 userId - 可以是SellerManager或Cashier，或null表示待认领池子)",
                   "receiverName": "string (接收者姓名)",
-                  "receiverRole": "string (接收者角色：'sellerManager' | 'financeManager' | null)", // 🆕 新增
+                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)", // 🆕 新增
                   "receiverPhone": "string (接收者电话)",
                   "// === 金额信息 ===": "",
                   "amount": "number (上交金额 RM)",
@@ -1028,7 +1028,7 @@
                   "// === 备注信息 ===": "",
                   "note": "string (备注)",
                   "receiptNumber": "string (收据编号)",
-                  "confirmationNote": "string (确认备注，FinanceManager 填写)",
+                  "confirmationNote": "string (确认备注，Cashier 填写)",
                   "disputeReason": "string (争议原因，可选)",
                   "// === 包含的销售记录 ===": "",
                   "includedSales": [
@@ -1075,11 +1075,11 @@
                   ],
                   "read": [
                     "提交者可以读取自己的记录",
-                    "FinanceManager 可以读取所有记录",
+                    "Cashier 可以读取所有记录",
                     "Event Manager 可以读取所有记录"
                   ],
                   "update": [
-                    "FinanceManager 可以更新状态（确认/拒绝/争议）",
+                    "Cashier 可以更新状态（确认/拒绝/争议）",
                     "只能修改 status, confirmedAt, confirmationNote, disputedAt, disputeReason 字段"
                   ],
                   "delete": [
@@ -1089,7 +1089,7 @@
                 "notes": [
                   "现金上交是整个系统的关键流程",
                   "状态变更必须记录时间戳",
-                  "FinanceManager 确认后更新各项统计",
+                  "Cashier 确认后更新各项统计",
                   "支持部分上交（一个 Seller 可以分多次上交）",
                   "includedSales 提供详细追溯"
                 ]
@@ -1305,9 +1305,9 @@
             "// --- PointSeller相关 ---": "",
             "pointSellerIssueCard": "boolean (PointSeller发行点数卡)",
             "pointSellerReceiveCash": "boolean (PointSeller收款确认)",
-            "// --- FinanceManager相关 ---": "",
-            "financeManagerVerify": "boolean (FinanceManager财务核实)",
-            "financeManagerApproval": "boolean (Finance Manager审批时是否需要OTP)",
+            "// --- Cashier相关 ---": "",
+            "cashierVerify": "boolean (Cashier财务核实)",
+            "cashierApproval": "boolean (Cashier审批时是否需要OTP)",
             "// --- Merchant相关 ---": "",
             "merchantPayment": "boolean (Merchant收款，通常为false)"
           },
@@ -1418,24 +1418,24 @@
             "functions/sellerManagerFunctions.js"
           ]
         },
-        "onFinanceManagerAllocation": {
-          "trigger": "organizations/{orgId}/events/{eventId}/users/{financeManagerId}/pointAllocations/{allocationId} onCreate",
-          "description": "当 Finance Manager 分配点数时（单人或批量）",
+        "onCashierAllocation": {
+          "trigger": "organizations/{orgId}/events/{eventId}/users/{cashierId}/pointAllocations/{allocationId} onCreate",
+          "description": "当 Cashier 分配点数时（单人或批量）",
           "scope": "可分配給任何非 student 的 identityTag，如 teacher/staff/parent 等",
           "tasks": [
-            "验证 Finance Manager 是否有 canAllocateToIndividual 权限",
+            "验证 Cashier 是否有 canAllocateToIndividual 权限",
             "如果是批量分配，验证 canBatchAllocate 权限",
             "验证批量分配额度是否超出 batchAllocationLimit",
             "验证接收者的 identityTag 不是 'student'",
             "更新接收者的对应角色 availablePoints（seller/merchant/customer）",
             "更新接收者的 pointsStats.totalReceived",
-            "更新接收者的 pointsStats.receivedFromFinanceManager",
-            "更新 FinanceManager 的 financeManagerStats",
+            "更新接收者的 pointsStats.receivedFromCashier",
+            "更新 Cashier 的 cashierStats",
             "更新 Event 的 globalPointsStats.totalAllocated",
             "不计算收款警示（非 students 不需要）"
           ],
           "relatedFiles": [
-            "functions/financeManagerFunctions.js"
+            "functions/cashierFunctions.js"
           ]
         },
         "onTransaction": {
@@ -1463,9 +1463,9 @@
           "tasks": [
             "验证 Seller Manager 的上交金额",
             "更新 Seller Manager 的 sellerManagerStats（待上交金额减少）",
-            "更新 Finance Manager 的 financeManagerStats（待验证金额增加）",
+            "更新 Cashier 的 cashierStats（待验证金额增加）",
             "创建待验证记录",
-            "发送通知给 Finance Manager"
+            "发送通知给 Cashier"
           ],
           "relatedFiles": [
             "functions/cashSubmissionFunctions.js"
@@ -1476,14 +1476,14 @@
           "description": "当现金收款记录创建时",
           "types": [
             "Seller Manager 从 Student 收款",
-            "Finance Manager 直接从 Teacher/Staff 收款"
+            "Cashier 直接从 Teacher/Staff 收款"
           ],
           "tasks": [
             "验证收款人权限（SM 或 FM）",
             "验证金额是否合理（不超过 pendingCollection）",
             "更新 Seller 的 seller.totalCashCollected",
             "更新 Seller 的 seller.pendingCollection（减少）",
-            "更新收款人的统计（sellerManagerStats 或 financeManagerStats）",
+            "更新收款人的统计（sellerManagerStats 或 cashierStats）",
             "更新部门的 departmentStats",
             "更新 Event 的 globalPointsStats.totalCollected",
             "更新收款警示状态"
@@ -1517,7 +1517,7 @@
             "重新计算 globalPointsStats",
             "重新计算所有 departmentStats",
             "重新计算所有 sellerManagerStats",
-            "重新计算所有 financeManagerStats",
+            "重新计算所有 cashierStats",
             "标记 lastCalculated 时间戳",
             "生成每日统计报告"
           ],
@@ -2029,7 +2029,7 @@
         "organizations/{organizationId}/events/{eventId}/users/{userId}",
         "organizations/{organizationId}/events/{eventId}/departmentStats/{departmentCode}",
         "organizations/{organizationId}/events/{eventId}/sellerManagerStats/{sellerManagerId}",
-        "organizations/{organizationId}/events/{eventId}/financeManagerStats/{financeManagerId}",
+        "organizations/{organizationId}/events/{eventId}/cashierStats/{cashierId}",
         "organizations/{organizationId}/events/{eventId}/merchants/{merchantId}",
         "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
         "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
@@ -2039,7 +2039,7 @@
       ],
       "userSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
-        "organizations/{organizationId}/events/{eventId}/users/{financeManagerId}/pointAllocations/{allocationId}"
+        "organizations/{organizationId}/events/{eventId}/users/{cashierId}/pointAllocations/{allocationId}"
       ]
     }
   }

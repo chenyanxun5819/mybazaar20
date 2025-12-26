@@ -13,7 +13,7 @@ import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
-import FinanceManagerDashboard from './views/finance/FinanceManagerDashboard';
+import CashierDashboard from './views/cashier/CashierDashboard';
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
@@ -201,12 +201,12 @@ function App() {
           </EventProvider>
         </DesktopGuard>
       } />
-      <Route path="/finance-manager/:orgEventCode/dashboard" element={
+      <Route path="/cashier/:orgEventCode/dashboard" element={
         <DesktopGuard>
           <EventProvider>
             <AuthProvider>
-              <ProtectedRoute allowedRoles={["financeManager"]}>
-                <FinanceManagerDashboard />
+              <ProtectedRoute allowedRoles={["cashier"]}>
+                <CashierDashboard />
               </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
