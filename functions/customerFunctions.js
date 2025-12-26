@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');  // ✅ 改用 v2 导入
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const { hashPin, verifyPin } = require('./utils/bcryptHelper');
 
 // ===========================================
 // 🔧 辅助函数
@@ -103,6 +104,120 @@ async function getPlatformSettings() {
   }
 
   return settingsDoc.data();
+}
+
+/**
+ * 验证交易密码（内部函数）- 兼容 bcrypt 和 SHA256 两种格式
+ */
+async function verifyTransactionPinInternal(transactionPin, userData) {
+  const MAX_ATTEMPTS = 5;
+  const LOCK_DURATION = 60 * 60 * 1000; // 1小时
+
+  // 检查是否被锁定
+  const pinLockedUntil = userData.basicInfo?.pinLockedUntil;
+  if (pinLockedUntil) {
+    const lockTime = pinLockedUntil.toMillis ? pinLockedUntil.toMillis() : pinLockedUntil;
+    if (Date.now() < lockTime) {
+      const remainingTime = Math.ceil((lockTime - Date.now()) / 60000);
+      return {
+        success: false,
+        locked: true,
+        error: `账户已锁定，请在 ${remainingTime} 分钟后重试`
+      };
+    }
+  }
+
+  // 检查错误次数
+  const failedAttempts = userData.basicInfo?.pinFailedAttempts || 0;
+  if (failedAttempts >= MAX_ATTEMPTS) {
+    return {
+      success: false,
+      locked: true,
+      error: '交易密码错误次数过多，账户已被锁定1小时'
+    };
+  }
+
+  // 验证密码
+  const pinHash = userData.basicInfo?.transactionPinHash;
+  const pinSalt = userData.basicInfo?.transactionPinSalt;
+
+  if (!pinHash) {
+    return {
+      success: false,
+      error: '交易密码未设置'
+    };
+  }
+
+  console.log('[verifyTransactionPinInternal] 检测加密方式:', {
+    hasSalt: !!pinSalt,
+    format: pinSalt ? 'SHA256（旧格式）' : 'bcrypt（新格式）'
+  });
+
+  let isPinCorrect = false;
+
+  try {
+    // ✅ 兼容处理：检查是否为旧格式（有 pinSalt）
+    if (pinSalt) {
+      // 旧格式：使用 SHA256 验证
+      const inputHash = sha256(transactionPin + pinSalt);
+      isPinCorrect = (inputHash === pinHash);
+      console.log('[verifyTransactionPinInternal] 使用 SHA256 验证（旧格式）');
+    } else {
+      // 新格式：使用 bcrypt 验证
+      isPinCorrect = await verifyPin(transactionPin, pinHash);
+      console.log('[verifyTransactionPinInternal] 使用 bcrypt 验证（新格式）');
+    }
+
+    if (isPinCorrect) {
+      return {
+        success: true
+      };
+    }
+
+    return {
+      success: false,
+      currentAttempts: failedAttempts,
+      error: '交易密码错误'
+    };
+  } catch (error) {
+    console.error('[verifyTransactionPinInternal] 验证失败:', error);
+    return {
+      success: false,
+      error: '密码验证失败，请重试'
+    };
+  }
+}
+
+/**
+ * 更新PIN验证状态（内部函数）
+ */
+async function updatePinVerificationStatus(userRef, success, currentAttempts = 0) {
+  const MAX_ATTEMPTS = 5;
+  const LOCK_DURATION = 60 * 60 * 1000; // 1小时
+
+  if (success) {
+    // 验证成功：重置错误次数
+    await userRef.update({
+      'basicInfo.pinFailedAttempts': 0,
+      'basicInfo.pinLockedUntil': null,
+      'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    // 验证失败：增加错误次数
+    const newAttempts = currentAttempts + 1;
+    const updateData = {
+      'basicInfo.pinFailedAttempts': newAttempts,
+      'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // 如果达到最大尝试次数，锁定账户
+    if (newAttempts >= MAX_ATTEMPTS) {
+      const lockUntil = new Date(Date.now() + LOCK_DURATION);
+      updateData['basicInfo.pinLockedUntil'] = admin.firestore.Timestamp.fromDate(lockUntil);
+    }
+
+    await userRef.update(updateData);
+  }
 }
 
 // ===========================================
@@ -237,9 +352,9 @@ exports.createCustomer = onCall(async (request) => {
     const passwordSalt = crypto.randomBytes(16).toString('hex');
     const passwordHash = sha256(password + passwordSalt);
 
-    // ✨ 修正6：生成交易密码哈希
-    const pinSalt = crypto.randomBytes(16).toString('hex');
-    const pinHash = sha256(transactionPin + pinSalt);
+    // ✨ 修正6：生成交易密码哈希（使用 bcrypt）
+    const pinHashData = await hashPin(transactionPin);
+    const pinHash = pinHashData.hash;
 
     console.log('[createCustomer] 🔐 密码加密完成');
 
@@ -277,9 +392,8 @@ exports.createCustomer = onCall(async (request) => {
         hasDefaultPassword: false,
         passwordLastChanged: admin.firestore.FieldValue.serverTimestamp(),
 
-        // ✨ 修正8：交易密码
+        // ✨ 修正8：交易密码（bcrypt 的 salt 已包含在 hash 中）
         transactionPinHash: pinHash,
-        transactionPinSalt: pinSalt,
         pinFailedAttempts: 0,
         pinLockedUntil: null,
         pinLastChanged: admin.firestore.FieldValue.serverTimestamp()

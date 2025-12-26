@@ -367,11 +367,45 @@ const handleOtpVerify = async (e) => {
     // 使用 verifyOtp 回傳的 customToken（優先）；向後相容使用第1步的 token
     const customTokenFromVerify = data?.customToken;
     const tokenToUse = customTokenFromVerify || userData?.customToken;
+    
+    // 🔍 調試信息：記錄 token 來源和長度
+    console.log('[UniversalLogin] 🔐 Custom Token 詳情:', {
+      hasTokenFromVerify: !!customTokenFromVerify,
+      hasTokenFromUserData: !!userData?.customToken,
+      tokenLength: tokenToUse?.length || 0,
+      tokenPreview: tokenToUse ? `${tokenToUse.substring(0, 30)}...` : 'null',
+      currentDomain: window.location.hostname,
+      userAgent: navigator.userAgent.substring(0, 100)
+    });
+    
     if (!tokenToUse) {
       throw new Error('登录票据缺失：未取得 Custom Token');
     }
-    await signInWithCustomToken(auth, tokenToUse);
-    console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
+    
+    // 🔍 嘗試登入並捕獲詳細錯誤
+    try {
+      await signInWithCustomToken(auth, tokenToUse);
+      console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
+    } catch (authError) {
+      console.error('[UniversalLogin] ❌ Firebase Auth 登录失败:', {
+        code: authError?.code,
+        message: authError?.message,
+        name: authError?.name,
+        stack: authError?.stack,
+        customData: authError?.customData,
+        fullError: JSON.stringify(authError, Object.getOwnPropertyNames(authError))
+      });
+      
+      // 根據錯誤碼提供更友好的提示
+      if (authError?.code === 'auth/network-request-failed') {
+        throw new Error('網路連線失敗。請檢查：1) 網路連線是否正常 2) 是否使用了 VPN 或代理 3) 防火牆設定');
+      } else if (authError?.code === 'auth/invalid-custom-token') {
+        throw new Error('登入憑證無效，請重新登入');
+      } else if (authError?.code === 'auth/app-not-authorized') {
+        throw new Error('應用程式未授權此域名，請聯繫管理員');
+      }
+      throw authError;
+    }
 
     // 根據 verifyOtp 結果覆蓋/對齊使用者資料（若提供）
     const verifiedUser = {
