@@ -1,9 +1,30 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2025-12-17-v5",
-    "lastUpdated": "2025-12-17",
+    "version": "2025-12-27-v7",
+    "lastUpdated": "2025-12-27",
     "architectureChanges": {
+      "version_2025-12-27-v7": [
+        "🆕 新增 pointSeller 角色（点数卡销售员）",
+        "💰 大幅扩充 financeManager 角色统计字段",
+        "📊 events.financeSummary: 完整财务汇总对象",
+        "📈 events.roleStats: 新增 pointSellers 和 financeManagers 统计",
+        "📝 cashSubmissions 集合：完整文档结构定义（第 969 行）",
+        "⚡ 新增 8 个 Cloud Functions",
+        "🔒 Security Rules 更新",
+        "📑 新增 5 个索引",
+        "🎯 完善现金流管理体系"
+      ],
+      "version_2025-12-26-v6": [
+        "🔐 Customer付款和转账从OTP验证改为PIN码（交易密码）验证",
+        "transactions集合：otpVerified/otpSessionId 改为 pinVerified/pinVerifiedAt/verificationMethod",
+        "processCustomerPayment和transferPoints函数：参数从otpSessionId改为transactionPin",
+        "新增 verifyTransactionPinInternal 和 updatePinVerificationStatus 辅助函数",
+        "platform_settings.otpRequired：标注customerPayment和customerTransfer已弃用OTP",
+        "支持bcrypt和SHA256双重加密方式（向后兼容）",
+        "PIN验证失败机制：5次失败锁定1小时",
+        "提升安全性：后端统一验证，无需短信成本"
+      ],
       "version_2025-12-17-v5": [
         "新增 platform_settings 顶层集合（Platform级别OTP配置）",
         "新增 pointCards Event子集合（不记名点数卡）",
@@ -214,6 +235,23 @@
                   "averageBalance": "number (平均余额)",
                   "totalBalance": "number (所有Customer的点数总和)",
                   "lastUpdated": "timestamp"
+                },
+                "pointSellers": {
+                  "count": "number (PointSeller 总数)",
+                  "activeCount": "number (活跃的 PointSeller 数)",
+                  "totalCardsIssued": "number (总发行卡数)",
+                  "totalPointsIssued": "number (总发行点数)",
+                  "totalCashReceived": "number (总收到现金 RM)",
+                  "averageCardsPerSeller": "number (平均每位 PointSeller 发行卡数)",
+                  "lastUpdated": "timestamp"
+                },
+                "financeManagers": {
+                  "count": "number (FinanceManager 总数)",
+                  "activeCount": "number (活跃的 FinanceManager 数)",
+                  "totalCashCollected": "number (总收款 RM)",
+                  "totalCollections": "number (总收款笔数)",
+                  "pendingConfirmations": "number (待确认笔数)",
+                  "lastUpdated": "timestamp"
                 }
               },
               "departmentOverview": {
@@ -248,6 +286,74 @@
                 "pendingVerification": "number (待验证现金 RM)",
                 "lastUpdated": "timestamp"
               },
+              "// === 财务汇总 ===": "",
+              "financeSummary": {
+                "// === 点数统计 ===": "",
+                "points": {
+                  "totalAllocated": "number (总分配点数)",
+                  "totalSold": "number (总销售点数 - Seller 售给 Customer)",
+                  "totalSpent": "number (总消费点数 - Customer 在 Merchant 消费)",
+                  "totalFromPointCards": "number (点数卡发行总点数)",
+                  "remainingInSystem": "number (系统中剩余点数)"
+                },
+                "// === 现金统计 ===": "",
+                "cash": {
+                  "// 预期收款": "",
+                  "expectedFromSales": "number (销售预期收款 RM = totalSold)",
+                  "expectedFromPointCards": "number (点数卡预期收款 RM = totalFromPointCards)",
+                  "totalExpected": "number (总预期收款 RM)",
+                  "// 实际收款": "",
+                  "collectedFromSellers": "number (从 Seller 收到的现金 RM)",
+                  "collectedFromSellerManagers": "number (从 SellerManager 收到的现金 RM)",
+                  "collectedFromPointSellers": "number (从 PointSeller 收到的现金 RM)",
+                  "totalCollected": "number (总实际收款 RM)",
+                  "// 待收款": "",
+                  "pendingFromSellers": "number (Seller 待上交 RM)",
+                  "pendingFromSellerManagers": "number (SellerManager 待上交 RM)",
+                  "pendingFromPointSellers": "number (PointSeller 待上交 RM)",
+                  "totalPending": "number (总待收款 RM)",
+                  "// 未收款": "",
+                  "outstandingCash": "number (未收款 RM = totalExpected - totalCollected - totalPending)"
+                },
+                "// === 对账率 ===": "",
+                "reconciliation": {
+                  "collectionRate": "number (收款率 = totalCollected / totalExpected)",
+                  "salesCollectionRate": "number (销售收款率)",
+                  "pointCardCollectionRate": "number (点数卡收款率)",
+                  "lastReconciled": "timestamp (最后对账时间)",
+                  "isBalanced": "boolean (是否平衡)",
+                  "discrepancy": "number (差异金额 RM)"
+                },
+                "// === 收款分布 ===": "",
+                "collectionsByFinanceManager": {
+                  "<financeManagerId>": {
+                    "managerName": "string (Finance Manager 姓名)",
+                    "totalCollected": "number (总收款 RM)",
+                    "collectionsCount": "number (收款笔数)",
+                    "lastCollection": "timestamp (最后收款时间)",
+                    "cashSources": {
+                      "fromSellers": "number (来自 Seller RM)",
+                      "fromSellerManagers": "number (来自 SellerManager RM)",
+                      "fromPointSellers": "number (来自 PointSeller RM)"
+                    }
+                  }
+                },
+                "// === 点数卡汇总 ===": "",
+                "pointCardSummary": {
+                  "totalCardsIssued": "number (总发行卡数)",
+                  "totalPointsIssued": "number (总发行点数)",
+                  "totalCashFromCards": "number (点数卡收到现金 RM)",
+                  "activeCards": "number (有效卡片数)",
+                  "usedCards": "number (已使用卡片数)",
+                  "expiredCards": "number (已过期卡片数)",
+                  "destroyedCards": "number (已销毁卡片数)",
+                  "unusedBalance": "number (未使用余额)",
+                  "lastUpdated": "timestamp"
+                },
+                "// === 更新信息 ===": "",
+                "lastUpdatedAt": "timestamp (最后更新时间)",
+                "lastUpdatedBy": "string (最后更新者 userId)"
+              },
               "status": "string ('planning' | 'active' | 'completed' | 'cancelled')",
               "createdAt": "timestamp",
               "updatedAt": "timestamp",
@@ -268,7 +374,7 @@
                   "userId": "string (Firebase Auth UID，文档ID)",
                   "authUid": "string (认证UID，与userId相同)",
                   "roles": [
-                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'financeManager' | 'seller' | 'merchant' | 'customer')"
+                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'financeManager' | 'pointSeller' | 'seller' | 'merchant' | 'customer')"
                   ],
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
@@ -420,21 +526,143 @@
                     "lastAllocationAt": "timestamp"
                   },
                   "financeManager": {
+                    "// === 基本信息 ===": "",
                     "managedIdentityTags": [
                       "teacher",
                       "staff",
                       "parent",
                       "...其他非学生身份"
                     ],
-                    "permissions": {
-                      "canAllocateToIndividual": true,
-                      "canBatchAllocate": false,
-                      "canReceiveCash": true,
-                      "canVerifySubmissions": true,
-                      "canViewAllStats": true
+                    "// === 收款统计 ===": "",
+                    "cashStats": {
+                      "totalCollected": "number (累计收款总额 RM)",
+                      "todayCollected": "number (今日收款 RM)",
+                      "thisWeekCollected": "number (本周收款 RM)",
+                      "thisMonthCollected": "number (本月收款 RM)",
+                      "totalCollections": "number (累计收款笔数)",
+                      "todayCollections": "number (今日收款笔数)",
+                      "thisWeekCollections": "number (本周收款笔数)",
+                      "thisMonthCollections": "number (本月收款笔数)",
+                      "lastCollectionAt": "timestamp (最后收款时间)",
+                      "largestCollection": "number (最大单笔收款 RM)",
+                      "averageCollection": "number (平均单笔收款 RM)"
                     },
-                    "batchAllocationLimit": 0,
-                    "notes": "所有 FM 都可单人分配；批量分配需特别开启权限"
+                    "// === 待确认统计 ===": "",
+                    "pendingStats": {
+                      "pendingAmount": "number (待确认金额 RM)",
+                      "pendingCount": "number (待确认笔数)",
+                      "oldestPendingDate": "timestamp (最早待确认日期)",
+                      "lastReviewedAt": "timestamp (最后审核时间)"
+                    },
+                    "// === 点数卡管理统计 ===": "",
+                    "pointCardStats": {
+                      "totalCardsIssued": "number (总发行卡数)",
+                      "totalPointsIssued": "number (总发行点数)",
+                      "totalCashFromCards": "number (点数卡收到的现金 RM)",
+                      "activePointSellers": "number (活跃的 PointSeller 数量)",
+                      "lastCheckedAt": "timestamp (最后检查时间)",
+                      "outstandingCashFromCards": "number (点数卡未收现金 RM)"
+                    },
+                    "// === 现金来源分布 ===": "",
+                    "cashSources": {
+                      "fromSellers": "number (来自 Seller 的现金 RM)",
+                      "fromSellerManagers": "number (来自 SellerManager 的现金 RM)",
+                      "fromPointSellers": "number (来自 PointSeller 的现金 RM)",
+                      "lastUpdated": "timestamp"
+                    },
+                    "// === 工作记录 ===": "",
+                    "workHistory": [
+                      {
+                        "date": "string (日期 YYYY-MM-DD)",
+                        "collectionsCount": "number (收款笔数)",
+                        "totalAmount": "number (总金额 RM)",
+                        "workingHours": "number (工作时长)",
+                        "confirmedCount": "number (确认笔数)"
+                      }
+                    ],
+                    "// === 权限设置 ===": "",
+                    "permissions": {
+                      "canAllocateToIndividual": "boolean (可以单人分配点数)",
+                      "canBatchAllocate": "boolean (可以批量分配点数)",
+                      "canReceiveCash": "boolean (可以收取现金)",
+                      "canVerifySubmissions": "boolean (可以验证现金上交)",
+                      "canViewAllStats": "boolean (可以查看所有统计)",
+                      "canManagePointCards": "boolean (可以管理点数卡)",
+                      "canGenerateReports": "boolean (可以生成报告)",
+                      "canExportData": "boolean (可以导出数据)"
+                    },
+                    "// === 其他 ===": "",
+                    "batchAllocationLimit": "number (批量分配限额，0=无限制)",
+                    "notes": "所有 FM 都可单人分配；批量分配需特别开启权限；负责整个活动的现金流管理"
+                  },
+                  "pointSeller": {
+                    "description": "PointSeller 角色专用数据（点数卡销售员）",
+                    "// === 基本信息 ===": "",
+                    "workingDate": "string (工作日期，YYYY-MM-DD格式)",
+                    "workingShift": "string (工作班次：'morning' | 'afternoon' | 'fullday')",
+                    "cashBoxNumber": "string (现金箱编号)",
+                    "// === 当日统计 ===": "",
+                    "todayStats": {
+                      "cardsIssued": "number (今日发行卡数)",
+                      "totalPointsIssued": "number (今日发行点数)",
+                      "totalCashReceived": "number (今日收到现金 RM)",
+                      "lastIssueAt": "timestamp (最后一次发行时间)",
+                      "firstIssueAt": "timestamp (首次发行时间)",
+                      "workingHours": "number (工作时长，小时)"
+                    },
+                    "// === 累计统计 ===": "",
+                    "totalStats": {
+                      "totalCardsIssued": "number (累计发行卡数)",
+                      "totalPointsIssued": "number (累计发行点数)",
+                      "totalCashReceived": "number (累计收到现金 RM)",
+                      "averageCardValue": "number (平均每卡点数)",
+                      "largestCardValue": "number (最大单卡点数)",
+                      "smallestCardValue": "number (最小单卡点数)"
+                    },
+                    "// === 现金管理 ===": "",
+                    "cashManagement": {
+                      "cashOnHand": "number (当前持有现金 RM)",
+                      "totalSubmitted": "number (累计上交现金 RM)",
+                      "pendingSubmission": "number (待上交现金 RM)",
+                      "lastSubmissionAt": "timestamp (最后上交时间)",
+                      "submissionCount": "number (上交次数)"
+                    },
+                    "// === 工作记录 ===": "",
+                    "workHistory": [
+                      {
+                        "date": "string (日期 YYYY-MM-DD)",
+                        "shift": "string (班次)",
+                        "cardsIssued": "number (发行卡数)",
+                        "pointsIssued": "number (发行点数)",
+                        "cashReceived": "number (收到现金)",
+                        "cashSubmitted": "number (上交现金)",
+                        "workingHours": "number (工作时长)"
+                      }
+                    ],
+                    "// === 权限设置 ===": "",
+                    "permissions": {
+                      "canIssueCards": "boolean (可以发行点数卡)",
+                      "canPrintQRCode": "boolean (可以打印 QR Code)",
+                      "canRecordCash": "boolean (可以记录现金收款)",
+                      "canViewOwnStats": "boolean (可以查看自己的统计)",
+                      "canSubmitCash": "boolean (可以上交现金)",
+                      "maxCardValue": "number (单卡最大点数限制，0=无限制)",
+                      "maxDailyIssue": "number (每日最大发行点数限制，0=无限制)"
+                    },
+                    "// === 状态信息 ===": "",
+                    "status": {
+                      "isActive": "boolean (是否激活)",
+                      "isOnDuty": "boolean (是否当班中)",
+                      "dutyStartedAt": "timestamp (当班开始时间)",
+                      "lastActivityAt": "timestamp (最后活动时间)"
+                    },
+                    "// === 备注 ===": "",
+                    "notes": [
+                      "PointSeller 只在义卖会当日有效",
+                      "发行点数卡时必须收取等值现金",
+                      "所有现金必须定期上交给 FinanceManager",
+                      "点数卡发行记录保存在 pointCards 集合"
+                    ]
                   },
                   "accountStatus": {
                     "isActive": "boolean (账户是否激活)",
@@ -690,9 +918,10 @@
                     "userName": "string",
                     "phone": "string"
                   },
-                  "otpVerified": "boolean (是否通过OTP验证)",
-                  "otpSessionId": "string (OTP会话ID)",
-                  "// === point_card 相关字段 ===": "",
+                  "// === 验证方式（已从OTP改为PIN码验证）===": "",
+                  "pinVerified": "boolean (是否通过交易密码验证)",
+                  "pinVerifiedAt": "timestamp (交易密码验证时间)",
+                  "verificationMethod": "string (验证方式: 'transaction_pin' | 'otp'，当前统一使用 transaction_pin)""// === point_card 相关字段 ===": "",
                   "cardId": "string (点数卡ID)",
                   "cardNumber": "string (点数卡编号)",
                   "cardBalanceBefore": "number",
@@ -749,48 +978,104 @@
                 "securityRules": "Seller Manager 可读写自己的记录; Finance Manager 和 Event Manager 可读所有记录"
               },
               "cashSubmissions": {
-                "path": "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
-                "description": "现金上交记录（Seller Manager 批量上交给 Finance Manager 的记录）",
+                "path": "organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId}",
+                "description": "现金上交记录（Seller/SellerManager/PointSeller 上交给 FinanceManager）",
                 "level": "Event Subcollection",
                 "documentStructure": {
-                  "submissionId": "string (文档ID)",
-                  "type": "string ('managerToFinance')",
-                  "submittedBy": "string (Seller Manager ID)",
-                  "submittedByName": "string",
-                  "submittedByRole": "string ('sellerManager')",
-                  "submittedByDepartments": "array<string>",
-                  "receivedBy": "string (Finance Manager ID)",
-                  "receivedByName": "string",
-                  "receivedByRole": "string ('financeManager')",
-                  "totalAmount": "number",
-                  "collectionCount": "number",
-                  "includedCollections": "array<string>",
+                  "// === 基本信息 ===": "",
+                  "submissionId": "string (自动生成的文档ID)",
+                  "submissionNumber": "string (流水号，如 'CS-2025-001')",
+                  "// === 提交方信息 ===": "",
+                  "submittedBy": "string (提交者 userId)",
+                  "submitterName": "string (提交者姓名)",
+                  "submitterRole": "string (提交者角色：'seller' | 'sellerManager' | 'pointSeller')",
+                  "submitterDepartment": "string (提交者部门，可选)",
+                  "submitterPhone": "string (提交者电话)",
+                  "// === 接收方信息 ===": "",
+                  "receivedBy": "string (接收者 userId - FinanceManager)",
+                  "receiverName": "string (接收者姓名)",
+                  "receiverPhone": "string (接收者电话)",
+                  "// === 金额信息 ===": "",
+                  "amount": "number (上交金额 RM)",
                   "breakdown": {
-                    "normalCollections": "number",
-                    "partialCollections": "number",
-                    "pointsRecovery": "number",
-                    "waivers": "number",
-                    "totalDiscrepancy": "number"
+                    "cash": "number (现金 RM)",
+                    "transfer": "number (转账 RM)",
+                    "check": "number (支票 RM)"
                   },
-                  "status": "string ('pending' | 'confirmed' | 'rejected')",
-                  "submittedAt": "timestamp",
-                  "confirmedAt": "timestamp",
-                  "rejectedAt": "timestamp",
-                  "rejectionReason": "string",
-                  "eventId": "string",
-                  "organizationId": "string",
-                  "note": "string",
-                  "financeNote": "string",
-                  "createdAt": "timestamp",
-                  "updatedAt": "timestamp"
+                  "currency": "string (货币，默认 'MYR')",
+                  "// === 状态信息 ===": "",
+                  "status": "string ('pending' | 'confirmed' | 'disputed' | 'rejected')",
+                  "submittedAt": "timestamp (提交时间)",
+                  "confirmedAt": "timestamp (确认时间，可选)",
+                  "disputedAt": "timestamp (争议时间，可选)",
+                  "rejectedAt": "timestamp (拒绝时间，可选)",
+                  "// === 备注信息 ===": "",
+                  "note": "string (备注)",
+                  "receiptNumber": "string (收据编号)",
+                  "confirmationNote": "string (确认备注，FinanceManager 填写)",
+                  "disputeReason": "string (争议原因，可选)",
+                  "// === 包含的销售记录 ===": "",
+                  "includedSales": [
+                    {
+                      "sellerId": "string (Seller ID，可选)",
+                      "sellerName": "string (Seller 姓名)",
+                      "amount": "number (金额 RM)",
+                      "salesDate": "string (销售日期 YYYY-MM-DD)",
+                      "transactionIds": [
+                        "array<string> (包含的交易ID列表)"
+                      ]
+                    }
+                  ],
+                  "salesCount": "number (包含的销售笔数)",
+                  "// === 点数卡信息 ===": "",
+                  "pointCardInfo": {
+                    "cardsIssued": "number (发行卡数，pointSeller 专用)",
+                    "pointsIssued": "number (发行点数，pointSeller 专用)",
+                    "cardIds": [
+                      "array<string> (点数卡ID列表)"
+                    ]
+                  },
+                  "// === 元数据 ===": "",
+                  "metadata": {
+                    "createdAt": "timestamp",
+                    "updatedAt": "timestamp",
+                    "eventId": "string (冗余字段)",
+                    "organizationId": "string (冗余字段)",
+                    "submissionSource": "string ('manual' | 'batch' | 'auto')"
+                  }
                 },
                 "indexes": [
-                  "submittedBy",
-                  "submittedAt",
                   "status",
-                  "receivedBy"
+                  "receivedBy + status + submittedAt (desc)",
+                  "submittedBy + submittedAt (desc)",
+                  "submittedAt (desc)",
+                  "submissionNumber (unique)"
                 ],
-                "securityRules": "Seller Manager 可创建和读取自己的记录; Finance Manager 可读写所有记录; Event Manager 可读所有记录"
+                "securityRules": {
+                  "create": [
+                    "Seller/SellerManager/PointSeller 可以创建自己的上交记录",
+                    "submittedBy 必须等于 request.auth.uid"
+                  ],
+                  "read": [
+                    "提交者可以读取自己的记录",
+                    "FinanceManager 可以读取所有记录",
+                    "Event Manager 可以读取所有记录"
+                  ],
+                  "update": [
+                    "FinanceManager 可以更新状态（确认/拒绝/争议）",
+                    "只能修改 status, confirmedAt, confirmationNote, disputedAt, disputeReason 字段"
+                  ],
+                  "delete": [
+                    "不允许删除"
+                  ]
+                },
+                "notes": [
+                  "现金上交是整个系统的关键流程",
+                  "状态变更必须记录时间戳",
+                  "FinanceManager 确认后更新各项统计",
+                  "支持部分上交（一个 Seller 可以分多次上交）",
+                  "includedSales 提供详细追溯"
+                ]
               },
               "departments": {
                 "path": "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}",
@@ -958,9 +1243,12 @@
         "level": "Platform",
         "documentId": "config (固定文档ID)",
         "documentStructure": {
+          "COMMENT_OTP_STATUS": "========== OTP系统状态说明 ==========",
+          "COMMENT_OTP_DEPRECATED_FOR_CUSTOMER": "注意：Customer付款（processCustomerPayment）和转账（transferPoints）已改用交易密码（PIN）验证，不再使用OTP。OTP配置保留用于其他场景（如登录、找回密码等）。",
           "// === OTP配置 ===": "",
+          "COMMENT_OTP_DEPRECATED": "注意：Customer付款和转账已改用交易密码（PIN）验证，不再使用OTP。OTP配置保留用于其他场景（如登录、重置密码等）。",
           "otp": {
-            "enabled": "boolean (OTP系统总开关)",
+            "enabled": "boolean (OTP系统总开关)，Customer付款/转账不使用)",
             "provider": "string ('360sms' | 'twilio' | 'firebase')",
             "validityMinutes": "number (OTP有效期，分钟)",
             "maxAttempts": "number (最大尝试次数)",
@@ -982,23 +1270,27 @@
           "// === OTP验证场景开关（Platform Admin统一控制）===": "",
           "otpRequired": {
             "// --- Customer相关 ---": "",
-            "customerPayment": "boolean (Customer付款给Merchant)",
-            "customerTransfer": "boolean (Customer转让点数)",
+            "COMMENT": "以下场景已改用PIN验证，此配置不再生效",
+            "customerPayment": "boolean (已弃用，改用交易密码验证)",
+            "customerTransfer": "boolean (已弃用，改用交易密码验证)",
             "pointCardTopup": "boolean (Customer扫点数卡充值，通常为false)",
             "// --- SellerManager相关 ---": "",
             "sellerManagerAllocate": "boolean (SellerManager分配点数)",
             "sellerManagerCollectCash": "boolean (SellerManager收款确认)",
+            "sellerManagerSubmission": "boolean (Seller Manager提交点数时是否需要OTP)",
             "// --- Seller相关 ---": "",
             "sellerSellPoints": "boolean (Seller出售点数)",
             "sellerSubmitCash": "boolean (Seller上缴现金)",
             "// --- EventManager相关 ---": "",
             "eventManagerBatchAllocate": "boolean (EventManager批量分配)",
             "eventManagerApproval": "boolean (EventManager审批大额操作)",
+            "eventManagerOperations": "boolean (Event Manager重要操作时是否需要OTP)",
             "// --- PointSeller相关 ---": "",
             "pointSellerIssueCard": "boolean (PointSeller发行点数卡)",
             "pointSellerReceiveCash": "boolean (PointSeller收款确认)",
             "// --- FinanceManager相关 ---": "",
             "financeManagerVerify": "boolean (FinanceManager财务核实)",
+            "financeManagerApproval": "boolean (Finance Manager审批时是否需要OTP)",
             "// --- Merchant相关 ---": "",
             "merchantPayment": "boolean (Merchant收款，通常为false)"
           },
@@ -1216,46 +1508,6 @@
             "functions/scheduledFunctions.js"
           ]
         },
-        "processPayment": {
-          "trigger": "Cloud Function (HTTPS Callable)",
-          "description": "處理 Customer 向 Merchant 付款",
-          "input": {
-            "organizationId": "string",
-            "eventId": "string",
-            "merchantId": "string",
-            "customerId": "string (從 auth 取得)",
-            "amount": "number (付款金額)"
-          },
-          "validation": [
-            "驗證用戶已登入（request.auth）",
-            "驗證 Customer 角色",
-            "驗證 Merchant 存在且營業中",
-            "驗證 Customer 餘額充足（availablePoints >= amount）",
-            "驗證金額合理性（amount > 0 且為整數）"
-          ],
-          "operations": [
-            "使用 Firestore Transaction 確保原子性",
-            "扣除 Customer 的 availablePoints",
-            "增加 Customer 的 totalSpent 和 merchantTransactionCount",
-            "增加 Merchant 的 totalRevenue 和 transactionCount",
-            "創建交易記錄（transactionType: 'MERCHANT_PAYMENT'）",
-            "更新 Event 的 globalPointsStats（如需要）"
-          ],
-          "output": {
-            "success": "boolean",
-            "transactionId": "string",
-            "newBalance": "number (Customer 新餘額)",
-            "message": "string"
-          },
-          "errorHandling": [
-            "餘額不足 -> 'INSUFFICIENT_BALANCE'",
-            "商家未營業 -> 'MERCHANT_INACTIVE'",
-            "交易失敗 -> 'TRANSACTION_FAILED'"
-          ],
-          "relatedFiles": [
-            "functions/src/transactions.js"
-          ]
-        },
         "onMerchantTransaction": {
           "trigger": "Firestore onCreate: transactions/{transactionId}",
           "description": "當創建商家交易記錄時觸發（更新統計）",
@@ -1370,50 +1622,114 @@
         "processCustomerPayment": {
           "name": "processCustomerPayment",
           "trigger": "HTTP Callable",
-          "description": "Customer付款给Merchant",
+          "description": "Customer付款给Merchant（使用交易密码验证）",
           "parameters": {
-            "merchantId": "string",
-            "amount": "number",
-            "otpSessionId": "string (如果需要OTP验证)"
+            "merchantId": "string (商家ID)",
+            "amount": "number (付款金额)",
+            "transactionPin": "string (6位数字交易密码，必填)",
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)"
           },
           "logic": [
-            "1. 如果有otpSessionId，验证OTP已通过",
-            "2. 使用Firestore Transaction:",
-            "   a. 读取Customer文档，检查余额",
-            "   b. 读取Merchant文档",
-            "   c. 扣除Customer points",
-            "   d. 增加Merchant revenue",
-            "   e. 创建transaction记录（type='MERCHANT_PAYMENT'）",
-            "3. 触发器更新统计数据"
+            "1. 验证身份（context.auth.uid）",
+            "2. 验证必要参数（merchantId, amount, organizationId, eventId）",
+            "3. 验证transactionPin格式（必须是6位数字：/^\\d{6}$/）",
+            "4. 读取Customer文档（organizations/{orgId}/events/{eventId}/users/{customerId}）",
+            "5. 使用 verifyTransactionPinInternal 验证交易密码：",
+            "   a. 检查账户锁定状态（pinLockedUntil）",
+            "   b. 检查失败次数（pinFailedAttempts < 5）",
+            "   c. 读取PIN哈希值（transactionPinHash）",
+            "   d. 检测加密方式（有pinSalt用SHA256，无pinSalt用bcrypt）",
+            "   e. 验证PIN正确性",
+            "   f. 验证失败：增加pinFailedAttempts，5次后锁定1小时",
+            "   g. 验证成功：重置pinFailedAttempts和pinLockedUntil",
+            "6. 使用Firestore Transaction执行付款：",
+            "   a. 重新读取Customer文档（确保数据最新）",
+            "   b. 检查余额（customer.pointsAccount.availablePoints >= amount）",
+            "   c. 读取Merchant文档",
+            "   d. 检查商家营业状态（operationStatus.isActive）",
+            "   e. 扣除Customer点数：",
+            "      - availablePoints -= amount",
+            "      - totalSpent += amount",
+            "      - transactionCount += 1",
+            "   f. 增加Merchant收入：",
+            "      - totalRevenue += amount",
+            "      - transactionCount += 1",
+            "   g. 更新Customer访问商家列表（stats.merchantsVisited）",
+            "   h. 创建transaction记录（type='customer_to_merchant'）：",
+            "      - 包含customerId, customerName, customerPhone",
+            "      - 包含merchantId, merchantName",
+            "      - pinVerified=true, verificationMethod='transaction_pin'",
+            "7. 返回结果：{ success, transactionId, remainingBalance }"
           ],
           "returns": {
             "success": "boolean",
             "transactionId": "string",
-            "remainingBalance": "number"
-          }
+            "remainingBalance": "number",
+            "message": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效或格式错误",
+            "unauthenticated: 未登录",
+            "not-found: Customer或Merchant不存在",
+            "failed-precondition: 余额不足、商家暂停营业、账户被锁定",
+            "permission-denied: 交易密码错误（包含剩余尝试次数）"
+          ]
         },
         "transferPoints": {
           "name": "transferPoints",
           "trigger": "HTTP Callable",
-          "description": "Customer转让点数",
+          "description": "Customer之间转让点数（使用交易密码验证）",
           "parameters": {
             "toPhoneNumber": "string (接收方手机号)",
-            "amount": "number",
-            "otpSessionId": "string (如果需要OTP验证)"
+            "amount": "number (转让金额)",
+            "transactionPin": "string (6位数字交易密码，必填)"
           },
           "logic": [
-            "1. 查询接收方Customer（通过phoneNumber）",
-            "2. 如果有otpSessionId，验证OTP已通过",
-            "3. 使用Firestore Transaction:",
-            "   a. 扣除转出方余额",
-            "   b. 增加接收方余额",
-            "   c. 更新双方统计数据",
-            "   d. 创建transaction记录（type='customer_transfer'）"
+            "1. 验证身份（context.auth.uid）",
+            "2. 从custom claims获取organizationId和eventId",
+            "3. 验证必要参数（toPhoneNumber, amount）",
+            "4. 验证transactionPin格式（必须是6位数字：/^\\d{6}$/）",
+            "5. 读取转出方Customer文档",
+            "6. 使用 verifyTransactionPinInternal 验证交易密码：",
+            "   （逻辑同processCustomerPayment，步骤5）",
+            "7. 查询接收方Customer：",
+            "   a. 生成手机号变体（支持多种格式）：",
+            "      - 原始号码（如：0123456789）",
+            "      - 国际格式（如：+60123456789）",
+            "      - 去0格式（如：123456789）",
+            "   b. 遍历变体查询 users 集合（basicInfo.phoneNumber）",
+            "   c. 验证接收方存在且角色包含'customer'",
+            "   d. 验证不是转给自己",
+            "8. 使用Firestore Transaction执行转账：",
+            "   a. 扣除转出方余额：",
+            "      - availablePoints -= amount",
+            "      - totalSpent += amount",
+            "      - transferOutCount += 1",
+            "   b. 增加接收方余额：",
+            "      - availablePoints += amount",
+            "      - totalReceived += amount",
+            "      - transferInCount += 1",
+            "   c. 更新双方统计数据（transactionCount, lastActivityAt）",
+            "   d. 创建transaction记录（type='customer_transfer'）：",
+            "      - 包含fromUser和toUser完整信息",
+            "      - pinVerified=true, verificationMethod='transaction_pin'",
+            "9. 返回结果：{ success, transactionId, remainingBalance }"
           ],
           "returns": {
             "success": "boolean",
-            "transactionId": "string"
-          }
+            "transactionId": "string",
+            "remainingBalance": "number",
+            "recipientName": "string",
+            "message": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效或格式错误",
+            "unauthenticated: 未登录",
+            "not-found: 接收方不存在或不是Customer",
+            "failed-precondition: 余额不足、账户被锁定、不能转给自己",
+            "permission-denied: 交易密码错误（包含剩余尝试次数）"
+          ]
         },
         "topupFromPointCard": {
           "name": "topupFromPointCard",
@@ -1436,6 +1752,12 @@
             "amount": "number (充值金额)",
             "transactionId": "string"
           }
+        },
+        "createPointCard": {
+          "name": "createPointCard",
+        },
+        "queryPointCardBalance": {
+          "name": "queryPointCardBalance",
         },
         "processPointCardPayment": {
           "name": "processPointCardPayment",
@@ -1461,6 +1783,73 @@
             "transactionId": "string",
             "remainingBalance": "number (卡片剩余余额)"
           }
+        },
+        "confirmCashSubmission": {
+          "name": "confirmCashSubmission",
+        },
+        "batchConfirmSubmissions": {
+          "name": "batchConfirmSubmissions",
+        },
+        "generateFinanceReport": {
+          "name": "generateFinanceReport",
+        },
+        "submitCashToFinance": {
+          "name": "submitCashToFinance",
+        },
+        "verifyTransactionPinInternal": {
+          "name": "verifyTransactionPinInternal",
+          "type": "Internal Function",
+          "description": "验证交易密码（内部函数，不直接暴露）",
+          "parameters": {
+            "transactionPin": "string (6位数字)",
+            "userData": "object (用户文档数据)"
+          },
+          "logic": [
+            "1. 检查锁定状态：",
+            "   - 读取 userData.basicInfo.pinLockedUntil",
+            "   - 如果当前时间 < pinLockedUntil，返回锁定错误",
+            "2. 检查失败次数：",
+            "   - 读取 userData.basicInfo.pinFailedAttempts",
+            "   - 如果 >= 5，返回锁定错误",
+            "3. 检查PIN是否已设置：",
+            "   - 读取 userData.basicInfo.transactionPinHash",
+            "   - 如果不存在，返回未设置错误",
+            "4. 检测加密方式：",
+            "   - 检查 userData.basicInfo.transactionPinSalt",
+            "   - 有Salt → 使用SHA256验证（旧格式，向后兼容）",
+            "   - 无Salt → 使用bcrypt验证（新格式）",
+            "5. 验证PIN：",
+            "   - SHA256: sha256(pin + salt) === pinHash",
+            "   - bcrypt: bcrypt.compare(pin, pinHash)",
+            "6. 返回验证结果：",
+            "   - 成功：{ success: true }",
+            "   - 失败：{ success: false, currentAttempts, error }",
+            "   - 锁定：{ success: false, locked: true, error }"
+          ],
+          "constants": {
+            "MAX_ATTEMPTS": "5 (最大失败次数)",
+            "LOCK_DURATION": "3600000 (锁定时长，毫秒，1小时)"
+          }
+        },
+        "updatePinVerificationStatus": {
+          "name": "updatePinVerificationStatus",
+          "type": "Internal Function",
+          "description": "更新PIN验证状态（内部函数）",
+          "parameters": {
+            "userRef": "DocumentReference (用户文档引用)",
+            "success": "boolean (验证是否成功)",
+            "currentAttempts": "number (当前失败次数，可选)"
+          },
+          "logic": [
+            "如果验证成功：",
+            "  - 重置 basicInfo.pinFailedAttempts = 0",
+            "  - 清除 basicInfo.pinLockedUntil = null",
+            "如果验证失败：",
+            "  - 增加 basicInfo.pinFailedAttempts += 1",
+            "  - 如果新的次数 >= 5：",
+            "    - 设置 basicInfo.pinLockedUntil = now + 1小时",
+            "    - 记录锁定时间"
+          ]
         }
       },
       "securityRules": {

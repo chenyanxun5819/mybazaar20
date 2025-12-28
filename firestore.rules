@@ -483,5 +483,91 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
+    
+    
+    // cashSubmissions 集合规则
+    match /organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId} {
+      
+      // ===== 辅助函数 =====
+      
+      // 检查用户是否已认证
+      function isAuthenticated() {
+        return request.auth != null;
+      }
+      
+      // 获取当前用户数据
+      function getUserData() {
+        return get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(request.auth.uid)).data;
+      }
+      
+      // 检查用户是否有指定角色
+      function hasRole(role) {
+        return isAuthenticated() && 
+               getUserData().roles.hasAny([role]);
+      }
+      
+      // 检查是否是提交者本人
+      function isSubmitter() {
+        return isAuthenticated() && 
+               resource.data.submittedBy == request.auth.uid;
+      }
+      
+      // 检查是否是 Finance Manager
+      function isFinanceManager() {
+        return hasRole('financeManager');
+      }
+      
+      // 检查是否是 Event Manager
+      function isEventManager() {
+        return hasRole('eventManager');
+      }
+      
+      // 检查是否可以创建上交记录
+      function canCreate() {
+        return isAuthenticated() &&
+               (hasRole('seller') || hasRole('sellerManager') || hasRole('pointSeller')) &&
+               request.resource.data.submittedBy == request.auth.uid &&
+               request.resource.data.status == 'pending';
+      }
+      
+      // 检查 Finance Manager 是否只更新允许的字段
+      function isValidFinanceUpdate() {
+        let allowedFields = ['status', 'confirmedAt', 'receivedBy', 'receiverName', 'confirmationNote', 'metadata'].toSet();
+        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return modifiedFields.hasOnly(allowedFields);
+      }
+      
+      // ===== 访问规则 =====
+      
+      // CREATE: Seller/SellerManager/PointSeller 可以创建上交记录
+      allow create: if canCreate();
+      
+      // READ: 
+      // - 提交者可以读取自己的记录
+      // - Finance Manager 可以读取所有记录
+      // - Event Manager 可以读取所有记录
+      allow read: if isSubmitter() || 
+                     isFinanceManager() || 
+                     isEventManager();
+      
+      // UPDATE: 
+      // - Finance Manager 可以更新状态（确认/拒绝）
+      // - 只能修改特定字段
+      allow update: if isFinanceManager() && 
+                       isValidFinanceUpdate();
+      
+      // DELETE: 不允许删除
+      allow delete: if false;
+    }
+    
+    // ===== 索引建议 =====
+    // 1. status (ASC)
+    // 2. receivedBy (ASC) + status (ASC) + submittedAt (DESC)
+    // 3. submittedBy (ASC) + submittedAt (DESC)
+    // 4. submittedAt (DESC)
+
+
+
+
   }
 }

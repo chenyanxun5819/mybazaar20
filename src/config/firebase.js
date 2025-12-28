@@ -14,6 +14,9 @@ const firebaseConfig = {
   measurementId: "G-JWBMQVNGHL"
 };
 
+export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
+export const FUNCTIONS_REGION = 'asia-southeast1';
+
 // 版本戳記（用於驗證部署是否最新）
 // 注意：這是執行時生成的時間，如果需要真正「建置時間」可改為在 build 腳本寫入環境變數再嵌入。
 export const BUILD_TIMESTAMP = '2025-11-30T' + new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -37,7 +40,7 @@ export const auth = initializeAuth(app, {
   popupRedirectResolver: undefined
 });
 export const db = getFirestore(app);
-export const functions = getFunctions(app, 'us-central1');
+export const functions = getFunctions(app, FUNCTIONS_REGION);
 
 // 禁用 Firebase Auth 的 Google 库预加载（解决 apis.google.com 超时）
 if (auth) {
@@ -55,7 +58,7 @@ if (auth) {
 
 console.log('☁️ [Firebase] 使用 Firebase 生產環境');
 console.log('📍 [Firebase] Project ID:', firebaseConfig.projectId);
-console.log('🌎 [Firebase] Functions Region: us-central1');
+console.log('🌎 [Firebase] Functions Region:', FUNCTIONS_REGION);
 console.log('✅ [Firebase] 初始化完成');
 
 export default app;

@@ -1,7 +1,9 @@
 // src/contexts/EventContext.jsx
+// ✅ 已更新：添加对 Manager 路由和 Login 路由的支持
 import { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import { safeFetch } from '../services/safeFetch';
 
 const EventContext = createContext();
 
@@ -23,6 +25,28 @@ export const EventProvider = ({ children }) => {
   const [orgCode, setOrgCode] = useState(null);
   const [eventCode, setEventCode] = useState(null);
 
+  const withTimeout = (promise, ms, label) => {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new Error(
+            `[EventContext] 载入逾时（${ms}ms）：${label}\n` +
+              `可能原因：\n` +
+              `• 网路阻挡 Google/Firebase 域名或防火墙拦截\n` +
+              `• 浏览器/外挂阻挡第三方请求\n` +
+              `• Firestore 规则拒绝读取（应会报错，但某些网路环境会卡住）\n` +
+              `建议：改用手机热点重试、停用拦截外挂、或稍后再试。`
+          )
+        );
+      }, ms);
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
+  };
+
   useEffect(() => {
     parseUrlAndLoadData();
   }, []);
@@ -32,10 +56,7 @@ export const EventProvider = ({ children }) => {
       setLoading(true);
       setError(null);
 
-      // 🔥 改进的 URL 解析：segment-based，容错更强
-      // 支持：
-      // - /orgCode-eventCode/platform(/...)
-      // - /(seller|merchant|customer)/orgCode-eventCode/dashboard
+      // URL 解析：支持多种格式
       const urlPath = decodeURIComponent(window.location.pathname || '/').replace(/\/+$/, '');
       console.log('[EventContext] 解析 URL:', urlPath);
 
@@ -45,8 +66,24 @@ export const EventProvider = ({ children }) => {
       let platform = null;
 
       if (segments.length >= 2) {
-        // 兼容普通用户路徑（dashboard, register, payment 等）
         const first = segments[0].toLowerCase();
+        
+        // ⭐ 新增：支持 Login 路由
+        // 格式: /login/:orgEventCode
+        if (first === 'login') {
+          const orgEvent = segments[1];
+          if (orgEvent) {
+            const idx = orgEvent.indexOf('-');
+            if (idx > 0) {
+              parsedOrgCode = orgEvent.substring(0, idx);
+              parsedEventCode = orgEvent.substring(idx + 1);
+              platform = 'universal'; // 统一登录页面
+              console.log('[EventContext] ✅ 识别为 Login 路由');
+            }
+          }
+        }
+        
+        // ✅ 支持普通用户路由: seller, merchant, customer
         if (['seller','merchant','customer'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
@@ -57,6 +94,26 @@ export const EventProvider = ({ children }) => {
               parsedOrgCode = orgEvent.substring(0, idx);
               parsedEventCode = orgEvent.substring(idx + 1);
               platform = 'phone';
+            }
+          }
+        }
+        
+        // ✅ 支持 Manager 路由
+        // 格式: /seller-manager/:orgEventCode/dashboard
+        //       /finance-manager/:orgEventCode/dashboard
+        //       /merchant-manager/:orgEventCode/dashboard
+        //       /customer-manager/:orgEventCode/dashboard
+        //       /event-manager/:orgEventCode/dashboard
+        if (['seller-manager', 'finance-manager', 'merchant-manager', 'customer-manager', 'event-manager'].includes(first)) {
+          const orgEvent = segments[1];
+          const third = segments[2]?.toLowerCase();
+          if (orgEvent && third === 'dashboard') {
+            const idx = orgEvent.indexOf('-');
+            if (idx > 0) {
+              parsedOrgCode = orgEvent.substring(0, idx);
+              parsedEventCode = orgEvent.substring(idx + 1);
+              platform = 'desktop'; // Manager 通常使用桌面版
+              console.log('[EventContext] ✅ 识别为 Manager 路由:', first);
             }
           }
         }
@@ -78,10 +135,11 @@ export const EventProvider = ({ children }) => {
 
       if (!parsedOrgCode || !parsedEventCode) {
         console.warn('[EventContext] URL 格式无法识别！: ' + urlPath);
-        console.log('[EventContext] 预期格式: /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...)');
+        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type)/:orgEventCode/dashboard');
         const hints = [
           'URL 格式不正确，请使用正确的链接',
           '例如: /login/xhessbn-2025 或 /seller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
+          '或 /finance-manager/xhessbn-2025/dashboard',
           '',
           '可能原因：',
           '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',
@@ -98,8 +156,6 @@ export const EventProvider = ({ children }) => {
         eventCode: parsedEventCode,
         platform: platform || '(unknown)'
       });
-
-      // 兼容舊日誌格式（移除 match 依賴）
 
       setOrgCode(parsedOrgCode);
       setEventCode(parsedEventCode);
@@ -118,100 +174,148 @@ export const EventProvider = ({ children }) => {
     try {
       console.log('[EventContext] 载入数据:', { orgCode, eventCode });
 
-      // 1. 🔥 查找组织（不区分大小写）
-      const orgsSnapshot = await getDocs(collection(db, 'organizations'));
-      
-      console.log(`[EventContext] 找到 ${orgsSnapshot.size} 个组织`);
+      const FIRESTORE_TIMEOUT_MS = 12000;
 
-      let orgDoc = null;
-      orgsSnapshot.forEach(doc => {
-        const data = doc.data();
-        console.log(`[EventContext] 检查组织: ${data.orgCode}`);
-        if (data.orgCode && data.orgCode.toLowerCase() === orgCode.toLowerCase()) {
-          orgDoc = doc;
-        }
-      });
+      let resolvedOrgId = null;
+      let resolvedEventId = null;
+      let resolvedOrgCode = orgCode;
+      let resolvedEventCode = eventCode;
 
-      if (!orgDoc) {
-        // 🔥 提供更有帮助的错误信息
-        const availableOrgs = [];
-        orgsSnapshot.forEach(doc => {
-          availableOrgs.push(doc.data().orgCode);
-        });
-        
-        console.error('[EventContext] 可用的组织:', availableOrgs);
-        throw new Error(
-          `找不到组织代码: ${orgCode}\n` +
-          `可用的组织: ${availableOrgs.join(', ')}\n` +
-          `请检查 URL 是否正确`
+      const resolveViaHttp = async () => {
+        console.warn('[EventContext] Firestore 读取被拒绝，改用 /api/resolveOrgEventHttp 解析 org/event');
+
+        const resp = await withTimeout(
+          safeFetch('/api/resolveOrgEventHttp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orgCode: String(orgCode || '').trim().toLowerCase(),
+              eventCode: String(eventCode || '').trim()
+            })
+          }),
+          FIRESTORE_TIMEOUT_MS,
+          'resolveOrgEventHttp'
         );
+
+        const text = await resp.text();
+        let json = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch (_) {
+          json = null;
+        }
+
+        if (!resp.ok || !json?.success) {
+          const serverMsg = json?.error?.message || text || `HTTP ${resp.status}`;
+          throw new Error(serverMsg);
+        }
+
+        const orgId = json.organizationId;
+        const evtId = json.eventId;
+        if (!orgId || !evtId) {
+          throw new Error('解析组织/活动失败（缺少 organizationId/eventId）');
+        }
+
+        setOrganizationId(orgId);
+        setEventId(evtId);
+        // 最小化对象，避免未登入时被 Firestore rules 卡住
+        setOrganization({ id: orgId, orgCode: String(orgCode || '').trim().toLowerCase() });
+        setEvent({ id: evtId, eventCode: String(eventCode || '').trim() });
+
+        console.log('[EventContext] ✅ 透过 HTTP 解析成功:', { orgId, evtId });
+      };
+
+      // 1. 查找组织（优先走 Firestore；若 rules 拒绝则 fallback HTTP）
+      let orgId = null;
+      let orgData = null;
+      try {
+        const orgsQ = query(
+          collection(db, 'organizations'),
+          where('orgCode', '==', String(orgCode || '').trim().toLowerCase())
+        );
+        const orgsSnapshot = await withTimeout(
+          getDocs(orgsQ),
+          FIRESTORE_TIMEOUT_MS,
+          '查询 organizations(orgCode)'
+        );
+
+        if (orgsSnapshot.empty) {
+          throw new Error(`找不到组织代码: ${orgCode}`);
+        }
+
+        const doc0 = orgsSnapshot.docs[0];
+        orgId = doc0.id;
+        orgData = doc0.data();
+        setOrganizationId(orgId);
+        setOrganization({ id: orgId, ...orgData });
+        console.log('[EventContext] 找到组织:', { id: orgId, orgCode: orgData?.orgCode });
+
+        resolvedOrgId = orgId;
+        resolvedOrgCode = orgData?.orgCode || orgCode;
+      } catch (e) {
+        const msg = e?.message || '';
+        const code = e?.code || '';
+        const isPerm =
+          code === 'permission-denied' ||
+          code === 'failed-precondition' ||
+          /Missing or insufficient permissions/i.test(msg);
+        if (isPerm) {
+          await resolveViaHttp();
+          setLoading(false);
+          return;
+        }
+        throw e;
       }
 
-      const orgId = orgDoc.id;
-      const orgData = orgDoc.data();
-
-      console.log('[EventContext] 找到组织:', {
-        id: orgId,
-        orgCode: orgData.orgCode
-      });
-
-      setOrganizationId(orgId);
-      setOrganization({ id: orgId, ...orgData });
-
-      // 2. 🔥 查找活动（不区分大小写）
+      // 2. 查找活动（优先走 Firestore；若 rules 拒绝则 fallback HTTP）
       const eventsCollectionPath = `organizations/${orgId}/events`;
       console.log('[EventContext] 查询活动路径:', eventsCollectionPath);
 
-      const eventsSnapshot = await getDocs(
-        collection(db, 'organizations', orgId, 'events')
-      );
+      try {
+        const eventsQ = query(
+          collection(db, 'organizations', orgId, 'events'),
+          where('eventCode', '==', String(eventCode || '').trim())
+        );
 
-      console.log(`[EventContext] 找到 ${eventsSnapshot.size} 个活动`);
+        const eventsSnapshot = await withTimeout(
+          getDocs(eventsQ),
+          FIRESTORE_TIMEOUT_MS,
+          `查询 events(eventCode)（orgId=${orgId}）`
+        );
 
-      let eventDoc = null;
-      eventsSnapshot.forEach(doc => {
-        const data = doc.data();
-        console.log(`[EventContext] 检查活动: ${data.eventCode}`);
-        if (data.eventCode && data.eventCode.toLowerCase() === eventCode.toLowerCase()) {
-          eventDoc = doc;
+        if (eventsSnapshot.empty) {
+          throw new Error(`找不到活动代码: ${eventCode}`);
         }
-      });
 
-      if (!eventDoc) {
-        // 🔥 提供更有帮助的错误信息
-        const availableEvents = [];
-        eventsSnapshot.forEach(doc => {
-          availableEvents.push(doc.data().eventCode);
-        });
+        const doc0 = eventsSnapshot.docs[0];
+        const evtId = doc0.id;
+        const evtData = doc0.data();
+        setEventId(evtId);
+        setEvent({ id: evtId, ...evtData });
+        console.log('[EventContext] 找到活动:', { id: evtId, eventCode: evtData?.eventCode });
 
-        console.error('[EventContext] 可用的活动:', availableEvents);
-        throw new Error([
-          `找不到活动代码: ${eventCode}`,
-          `可用的活动: ${availableEvents.join(', ') || '（空）'}`,
-          '',
-          '请检查 URL：',
-          '• 链接是否包含 orgCode-eventCode（例如 xhessbn-2025）',
-          '• 组织与活动是否已在 Firestore 建立',
-          '• 链接大小写是否与保存的一致',
-        ].join('\n'));
+        resolvedEventId = evtId;
+        resolvedEventCode = evtData?.eventCode || eventCode;
+      } catch (e) {
+        const msg = e?.message || '';
+        const code = e?.code || '';
+        const isPerm =
+          code === 'permission-denied' ||
+          code === 'failed-precondition' ||
+          /Missing or insufficient permissions/i.test(msg);
+        if (isPerm) {
+          await resolveViaHttp();
+          setLoading(false);
+          return;
+        }
+        throw e;
       }
 
-      const evtId = eventDoc.id;
-      const evtData = eventDoc.data();
-
-      console.log('[EventContext] 找到活动:', {
-        id: evtId,
-        eventCode: evtData.eventCode
-      });
-
-      setEventId(evtId);
-      setEvent({ id: evtId, ...evtData });
-
       console.log('[EventContext] ✅ 载入成功:', {
-        orgCode: orgData.orgCode,
-        eventCode: evtData.eventCode,
-        orgId,
-        eventId: evtId
+        orgCode: resolvedOrgCode,
+        eventCode: resolvedEventCode,
+        orgId: resolvedOrgId || orgId,
+        eventId: resolvedEventId
       });
 
       setLoading(false);
@@ -251,7 +355,7 @@ export const EventProvider = ({ children }) => {
     reload: parseUrlAndLoadData
   };
 
-  // 🔥 添加错误显示
+  // 添加错误显示
   if (error) {
     return (
       <EventContext.Provider value={value}>
@@ -277,7 +381,7 @@ export const EventProvider = ({ children }) => {
           </pre>
           <p>请检查：</p>
           <ul>
-            <li>URL 格式是否正确（orgCode-eventCode/platform）</li>
+            <li>URL 格式是否正确（如 /login/orgCode-eventCode）</li>
             <li>组织和活动代码是否存在于 Firestore</li>
             <li>网络连接是否正常（若使用公司网路，可能阻挡 Google 域名）</li>
           </ul>

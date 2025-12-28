@@ -13,6 +13,7 @@ import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
+import FinanceManagerDashboard from './views/finance/FinanceManagerDashboard';
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
@@ -51,7 +52,13 @@ function App() {
   return (
     <Routes>
       {/* 🆕 统一登录路由 */}
-      <Route path="/login/:orgEventCode" element={<UniversalLogin />} />
+      <Route path="/login/:orgEventCode" element={
+        <EventProvider>
+          <AuthProvider>
+            <UniversalLogin />
+          </AuthProvider>
+        </EventProvider>
+      } />
 
       {/* 📄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
@@ -136,10 +143,13 @@ function App() {
         </div>
       } />
       <Route path="/finance-manager/:orgEventCode/dashboard" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h2>Finance Manager Dashboard</h2>
-          <p>功能开发中...</p>
-        </div>
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <FinanceManagerDashboard />
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
       } />
 
       {/* 🆕 普通用户 Dashboards - Mobile 版本 */}

@@ -1,0 +1,282 @@
+/**
+ * Collection Overview Styles
+ * Tab 1: 收款概览样式
+ */
+
+.collection-overview {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Overview Header ===== */
+.overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.overview-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.refresh-button {
+  background: white;
+  border: 1px solid #ddd;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+  transition: all 0.2s ease;
+}
+
+.refresh-button:hover {
+  background: #f5f5f5;
+  border-color: #999;
+  color: #333;
+}
+
+/* ===== Stats Cards ===== */
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-left: 4px solid;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card.blue {
+  border-left-color: #3498db;
+}
+
+.stat-card.green {
+  border-left-color: #2ecc71;
+}
+
+.stat-card.purple {
+  border-left-color: #9b59b6;
+}
+
+.stat-card.orange {
+  border-left-color: #e67e22;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.card-icon {
+  font-size: 1.5rem;
+}
+
+.card-title {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.card-content .amount {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 0.3rem;
+}
+
+.card-content .count {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+/* ===== Pending Summary ===== */
+.pending-summary {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+}
+
+.pending-summary h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+.pending-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.pending-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid #e9ecef;
+}
+
+.pending-label {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-bottom: 0.5rem;
+}
+
+.pending-amount,
+.pending-count,
+.pending-date {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+/* ===== Last Collection ===== */
+.last-collection {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+}
+
+.last-collection h3 {
+  margin: 0 0 0.8rem 0;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+.last-collection-time {
+  font-size: 1.1rem;
+  color: #666;
+  margin: 0;
+}
+
+/* ===== Collection Alert ===== */
+.collection-alert {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.alert-icon {
+  font-size: 2rem;
+}
+
+.alert-message strong {
+  color: #856404;
+  font-size: 1rem;
+}
+
+.alert-message p {
+  margin: 0.3rem 0 0;
+  color: #856404;
+  font-size: 0.9rem;
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  background: white;
+  border-radius: 12px;
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.empty-message {
+  font-size: 1.2rem;
+  color: #333;
+  margin: 0 0 0.5rem;
+  font-weight: 500;
+}
+
+.empty-hint {
+  font-size: 0.95rem;
+  color: #999;
+  margin: 0;
+}
+
+/* ===== Responsive Design ===== */
+@media (max-width: 768px) {
+  .stats-cards {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .card-content .amount {
+    font-size: 1.5rem;
+  }
+
+  .pending-summary {
+    padding: 1rem;
+  }
+
+  .pending-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .refresh-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .empty-state {
+    padding: 2rem 1rem;
+  }
+
+  .empty-icon {
+    font-size: 3rem;
+  }
+}

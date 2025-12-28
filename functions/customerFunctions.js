@@ -58,53 +58,9 @@ function getPhoneVariants(phoneNumber) {
   return parsed?.variants || [];
 }
 
-/**
- * 验证OTP Session
- */
-async function verifyOtpSession(sessionId, context) {
-  const db = admin.firestore();
 
-  // 读取OTP session
-  const otpDoc = await db.collection('otp_sessions').doc(sessionId).get();
 
-  if (!otpDoc.exists) {
-    throw new HttpsError('not-found', 'OTP session不存在');  // ✅ v2
-  }
-
-  const otpData = otpDoc.data();
-
-  // 验证状态
-  if (otpData.status !== 'verified') {
-    throw new HttpsError('permission-denied', 'OTP未验证');  // ✅ v2
-  }
-
-  // 验证所有权（如果有userId）
-  if (otpData.userId && context.auth && otpData.userId !== context.auth.uid) {
-    throw new HttpsError('permission-denied', '无权使用此OTP session');  // ✅ v2
-  }
-
-  // 检查是否过期
-  if (Date.now() > otpData.expiresAt) {
-    throw new HttpsError('deadline-exceeded', 'OTP session已过期');
-  }
-
-  return { otpDoc, otpData };
-}
-
-/**
- * 读取Platform Settings
- */
-async function getPlatformSettings() {
-  const db = admin.firestore();
-  const settingsDoc = await db.collection('platform_settings').doc('config').get();
-
-  if (!settingsDoc.exists) {
-    console.warn('[getPlatformSettings] ⚠️ platform_settings/config 不存在');
-    return null;
-  }
-
-  return settingsDoc.data();
-}
+// Transaction PIN helpers implemented below
 
 /**
  * 验证交易密码（内部函数）- 兼容 bcrypt 和 SHA256 两种格式
@@ -564,8 +520,7 @@ exports.createCustomer = onCall(async (request) => {
  * @param {number} data.amount - 付款金额
  * @param {string} data.organizationId - 组织ID
  * @param {string} data.eventId - 活动ID
- * @param {string} data.transactionPin - 交易密码（6位数字）✨ 新增
- * @param {string} [data.otpSessionId] - OTP session ID（向后兼容，可选）
+ * @param {string} data.transactionPin - 交易密码（6位数字）
  */
 exports.processCustomerPayment = onCall(async (request) => {
   const data = request.data;
@@ -581,8 +536,7 @@ exports.processCustomerPayment = onCall(async (request) => {
       amount, 
       organizationId, 
       eventId, 
-      transactionPin,  // ✨ 新增
-      otpSessionId     // 向后兼容
+      transactionPin
     } = requestData;
     
     let customerId = context.auth?.uid || null;
@@ -592,8 +546,7 @@ exports.processCustomerPayment = onCall(async (request) => {
       amount: amount || 'missing',
       organizationId: organizationId || 'missing',
       eventId: eventId || 'missing',
-      hasTransactionPin: !!transactionPin,
-      hasOtpSessionId: !!otpSessionId
+      hasTransactionPin: !!transactionPin
     });
 
     // === 验证必要参数 ===
@@ -644,16 +597,20 @@ exports.processCustomerPayment = onCall(async (request) => {
       // 验证交易密码
       const pinVerifyResult = await verifyTransactionPinInternal(transactionPin, customerData);
 
+      if (pinVerifyResult.missing) {
+        throw new HttpsError('failed-precondition', pinVerifyResult.error);
+      }
+
+      if (pinVerifyResult.locked) {
+        throw new HttpsError('failed-precondition', pinVerifyResult.error);
+      }
+
       if (!pinVerifyResult.success) {
         // 更新验证状态（增加错误次数）
         await updatePinVerificationStatus(customerRef, false, pinVerifyResult.currentAttempts);
 
         const MAX_ATTEMPTS = 5;
         const remainingAttempts = MAX_ATTEMPTS - (pinVerifyResult.currentAttempts + 1);
-
-        if (pinVerifyResult.locked) {
-          throw new HttpsError('failed-precondition', pinVerifyResult.error);
-        }
 
         if (remainingAttempts <= 0) {
           throw new HttpsError('failed-precondition', '交易密码错误次数过多，账户已被锁定1小时');
@@ -670,20 +627,10 @@ exports.processCustomerPayment = onCall(async (request) => {
 
       console.log('[processCustomerPayment] ✅ 交易密码验证通过');
     } else {
-      // ========== 向后兼容：如果没有 PIN，则必须有 OTP ==========
-      console.warn('[processCustomerPayment] ⚠️ 未提供交易密码，检查 OTP...');
-      
-      if (!otpSessionId) {
-        throw new HttpsError(
-          'invalid-argument',
-          '请提供交易密码进行验证'
-        );
-      }
-
-      // 这里可以保留原有的 OTP 验证逻辑作为向后兼容
-      // 但建议逐步迁移到 PIN 验证
-      console.log('[processCustomerPayment] 使用 OTP 验证（向后兼容模式）');
-      // ... 原有的 OTP 验证代码 ...
+      throw new HttpsError(
+        'invalid-argument',
+        '请提供交易密码进行验证'
+      );
     }
 
     // === 使用Transaction执行付款 ===
@@ -756,7 +703,7 @@ exports.processCustomerPayment = onCall(async (request) => {
         transactionId,
         eventId,
         organizationId,
-        Type: 'customer_to_merchant',
+        transactionType: 'customer_to_merchant',
 
         // 交易双方
         customerId,
@@ -771,10 +718,8 @@ exports.processCustomerPayment = onCall(async (request) => {
         paymentMethod: 'POINTS',
 
         // ✨ 验证方式标记
-        verificationMethod: transactionPin ? 'TRANSACTION_PIN' : 'OTP',
-        pinVerified: !!transactionPin,
-        otpVerified: !!otpSessionId,
-        otpSessionId: otpSessionId || null,
+        verificationMethod: 'TRANSACTION_PIN',
+        pinVerified: true,
 
         // 时间戳
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -830,7 +775,7 @@ exports.processCustomerPayment = onCall(async (request) => {
  * @param {object} data
  * @param {string} data.toPhoneNumber - 接收方手机号
  * @param {number} data.amount - 转让金额
- * @param {string} [data.otpSessionId] - OTP session ID（如果需要验证）
+ * @param {string} data.transactionPin - 交易密码（6位数字）
  */
 exports.transferPoints = onCall(async (request) => {
   const data = request.data;
@@ -841,10 +786,10 @@ exports.transferPoints = onCall(async (request) => {
       throw new HttpsError('unauthenticated', '请先登录');
     }
 
-    const { toPhoneNumber, amount, otpSessionId } = data;
+    const { toPhoneNumber, amount, transactionPin } = data;
     const fromUserId = context.auth.uid;
 
-    console.log('[transferPoints] 开始转让点数:', { fromUserId, toPhoneNumber, amount });
+    console.log('[transferPoints] 开始转让点数:', { fromUserId, toPhoneNumber, amount, hasTransactionPin: !!transactionPin });
 
     // === 验证参数 ===
     if (!toPhoneNumber || !amount) {
@@ -863,6 +808,51 @@ exports.transferPoints = onCall(async (request) => {
 
     if (!organizationId || !eventId) {
       throw new HttpsError('failed-precondition', '缺少组织或活动信息');
+    }
+
+    // === 读取转出方（用于 PIN 验证） ===
+    const fromCustomerRef = db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('users').doc(fromUserId);
+
+    const fromCustomerDoc = await fromCustomerRef.get();
+
+    if (!fromCustomerDoc.exists) {
+      throw new HttpsError('not-found', '转出方不存在');
+    }
+
+    const fromCustomerDataForVerify = fromCustomerDoc.data();
+
+    // === 优先使用交易密码验证（新版） ===
+    if (transactionPin) {
+      if (!/^\d{6}$/.test(transactionPin)) {
+        throw new HttpsError('invalid-argument', '交易密码必须是6位数字');
+      }
+
+      const pinVerifyResult = await verifyTransactionPinInternal(transactionPin, fromCustomerDataForVerify);
+
+      if (pinVerifyResult.missing) {
+        throw new HttpsError('failed-precondition', pinVerifyResult.error);
+      }
+
+      if (pinVerifyResult.locked) {
+        throw new HttpsError('failed-precondition', pinVerifyResult.error);
+      }
+
+      if (!pinVerifyResult.success) {
+        await updatePinVerificationStatus(fromCustomerRef, false, pinVerifyResult.currentAttempts);
+
+        const remainingAttempts = MAX_PIN_FAILED_ATTEMPTS - (pinVerifyResult.currentAttempts + 1);
+        if (remainingAttempts <= 0) {
+          throw new HttpsError('failed-precondition', '交易密码错误次数过多，账户已被锁定1小时');
+        }
+
+        throw new HttpsError('permission-denied', `交易密码错误，剩余尝试次数：${remainingAttempts}`);
+      }
+
+      await updatePinVerificationStatus(fromCustomerRef, true);
+      console.log('[transferPoints] ✅ 交易密码验证通过');
     }
 
     // === 查询接收方Customer ===
@@ -903,41 +893,17 @@ exports.transferPoints = onCall(async (request) => {
 
     console.log('[transferPoints] ✅ 接收方找到:', toUserId);
 
-    // === 读取Platform Settings检查是否需要OTP ===
-    const settings = await getPlatformSettings();
-    const otpRequired = settings?.otpRequired?.customerTransfer || false;
-
-    // === 如果需要OTP，验证之 ===
-    if (otpRequired) {
-      if (!otpSessionId) {
-        throw new HttpsError(
-          'failed-precondition',
-          '此操作需要OTP验证，请先发送验证码'
-        );
-      }
-
-      const { otpDoc, otpData } = await verifyOtpSession(otpSessionId, context);
-
-      if (otpData.scenario !== 'customerTransfer') {
-        throw new HttpsError('invalid-argument', 'OTP场景不匹配');
-      }
-
-      if (otpData.userId !== fromUserId) {
-        throw new HttpsError('permission-denied', '无权使用此OTP');
-      }
-
-      console.log('[transferPoints] ✅ OTP验证通过');
-      await otpDoc.ref.delete();
+    // === 验证：必须有 PIN ===
+    if (!transactionPin) {
+      throw new HttpsError(
+        'invalid-argument',
+        '请提供交易密码进行验证'
+      );
     }
 
     // === 使用Transaction执行转让 ===
     const result = await db.runTransaction(async (transaction) => {
       // 读取转出方
-      const fromCustomerRef = db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('users').doc(fromUserId);
-
       const fromCustomerDoc = await transaction.get(fromCustomerRef);
 
       if (!fromCustomerDoc.exists) {
@@ -987,7 +953,7 @@ exports.transferPoints = onCall(async (request) => {
         transactionId,
         eventId,
         organizationId,
-        Type: 'customer_transfer',
+        transactionType: 'customer_transfer',
 
         // 转出方
         fromUser: {
@@ -1007,9 +973,9 @@ exports.transferPoints = onCall(async (request) => {
         amount,
         status: 'completed',
 
-        // OTP验证信息
-        otpVerified: !!otpSessionId,
-        otpSessionId: otpSessionId || null,
+        // ✨ 验证方式标记
+        verificationMethod: 'TRANSACTION_PIN',
+        pinVerified: true,
 
         // 时间戳
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -1177,7 +1143,7 @@ exports.topupFromPointCard = onCall(async (request) => {
         transactionId,
         eventId,
         organizationId,
-        Type: 'point_card_topup',
+        transactionType: 'point_card_topup',
 
         // 点数卡信息
         cardId,

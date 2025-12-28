@@ -87,7 +87,7 @@ const SellerManagerDashboard = () => {
     try {
       setLoading(true);
 
-      const storedInfo = localStorage.getItem('sellerManagerInfo');
+      const storedInfo = localStorage.getItem('sellerManagerInfo') || localStorage.getItem('currentUser');
       if (!storedInfo) {
         console.warn('[SM Dashboard] 未找到登录信息');
         navigate(`/login/${orgEventCode}`);

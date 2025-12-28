@@ -101,6 +101,31 @@ const CustomerDashboard = () => {
     loadCustomerData();
   };
 
+  // 讓 iOS 在「點擊扫码付款」當下就跳出系統相機授權（避免進入付款頁後再按一次）
+  const handleScanPayClick = async () => {
+    // 先準備目標路由
+    const orgId = customerData?.organizationId?.replace('organization_', '') || '';
+    const evtId = customerData?.eventId?.replace('event_', '') || '';
+    const orgEventCode = `${orgId}-${evtId}`;
+    const target = `/customer/${orgEventCode}/payment`;
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        // iOS/Chrome(iOS) 需要「使用者手勢」才能觸發相機授權提示。
+        // 這裡只用來觸發授權，成功後立刻關閉 stream。
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    } catch (e) {
+      // 若使用者拒絕，仍可導頁，但付款頁將顯示無法開相機並提示開啟權限
+      console.warn('[CustomerDashboard] 相机权限预请求失败:', e?.name, e?.message);
+    } finally {
+      navigate(target);
+    }
+  };
+
   if (loading) {
     return (
       <div style={styles.container}>
@@ -229,7 +254,7 @@ const CustomerDashboard = () => {
       <div style={styles.menuGrid}>
         {/* 扫码付款 */}
         <button
-          onClick={() => navigate(`/customer/${orgEventCode}/payment`)}
+          onClick={handleScanPayClick}
           style={styles.menuButton}
         >
           <div style={styles.menuIcon}>💳</div>

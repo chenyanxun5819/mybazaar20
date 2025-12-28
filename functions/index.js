@@ -22,6 +22,9 @@ const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
 const { onCashCollection } = require('./onCashCollection');
 
+// Finance Manager callable / triggers
+const financeManagerFunctions = require('./financeManagerFunctions');
+
 const sellerManagerFunctions = require('./sellerManagerFunctions');
 const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 
@@ -84,6 +87,10 @@ exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
+
+// 导出 Finance Manager callable functions
+exports.getFinanceStats = financeManagerFunctions.getFinanceStats;
+exports.confirmCashSubmission = financeManagerFunctions.confirmCashSubmission;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
 exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;

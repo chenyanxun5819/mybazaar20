@@ -4,8 +4,6 @@ import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
-import { safeFetch } from '../../services/safeFetch';
-import OTPInput from '../../components/OTPInput';
 
 /**
  * Customer点数转让页面
@@ -14,15 +12,14 @@ import OTPInput from '../../components/OTPInput';
  * 1. 输入接收方手机号
  * 2. 查询接收方信息（脱敏显示）
  * 3. 输入转让金额
- * 4. 确认转让（如需OTP，发送验证码）
- * 5. 输入OTP（如果需要）
- * 6. 执行转让
+ * 4. 输入交易密码（6位数字 PIN）
+ * 5. 执行转让
  */
 const CustomerTransfer = () => {
   const navigate = useNavigate();
 
   // 页面状态
-  const [step, setStep] = useState('input'); // input | confirm | otp | processing | success
+  const [step, setStep] = useState('input'); // input | confirm | pin | processing | success
 
   // 用户数据
   const [customerData, setCustomerData] = useState(null);
@@ -37,10 +34,9 @@ const CustomerTransfer = () => {
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState('');
 
-  // OTP数据
-  const [otpSessionId, setOtpSessionId] = useState(null);
-  const [otpExpiresIn, setOtpExpiresIn] = useState(300);
-  const [otpRequired, setOtpRequired] = useState(false);
+  // 交易密码（PIN）
+  const [transactionPin, setTransactionPin] = useState('');
+  const [pinError, setPinError] = useState('');
 
   // 加载状态
   const [loading, setLoading] = useState(false);
@@ -139,7 +135,7 @@ const CustomerTransfer = () => {
 
     // 检查是否是自己
     const normalizedPhone = normalizePhoneNumber(recipientPhone);
-    if (normalizedPhone === customerData.identityInfo.phoneNumber) {
+    if (normalizedPhone === customerData.basicInfo.phoneNumber) {
       setPhoneError('不能转给自己');
       return;
     }
@@ -168,7 +164,7 @@ const CustomerTransfer = () => {
       for (const variant of variants) {
         const q = query(
           usersRef,
-          where('identityInfo.phoneNumber', '==', variant),
+          where('basicInfo.phoneNumber', '==', variant),
           where('roles', 'array-contains', 'customer')
         );
 
@@ -228,136 +224,41 @@ const CustomerTransfer = () => {
     return true;
   };
 
-  // 确认转让（检查是否需要OTP）
-  const handleConfirmTransfer = async () => {
+  // 确认转让：进入 PIN 输入界面
+  const handleConfirmTransfer = () => {
     if (!validateAmount()) return;
 
-    setLoading(true);
     setError(null);
-
-    try {
-      // 调用 sendOtpHttp 检查是否需要 OTP
-      const response = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: customerData.identityInfo.phoneNumber,
-          userId: customerData.userId,
-          scenario: 'customerTransfer',
-          scenarioData: {
-            amount: parseFloat(amount),
-            recipientName: recipientData.identityInfo.displayName,
-            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-          }
-        })
-      });
-
-      const result = await response.json();
-      console.log('[CustomerTransfer] sendOTP结果:', result);
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '发送 OTP 失败');
-      }
-
-      if (result.otpRequired) {
-        // 需要OTP验证
-        setOtpRequired(true);
-        setOtpSessionId(result.sessionId);
-        setOtpExpiresIn(result.expiresIn || 300);
-        setStep('otp');
-      } else {
-        // 不需要OTP，直接转让
-        setOtpRequired(false);
-        await executeTransfer(null);
-      }
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 确认转让失败:', error);
-      setError(error.message || '操作失败');
-    } finally {
-      setLoading(false);
-    }
+    setPinError('');
+    setTransactionPin('');
+    setStep('pin');
   };
 
-  // OTP验证完成
-  const handleOTPComplete = async (otp) => {
-    setLoading(true);
-    setError(null);
-    try {
-      // 验证OTP（HTTP）
-      const resp = await safeFetch('/api/verifyOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: otpSessionId, otp })
-      });
-      const result = await resp.json();
-      console.log('[CustomerTransfer] OTP验证結果:', result);
-      if (resp.ok && result.success) {
-        // OTP验证成功，执行转让
-        await executeTransfer(otpSessionId);
-      } else {
-        throw new Error('OTP验证失败');
-      }
-
-    } catch (error) {
-      console.error('[CustomerTransfer] OTP验证失败:', error);
-      setError(error.message || 'OTP验证失败');
-      setLoading(false);
+  // 执行转让（包含 PIN 验证）
+  const executeTransfer = async () => {
+    // 验证 PIN 格式
+    if (!transactionPin || transactionPin.length !== 6) {
+      setPinError('请输入6位交易密码');
+      return;
     }
-  };
 
-  // 重新发送OTP
-  const handleResendOTP = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: customerData.identityInfo.phoneNumber,
-          userId: customerData.userId,
-          scenario: 'customerTransfer',
-          scenarioData: {
-            amount: parseFloat(amount),
-            recipientName: recipientData.identityInfo.displayName,
-            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-          }
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '重新发送失败');
-      }
-
-      setOtpSessionId(result.sessionId);
-      setOtpExpiresIn(result.expiresIn || 300);
-
-      console.log('[CustomerTransfer] OTP重新发送成功');
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 重新发送OTP失败:', error);
-      setError(error.message || '重新发送失败');
-    } finally {
-      setLoading(false);
+    if (!/^\d{6}$/.test(transactionPin)) {
+      setPinError('交易密码必须是6位数字');
+      return;
     }
-  };
 
-  // 执行转让
-  const executeTransfer = async (otpSessionId) => {
     setStep('processing');
     setLoading(true);
+    setError(null);
+    setPinError('');
 
     try {
       const transferPoints = httpsCallable(functions, 'transferPoints');
 
       const result = await transferPoints({
-        toPhoneNumber: recipientData.identityInfo.phoneNumber,
+        toPhoneNumber: recipientData.basicInfo.phoneNumber,
         amount: parseFloat(amount),
-        otpSessionId: otpSessionId || null
+        transactionPin: transactionPin
       });
 
       console.log('[CustomerTransfer] 转让成功:', result.data);
@@ -371,8 +272,14 @@ const CustomerTransfer = () => {
 
     } catch (error) {
       console.error('[CustomerTransfer] 转让失败:', error);
-      setError(error.message || '转让失败');
-      setStep('confirm');
+
+      if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
+        setPinError(error.message || '交易密码验证失败');
+        setStep('pin');
+      } else {
+        setError(error.message || '转让失败');
+        setStep('confirm');
+      }
     } finally {
       setLoading(false);
     }
@@ -385,8 +292,10 @@ const CustomerTransfer = () => {
       setRecipientData(null);
       setAmount('');
       setAmountError('');
-    } else if (step === 'otp') {
+    } else if (step === 'pin') {
       setStep('confirm');
+      setTransactionPin('');
+      setPinError('');
     }
   };
 
@@ -492,10 +401,10 @@ const CustomerTransfer = () => {
               <div style={styles.recipientIcon}>👤</div>
               <div>
                 <h2 style={styles.recipientName}>
-                  {recipientData.identityInfo.displayName}
+                  {recipientData.basicInfo.displayName}
                 </h2>
                 <p style={styles.recipientPhone}>
-                  {maskPhoneNumber(recipientData.identityInfo.phoneNumber)}
+                  {maskPhoneNumber(recipientData.basicInfo.phoneNumber)}
                 </p>
               </div>
             </div>
@@ -562,32 +471,63 @@ const CustomerTransfer = () => {
         </div>
       )}
 
-      {/* 步骤3：OTP验证 */}
-      {step === 'otp' && (
-        <div style={styles.content}>
-          <OTPInput
-            onComplete={handleOTPComplete}
-            onResend={handleResendOTP}
-            expiresIn={otpExpiresIn}
-            loading={loading}
-          />
+      {/* 步骤3：交易密码验证 */}
+      {step === 'pin' && (
+        <div style={styles.pinContainer}>
+          <div style={styles.pinCard}>
+            <div style={styles.pinIcon}>🔐</div>
+            <h2 style={styles.pinTitle}>请输入交易密码</h2>
+            <p style={styles.pinSubtitle}>
+              转让给 {recipientData?.basicInfo?.displayName || '接收方'}：{amount} 点
+            </p>
 
-          <div style={styles.otpInfo}>
-            <p style={styles.otpInfoText}>
-              转让金额：<strong>{amount} 点</strong>
-            </p>
-            <p style={styles.otpInfoText}>
-              接收方：<strong>{recipientData.identityInfo.displayName}</strong>
-            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength="6"
+              value={transactionPin}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                setTransactionPin(value);
+                setPinError('');
+              }}
+              placeholder="请输入6位数字"
+              style={{
+                ...styles.pinInput,
+                ...(pinError ? styles.inputError : {})
+              }}
+              autoFocus
+              disabled={loading}
+            />
+
+            {pinError && <p style={styles.errorText}>{pinError}</p>}
+
+            <p style={styles.pinHint}>交易密码是您设置的6位数字密码</p>
+
+            <div style={styles.pinActions}>
+              <button
+                onClick={handleBack}
+                style={{
+                  ...styles.button,
+                  ...styles.secondaryButton
+                }}
+                disabled={loading}
+              >
+                返回修改
+              </button>
+              <button
+                onClick={executeTransfer}
+                style={{
+                  ...styles.button,
+                  ...styles.primaryButton,
+                  ...(loading ? styles.buttonDisabled : {})
+                }}
+                disabled={loading || transactionPin.length !== 6}
+              >
+                {loading ? '验证中...' : '确认转让'}
+              </button>
+            </div>
           </div>
-
-          <button
-            onClick={handleBack}
-            disabled={loading}
-            style={styles.cancelOtpButton}
-          >
-            取消转让
-          </button>
         </div>
       )}
 
@@ -608,7 +548,7 @@ const CustomerTransfer = () => {
           <div style={styles.successDetails}>
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>接收方：</span>
-              <span style={styles.detailValue}>{recipientData.identityInfo.displayName}</span>
+              <span style={styles.detailValue}>{recipientData.basicInfo.displayName}</span>
             </p>
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>金额：</span>
@@ -860,27 +800,56 @@ const styles = {
     display: 'flex',
     gap: '1rem'
   },
-  otpInfo: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px'
+  pinContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 'calc(100vh - 200px)'
   },
-  otpInfoText: {
-    margin: '0.5rem 0',
-    fontSize: '0.9rem',
-    color: '#666'
-  },
-  cancelOtpButton: {
+  pinCard: {
     width: '100%',
-    marginTop: '1rem',
-    padding: '0.75rem',
-    fontSize: '0.9rem',
+    maxWidth: '400px',
+    padding: '2rem',
     backgroundColor: '#fff',
-    color: '#f44336',
-    border: '1px solid #f44336',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    textAlign: 'center'
+  },
+  pinIcon: {
+    fontSize: '3rem',
+    marginBottom: '1rem'
+  },
+  pinTitle: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#333',
+    margin: '0 0 0.5rem 0'
+  },
+  pinSubtitle: {
+    fontSize: '1rem',
+    color: '#666',
+    marginBottom: '2rem'
+  },
+  pinInput: {
+    width: '100%',
+    padding: '1.5rem',
+    fontSize: '2rem',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: '0.5rem',
+    border: '2px solid #ddd',
     borderRadius: '8px',
-    cursor: 'pointer'
+    outline: 'none',
+    marginBottom: '1rem'
+  },
+  pinHint: {
+    fontSize: '0.85rem',
+    color: '#999',
+    marginBottom: '2rem'
+  },
+  pinActions: {
+    display: 'flex',
+    gap: '1rem'
   },
   processingContainer: {
     display: 'flex',

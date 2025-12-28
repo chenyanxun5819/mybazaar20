@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Html5QrcodeScanner, Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 /**
  * QR扫描组件 - 完全简化版
@@ -50,37 +50,42 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
 
   const checkCameraPermission = async () => {
     try {
-      addDebugLog('🔍 检查摄像头权限...');
-      
+      addDebugLog('🔍 检查摄像头权限(不弹窗)...');
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         addDebugLog('❌ 浏览器不支持 getUserMedia');
         setCameraPermission('denied');
         return;
       }
-      
-      addDebugLog('📱 请求后置摄像头权限...');
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }  // 强制后置相机
-      });
-      addDebugLog('✅ 后置摄像头权限获取成功');
-      
-      stream.getTracks().forEach(track => {
-        addDebugLog(`🎥 关闭测试流: ${track.kind}`);
-        track.stop();
-      });
-      
-      setCameraPermission('granted');
-      
+
+      // 盡量使用 Permissions API（不會觸發權限彈窗）
+      if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+        try {
+          const status = await navigator.permissions.query({ name: 'camera' });
+          addDebugLog(`🔐 camera permission state: ${status.state}`);
+          setCameraPermission(status.state); // 'granted' | 'prompt' | 'denied'
+          status.onchange = () => {
+            addDebugLog(`🔐 camera permission changed: ${status.state}`);
+            setCameraPermission(status.state);
+          };
+        } catch (e) {
+          // 某些瀏覽器（尤其 iOS Safari）可能不支援 camera query
+          addDebugLog('⚠️ Permissions API 不支援 camera，改用 prompt 狀態');
+          setCameraPermission('prompt');
+        }
+      } else {
+        setCameraPermission('prompt');
+      }
+
       if (autoStart) {
-        addDebugLog('⚡ autoStart=true，延迟启动扫描');
+        addDebugLog('⚡ autoStart=true，直接启动扫描（只会请求一次权限）');
         setTimeout(() => {
-          addDebugLog('🚀 触发自动扫描');
           setScanning(true);
-        }, 100);
+        }, 50);
       }
     } catch (error) {
-      addDebugLog(`❌ 权限检查失败: ${error.name} - ${error.message}`);
-      setCameraPermission('denied');
+      addDebugLog(`❌ 权限状态检查失败: ${error.name} - ${error.message}`);
+      setCameraPermission('prompt');
     }
   };
 
@@ -172,7 +177,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       return;
     }
 
-    addDebugLog('🎬 scanning=true，开始初始化...');
+    addDebugLog('🎬 scanning=true，开始初始化（直接模式，避免二次权限弹窗）...');
 
     const init = () => {
       const el = document.getElementById('qr-reader');
@@ -182,67 +187,21 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         return;
       }
 
+      // 每次開始前先清乾淨
+      if (qrScannerRef.current) {
+        try {
+          qrScannerRef.current.stop?.();
+          qrScannerRef.current.clear?.();
+        } catch (_) {}
+        qrScannerRef.current = null;
+      }
+
       try {
-        addDebugLog('🔧 开始创建 Html5QrcodeScanner...');
-        
-        // ✅ 简化配置，强制后置相机
-        const config = {
-          fps: 8,
-          qrbox: 250,
-          // ✅ 关键：强制使用后置相机
-          videoConstraints: {
-            facingMode: { exact: "environment" }
-          },
-          // ✅ 关键：禁用相机切换
-          showTorchButtonIfSupported: false,
-          disableFlip: true  // 禁用翻转按钮
-        };
-        
-        addDebugLog(`📋 配置: ${JSON.stringify(config)}`);
-        
-        qrScannerRef.current = new Html5QrcodeScanner(
-          'qr-reader',
-          config,
-          false  // verbose = false
-        );
-        
-        addDebugLog('✅ Html5QrcodeScanner 实例创建成功');
-        addDebugLog('🎨 调用 render()...');
-        
-        qrScannerRef.current.render(
-          handleScanSuccess,
-          handleScanFailure
-        );
-        
-        addDebugLog('✅ render() 调用成功');
-        addDebugLog('📷 等待后置相机启动...');
-        
-        // ✅ 隐藏 html5-qrcode 的控制按钮
-        setTimeout(() => {
-          hideHtml5QrcodeButtons();
-        }, 500);
-        
+        initDirectHtml5qrcode();
       } catch (error) {
-        addDebugLog(`❌ 创建或渲染失败: ${error.name}`);
-        addDebugLog(`❌ 错误信息: ${error.message}`);
-
-        // iOS Safari 有時會拋出 "AbortError: Fetch is aborted"（來源於底層資源抓取）
-        // 這裡回退到直接使用 Html5Qrcode.start()，避開 Scanner 包裝 UI。
-        const msg = `${error?.name || ''} ${error?.message || ''}`.toLowerCase();
-        if (msg.includes('abort') || msg.includes('fetch is aborted')) {
-          addDebugLog('🔁 檢測到 AbortError，嘗試回退為直接模式 Html5Qrcode.start(...)');
-          try {
-            initDirectHtml5qrcode();
-            return;
-          } catch (fbError) {
-            addDebugLog(`❌ 回退模式啟動失敗: ${fbError?.message || fbError}`);
-          }
-        }
-
+        addDebugLog(`❌ 初始化失败: ${error?.message || error}`);
         setScanning(false);
-        if (onScanError) {
-          onScanError(`扫描器初始化失败: ${error.message}`);
-        }
+        if (onScanError) onScanError(`扫描器初始化失败: ${error?.message || error}`);
       }
     };
 
@@ -336,52 +295,23 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       handleScanFailure
     ).then(() => {
       addDebugLog('✅ 直接模式啟動成功，攝像頭應該已打開');
+      setCameraPermission('granted');
     }).catch((e) => {
-      addDebugLog(`❌ 直接模式啟動失敗: ${e?.message || e}`);
+      const name = e?.name || '';
+      addDebugLog(`❌ 直接模式啟動失敗: ${name} ${e?.message || e}`);
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setCameraPermission('denied');
+      }
       throw e;
     });
   };
 
   const requestCameraPermission = async () => {
-    try {
-      addDebugLog('🔐 请求后置摄像头权限...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: 'environment' } }  // 强制后置
-      });
-      
-      addDebugLog('✅ 权限获取成功');
-      stream.getTracks().forEach(track => track.stop());
-      
-      setCameraPermission('granted');
-      startScanning();
-      
-    } catch (error) {
-      addDebugLog(`❌ 权限请求失败: ${error.name}`);
-      
-      let userMessage = '无法访问后置摄像头';
-      
-      if (error.name === 'NotAllowedError') {
-        userMessage = '❌ 摄像头权限被拒绝。请在浏览器设置中允许访问摄像头。';
-      } else if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
-        userMessage = '❌ 找不到后置摄像头。将尝试使用任意可用摄像头...';
-        // 降级：尝试任意摄像头
-        try {
-          const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          fallbackStream.getTracks().forEach(track => track.stop());
-          setCameraPermission('granted');
-          startScanning();
-          return;
-        } catch (fallbackError) {
-          userMessage = '❌ 设备上找不到可用的摄像头。';
-        }
-      }
-      
-      setCameraPermission('denied');
-      if (onScanError) {
-        onScanError(userMessage);
-      }
-    }
+    // ⚠️ 不在這裡先 getUserMedia()，避免「先預檢一次、掃描再請求一次」造成雙重彈窗。
+    // 讓 Html5Qrcode.start() 來做唯一一次的權限請求。
+    addDebugLog('🔐 准备启动扫描（将由掃描器请求一次摄像头权限）...');
+    setCameraPermission('prompt');
+    startScanning();
   };
 
   const getInstructionText = () => {

@@ -23,9 +23,9 @@ export const AuthProvider = ({ children }) => {
   const [claims, setClaims] = useState(null);
   const [error, setError] = useState(null);
   
-  const { organizationId, eventId } = useEvent();
+  const { organizationId, eventId, orgCode, eventCode } = useEvent();
 
-  // 🔥 新增：从 localStorage 恢复用户数据
+  // 从 localStorage 恢复用户数据
   const restoreUserFromLocalStorage = (role) => {
     try {
       const storageKey = role === 'eventManager' ? 'eventManagerInfo' : `${role}Info`;
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
     return null;
   };
 
-  // 🔥 新增：从 Custom Claims 构建基本 userProfile
+  // 从 Custom Claims 构建基本 userProfile
   const buildProfileFromClaims = (claims) => {
     if (!claims || !claims.userId || !claims.roles) {
       return null;
@@ -80,6 +80,77 @@ export const AuthProvider = ({ children }) => {
     };
   };
 
+  // ⭐ 新增：根据用户角色获取导航路径
+  const getNavigationPath = (profile) => {
+    if (!profile || !profile.roles || profile.roles.length === 0) {
+      console.warn('[AuthContext] 无法获取导航路径：缺少角色信息');
+      return '/login';
+    }
+
+    const roles = profile.roles;
+    
+    // 构建 orgEventCode
+    let orgEventCode = '';
+    
+    // 尝试从多个来源获取 codes
+    if (orgCode && eventCode) {
+      orgEventCode = `${orgCode}-${eventCode}`;
+    } else if (profile.organizationCode && profile.eventCode) {
+      orgEventCode = `${profile.organizationCode}-${profile.eventCode}`;
+    } else {
+      console.warn('[AuthContext] 无法构建 orgEventCode，使用默认值');
+      orgEventCode = 'unknown-event';
+    }
+
+    console.log('[AuthContext] 🧭 获取导航路径:', {
+      roles,
+      orgEventCode,
+      source: orgCode ? 'EventContext' : profile.organizationCode ? 'userProfile' : 'none'
+    });
+
+    // 角色优先级判断（从高到低）
+    if (roles.includes('platformAdmin') || roles.includes('platform_admin')) {
+      return '/platform/admin';
+    }
+    
+    if (roles.includes('eventManager') || roles.includes('event_manager')) {
+      return `/event-manager/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('sellerManager')) {
+      return `/seller-manager/${orgEventCode}/dashboard`;
+    }
+    
+    // ⭐⭐⭐ Finance Manager 导航 ⭐⭐⭐
+    if (roles.includes('financeManager')) {
+      console.log('[AuthContext] ✅ 导航到 Finance Manager Dashboard');
+      return `/finance-manager/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('merchantManager')) {
+      return `/merchant-manager/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('customerManager')) {
+      return `/customer-manager/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('customer')) {
+      return `/customer/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('seller')) {
+      return `/seller/${orgEventCode}/dashboard`;
+    }
+    
+    if (roles.includes('merchant')) {
+      return `/merchant/${orgEventCode}/dashboard`;
+    }
+
+    console.warn('[AuthContext] ⚠️ 未识别的角色，返回登录页:', roles);
+    return '/login';
+  };
+
   // 监听 Firebase Auth 状态变化
   useEffect(() => {
     if (!organizationId || !eventId) {
@@ -95,23 +166,23 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(user);
         
         try {
-          // 🔥 步骤 1: 获取 Custom Claims
+          // 步骤 1: 获取 Custom Claims
           const idTokenResult = await user.getIdTokenResult();
           const c = idTokenResult?.claims || {};
           setClaims(c);
           console.log('[AuthContext] Loaded custom claims:', c);
 
-          // 🔥 步骤 2: 如果已经有 userProfile（从登录时设置），直接使用
+          // 步骤 2: 如果已经有 userProfile（从登录时设置），直接使用
           if (userProfile && userProfile.userId) {
             console.log('[AuthContext] ✅ 使用已有的 userProfile（从登录设置）');
             setLoading(false);
             return;
           }
 
-          // 🔥 步骤 3: 尝试从 Custom Claims 恢复基本信息
+          // 步骤 3: 尝试从 Custom Claims 恢复基本信息
           let profile = buildProfileFromClaims(c);
 
-          // 🔥 步骤 4: 尝试从 localStorage 补充详细信息
+          // 步骤 4: 尝试从 localStorage 补充详细信息
           if (c.roles && c.roles.length > 0) {
             const primaryRole = c.roles[0]; // 使用第一个角色
             const storedProfile = restoreUserFromLocalStorage(primaryRole);
@@ -130,7 +201,7 @@ export const AuthProvider = ({ children }) => {
             }
           }
 
-          // 🔥 步骤 5: 如果还是没有，尝试从 Firestore 读取（fallback）
+          // 步骤 5: 如果还是没有，尝试从 Firestore 读取（fallback）
           if (!profile || !profile.userId) {
             console.log('[AuthContext] 尝试从 Firestore 读取用户数据...');
             
@@ -163,7 +234,7 @@ export const AuthProvider = ({ children }) => {
             }
           }
 
-          // 🔥 步骤 6: 规范化角色名称
+          // 步骤 6: 规范化角色名称
           if (profile) {
             const normalized = { ...profile };
             if (Array.isArray(normalized.roles)) {
@@ -211,12 +282,17 @@ export const AuthProvider = ({ children }) => {
       
       const result = await authService.loginWithPin(phoneNumber, password, organizationId, eventId);
       
-      // 🔥 如果登录返回了用户资料，直接设置
+      // 如果登录返回了用户资料，直接设置
       if (result.userProfile) {
         const normalized = { ...result.userProfile };
         if (Array.isArray(normalized.roles)) {
           normalized.roles = normalized.roles.map(r => r === 'event_manager' ? 'eventManager' : r);
         }
+        
+        // ⭐ 添加 organizationCode 和 eventCode（用于导航）
+        normalized.organizationCode = orgCode;
+        normalized.eventCode = eventCode;
+        
         setUserProfile(normalized);
         console.log('[AuthContext] User profile set from login result (normalized):', normalized);
       }
@@ -238,7 +314,7 @@ export const AuthProvider = ({ children }) => {
       setUserProfile(null);
       setClaims(null);
       
-      // 🔥 清除 localStorage
+      // 清除 localStorage
       ['sellerInfo', 'merchantInfo', 'customerInfo', 'eventManagerInfo', 
        'sellerManagerInfo', 'financeManagerInfo'].forEach(key => {
         localStorage.removeItem(key);
@@ -263,9 +339,11 @@ export const AuthProvider = ({ children }) => {
     
     const rolePriority = [
       'platform_admin',
+      'platformAdmin',
       'org_admin', 
       'eventManager',
-      'financeManager',
+      'event_manager',
+      'financeManager',      // ⭐ Finance Manager
       'sellerManager',
       'merchantManager',
       'customerManager',
@@ -283,10 +361,18 @@ export const AuthProvider = ({ children }) => {
     return null;
   };
 
-  // 🔥 新增：公开的 setUserProfile 方法（供 UniversalLogin 使用）
+  // 公开的 setUserProfile 方法（供 UniversalLogin 使用）
   const updateUserProfile = (profile) => {
     console.log('[AuthContext] updateUserProfile called:', profile);
-    setUserProfile(profile);
+    
+    // ⭐ 确保包含 organizationCode 和 eventCode
+    const enrichedProfile = {
+      ...profile,
+      organizationCode: profile.organizationCode || orgCode,
+      eventCode: profile.eventCode || eventCode
+    };
+    
+    setUserProfile(enrichedProfile);
   };
 
   const value = {
@@ -299,7 +385,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     hasRole,
     getPrimaryRole,
-    updateUserProfile, // 🔥 新增：暴露给外部使用
+    updateUserProfile,
+    getNavigationPath,     // ⭐⭐⭐ 新增：导航路径辅助函数 ⭐⭐⭐
     isAuthenticated: !!currentUser && !currentUser.isAnonymous
   };
 

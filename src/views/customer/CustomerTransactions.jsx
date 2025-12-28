@@ -1,46 +1,41 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../config/firebase';
-import { safeFetch } from '../../services/safeFetch';
-import OTPInput from '../../components/OTPInput';
+import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
 
 /**
- * Customer点数转让页面
+ * Customer 交易记录页面
  * 
- * 流程：
- * 1. 输入接收方手机号
- * 2. 查询接收方信息（脱敏显示）
- * 3. 输入转让金额
- * 4. 确认转让（如需OTP，发送验证码）
- * 5. 输入OTP（如果需要）
- * 6. 执行转让
+ * 功能：
+ * 1. 显示所有交易记录（付款、转出、转入、充值）
+ * 2. 按类型筛选
+ * 3. 按时间排序
+ * 4. 查看交易详情
+ * 5. 刷新功能
+ * 
+ * 交易类型（符合 Firestore 架构规范）：
+ * - customer_to_merchant: Customer付款给Merchant
+ * - customer_transfer: Customer之间转账（转出/转入）
+ * - point_card_topup: 点数卡充值
  */
-const CustomerTransfer = () => {
+const CustomerTransactions = () => {
   const navigate = useNavigate();
-
-  // 页面状态
-  const [step, setStep] = useState('input'); // input | confirm | otp | processing | success
-
+  const { orgEventCode } = useParams();
+  
   // 用户数据
   const [customerData, setCustomerData] = useState(null);
-
-  // 接收方数据
-  const [recipientData, setRecipientData] = useState(null);
-  const [recipientPhone, setRecipientPhone] = useState('');
-  const [phoneError, setPhoneError] = useState('');
-
-  // 转让数据
-  const [amount, setAmount] = useState('');
-  const [amountError, setAmountError] = useState('');
-
-  // OTP数据
-  const [otpSessionId, setOtpSessionId] = useState(null);
-  const [otpExpiresIn, setOtpExpiresIn] = useState(300);
-  const [otpRequired, setOtpRequired] = useState(false);
-  const [orgEventCode, setOrgEventCode] = useState('');
+  
+  // 交易数据
+  const [transactions, setTransactions] = useState([]);
+  const [filteredTransactions, setFilteredTransactions] = useState([]);
+  
+  // 筛选和排序
+  const [filterType, setFilterType] = useState('all'); // all | payment | transfer_out | transfer_in | topup
+  const [sortOrder, setSortOrder] = useState('desc'); // desc | asc
+  
+  // 详情
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  
   // 加载状态
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -48,6 +43,16 @@ const CustomerTransfer = () => {
   useEffect(() => {
     loadCustomerData();
   }, []);
+
+  useEffect(() => {
+    if (customerData) {
+      loadTransactions();
+    }
+  }, [customerData]);
+
+  useEffect(() => {
+    filterAndSortTransactions();
+  }, [transactions, filterType, sortOrder]);
 
   // 加载Customer数据
   const loadCustomerData = async () => {
@@ -61,335 +66,222 @@ const CustomerTransfer = () => {
       const tokenResult = await user.getIdTokenResult();
       const { organizationId, eventId } = tokenResult.claims;
 
-      const customerRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', user.uid
-      );
-
-      const customerSnap = await getDoc(customerRef);
-      if (customerSnap.exists()) {
-        setCustomerData({
-          ...customerSnap.data(),
-          organizationId,
-          eventId,
-          userId: user.uid
-        });
-        // ✅ 构建orgEventCode用于导航
-        const orgId = organizationId?.replace('organization_', '') || '';
-        const evtId = eventId?.replace('event_', '') || '';
-        const code = `${orgId}-${evtId}`;
-        setOrgEventCode(code);
-        console.log('[CustomerTransactions] orgEventCode设置为:', code);
+      if (!organizationId || !eventId) {
+        setError('无法获取组织或活动信息');
+        return;
       }
+
+      setCustomerData({
+        organizationId,
+        eventId,
+        userId: user.uid
+      });
     } catch (error) {
-      console.error('[CustomerTransfer] 加载Customer数据失败:', error);
+      console.error('[CustomerTransactions] 加载Customer数据失败:', error);
       setError('加载失败：' + error.message);
     }
   };
 
-  // 标准化手机号
-  const normalizePhoneNumber = (phone) => {
-    let cleaned = phone.replace(/[\s\-\(\)]/g, '');
-
-    if (cleaned.startsWith('+60')) {
-      return cleaned;
-    } else if (cleaned.startsWith('60')) {
-      return '+' + cleaned;
-    } else if (cleaned.startsWith('0')) {
-      return '+60' + cleaned.substring(1);
-    } else if (cleaned.startsWith('1')) {
-      return '+60' + cleaned;
-    }
-
-    return '+60' + cleaned;
-  };
-
-  // 脱敏显示手机号
-  const maskPhoneNumber = (phone) => {
-    if (!phone) return '';
-    const normalized = phone.replace(/\D/g, '');
-    if (normalized.length >= 10) {
-      const last4 = normalized.slice(-4);
-      const masked = normalized.slice(0, -4).replace(/\d/g, '*');
-      return masked + last4;
-    }
-    return phone;
-  };
-
-  // 查询接收方
-  const handleSearchRecipient = async () => {
-    setPhoneError('');
+  // 加载交易记录
+  const loadTransactions = async () => {
+    setLoading(true);
     setError(null);
 
-    if (!recipientPhone) {
-      setPhoneError('请输入接收方手机号');
-      return;
-    }
-
-    // 验证手机号格式
-    const phoneRegex = /^(\+?60|0)?1\d{8,9}$/;
-    if (!phoneRegex.test(recipientPhone.replace(/[\s\-]/g, ''))) {
-      setPhoneError('手机号格式不正确');
-      return;
-    }
-
-    // 检查是否是自己
-    const normalizedPhone = normalizePhoneNumber(recipientPhone);
-    if (normalizedPhone === customerData.identityInfo.phoneNumber) {
-      setPhoneError('不能转给自己');
-      return;
-    }
-
-    setLoading(true);
-
     try {
-      // 查询接收方
-      const usersRef = collection(
+      const transactionsRef = collection(
         db,
         'organizations', customerData.organizationId,
         'events', customerData.eventId,
-        'users'
+        'transactions'
       );
 
-      // 生成手机号变体
-      const variants = [
-        recipientPhone,
-        normalizedPhone,
-        recipientPhone.replace(/^0/, '+60'),
-        recipientPhone.replace(/^\+60/, '0')
+      console.log('[CustomerTransactions] 开始加载交易记录...');
+
+      // 查询与该Customer相关的交易
+      // 包括：付款给Merchant、转出、转入、点数卡充值
+      const queries = [
+        // 1. 付款给Merchant
+        query(
+          transactionsRef,
+          where('customerId', '==', customerData.userId),
+          where('transactionType', '==', 'customer_to_merchant'),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        ),
+        // 2. 转出（作为转出方）
+        query(
+          transactionsRef,
+          where('fromUser.userId', '==', customerData.userId),
+          where('transactionType', '==', 'customer_transfer'),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        ),
+        // 3. 转入（作为接收方）
+        query(
+          transactionsRef,
+          where('toUser.userId', '==', customerData.userId),
+          where('transactionType', '==', 'customer_transfer'),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        ),
+        // 4. 点数卡充值
+        query(
+          transactionsRef,
+          where('customerId', '==', customerData.userId),
+          where('transactionType', '==', 'point_card_topup'),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        )
       ];
 
-      let recipientDoc = null;
+      // 执行所有查询
+      const results = await Promise.all(
+        queries.map(q => getDocs(q).catch(err => {
+          console.warn('[CustomerTransactions] 查询失败:', err);
+          return { docs: [] };
+        }))
+      );
 
-      for (const variant of variants) {
-        const q = query(
-          usersRef,
-          where('identityInfo.phoneNumber', '==', variant),
-          where('roles', 'array-contains', 'customer')
-        );
+      // 合并结果（去重）
+      const allTransactions = [];
+      const seenIds = new Set();
 
-        const querySnap = await getDocs(q);
+      results.forEach(querySnap => {
+        querySnap.docs.forEach(doc => {
+          if (!seenIds.has(doc.id)) {
+            seenIds.add(doc.id);
+            allTransactions.push({
+              id: doc.id,
+              ...doc.data()
+            });
+          }
+        });
+      });
 
-        if (!querySnap.empty) {
-          recipientDoc = querySnap.docs[0];
-          break;
+      console.log('[CustomerTransactions] 加载交易记录成功:', allTransactions.length);
+      setTransactions(allTransactions);
+
+    } catch (error) {
+      console.error('[CustomerTransactions] 加载交易记录失败:', error);
+      setError('加载失败：' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 筛选和排序
+  const filterAndSortTransactions = () => {
+    let filtered = [...transactions];
+
+    // 筛选
+    if (filterType !== 'all') {
+      filtered = filtered.filter(tx => {
+        if (filterType === 'payment') {
+          return tx.transactionType === 'customer_to_merchant';
+        } else if (filterType === 'transfer_out') {
+          return tx.transactionType === 'customer_transfer' && 
+                 tx.fromUser?.userId === customerData.userId;
+        } else if (filterType === 'transfer_in') {
+          return tx.transactionType === 'customer_transfer' && 
+                 tx.toUser?.userId === customerData.userId;
+        } else if (filterType === 'topup') {
+          return tx.transactionType === 'point_card_topup';
         }
-      }
-
-      if (!recipientDoc) {
-        setPhoneError('该手机号未注册或不是Customer');
-        return;
-      }
-
-      const recipient = recipientDoc.data();
-
-      setRecipientData({
-        ...recipient,
-        userId: recipientDoc.id
+        return true;
       });
-
-      setStep('confirm');
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 查询接收方失败:', error);
-      setError('查询失败：' + error.message);
-    } finally {
-      setLoading(false);
     }
+
+    // 排序
+    filtered.sort((a, b) => {
+      const timeA = a.timestamp?.toMillis() || 0;
+      const timeB = b.timestamp?.toMillis() || 0;
+      return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+    });
+
+    setFilteredTransactions(filtered);
   };
 
-  // 验证金额
-  const validateAmount = () => {
-    setAmountError('');
-
-    if (!amount || parseFloat(amount) <= 0) {
-      setAmountError('请输入有效金额');
-      return false;
-    }
-
-    const numAmount = parseFloat(amount);
-    const availablePoints = customerData?.customer?.pointsAccount?.availablePoints || 0;
-
-    if (numAmount > availablePoints) {
-      setAmountError(`余额不足。当前余额：${availablePoints}点`);
-      return false;
-    }
-
-    // 最小转让金额
-    if (numAmount < 1) {
-      setAmountError('转让金额不能少于1点');
-      return false;
-    }
-
-    return true;
-  };
-
-  // 确认转让（检查是否需要OTP）
-  const handleConfirmTransfer = async () => {
-    if (!validateAmount()) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 调用 sendOtpHttp 检查是否需要 OTP
-      const response = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: customerData.identityInfo.phoneNumber,
-          userId: customerData.userId,
-          scenario: 'customerTransfer',
-          scenarioData: {
-            amount: parseFloat(amount),
-            recipientName: recipientData.identityInfo.displayName,
-            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-          }
-        })
-      });
-
-      const result = await response.json();
-      console.log('[CustomerTransfer] sendOTP结果:', result);
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '发送 OTP 失败');
-      }
-
-      if (result.otpRequired) {
-        // 需要OTP验证
-        setOtpRequired(true);
-        setOtpSessionId(result.sessionId);
-        setOtpExpiresIn(result.expiresIn || 300);
-        setStep('otp');
+  // 格式化交易类型
+  const getTransactionTypeLabel = (transaction) => {
+    if (transaction.transactionType === 'customer_to_merchant') {
+      return { label: '商家付款', icon: '💳', color: '#f44336' };
+    } else if (transaction.transactionType === 'customer_transfer') {
+      if (transaction.fromUser?.userId === customerData.userId) {
+        return { label: '转出', icon: '📤', color: '#FF9800' };
       } else {
-        // 不需要OTP，直接转让
-        setOtpRequired(false);
-        await executeTransfer(null);
+        return { label: '转入', icon: '📥', color: '#4CAF50' };
       }
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 确认转让失败:', error);
-      setError(error.message || '操作失败');
-    } finally {
-      setLoading(false);
+    } else if (transaction.transactionType === 'point_card_topup') {
+      return { label: '点数卡充值', icon: '🎫', color: '#2196F3' };
     }
+    return { label: '未知', icon: '❓', color: '#999' };
   };
 
-  // OTP验证完成
-  const handleOTPComplete = async (otp) => {
-    setLoading(true);
-    setError(null);
-    try {
-      // 验证OTP（HTTP）
-      const resp = await safeFetch('/api/verifyOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: otpSessionId, otp })
-      });
-      const result = await resp.json();
-      console.log('[CustomerTransfer] OTP验证結果:', result);
-      if (resp.ok && result.success) {
-        // OTP验证成功，执行转让
-        await executeTransfer(otpSessionId);
-      } else {
-        throw new Error('OTP验证失败');
-      }
-
-    } catch (error) {
-      console.error('[CustomerTransfer] OTP验证失败:', error);
-      setError(error.message || 'OTP验证失败');
-      setLoading(false);
+  // 格式化时间（相对时间）
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '未知时间';
+    const date = timestamp.toDate();
+    const now = new Date();
+    const diff = now - date;
+    
+    // 小于1分钟
+    if (diff < 60000) {
+      return '刚刚';
     }
+    // 小于1小时
+    if (diff < 3600000) {
+      return `${Math.floor(diff / 60000)}分钟前`;
+    }
+    // 小于1天
+    if (diff < 86400000) {
+      return `${Math.floor(diff / 3600000)}小时前`;
+    }
+    // 小于7天
+    if (diff < 604800000) {
+      return `${Math.floor(diff / 86400000)}天前`;
+    }
+    
+    // 超过7天显示完整日期
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
-  // 重新发送OTP
-  const handleResendOTP = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await safeFetch('/api/sendOtpHttp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: customerData.identityInfo.phoneNumber,
-          userId: customerData.userId,
-          scenario: 'customerTransfer',
-          scenarioData: {
-            amount: parseFloat(amount),
-            recipientName: recipientData.identityInfo.displayName,
-            recipientPhone: maskPhoneNumber(recipientData.identityInfo.phoneNumber)
-          }
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '重新发送失败');
-      }
-
-      setOtpSessionId(result.sessionId);
-      setOtpExpiresIn(result.expiresIn || 300);
-
-      console.log('[CustomerTransfer] OTP重新发送成功');
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 重新发送OTP失败:', error);
-      setError(error.message || '重新发送失败');
-    } finally {
-      setLoading(false);
-    }
+  // 格式化完整时间
+  const formatFullTime = (timestamp) => {
+    if (!timestamp) return '未知时间';
+    const date = timestamp.toDate();
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
   };
 
-  // 执行转让
-  const executeTransfer = async (otpSessionId) => {
-    setStep('processing');
-    setLoading(true);
-
-    try {
-      const transferPoints = httpsCallable(functions, 'transferPoints');
-
-      const result = await transferPoints({
-        toPhoneNumber: recipientData.identityInfo.phoneNumber,
-        amount: parseFloat(amount),
-        otpSessionId: otpSessionId || null
-      });
-
-      console.log('[CustomerTransfer] 转让成功:', result.data);
-
-      setStep('success');
-
-      // 3秒后返回主页
-      setTimeout(() => {
-        navigate(`/customer/${orgEventCode}/dashboard`);
-      }, 3000);
-
-    } catch (error) {
-      console.error('[CustomerTransfer] 转让失败:', error);
-      setError(error.message || '转让失败');
-      setStep('confirm');
-    } finally {
-      setLoading(false);
-    }
+  // 查看详情
+  const handleViewDetail = (transaction) => {
+    setSelectedTransaction(transaction);
   };
 
-  // 返回上一步
+  // 关闭详情
+  const handleCloseDetail = () => {
+    setSelectedTransaction(null);
+  };
+
+  // 刷新
+  const handleRefresh = () => {
+    loadTransactions();
+  };
+
+  // 返回Dashboard
   const handleBack = () => {
-    if (step === 'confirm') {
-      setStep('input');
-      setRecipientData(null);
-      setAmount('');
-      setAmountError('');
-    } else if (step === 'otp') {
-      setStep('confirm');
-    }
-  };
-
-  // 取消转让
-  const handleCancel = () => {
     navigate(`/customer/${orgEventCode}/dashboard`);
   };
 
@@ -408,250 +300,312 @@ const CustomerTransfer = () => {
     <div style={styles.container}>
       {/* 顶部导航 */}
       <div style={styles.header}>
-        <button onClick={handleCancel} style={styles.backButton}>
-          ← 取消
+        <button onClick={handleBack} style={styles.backButton}>
+          ← 返回
         </button>
-        <h1 style={styles.title}>点数转让</h1>
-        <div style={{ width: '60px' }}></div>
+        <h1 style={styles.title}>交易记录</h1>
+        <button onClick={handleRefresh} style={styles.refreshButton}>
+          🔄
+        </button>
       </div>
 
-      {/* 错误提示 */}
-      {error && (
-        <div style={styles.errorBanner}>
-          <span>⚠️ {error}</span>
-          <button onClick={() => setError(null)} style={styles.closeButton}>✕</button>
-        </div>
-      )}
-
-      {/* 步骤1：输入接收方手机号 */}
-      {step === 'input' && (
-        <div style={styles.content}>
-          {/* 余额显示 */}
-          <div style={styles.balanceCard}>
-            <p style={styles.balanceLabel}>可用余额</p>
-            <p style={styles.balanceAmount}>
-              {customerData.customer?.pointsAccount?.availablePoints || 0} 点
-            </p>
-          </div>
-
-          {/* 输入手机号 */}
-          <div style={styles.inputCard}>
-            <label style={styles.inputLabel}>接收方手机号</label>
-            <input
-              type="tel"
-              value={recipientPhone}
-              onChange={(e) => {
-                setRecipientPhone(e.target.value);
-                setPhoneError('');
-              }}
-              placeholder="例：0123456789 或 +60123456789"
-              style={{
-                ...styles.input,
-                ...(phoneError ? styles.inputError : {})
-              }}
-              disabled={loading}
-              autoFocus
-            />
-            {phoneError && <p style={styles.errorText}>{phoneError}</p>}
-          </div>
-
-          {/* 查询按钮 */}
+      {/* 筛选栏 */}
+      <div style={styles.filterBar}>
+        <div style={styles.filterButtons}>
           <button
-            onClick={handleSearchRecipient}
-            disabled={loading || !recipientPhone}
+            onClick={() => setFilterType('all')}
             style={{
-              ...styles.button,
-              ...styles.primaryButton,
-              ...(loading || !recipientPhone ? styles.buttonDisabled : {})
+              ...styles.filterButton,
+              ...(filterType === 'all' ? styles.filterButtonActive : {})
             }}
           >
-            {loading ? '查询中...' : '查询接收方'}
+            全部
           </button>
-
-          {/* 提示 */}
-          <div style={styles.tips}>
-            <p style={styles.tipTitle}>💡 转让提示：</p>
-            <ul style={styles.tipList}>
-              <li>确保输入正确的接收方手机号</li>
-              <li>接收方必须已注册Customer账户</li>
-              <li>转让后无法撤销</li>
-              <li>最小转让金额：1点</li>
-            </ul>
-          </div>
+          <button
+            onClick={() => setFilterType('payment')}
+            style={{
+              ...styles.filterButton,
+              ...(filterType === 'payment' ? styles.filterButtonActive : {})
+            }}
+          >
+            💳 付款
+          </button>
+          <button
+            onClick={() => setFilterType('transfer_out')}
+            style={{
+              ...styles.filterButton,
+              ...(filterType === 'transfer_out' ? styles.filterButtonActive : {})
+            }}
+          >
+            📤 转出
+          </button>
+          <button
+            onClick={() => setFilterType('transfer_in')}
+            style={{
+              ...styles.filterButton,
+              ...(filterType === 'transfer_in' ? styles.filterButtonActive : {})
+            }}
+          >
+            📥 转入
+          </button>
+          <button
+            onClick={() => setFilterType('topup')}
+            style={{
+              ...styles.filterButton,
+              ...(filterType === 'topup' ? styles.filterButtonActive : {})
+            }}
+          >
+            🎫 充值
+          </button>
         </div>
-      )}
 
-      {/* 步骤2：确认转让 */}
-      {step === 'confirm' && recipientData && (
-        <div style={styles.content}>
-          {/* 接收方信息 */}
-          <div style={styles.recipientCard}>
-            <div style={styles.recipientHeader}>
-              <div style={styles.recipientIcon}>👤</div>
-              <div>
-                <h2 style={styles.recipientName}>
-                  {recipientData.identityInfo.displayName}
-                </h2>
-                <p style={styles.recipientPhone}>
-                  {maskPhoneNumber(recipientData.identityInfo.phoneNumber)}
-                </p>
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          style={styles.sortSelect}
+        >
+          <option value="desc">最新在前</option>
+          <option value="asc">最早在前</option>
+        </select>
+      </div>
+
+      {/* 交易列表 */}
+      <div style={styles.content}>
+        {loading && (
+          <div style={styles.loadingSection}>
+            <div style={styles.spinner}></div>
+            <p>加载中...</p>
+          </div>
+        )}
+
+        {error && (
+          <div style={styles.errorCard}>
+            <p>⚠️ {error}</p>
+            <button onClick={handleRefresh} style={styles.retryButton}>
+              重试
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && filteredTransactions.length === 0 && (
+          <div style={styles.emptyCard}>
+            <div style={styles.emptyIcon}>📭</div>
+            <p style={styles.emptyText}>暂无交易记录</p>
+            <p style={styles.emptySubtext}>
+              {filterType !== 'all' 
+                ? '尝试切换筛选条件' 
+                : '开始使用MyBazaar进行交易吧！'}
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && filteredTransactions.length > 0 && (
+          <div style={styles.transactionList}>
+            {filteredTransactions.map(tx => {
+              const typeInfo = getTransactionTypeLabel(tx);
+              const isNegative = tx.transactionType === 'customer_to_merchant' ||
+                                (tx.transactionType === 'customer_transfer' && 
+                                 tx.fromUser?.userId === customerData.userId);
+
+              return (
+                <div
+                  key={tx.id}
+                  onClick={() => handleViewDetail(tx)}
+                  style={styles.transactionCard}
+                >
+                  <div style={styles.transactionLeft}>
+                    <div style={{
+                      ...styles.transactionIcon,
+                      backgroundColor: typeInfo.color + '20'
+                    }}>
+                      <span style={{ fontSize: '1.5rem' }}>{typeInfo.icon}</span>
+                    </div>
+                    <div style={styles.transactionInfo}>
+                      <div style={styles.transactionType}>{typeInfo.label}</div>
+                      <div style={styles.transactionTime}>{formatTime(tx.timestamp)}</div>
+                      
+                      {/* 交易对象 */}
+                      {tx.transactionType === 'customer_to_merchant' && (
+                        <div style={styles.transactionTarget}>
+                          {tx.merchantName || '商家'}
+                        </div>
+                      )}
+                      {tx.transactionType === 'customer_transfer' && (
+                        <div style={styles.transactionTarget}>
+                          {tx.fromUser?.userId === customerData.userId 
+                            ? `转给 ${tx.toUser?.userName || '未知'}` 
+                            : `来自 ${tx.fromUser?.userName || '未知'}`}
+                        </div>
+                      )}
+                      {tx.transactionType === 'point_card_topup' && (
+                        <div style={styles.transactionTarget}>
+                          卡号：{tx.cardNumber || '未知'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={styles.transactionRight}>
+                    <div style={{
+                      ...styles.transactionAmount,
+                      color: isNegative ? '#f44336' : '#4CAF50'
+                    }}>
+                      {isNegative ? '-' : '+'}{tx.amount}
+                    </div>
+                    <div style={styles.transactionArrow}>›</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 交易详情弹窗 */}
+      {selectedTransaction && (
+        <div style={styles.modal} onClick={handleCloseDetail}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>交易详情</h2>
+              <button onClick={handleCloseDetail} style={styles.closeButton}>✕</button>
+            </div>
+
+            <div style={styles.modalBody}>
+              {/* 交易类型 */}
+              {(() => {
+                const typeInfo = getTransactionTypeLabel(selectedTransaction);
+                return (
+                  <div style={styles.detailSection}>
+                    <div style={styles.detailIconLarge}>{typeInfo.icon}</div>
+                    <div style={styles.detailLabel}>{typeInfo.label}</div>
+                  </div>
+                );
+              })()}
+
+              {/* 金额 */}
+              {(() => {
+                const isNegative = selectedTransaction.transactionType === 'customer_to_merchant' ||
+                                  (selectedTransaction.transactionType === 'customer_transfer' && 
+                                   selectedTransaction.fromUser?.userId === customerData.userId);
+                return (
+                  <div style={styles.detailAmount}>
+                    <span style={{ 
+                      fontSize: '2.5rem',
+                      fontWeight: '700',
+                      color: isNegative ? '#f44336' : '#4CAF50' 
+                    }}>
+                      {isNegative ? '-' : '+'}{selectedTransaction.amount}
+                    </span>
+                    <span style={styles.detailUnit}>点</span>
+                  </div>
+                );
+              })()}
+
+              {/* 详细信息 */}
+              <div style={styles.detailList}>
+                <div style={styles.detailItem}>
+                  <span style={styles.detailItemLabel}>交易ID：</span>
+                  <span style={styles.detailItemValue}>{selectedTransaction.transactionId || selectedTransaction.id}</span>
+                </div>
+
+                <div style={styles.detailItem}>
+                  <span style={styles.detailItemLabel}>时间：</span>
+                  <span style={styles.detailItemValue}>
+                    {formatFullTime(selectedTransaction.timestamp)}
+                  </span>
+                </div>
+
+                <div style={styles.detailItem}>
+                  <span style={styles.detailItemLabel}>状态：</span>
+                  <span style={{
+                    ...styles.detailItemValue,
+                    color: selectedTransaction.status === 'completed' ? '#4CAF50' : '#FF9800'
+                  }}>
+                    {selectedTransaction.status === 'completed' ? '✅ 已完成' : '⏳ 处理中'}
+                  </span>
+                </div>
+
+                {/* 商家付款详情 */}
+                {selectedTransaction.transactionType === 'customer_to_merchant' && (
+                  <>
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailItemLabel}>商家：</span>
+                      <span style={styles.detailItemValue}>{selectedTransaction.merchantName || '未知'}</span>
+                    </div>
+                    {selectedTransaction.pinVerified && (
+                      <div style={styles.detailItem}>
+                        <span style={styles.detailItemLabel}>验证：</span>
+                        <span style={styles.detailItemValue}>🔒 交易密码已验证</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Customer转账详情 */}
+                {selectedTransaction.transactionType === 'customer_transfer' && (
+                  <>
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailItemLabel}>转出方：</span>
+                      <span style={styles.detailItemValue}>
+                        {selectedTransaction.fromUser?.userName || '未知'}
+                      </span>
+                    </div>
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailItemLabel}>接收方：</span>
+                      <span style={styles.detailItemValue}>
+                        {selectedTransaction.toUser?.userName || '未知'}
+                      </span>
+                    </div>
+                    {selectedTransaction.pinVerified && (
+                      <div style={styles.detailItem}>
+                        <span style={styles.detailItemLabel}>验证：</span>
+                        <span style={styles.detailItemValue}>🔒 交易密码已验证</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* 点数卡充值详情 */}
+                {selectedTransaction.transactionType === 'point_card_topup' && (
+                  <>
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailItemLabel}>卡号：</span>
+                      <span style={styles.detailItemValue}>{selectedTransaction.cardNumber || '未知'}</span>
+                    </div>
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailItemLabel}>卡片ID：</span>
+                      <span style={styles.detailItemValue}>{selectedTransaction.cardId || '未知'}</span>
+                    </div>
+                  </>
+                )}
+
+                {/* 备注 */}
+                {selectedTransaction.notes && (
+                  <div style={styles.detailItem}>
+                    <span style={styles.detailItemLabel}>备注：</span>
+                    <span style={styles.detailItemValue}>{selectedTransaction.notes}</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div style={styles.recipientBadge}>✅ 已验证</div>
-          </div>
 
-          {/* 余额显示 */}
-          <div style={styles.balanceCard}>
-            <p style={styles.balanceLabel}>可用余额</p>
-            <p style={styles.balanceAmount}>
-              {customerData.customer?.pointsAccount?.availablePoints || 0} 点
-            </p>
-          </div>
-
-          {/* 金额输入 */}
-          <div style={styles.inputCard}>
-            <label style={styles.inputLabel}>转让金额</label>
-            <div style={styles.amountInputContainer}>
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value);
-                  setAmountError('');
-                }}
-                placeholder="0"
-                style={{
-                  ...styles.amountInput,
-                  ...(amountError ? styles.inputError : {})
-                }}
-                disabled={loading}
-                autoFocus
-              />
-              <span style={styles.amountUnit}>点</span>
+            <div style={styles.modalFooter}>
+              <button onClick={handleCloseDetail} style={styles.closeModalButton}>
+                关闭
+              </button>
             </div>
-            {amountError && <p style={styles.errorText}>{amountError}</p>}
           </div>
-
-          {/* 操作按钮 */}
-          <div style={styles.actions}>
-            <button
-              onClick={handleBack}
-              disabled={loading}
-              style={{
-                ...styles.button,
-                ...styles.secondaryButton,
-                ...(loading ? styles.buttonDisabled : {})
-              }}
-            >
-              返回修改
-            </button>
-            <button
-              onClick={handleConfirmTransfer}
-              disabled={loading}
-              style={{
-                ...styles.button,
-                ...styles.primaryButton,
-                ...(loading ? styles.buttonDisabled : {})
-              }}
-            >
-              {loading ? '处理中...' : '确认转让'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 步骤3：OTP验证 */}
-      {step === 'otp' && (
-        <div style={styles.content}>
-          <OTPInput
-            onComplete={handleOTPComplete}
-            onResend={handleResendOTP}
-            expiresIn={otpExpiresIn}
-            loading={loading}
-          />
-
-          <div style={styles.otpInfo}>
-            <p style={styles.otpInfoText}>
-              转让金额：<strong>{amount} 点</strong>
-            </p>
-            <p style={styles.otpInfoText}>
-              接收方：<strong>{recipientData.identityInfo.displayName}</strong>
-            </p>
-          </div>
-
-          <button
-            onClick={handleBack}
-            disabled={loading}
-            style={styles.cancelOtpButton}
-          >
-            取消转让
-          </button>
-        </div>
-      )}
-
-      {/* 步骤4：处理中 */}
-      {step === 'processing' && (
-        <div style={styles.processingContainer}>
-          <div style={styles.spinner}></div>
-          <p style={styles.processingText}>转让处理中...</p>
-          <p style={styles.processingSubtext}>请稍候</p>
-        </div>
-      )}
-
-      {/* 步骤5：成功 */}
-      {step === 'success' && (
-        <div style={styles.successContainer}>
-          <div style={styles.successIcon}>✅</div>
-          <h2 style={styles.successTitle}>转让成功！</h2>
-          <div style={styles.successDetails}>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>接收方：</span>
-              <span style={styles.detailValue}>{recipientData.identityInfo.displayName}</span>
-            </p>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>金额：</span>
-              <span style={styles.detailValue}>{amount} 点</span>
-            </p>
-            <p style={styles.successDetail}>
-              <span style={styles.detailLabel}>剩余余额：</span>
-              <span style={styles.detailValue}>
-                {(customerData.customer?.pointsAccount?.availablePoints || 0) - parseFloat(amount)} 点
-              </span>
-            </p>
-          </div>
-          <p style={styles.successSubtext}>3秒后自动返回...</p>
-          <button
-            onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
-            style={styles.returnButton}
-          >
-            立即返回
-          </button>
         </div>
       )}
     </div>
   );
 };
 
+// 样式定义
 const styles = {
   container: {
     minHeight: '100vh',
     backgroundColor: '#f5f5f5'
-  },
-  loadingCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100vh',
-    gap: '1rem'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #f3f3f3',
-    borderTop: '4px solid #2196F3',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
   },
   header: {
     display: 'flex',
@@ -659,7 +613,10 @@ const styles = {
     alignItems: 'center',
     padding: '1rem',
     backgroundColor: '#fff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10
   },
   backButton: {
     padding: '0.5rem 1rem',
@@ -675,276 +632,283 @@ const styles = {
     color: '#333',
     margin: 0
   },
-  errorBanner: {
+  refreshButton: {
+    padding: '0.5rem 1rem',
+    fontSize: '1.2rem',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer'
+  },
+  filterBar: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '1rem',
-    margin: '1rem',
-    backgroundColor: '#fff3cd',
-    border: '1px solid #ffc107',
-    borderRadius: '8px',
-    color: '#856404'
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #eee',
+    gap: '1rem',
+    flexWrap: 'wrap'
   },
-  closeButton: {
-    padding: '0.25rem 0.5rem',
-    fontSize: '1rem',
-    backgroundColor: 'transparent',
-    border: 'none',
+  filterButtons: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+    flex: 1
+  },
+  filterButton: {
+    padding: '0.5rem 1rem',
+    fontSize: '0.9rem',
+    backgroundColor: '#f5f5f5',
+    color: '#666',
+    border: '1px solid #ddd',
+    borderRadius: '20px',
     cursor: 'pointer',
-    color: '#856404'
+    transition: 'all 0.2s'
+  },
+  filterButtonActive: {
+    backgroundColor: '#2196F3',
+    color: '#fff',
+    border: '1px solid #2196F3'
+  },
+  sortSelect: {
+    padding: '0.5rem 1rem',
+    fontSize: '0.9rem',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    backgroundColor: '#fff',
+    cursor: 'pointer'
   },
   content: {
     padding: '1rem'
   },
-  balanceCard: {
-    marginBottom: '1rem',
-    padding: '1rem 1.5rem',
-    backgroundColor: '#f0f7ff',
-    borderRadius: '8px',
-    border: '1px solid #2196F3'
+  loadingSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '3rem',
+    gap: '1rem'
   },
-  balanceLabel: {
-    fontSize: '0.9rem',
-    color: '#666',
-    margin: '0 0 0.25rem 0'
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #f3f3f3',
+    borderTop: '4px solid #2196F3',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
   },
-  balanceAmount: {
-    fontSize: '1.8rem',
-    fontWeight: '700',
-    color: '#2196F3',
-    margin: 0
-  },
-  inputCard: {
-    marginBottom: '1.5rem',
-    padding: '1.5rem',
+  loadingCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '3rem',
+    gap: '1rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    margin: '2rem'
   },
-  inputLabel: {
-    display: 'block',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: '0.75rem'
+  errorCard: {
+    padding: '2rem',
+    backgroundColor: '#fff',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #f44336'
   },
-  input: {
-    width: '100%',
-    padding: '0.75rem 1rem',
+  retryButton: {
+    marginTop: '1rem',
+    padding: '0.75rem 2rem',
     fontSize: '1rem',
-    border: '2px solid #ddd',
-    borderRadius: '8px',
-    outline: 'none',
-    boxSizing: 'border-box'
-  },
-  inputError: {
-    borderColor: '#f44336'
-  },
-  errorText: {
-    margin: '0.5rem 0 0 0',
-    fontSize: '0.85rem',
-    color: '#f44336'
-  },
-  button: {
-    flex: 1,
-    padding: '1rem',
-    fontSize: '1rem',
-    fontWeight: '600',
+    backgroundColor: '#2196F3',
+    color: '#fff',
     border: 'none',
     borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
+    cursor: 'pointer'
   },
-  primaryButton: {
-    width: '100%',
-    backgroundColor: '#2196F3',
-    color: '#fff'
-  },
-  secondaryButton: {
+  emptyCard: {
+    padding: '3rem 2rem',
     backgroundColor: '#fff',
-    color: '#2196F3',
-    border: '1px solid #2196F3'
+    borderRadius: '12px',
+    textAlign: 'center'
   },
-  buttonDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed'
+  emptyIcon: {
+    fontSize: '4rem',
+    marginBottom: '1rem'
   },
-  tips: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px'
-  },
-  tipTitle: {
-    margin: '0 0 0.5rem 0',
+  emptyText: {
+    fontSize: '1.1rem',
     fontWeight: '600',
-    color: '#666',
-    fontSize: '0.9rem'
+    color: '#333',
+    margin: '0.5rem 0'
   },
-  tipList: {
-    margin: 0,
-    paddingLeft: '1.5rem',
-    color: '#666',
-    fontSize: '0.85rem'
+  emptySubtext: {
+    fontSize: '0.9rem',
+    color: '#999',
+    margin: 0
   },
-  recipientCard: {
-    marginBottom: '1rem',
-    padding: '1.5rem',
+  transactionList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem'
+  },
+  transactionCard: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    position: 'relative'
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   },
-  recipientHeader: {
+  transactionLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem'
+    gap: '1rem',
+    flex: 1
   },
-  recipientIcon: {
-    width: '60px',
-    height: '60px',
-    borderRadius: '50%',
-    backgroundColor: '#4CAF50',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '2rem'
-  },
-  recipientName: {
-    fontSize: '1.3rem',
-    fontWeight: '600',
-    color: '#333',
-    margin: '0 0 0.25rem 0'
-  },
-  recipientPhone: {
-    fontSize: '0.9rem',
-    color: '#666',
-    margin: 0
-  },
-  recipientBadge: {
-    position: 'absolute',
-    top: '1rem',
-    right: '1rem',
-    padding: '0.25rem 0.75rem',
-    fontSize: '0.8rem',
-    backgroundColor: '#4CAF50',
-    color: '#fff',
+  transactionIcon: {
+    width: '50px',
+    height: '50px',
     borderRadius: '12px',
-    fontWeight: '600'
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
-  amountInputContainer: {
+  transactionInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  transactionType: {
+    fontSize: '1rem',
+    fontWeight: '600',
+    color: '#333'
+  },
+  transactionTime: {
+    fontSize: '0.85rem',
+    color: '#999'
+  },
+  transactionTarget: {
+    fontSize: '0.85rem',
+    color: '#666'
+  },
+  transactionRight: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem'
   },
-  amountInput: {
-    flex: 1,
-    padding: '1rem',
-    fontSize: '2rem',
-    fontWeight: '600',
-    textAlign: 'center',
-    border: '2px solid #ddd',
-    borderRadius: '8px',
-    outline: 'none'
-  },
-  amountUnit: {
+  transactionAmount: {
     fontSize: '1.2rem',
-    fontWeight: '600',
-    color: '#666'
+    fontWeight: '700',
+    textAlign: 'right'
   },
-  actions: {
+  transactionArrow: {
+    fontSize: '1.5rem',
+    color: '#ccc'
+  },
+  modal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     display: 'flex',
-    gap: '1rem'
-  },
-  otpInfo: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px'
-  },
-  otpInfoText: {
-    margin: '0.5rem 0',
-    fontSize: '0.9rem',
-    color: '#666'
-  },
-  cancelOtpButton: {
-    width: '100%',
-    marginTop: '1rem',
-    padding: '0.75rem',
-    fontSize: '0.9rem',
-    backgroundColor: '#fff',
-    color: '#f44336',
-    border: '1px solid #f44336',
-    borderRadius: '8px',
-    cursor: 'pointer'
-  },
-  processingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: '60vh',
-    gap: '1rem'
+    zIndex: 1000,
+    padding: '1rem'
   },
-  processingText: {
-    fontSize: '1.2rem',
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: '12px',
+    width: '100%',
+    maxWidth: '500px',
+    maxHeight: '80vh',
+    overflow: 'auto',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1.5rem',
+    borderBottom: '1px solid #eee'
+  },
+  modalTitle: {
+    fontSize: '1.3rem',
     fontWeight: '600',
     color: '#333',
     margin: 0
   },
-  processingSubtext: {
-    fontSize: '0.9rem',
-    color: '#666',
-    margin: 0
+  closeButton: {
+    padding: '0.5rem',
+    fontSize: '1.5rem',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#999'
   },
-  successContainer: {
+  modalBody: {
+    padding: '2rem'
+  },
+  detailSection: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '60vh',
-    padding: '2rem'
+    marginBottom: '2rem'
   },
-  successIcon: {
+  detailIconLarge: {
     fontSize: '4rem',
-    marginBottom: '1rem'
-  },
-  successTitle: {
-    fontSize: '1.5rem',
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginBottom: '1.5rem'
-  },
-  successDetails: {
-    width: '100%',
-    maxWidth: '400px',
-    padding: '1.5rem',
-    backgroundColor: '#fff',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '1rem'
-  },
-  successDetail: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    margin: '0.75rem 0',
-    fontSize: '1rem'
+    marginBottom: '0.5rem'
   },
   detailLabel: {
+    fontSize: '1.1rem',
+    fontWeight: '600',
     color: '#666'
   },
-  detailValue: {
+  detailAmount: {
+    textAlign: 'center',
+    marginBottom: '2rem'
+  },
+  detailUnit: {
+    fontSize: '1.2rem',
     fontWeight: '600',
-    color: '#333'
+    color: '#666',
+    marginLeft: '0.5rem'
   },
-  successSubtext: {
+  detailList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem'
+  },
+  detailItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    paddingBottom: '1rem',
+    borderBottom: '1px solid #f5f5f5'
+  },
+  detailItemLabel: {
     fontSize: '0.9rem',
-    color: '#999',
-    marginBottom: '1rem'
+    color: '#666'
   },
-  returnButton: {
+  detailItemValue: {
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'right',
+    maxWidth: '60%',
+    wordBreak: 'break-all'
+  },
+  modalFooter: {
+    padding: '1.5rem',
+    borderTop: '1px solid #eee',
+    display: 'flex',
+    justifyContent: 'center'
+  },
+  closeModalButton: {
     padding: '0.75rem 2rem',
     fontSize: '1rem',
     fontWeight: '600',
@@ -972,4 +936,4 @@ if (typeof document !== 'undefined') {
   }
 }
 
-export default CustomerTransfer;
+export default CustomerTransactions;
