@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const cors = require('cors');
 
 // 设置全局选项，确保 v2 触发器使用正确的区域
-setGlobalOptions({ region: 'us-central1' });
+setGlobalOptions({ region: 'asia-southeast1' });
 
 // 确保只初始化一次
 if (!admin.apps.length) {
@@ -130,7 +130,7 @@ exports.pingHttp = functions.https.onRequest((req, res) => {
 function normalizePhoneNumber(phoneNumber) {
   if (!phoneNumber) return null;
 
-  let cleaned = phoneNumber.replace(/[\s\-\(\)]/g, '');
+  let cleaned = phoneNumber.replace(/[\s\-()]/g, '');
 
   if (cleaned.startsWith('+60')) {
     cleaned = cleaned.substring(3);

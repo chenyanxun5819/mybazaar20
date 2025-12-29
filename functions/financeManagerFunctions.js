@@ -1,6 +1,6 @@
 /**
- * Finance Manager Cloud Functions (v2)
- * 使用 Firebase Functions v2 API，独立于全局 region 设置
+ * Finance Manager Cloud Functions (v2) - 修复版
+ * 修复：使用 authUid 查询用户文档，而不是直接使用 doc(userId)
  */
 
 const { onCall } = require('firebase-functions/v2/https');
@@ -18,13 +18,12 @@ const { FieldValue } = admin.firestore;
  */
 exports.confirmCashSubmission = onCall(
   { 
-    region: 'asia-southeast1',  // ✅ v2 的 region 设置
+    region: 'asia-southeast1',
     cors: true 
   },
   async (request) => {
     const { data, auth } = request;
 
-    // 🔍 详细的认证日志
     console.log('[confirmCashSubmission] 🔐 Auth Debug:', {
       hasAuth: !!auth,
       uid: auth?.uid || null,
@@ -45,29 +44,37 @@ exports.confirmCashSubmission = onCall(
       userId: auth.uid
     });
 
-    // 验证必需参数
     if (!orgId || !eventId || !submissionId) {
       throw new Error('缺少必需参数');
     }
 
     const db = admin.firestore();
-    const userId = auth.uid;
+    const authUid = auth.uid;
 
     try {
-      // ===== 2. 权限验证 =====
-      const userRef = db
+      // ===== 2. 权限验证 - 使用 authUid 查询 =====
+      const usersRef = db
         .collection('organizations').doc(orgId)
         .collection('events').doc(eventId)
-        .collection('users').doc(userId);
+        .collection('users');
 
-      const userDoc = await userRef.get();
+      const userQuery = usersRef.where('authUid', '==', authUid);
+      const userSnapshot = await userQuery.get();
       
-      if (!userDoc.exists) {
-        console.warn('[confirmCashSubmission] ⚠️ 用户文档不存在:', userId);
+      if (userSnapshot.empty) {
+        console.warn('[confirmCashSubmission] ⚠️ 用户文档不存在:', authUid);
         throw new Error('用户不存在');
       }
 
+      const userDoc = userSnapshot.docs[0];
       const userData = userDoc.data();
+      const userId = userDoc.id;
+      
+      console.log('[confirmCashSubmission] ✅ 找到用户:', {
+        authUid,
+        userId,
+        roles: userData.roles
+      });
       
       // 检查是否是 Finance Manager
       if (!userData.roles || !userData.roles.includes('financeManager')) {
@@ -116,15 +123,21 @@ exports.confirmCashSubmission = onCall(
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
+        // 获取用户文档引用
+        const userDocRef = db
+          .collection('organizations').doc(orgId)
+          .collection('events').doc(eventId)
+          .collection('users').doc(userId);
+
         // 获取当前统计数据
-        const currentFinanceData = (await transaction.get(userRef)).data();
+        const currentFinanceData = (await transaction.get(userDocRef)).data();
         const currentCashStats = currentFinanceData.financeManager?.cashStats || {};
         
         // 计算今日收款
         const lastCollection = currentCashStats.lastCollectionAt;
         const isToday = lastCollection && lastCollection.toDate() >= todayStart;
         
-        transaction.update(userRef, {
+        transaction.update(userDocRef, {
           'financeManager.cashStats.totalCollected': FieldValue.increment(amount),
           'financeManager.cashStats.todayCollected': isToday 
             ? FieldValue.increment(amount) 
@@ -180,17 +193,16 @@ exports.confirmCashSubmission = onCall(
 );
 
 /**
- * 获取财务统计数据 (v2)
+ * 获取财务统计数据 (v2) - ⭐ 修复版
  */
 exports.getFinanceStats = onCall(
   { 
-    region: 'asia-southeast1',  // ✅ v2 的 region 设置
+    region: 'asia-southeast1',
     cors: true 
   },
   async (request) => {
     const { data, auth } = request;
 
-    // 🔍 详细的认证日志
     console.log('[getFinanceStats] 🔐 Auth Debug:', {
       hasAuth: !!auth,
       uid: auth?.uid || null,
@@ -207,7 +219,7 @@ exports.getFinanceStats = onCall(
     console.log('[getFinanceStats] 📥 收到请求:', {
       orgId,
       eventId,
-      userId: auth.uid
+      authUid: auth.uid
     });
 
     if (!orgId || !eventId) {
@@ -215,23 +227,35 @@ exports.getFinanceStats = onCall(
     }
 
     const db = admin.firestore();
-    const userId = auth.uid;
+    const authUid = auth.uid;
 
     try {
-      // ===== 2. 权限验证 =====
-      const userRef = db
+      // ===== 2. 权限验证 - ⭐⭐⭐ 修复：使用 authUid 查询 ⭐⭐⭐ =====
+      const usersRef = db
         .collection('organizations').doc(orgId)
         .collection('events').doc(eventId)
-        .collection('users').doc(userId);
+        .collection('users');
 
-      const userDoc = await userRef.get();
+      // ⭐ 关键修复：使用 where 查询而不是 doc(userId)
+      const userQuery = usersRef.where('authUid', '==', authUid);
+      const userSnapshot = await userQuery.get();
       
-      if (!userDoc.exists) {
-        console.warn('[getFinanceStats] ⚠️ 用户文档不存在:', userId);
+      if (userSnapshot.empty) {
+        console.warn('[getFinanceStats] ⚠️ 用户文档不存在:', authUid);
+        console.log('[getFinanceStats] 💡 提示：请检查用户文档是否有 authUid 字段');
         throw new Error('用户不存在');
       }
 
+      const userDoc = userSnapshot.docs[0];
       const userData = userDoc.data();
+      const userId = userDoc.id;
+      
+      console.log('[getFinanceStats] ✅ 找到用户:', {
+        authUid,
+        userId,
+        roles: userData.roles,
+        hasFinanceManager: !!userData.financeManager
+      });
       
       if (!userData.roles || !userData.roles.includes('financeManager')) {
         console.warn('[getFinanceStats] ⚠️ 权限不足:', {

@@ -723,53 +723,24 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   // 提交保存
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!validateForm()) return;
+
     setSubmitting(true);
     setError('');
 
     try {
-      // 獲取當前用戶的 ID Token
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('用户未登录，请重新登录');
-      }
-
-      const idToken = await user.getIdToken();
-
-      // 使用 Hosting API 路徑（透過 firebase.json rewrites）
-      const response = await safeFetch('/api/createEventByPlatformAdminHttp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          organizationId: organization.id,
-          orgCode: organization.orgCode,
-          eventCode: formData.eventCode,
-          eventName: formData.eventName,
-          description: formData.description,
-          eventInfo: {
-            endDate: formData.endDate,
-            endTime: formData.endTime,
-            duration: formData.duration
-          },
-          status: formData.status
-        })
+      const orgRef = doc(db, 'organizations', organization.id);
+      await updateDoc(orgRef, {
+        identityTags: identityTags,
+        updatedAt: serverTimestamp()
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '创建活动失败');
-      }
-
-      const result = await response.json();
-      console.log('活动创建成功:', result);
-      alert('活动创建成功！');
+      alert('身份标签更新成功！');
       onSuccess();
-
     } catch (err) {
-      console.error('创建活动失败:', err);
-      setError(err.message || '创建活动失败');
+      console.error('更新身份标签失败:', err);
+      setError(err.message || '更新身份标签失败');
     } finally {
       setSubmitting(false);
     }

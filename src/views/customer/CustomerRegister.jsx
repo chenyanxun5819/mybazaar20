@@ -102,12 +102,12 @@ const CustomerRegister = () => {
   const validatePhone = (phone) => {
     // 马来西亚手机号：+60或60开头，9-10位数字
     const phoneRegex = /^(\+?60|0)?1\d{8,9}$/;
-    return phoneRegex.test(phone.replace(/[\s\-]/g, ''));
+    return phoneRegex.test(phone.replace(/[\s-]/g, ''));
   };
 
   // 格式化手机号为+60格式
   const formatPhoneNumber = (phone) => {
-    let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    let cleaned = phone.replace(/[\s-()]/g, '');
 
     if (cleaned.startsWith('+60')) {
       return cleaned;

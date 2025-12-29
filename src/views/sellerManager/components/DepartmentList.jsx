@@ -24,10 +24,11 @@ const DepartmentList = ({ departmentStats, onSelectDepartment }) => {
           return (bStats.totalRevenue || 0) - (aStats.totalRevenue || 0);
         case 'collectionRate':
           return (bStats.collectionRate || 0) - (aStats.collectionRate || 0);
-        case 'name':
+        case 'name': {
           const aCode = a.departmentCode || '';
           const bCode = b.departmentCode || '';
           return String(aCode).localeCompare(String(bCode));
+        }
         default:
           return 0;
       }

@@ -89,7 +89,7 @@ const CustomerTransfer = () => {
 
   // 标准化手机号
   const normalizePhoneNumber = (phone) => {
-    let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    let cleaned = phone.replace(/[\s\-()]/g, '');
 
     if (cleaned.startsWith('+60')) {
       return cleaned;
@@ -128,7 +128,7 @@ const CustomerTransfer = () => {
 
     // 验证手机号格式
     const phoneRegex = /^(\+?60|0)?1\d{8,9}$/;
-    if (!phoneRegex.test(recipientPhone.replace(/[\s\-]/g, ''))) {
+    if (!phoneRegex.test(recipientPhone.replace(/[\s-]/g, ''))) {
       setPhoneError('手机号格式不正确');
       return;
     }

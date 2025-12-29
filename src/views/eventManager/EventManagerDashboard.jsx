@@ -144,7 +144,7 @@ const EventManagerDashboard = () => {
       setEditingUser(null);
       
       // 重新加载用户列表
-      await loadUsers();
+      await loadDashboardData();
     } catch (error) {
       console.error('❌ 更新用户失败:', error);
       alert('更新失败: ' + error.message);

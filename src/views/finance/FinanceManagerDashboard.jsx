@@ -8,11 +8,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
 import { auth, db, functions, FIREBASE_PROJECT_ID, FUNCTIONS_REGION } from '../../config/firebase';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  query,
+  where,
+  orderBy,
   onSnapshot
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -25,7 +25,7 @@ import PendingSubmissions from './PendingSubmissions';
 const FinanceManagerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
-  const { currentUser, userProfile, loading: authLoading } = useAuth();
+  const { currentUser, userProfile, loading: authLoading, logout } = useAuth();
   const { organizationId, eventId, loading: eventLoading, error: eventError } = useEvent();
 
   const withTimeout = (promise, ms, label) => {
@@ -120,6 +120,20 @@ const FinanceManagerDashboard = () => {
 
   // 解析 orgEventCode
   const [orgCode, eventCode] = orgEventCode?.split('-') || [];
+
+  // ⭐ 新增：登出处理
+  const handleLogout = async () => {
+    const confirmed = window.confirm('确定要退出登录吗？');
+    if (!confirmed) return;
+
+    try {
+      await logout();
+      navigate(`/login/${orgEventCode}`);
+    } catch (error) {
+      console.error('退出登录失败:', error);
+      alert('退出登录失败: ' + error.message);
+    }
+  };
 
   // ===== 1. 权限验证 =====
   useEffect(() => {
@@ -308,6 +322,7 @@ const FinanceManagerDashboard = () => {
     );
   }
 
+
   return (
     <div className="finance-dashboard">
       {/* 头部 */}
@@ -321,6 +336,9 @@ const FinanceManagerDashboard = () => {
           </div>
           <div className="header-right">
             <span className="date">{new Date().toLocaleDateString('zh-CN')}</span>
+            <button className="logout-button" onClick={handleLogout}>
+              🚪 退出登录
+            </button>
           </div>
         </div>
       </header>
@@ -349,7 +367,7 @@ const FinanceManagerDashboard = () => {
       {/* Tab 内容 */}
       <main className="dashboard-content">
         {activeTab === 'overview' && (
-          <CollectionOverview 
+          <CollectionOverview
             statistics={statistics}
             onRefresh={loadFinanceData}
           />

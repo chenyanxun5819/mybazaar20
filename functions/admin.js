@@ -2897,6 +2897,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     const callerUid = decoded.uid;
     const db = getDb();
     const orgRef = db.collection('organizations').doc(organizationId);
+    const eventRef = orgRef.collection('events').doc(eventId);
 
     // ✅ 使用通用权限检查函数
     const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
@@ -3488,9 +3489,9 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
         userId: userId,
         roles: ['eventManager', 'seller', 'customer'],
         identityInfo: {
-          identityId: eventManagerInfo.identityId || `${identityTag.toUpperCase()}_${Date.now()}`,
-          identityTag: identityTag,
-          identityName: validTag.name['zh-CN'] || validTag.name['en-US'] || identityTag,
+          identityId: eventManagerInfo.identityId || `${eventManagerInfo.identityTag.toUpperCase()}_${Date.now()}`,
+          identityTag: eventManagerInfo.identityTag,
+          identityName: validTag.name['zh-CN'] || validTag.name['en-US'] || eventManagerInfo.identityTag,
           department: deptName,
           position: eventManagerInfo.position || '活动负责人'  // ✅ 新增 position 字段
         },

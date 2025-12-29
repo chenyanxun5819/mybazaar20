@@ -1,4 +1,4 @@
-import { useEffect, useRef, useStte } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 
 /**

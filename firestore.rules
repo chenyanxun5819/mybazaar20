@@ -129,9 +129,9 @@ service cloud.firestore {
     // ============================================================================
     
     match /organizations/{organizationId} {
-      // Platform Admin 可以读写
-      // Event Manager 可以读取组织信息
-      allow read: if isAuthenticated();
+      // ✅ 允许所有人读取组织基本信息（用于登录页面显示）
+      // 注意：organizations 只包含 orgCode, name 等非敏感信息
+      allow read: if true;
       
       // ✅ Platform Admin 可以创建和修改组织
       allow create: if isPlatformAdmin();
@@ -143,8 +143,9 @@ service cloud.firestore {
       // ============================================================================
       
       match /events/{eventId} {
-        // 所有认证用户可以读取活动基本信息
-        allow read: if isAuthenticated();
+        // ✅ 允许所有人读取活动基本信息（用于登录页面显示）
+        // 注意：events 只包含 eventCode, name, dates 等非敏感信息
+        allow read: if true;
         
         // ✅ Event Manager 可以更新活动信息（排除敏感字段）
         // 注意：不再检查 eventManager 对象，因为已迁移到 users 集合

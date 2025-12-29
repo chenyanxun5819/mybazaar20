@@ -12,7 +12,7 @@ function normalizePhone(phoneNumber) {
   if (!phoneNumber) return null;
   
   // 移除所有空格和特殊字符
-  let cleaned = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
+  let cleaned = phoneNumber.trim().replace(/[\s\-()]/g, '');
   
   // 如果以 +60 或 60 開頭，移除它
   if (cleaned.startsWith('+60')) {
