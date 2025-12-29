@@ -60,10 +60,10 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
   const { orgCode, eventCode, phoneNumber, password } = req.body;
 
   try {
-    console.log('[loginUniversalHttp] 开始登录', { 
-      orgCode, 
-      eventCode, 
-      phoneNumber 
+    console.log('[loginUniversalHttp] 开始登录', {
+      orgCode,
+      eventCode,
+      phoneNumber
     });
 
     // ✅ 参数验证
@@ -79,7 +79,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
 
     // 📋 Step 1: 查找组织
     console.log('[loginUniversalHttp] Step 1: 查找组织', { orgCode: orgCodeLower });
-    
+
     const orgSnapshot = await db.collection('organizations')
       .where('orgCode', '==', orgCodeLower)
       .limit(1)
@@ -95,15 +95,15 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     const orgDoc = orgSnapshot.docs[0];
     const organizationId = orgDoc.id;
     const orgData = orgDoc.data();
-    
-    console.log('[loginUniversalHttp] 组织找到', { 
-      organizationId, 
-      orgName: orgData.orgName?.['zh-CN'] 
+
+    console.log('[loginUniversalHttp] 组织找到', {
+      organizationId,
+      orgName: orgData.orgName?.['zh-CN']
     });
 
     // 📋 Step 2: 查找活动
     console.log('[loginUniversalHttp] Step 2: 查找活动', { eventCode });
-    
+
     const eventSnapshot = await db
       .collection('organizations').doc(organizationId)
       .collection('events')
@@ -121,10 +121,10 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     const eventDoc = eventSnapshot.docs[0];
     const eventId = eventDoc.id;
     const eventData = eventDoc.data();
-    
-    console.log('[loginUniversalHttp] 活动找到', { 
-      eventId, 
-      eventName: eventData.eventName?.['zh-CN'] 
+
+    console.log('[loginUniversalHttp] 活动找到', {
+      eventId,
+      eventName: eventData.eventName?.['zh-CN']
     });
 
     // 📋 Step 3A: 先检查是否为 Event Manager 登录（匹配 event.eventManager）
@@ -225,11 +225,11 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     }
     const userId = userDoc.id;
     const userData = userDoc.data();
-    
-    console.log('[loginUniversalHttp] 用户找到', { 
-      userId, 
+
+    console.log('[loginUniversalHttp] 用户找到', {
+      userId,
       englishName: userData.basicInfo?.englishName,
-      roles: userData.roles 
+      roles: userData.roles
     });
 
     // 🔐 Step 4: 验证密码（支持 hash+salt 与简易明文两种存储）
@@ -253,7 +253,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
 
     // ✅ Step 5: 检查用户角色
     console.log('[loginUniversalHttp] Step 5: 检查角色');
-    
+
     const roles = userData.roles || [];
     if (roles.length === 0) {
       console.warn('[loginUniversalHttp] 用户没有角色', { userId });
@@ -264,14 +264,14 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
 
     // 🎫 Step 6: 生成 Custom Token（包含 Custom Claims）
     console.log('[loginUniversalHttp] Step 6: 生成 Custom Token with Custom Claims');
-    
+
     const authUidForToken = userData.authUid || `phone_60${norm}`;
-    
+
     // ✨ 提取 managedDepartments（支持两种数据结构）
-    const managedDepartments = userData.sellerManager?.managedDepartments || 
-                               userData.roleSpecificData?.sellerManager?.managedDepartments || 
-                               [];
-    
+    const managedDepartments = userData.sellerManager?.managedDepartments ||
+      userData.roleSpecificData?.sellerManager?.managedDepartments ||
+      [];
+
     // ✨ 构建 Custom Claims
     const customClaims = {
       organizationId,
@@ -282,9 +282,9 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       department: userData.identityInfo?.department || '',
       identityTag: userData.identityTag || userData.identityInfo?.identityTag || ''
     };
-    
+
     console.log('[loginUniversalHttp] Custom Claims:', customClaims);
-    
+
     const customToken = await admin.auth().createCustomToken(authUidForToken, customClaims);
 
     // 📝 Step 7: 更新最后登录时间
@@ -293,11 +293,27 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     });
 
     const elapsedMs = Date.now() - startTime;
-    console.log('[loginUniversalHttp] ✅ 登录成功', { 
-      userId, 
+    console.log('[loginUniversalHttp] ✅ 登录成功', {
+      userId,
       roles,
       managedDepartments,
-      elapsedMs 
+      elapsedMs
+    });
+
+
+    // ⭐ 新增：Step 8 - 检查密码状态
+    console.log('[loginUniversalHttp] Step 8: 检查密码状态');
+
+    const needsPasswordSetup =
+      userData.basicInfo?.hasDefaultPassword === true ||  // 仍是默认密码
+      userData.basicInfo?.isFirstLogin === true ||        // 首次登录
+      !userData.basicInfo?.transactionPinHash;            // 未设置交易密码
+
+    console.log('[loginUniversalHttp] 密码状态:', {
+      hasDefaultPassword: userData.basicInfo?.hasDefaultPassword,
+      isFirstLogin: userData.basicInfo?.isFirstLogin,
+      hasTransactionPin: !!userData.basicInfo?.transactionPinHash,
+      needsPasswordSetup
     });
 
     // 🎉 返回成功结果
@@ -313,7 +329,11 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       managedDepartments: managedDepartments,
       department: userData.identityInfo?.department || '',
       identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
-      roleSpecificData: userData.roleSpecificData || {} // 返回角色特定数据（可选）
+      roleSpecificData: userData.roleSpecificData || {}, // 返回角色特定数据（可选）
+      needsPasswordSetup: needsPasswordSetup,
+      hasDefaultPassword: userData.basicInfo?.hasDefaultPassword || false,
+      isFirstLogin: userData.basicInfo?.isFirstLogin || false,
+      hasTransactionPin: !!userData.basicInfo?.transactionPinHash
     });
 
   } catch (error) {

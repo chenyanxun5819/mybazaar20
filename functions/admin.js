@@ -973,7 +973,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
       .doc(organizationId)
       .collection('events')
       .doc(eventId);
-    
+
     const eventSnap = await eventRef.get();
     if (!eventSnap.exists) {
       res.status(404).json({ error: '活动不存在' });
@@ -982,7 +982,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
 
     const eventData = eventSnap.data() || {};
     const eventManager = eventData.eventManager || {};
-    
+
     // 标准化电话号码函数
     const normalizePhone = (p) => {
       if (!p) return '';
@@ -993,7 +993,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     };
 
     let hasPermission = false;
-    
+
     // 方法 1: 检查 authUid 完全匹配
     if (eventManager.authUid === callerUid) {
       hasPermission = true;
@@ -1128,10 +1128,19 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         englishName: englishName,
         chineseName: chineseName || '',
         email: email,
+        // 登录密码
         passwordHash: passwordHash,
         passwordSalt: passwordSalt,
-        pinHash: passwordHash,
-        pinSalt: passwordSalt,
+        hasDefaultPassword: true,        // ← 新增
+        isFirstLogin: true,              // ← 新增
+        passwordLastChanged: null,       // ← 新增
+
+        // 交易密码（初始为空）
+        transactionPinHash: null,        // ← 新增
+        transactionPinSalt: null,        // ← 新增
+        pinFailedAttempts: 0,            // ← 新增
+        pinLockedUntil: null,            // ← 新增
+        pinLastChanged: null,            // ← 新增
         isPhoneVerified: true
       },
       identityInfo: identityInfo,
@@ -2910,17 +2919,17 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     // 获取目标用户文档
     const userRef = orgRef.collection('events').doc(eventId).collection('users').doc(userId);
     const userSnap = await userRef.get();
-    
+
     if (!userSnap.exists) {
       return res.status(404).json({ error: '用户不存在' });
     }
-    
+
     const userData = userSnap.data();
     const currentRoles = userData.roles || [];
 
     // 检查是否是 Event Manager 修改自己的角色
-    const isModifyingSelf = (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) || 
-                            (callerUid === `eventManager_${userData.basicInfo?.phoneNumber}`);
+    const isModifyingSelf = (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) ||
+      (callerUid === `eventManager_${userData.basicInfo?.phoneNumber}`);
 
     console.log('[updateUserRoles] isModifyingSelf:', isModifyingSelf);
     console.log('[updateUserRoles] currentRoles:', currentRoles);
@@ -2929,7 +2938,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     // 🚫 禁止 Event Manager 修改自己的角色
     if (isModifyingSelf && currentRoles.includes('eventManager')) {
       console.log('[updateUserRoles] ❌ Event Manager 不能修改自己的角色');
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Event Manager 不能修改自己的角色',
         code: 'cannot-modify-own-roles'
       });
@@ -2954,12 +2963,12 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     if (currentRoles.includes('eventManager')) {
       if (managerRoles.length > 0) {
         console.log('[updateUserRoles] ❌ Event Manager 不能拥有其他 manager 角色');
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Event Manager 不能同时拥有其他 manager 角色（Seller Manager、Finance Manager 等）',
           code: 'eventmanager-cannot-hold-other-manager-roles'
         });
       }
-      
+
       // ✅ Event Manager 可以拥有参与者角色 (seller, merchant, customer)
       // 保持 eventManager 角色
       newRoles.push('eventManager');
@@ -2968,7 +2977,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     // 🚫 规则 2: 如果尝试添加 eventManager 角色给已有其他 manager 角色的用户
     if (roles.eventManager && managerRoles.length > 0) {
       console.log('[updateUserRoles] ❌ 不能给拥有其他 manager 角色的用户添加 eventManager');
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: '拥有其他 manager 角色的用户不能成为 Event Manager',
         code: 'cannot-add-eventmanager-with-other-managers'
       });
@@ -3005,32 +3014,32 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
     // ⭐⭐⭐ 修改：merchant 角色 - 创建 merchants 集合文档 ⭐⭐⭐
     if (roles.merchant && !previousRoles?.includes('merchant')) {
       console.log('[updateUserRoles] 检测到新增 merchant 角色，准备创建 merchants 文档');
-      
+
       // 生成 merchantId
       const merchantId = `merchant_${userId}`;
-      
+
       // 创建 merchants 集合文档
       const merchantRef = eventRef.collection('merchants').doc(merchantId);
-      
+
       // 检查是否已存在
       const merchantSnap = await merchantRef.get();
-      
+
       if (!merchantSnap.exists) {
         console.log('[updateUserRoles] 创建新的 merchants 文档:', merchantId);
-        
+
         // 创建 merchants 文档
         await merchantRef.set({
           merchantId: merchantId,
           userId: userId,
           stallName: userData.basicInfo?.englishName || userData.basicInfo?.chineseName || '未命名摊位',
           description: '',
-          
+
           contactInfo: {
             phone: userData.basicInfo?.phoneNumber || '',
             email: '',
             note: ''
           },
-          
+
           qrCodeData: {
             type: 'MERCHANT_PAYMENT',
             version: '1.0',
@@ -3039,7 +3048,7 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
             organizationId: organizationId,
             generatedAt: new Date()
           },
-          
+
           revenueStats: {
             totalRevenue: 0,
             todayRevenue: 0,
@@ -3048,13 +3057,13 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
             lastTransactionAt: null,
             averageTransactionAmount: 0
           },
-          
+
           operationStatus: {
             isActive: true,
             lastStatusChange: new Date(),
             pauseReason: ''
           },
-          
+
           metadata: {
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -3062,12 +3071,12 @@ exports.updateUserRoles = functions.https.onRequest(async (req, res) => {
             lastUpdatedBy: 'updateUserRoles'
           }
         });
-        
+
         console.log('[updateUserRoles] ✅ Merchants 文档创建成功');
       } else {
         console.log('[updateUserRoles] Merchants 文档已存在，跳过创建');
       }
-      
+
       // ⭐ 在 users 文档中设置 merchant.id
       additionalUpdateData['merchant.id'] = merchantId;
       additionalUpdateData['merchant.availablePoints'] = 0;
@@ -3654,20 +3663,20 @@ exports.submitCashToFinanceHttp = onRequest(
 
         // 參數驗證
         if (!organizationId || !eventId || !financeManagerId) {
-          return res.status(400).json({ 
-            error: '缺少必要參數：organizationId, eventId, financeManagerId' 
+          return res.status(400).json({
+            error: '缺少必要參數：organizationId, eventId, financeManagerId'
           });
         }
 
         if (!selectedCollections || selectedCollections.length === 0) {
-          return res.status(400).json({ 
-            error: '至少需要選擇一筆收款記錄' 
+          return res.status(400).json({
+            error: '至少需要選擇一筆收款記錄'
           });
         }
 
         if (!totalAmount || totalAmount <= 0) {
-          return res.status(400).json({ 
-            error: '總金額必須大於 0' 
+          return res.status(400).json({
+            error: '總金額必須大於 0'
           });
         }
 
@@ -3688,15 +3697,15 @@ exports.submitCashToFinanceHttp = onRequest(
         const smDoc = await smDocRef.get();
 
         if (!smDoc.exists) {
-          return res.status(403).json({ 
-            error: '找不到用戶記錄' 
+          return res.status(403).json({
+            error: '找不到用戶記錄'
           });
         }
 
         const smData = smDoc.data();
         if (!smData.roles || !smData.roles.includes('sellerManager')) {
-          return res.status(403).json({ 
-            error: '只有 Seller Manager 可以上交現金' 
+          return res.status(403).json({
+            error: '只有 Seller Manager 可以上交現金'
           });
         }
 
@@ -3711,15 +3720,15 @@ exports.submitCashToFinanceHttp = onRequest(
         const fmDoc = await fmDocRef.get();
 
         if (!fmDoc.exists) {
-          return res.status(404).json({ 
-            error: '找不到指定的 Finance Manager' 
+          return res.status(404).json({
+            error: '找不到指定的 Finance Manager'
           });
         }
 
         const fmData = fmDoc.data();
         if (!fmData.roles || !fmData.roles.includes('financeManager')) {
-          return res.status(400).json({ 
-            error: '指定的用戶不是 Finance Manager' 
+          return res.status(400).json({
+            error: '指定的用戶不是 Finance Manager'
           });
         }
 
@@ -3734,8 +3743,8 @@ exports.submitCashToFinanceHttp = onRequest(
           .get();
 
         if (collectionsSnapshot.size !== selectedCollections.length) {
-          return res.status(400).json({ 
-            error: `找不到所有指定的收款記錄（找到 ${collectionsSnapshot.size}/${selectedCollections.length}）` 
+          return res.status(400).json({
+            error: `找不到所有指定的收款記錄（找到 ${collectionsSnapshot.size}/${selectedCollections.length}）`
           });
         }
 
@@ -3752,8 +3761,8 @@ exports.submitCashToFinanceHttp = onRequest(
         });
 
         if (invalidCollections.length > 0) {
-          return res.status(400).json({ 
-            error: `部分收款記錄無效或狀態不正確：${invalidCollections.join(', ')}` 
+          return res.status(400).json({
+            error: `部分收款記錄無效或狀態不正確：${invalidCollections.join(', ')}`
           });
         }
 
