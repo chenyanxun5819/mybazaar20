@@ -364,7 +364,6 @@ exports.checkCollectionWarnings = onDocumentWritten(
       const eventDoc = await db.doc(`organizations/${orgId}/events/${eventId}`).get();
       const eventData = eventDoc.data();
       
-      const warningThreshold = eventData?.pointAllocationRules?.sellerManager?.warningThreshold || 0.3;
       const enableWarnings = eventData?.pointAllocationRules?.sellerManager?.enableWarnings !== false;
 
       if (!enableWarnings) {

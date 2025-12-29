@@ -4,7 +4,6 @@
  */
 
 const { onCall } = require('firebase-functions/v2/https');
-const { setGlobalOptions } = require('firebase-functions/v2/options');
 const admin = require('firebase-admin');
 
 // 🔧 确保 Admin SDK 已初始化（仅初始化一次）

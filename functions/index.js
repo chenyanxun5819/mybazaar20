@@ -239,7 +239,6 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
 
           if (!usersSnap.empty) {
             userDoc = usersSnap.docs[0];
-            usedVariant = variant;
             console.log(`[${requestId}] ✅ Found user with variant: ${variant}, Doc ID: ${userDoc.id}`);
             break;
           }
@@ -295,17 +294,15 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
       const authUid = `phone_60${normalizedPhone}`;
       console.log(`[${requestId}] 🔑 AuthUid: ${authUid}`);
 
-      let userRecord;
-      let skipAuthUserOps = false;
       try {
         console.log(`[${requestId}] 🔍 Checking if auth user exists...`);
-        userRecord = await admin.auth().getUser(authUid);
+        await admin.auth().getUser(authUid);
         console.log(`[${requestId}] ✅ Existing auth user found`);
       } catch (error) {
         if (error.code === 'auth/user-not-found') {
           console.log(`[${requestId}] 📝 Creating new auth user...`);
           try {
-            userRecord = await admin.auth().createUser({
+            await admin.auth().createUser({
               uid: authUid,
               displayName: userData.basicInfo?.englishName ||
                 userData.basicInfo?.chineseName ||
@@ -318,7 +315,6 @@ exports.loginWithPin = functions.https.onRequest((req, res) => {
           }
         } else if (error.code === 'app/invalid-credential') {
           console.warn(`[${requestId}] ⚠️ Auth not configured, skipping getUser/createUser`);
-          skipAuthUserOps = true;
         } else {
           console.error(`[${requestId}] ❌ Auth error:`, error);
           throw error;

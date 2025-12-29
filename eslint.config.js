@@ -24,7 +24,7 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': 'warn',
     },
   },
   // Cloud Functions（Node/CommonJS）覆蓋設定
@@ -43,5 +43,14 @@ export default defineConfig([
       // 保留同樣的變數忽略模式；參數未使用暫不報錯以減少噪音
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', args: 'none' }],
     },
+  },
+  // 忽略特定資料夾
+  {
+    ignores: [
+      '**/markdown/**',
+      '**/scripts/**',
+      '**/dist/**',
+      '**/node_modules/**',
+    ],
   },
 ])

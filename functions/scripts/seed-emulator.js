@@ -21,14 +21,6 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-function omit(obj, keysToOmit) {
-  const out = {};
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (!keysToOmit.includes(k)) out[k] = v;
-  }
-  return out;
-}
-
 async function seed() {
   const jsonPath = path.resolve(__dirname, '../../markdown/任務階段記錄/firestore_架構更新正确版.json');
   if (!fs.existsSync(jsonPath)) {

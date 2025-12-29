@@ -3,9 +3,14 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { hashPin, verifyPin } = require('./utils/bcryptHelper');
 
+// 定義缺失的常量
+const MAX_PIN_FAILED_ATTEMPTS = 5;
+
 // ===========================================
 // 🔧 辅助函数
 // ===========================================
+
+
 
 /**
  * SHA256 哈希函数
@@ -194,7 +199,6 @@ async function updatePinVerificationStatus(userRef, success, currentAttempts = 0
  */
 exports.createCustomer = onCall(async (request) => {
   const { data } = request;  // ← 关键！从 request.data 取数据
-  const auth = request.auth;  // ← 认证信息（如果需要）
   
   try {
     // ✨ 修正1：添加 transactionPin 参数
