@@ -1105,7 +1105,8 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
     };
 
     // 8. 创建用户文档
-    const userId = `usr_${crypto.randomUUID()}`;
+    // ✅ 统一格式：userId = authUid (phone_60xxx)
+    const userId = authUid;
     const now = new Date();
 
     const userDoc = {
@@ -2650,10 +2651,10 @@ exports.batchImportUsersHttp = functions.https.onRequest(async (req, res) => {
         continue;
       }
 
-      // 構建 userId / authUid
-      const userId = `usr_${crypto.randomUUID()}`;
+      // ✅ 统一格式：userId = authUid (phone_60xxx)
       const normalizedPhone = String(phoneNumber).replace(/^0/, '');
       const authUid = `phone_60${normalizedPhone}`;
+      const userId = authUid;
 
       // 可選建立 Auth
       if (!skipAuth) {

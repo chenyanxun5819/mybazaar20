@@ -46,12 +46,12 @@ const CustomerDashboard = () => {
         return;
       }
 
-      // 读取Customer文档
+      // ✅ 直接使用 user.uid 访问文档（统一格式后 user.uid = userId）
       const customerRef = doc(
         db,
         'organizations', organizationId,
         'events', eventId,
-        'users', user.uid
+        'users', user.uid // 统一格式后，user.uid 就是文档 ID
       );
 
       const customerSnap = await getDoc(customerRef);
