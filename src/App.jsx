@@ -24,6 +24,7 @@ import CustomerPayment from './views/customer/CustomerPayment';
 import CustomerTransfer from './views/customer/CustomerTransfer';
 import CustomerTransactions from './views/customer/CustomerTransactions';
 import PointCardTopup from './views/customer/PointCardTopup';
+import InitialPasswordSetup from './views/auth/InitialPasswordSetup';
 
 // Placeholder 组件
 const PhonePlaceholder = () => (
@@ -60,6 +61,17 @@ function App() {
         </EventProvider>
       } />
 
+      {/* ⭐ 新增：密码设置路由 */}
+      <Route
+        path="/setup-passwords/:orgEventCode"
+        element={
+          <EventProvider>
+            <AuthProvider>
+              <InitialPasswordSetup />
+            </AuthProvider>
+          </EventProvider>
+        }
+      />
       {/* 📄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
 

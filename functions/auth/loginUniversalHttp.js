@@ -185,6 +185,19 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       // 返回成功结果（使用 eventManagerData 信息）
       const elapsedMs = Date.now() - startTime;
       console.log('[loginUniversalHttp] ✅ 登录成功 (Event Manager)', { elapsedMs });
+      // ⭐ 新增：检查 Event Manager 密码状态
+      const needsPasswordSetup =
+        eventManagerData.hasDefaultPassword === true ||
+        eventManagerData.isFirstLogin === true ||
+        !eventManagerData.transactionPinHash;
+
+      console.log('[loginUniversalHttp] Event Manager 密码状态:', {
+        hasDefaultPassword: eventManagerData.hasDefaultPassword,
+        isFirstLogin: eventManagerData.isFirstLogin,
+        hasTransactionPin: !!eventManagerData.transactionPinHash,
+        needsPasswordSetup
+      });
+
       return res.status(200).json({
         success: true,
         customToken,
@@ -197,7 +210,13 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
         managedDepartments: [],
         department: '',
         identityTag: '',
-        roleSpecificData: {}
+        roleSpecificData: {},
+
+        // ⭐ 新增：密码状态字段
+        needsPasswordSetup: needsPasswordSetup,
+        hasDefaultPassword: eventManagerData.hasDefaultPassword || false,
+        isFirstLogin: eventManagerData.isFirstLogin || false,
+        hasTransactionPin: !!eventManagerData.transactionPinHash
       });
     }
 

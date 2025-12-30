@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
+const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const cors = require('cors');
@@ -15,7 +16,7 @@ if (!admin.apps.length) {
 
 // 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createEventManager, createEventManagerHttp, createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp } = require('./admin');
+  createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { resolveOrgEventHttp } = require('./auth/resolveOrgEventHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
@@ -51,8 +52,6 @@ exports.setProjectInfo = setProjectInfo;
 exports.getTotalCapital = getTotalCapital;
 exports.getAssignedCapitalSum = getAssignedCapitalSum;
 exports.createManager = createManager;
-exports.createEventManager = createEventManager;
-exports.createEventManagerHttp = createEventManagerHttp;
 exports.createUserByEventManagerHttp = createUserByEventManagerHttp;
 exports.deleteEventHttp = deleteEventHttp;
 exports.checkDuplicateUsers = checkDuplicateUsers;
@@ -116,7 +115,7 @@ const corsHandler = cors({
 });
 
 // 簡單健康檢查（透過 Hosting 代理用於驗證 rewrites / IAM / CORS）
-exports.pingHttp = functions.https.onRequest((req, res) => {
+exports.pingHttp = onRequest({ region: 'asia-southeast1' }, (req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== 'GET') {
       return res.status(405).json({ error: { code: 'method-not-allowed' } });
@@ -166,7 +165,7 @@ function getRedirectUrl(roles) {
 }
 
 // 登录函数 - 使用 corsHandler
-exports.loginWithPin = functions.https.onRequest((req, res) => {
+exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
   corsHandler(req, res, async () => {
     const startTime = Date.now();
     const requestId = Math.random().toString(36).substring(7);
@@ -521,7 +520,7 @@ exports.getManagers = functions.https.onCall(async (data, context) => {
 });
 
 // functions/migrateIdentityTags.js
-exports.migrateIdentityTags = functions.https.onRequest(async (req, res) => {
+exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (req, res) => {
   try {
     const db = admin.firestore();
 

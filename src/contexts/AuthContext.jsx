@@ -160,6 +160,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      // ✅ 检测是否在登录页面（用于静默处理警告）
+      const isLoginPage = window.location.pathname.includes('/login');
+      
       console.log('[AuthContext] Auth state changed:', user ? user.uid : 'no user');
       
       if (user && !user.isAnonymous) {
@@ -249,12 +252,35 @@ export const AuthProvider = ({ children }) => {
               source: userProfile?.userId ? 'login' : profile.basicInfo ? 'localStorage' : 'claims'
             });
           } else {
-            console.warn('[AuthContext] ⚠️ 无法获取用户数据');
+            // ✅ 在登录页面时静默处理
+            if (!isLoginPage) {
+              console.warn('[AuthContext] ⚠️ 无法获取用户数据，可能需要重新登录');
+            }
+            
+            // ✅ 自动清除旧的 Auth 状态
+            try {
+              console.log('[AuthContext] 正在清除旧的登录状态...');
+              await auth.signOut();
+            } catch (signOutErr) {
+              // 忽略 signOut 错误
+            }
           }
 
         } catch (e) {
-          console.error('[AuthContext] 加载用户数据失败:', e);
+          // ✅ 根据页面类型决定日志级别
+          if (isLoginPage) {
+            console.warn('[AuthContext] 加载用户数据失败（登录页面）:', e.message);
+          } else {
+            console.error('[AuthContext] 加载用户数据失败:', e);
+          }
           setError(e.message);
+          
+          // ✅ 出错时也清除 Auth 状态
+          try {
+            await auth.signOut();
+          } catch (signOutErr) {
+            // 忽略 signOut 错误
+          }
         }
       } else {
         setCurrentUser(null);

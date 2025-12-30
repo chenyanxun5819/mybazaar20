@@ -69,7 +69,7 @@ echo     totalPointsSpent: 0,
 echo     transactions: {}
 echo   },
 echo.
-echo   参考文件: createEventManager_fixed_snippet.js
+echo   参考文件: （已移除，請改參考 admin.js 中的 createEventByPlatformAdminHttp）
 echo.
 echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo.

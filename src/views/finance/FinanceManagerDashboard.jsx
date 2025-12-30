@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
-import { auth, db, functions, FIREBASE_PROJECT_ID, FUNCTIONS_REGION } from '../../config/firebase';
+import { auth, db, functions } from '../../config/firebase';
 import {
   collection,
   query,
@@ -62,7 +62,7 @@ const FinanceManagerDashboard = () => {
 
       // Fallback: 以 fetch 明確帶上 Authorization: Bearer <idToken>
       const idToken = await getFreshIdToken();
-      const url = `https://${FUNCTIONS_REGION}-${FIREBASE_PROJECT_ID}.cloudfunctions.net/${name}`;
+      const url = `/api/${name}`;
 
       const resp = await withTimeout(
         fetch(url, {

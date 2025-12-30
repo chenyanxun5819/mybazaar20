@@ -18,7 +18,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "loginUniversalHttp": {
           "httpsOptions": {
@@ -26,7 +26,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "sendOtpHttp": {
           "httpsOptions": {
@@ -34,7 +34,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "verifyOtpHttp": {
           "httpsOptions": {
@@ -42,7 +42,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "generateTestOtp": {
           "httpsOptions": {
@@ -50,7 +50,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "updateUserRoles": {
           "httpsOptions": {
@@ -58,7 +58,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         },
         "batchImportUsersHttp": {
           "httpsOptions": {
@@ -66,7 +66,7 @@
               "public"
             ]
           },
-          "region": "us-central1"
+          "region": "asia-southeast1"
         }
       },
       "ignore": [
@@ -103,13 +103,7 @@
         "source": "/api/resolveOrgEventHttp",
         "function": "resolveOrgEventHttp"
       },
-      {
-        "source": "/api/createEventManagerHttp",
-        "function": "createEventManagerHttp"
-      },      {
-        "source": "/api/createEventManager",
-        "function": "createEventManagerHttp"
-      },
+      
       {
         "source": "/api/batchImportUsersHttp",
         "function": "batchImportUsersHttp"
@@ -149,6 +143,18 @@
       {
         "source": "/api/allocatePointsBySellerManager",
         "function": "allocatePointsBySellerManagerHttp"
+      },
+      {
+        "source": "/api/submitCashToFinanceHttp",
+        "function": "submitCashToFinanceHttp"
+      },
+      {
+        "source": "/api/getFinanceStats",
+        "function": "getFinanceStats"
+      },
+      {
+        "source": "/api/confirmCashSubmission",
+        "function": "confirmCashSubmission"
       },
       {
         "source": "/api/ping",

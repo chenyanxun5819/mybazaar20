@@ -361,7 +361,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
       console.log('[BatchImportUser] 默认密码:', defaultPassword);
 
-      const response = await safeFetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/batchImportUsersHttp', {
+      const response = await safeFetch('/api/batchImportUsersHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
