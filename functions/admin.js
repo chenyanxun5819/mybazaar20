@@ -211,17 +211,7 @@ exports.createEventManager = functions.https.onCall(async (data, context) => {
   }
 });
 
-// Line 214
-// ⚠️ 此函數已廢棄
-// Event Manager 現在在創建 Event 時一併創建
-// 請使用 createEventByPlatformAdminHttp
-exports.createEventManagerHttp = functions.https.onRequest((req, res) => {
-  // 返回錯誤提示
-  return res.status(410).json({
-    error: 'gone',
-    message: '此 API 已廢棄，Event Manager 現在在創建 Event 時一併創建'
-  });
-});
+
 
 // ========== OTP 相关函数 ==========
 
@@ -1142,6 +1132,7 @@ exports.createUserByEventManagerHttp = functions.https.onRequest(async (req, res
         pinLockedUntil: null,            // ← 新增
         pinLastChanged: null,            // ← 新增
         isPhoneVerified: true
+
       },
       identityInfo: identityInfo,
       activityData: {
@@ -3491,7 +3482,13 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
       const passwordHash = sha256(eventManagerInfo.password + passwordSalt);
 
       // ✅ 第五步：生成 userId
-      const userId = `phone_${eventManagerInfo.phoneNumber}`;
+      const normalizePhone = (phone) => {
+        let digits = String(phone).replace(/[^0-9]/g, '');
+        if (digits.startsWith('0')) digits = digits.substring(1);
+        return digits;
+      };
+      const norm = normalizePhone(eventManagerInfo.phoneNumber);
+      const userId = `phone_60${norm}`;
 
       // ✅ 第六步：在 users 集合創建 Event Manager 文檔
       const eventManagerData = {
@@ -3568,6 +3565,7 @@ exports.createEventByPlatformAdminHttp = functions.https.onRequest((req, res) =>
       // ✅ 更新 Event 文檔：添加 eventManager 基本聯絡信息和 roleStats
       await eventRef.update({
         eventManager: {
+          authUid: userId,  // ✅ 添加 authUid 用于权限验证
           chineseName: eventManagerInfo.chineseName || '',
           englishName: eventManagerInfo.englishName,
           phoneNumber: eventManagerInfo.phoneNumber,
