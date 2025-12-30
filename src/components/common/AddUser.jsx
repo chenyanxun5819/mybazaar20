@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
+import { getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../../services/safeFetch';
 
@@ -241,8 +242,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
     try {
       // ✅ 修复：调用正确的 API 端点，email 改为可选
-      // 注意：需要从 Firebase Auth 获取 idToken
-      const { getAuth } = await import('firebase/auth');
+      // 注意：需要從 Firebase Auth 获取 idToken
       const auth = getAuth();
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
