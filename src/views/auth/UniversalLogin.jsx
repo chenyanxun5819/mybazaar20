@@ -444,6 +444,53 @@ const UniversalLogin = () => {
       try {
         await signInWithCustomToken(auth, tokenToUse);
         console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
+
+        // ⭐ 新增：检查是否需要设置密码
+        // data 来自 verifyOtp 的返回，userData 来自第一步密码验证
+        const needsPasswordSetup = data?.needsPasswordSetup || userData?.needsPasswordSetup || false;
+
+        console.log('[UniversalLogin] 密码设置状态检查:', {
+          needsPasswordSetup,
+          hasDefaultPassword: data?.hasDefaultPassword || userData?.hasDefaultPassword,
+          isFirstLogin: data?.isFirstLogin || userData?.isFirstLogin,
+          hasTransactionPin: data?.hasTransactionPin || userData?.hasTransactionPin
+        });
+
+        if (needsPasswordSetup) {
+          // 构建用户信息（用于密码设置页面）
+          const tempUserInfo = {
+            userId: data?.userId || userData.userId,
+            organizationId: data?.organizationId || userData.organizationId,
+            eventId: data?.eventId || userData.eventId,
+            orgCode,
+            eventCode,
+            orgEventCode,
+            englishName: data?.englishName || userData.englishName,
+            chineseName: data?.chineseName || userData.chineseName,
+            roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
+            phoneNumber: formData.phoneNumber,
+            // 保存原始密码（用于 changeLoginPassword 的旧密码验证）
+            oldPassword: formData.password
+          };
+
+          // 保存到 sessionStorage（防止刷新丢失）
+          sessionStorage.setItem('passwordSetupPending', JSON.stringify(tempUserInfo));
+
+          console.log('[UniversalLogin] 🔐 检测到需要设置密码，跳转到设置页面');
+
+          // 跳转到密码设置页面
+          navigate(`/setup-passwords/${orgEventCode}`, {
+            replace: true,
+            state: { userInfo: tempUserInfo }
+          });
+
+          setOtpLoading(false);
+          return;
+        }
+
+        // 正常的登录流程继续...
+        console.log('[UniversalLogin] ✅ 密码状态正常，继续登录流程');
+
       } catch (authError) {
         console.error('[UniversalLogin] ❌ Firebase Auth 登录失败:', {
           code: authError?.code,

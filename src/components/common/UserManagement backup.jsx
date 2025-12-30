@@ -309,7 +309,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         idToken
       };
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
+      const resp = await fetch('https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/updateUserRoles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -375,7 +375,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
+      const resp = await fetch('https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/allocatePointsHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -437,7 +437,7 @@ const UserManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const resp = await fetch('https://us-central1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
+      const resp = await fetch('https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/recallPointsHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

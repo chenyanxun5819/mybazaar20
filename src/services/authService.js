@@ -77,7 +77,7 @@ async function loginWithPin(phoneNumber, password, organizationId, eventId) {
     // 🔥 调用 Cloud Function - 使用 fetch 直接请求
     console.log('[authService] Calling Cloud Function...');
     
-    const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/loginWithPin';
+    const functionUrl = '/api/loginWithPin';
     
     const response = await safeFetch(functionUrl, {
       method: 'POST',

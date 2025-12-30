@@ -33,6 +33,20 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   const [identityTags, setIdentityTags] = useState([]);
   const [loadingTags, setLoadingTags] = useState(true);
   const [departments, setDepartments] = useState([]);
+
+
+  // ⭐ 新增：权限检查
+  useEffect(() => {
+    if (callerRole !== 'eventManager') {
+      setError('只有 Event Manager 可以创建用户');
+      // 显示错误2秒后自动关闭
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    }
+  }, [callerRole, onClose]);
+
+
   // ✨ 新增：从 Firestore 加载 Organization 的 identityTags
   useEffect(() => {
     const loadIdentityTags = async () => {
@@ -79,7 +93,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       try {
         const orgRef = doc(db, 'organizations', organizationId);
         const orgSnap = await getDoc(orgRef);
-        
+
         if (orgSnap.exists()) {
           const orgData = orgSnap.data();
           const depts = orgData.departments || [];
@@ -95,7 +109,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     }
   }, [organizationId]);
 
-  
+
 
   // 根据 callerRole 获取可见的角色选项
   const getRoleOptions = () => {
@@ -138,70 +152,41 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       }
     };
 
-    // 根据调用者角色返回可见的角色
+    // ⭐ 修改：只有 Event Manager 可以创建角色
     switch (callerRole) {
       case 'eventManager':
         // Event Manager 可以看到所有角色
         return Object.values(allRoles);
 
-      case 'sellerManager':
-        // Seller Manager 只能创建 Seller 和 Customer
-        return [allRoles.seller, allRoles.customer];
-
-      case 'merchantManager':
-        // Merchant Manager 只能创建 Merchant 和 Customer
-        return [allRoles.merchant, allRoles.customer];
-
-      case 'customerManager':
-        // Customer Manager 只能创建 Customer
-        return [allRoles.customer];
-
       default:
+        // 其他所有 Manager 都不能创建角色
         return [];
     }
   };
 
-  // 根据 callerRole 获取默认勾选的角色
+  // ⭐ 修改：只有 Event Manager 有默认角色
   const getDefaultRoles = () => {
-      switch (callerRole) {
-        case 'eventManager':
-          // Event Manager: 预设勾选 Customer（但可取消）
-          return ['customer'];      case 'sellerManager':
-        // Seller Manager: 必须勾选 Seller 和 Customer
-        return ['seller', 'customer'];
-
-      case 'merchantManager':
-        // Merchant Manager: 必须勾选 Merchant 和 Customer
-        return ['merchant', 'customer'];
-
-      case 'customerManager':
-        // Customer Manager: 必须勾选 Customer
+    switch (callerRole) {
+      case 'eventManager':
+        // Event Manager 预设勾选 customer
         return ['customer'];
 
       default:
+        // 其他所有 Manager 都无权限创建
         return [];
     }
   };
 
-  // 判断某个角色是否可以取消勾选
+  // ⭐ 修改：只有 Event Manager 可以自由勾选
   const isRoleDisabled = (roleValue) => {
-      switch (callerRole) {
-        case 'eventManager':
-          // Event Manager 可以取消所有角色（完全自由）
-          return false;      case 'sellerManager':
-        // Seller Manager 创建的用户必须是 Seller 和 Customer
-        return ['seller', 'customer'].includes(roleValue);
-
-      case 'merchantManager':
-        // Merchant Manager 创建的用户必须是 Merchant 和 Customer
-        return ['merchant', 'customer'].includes(roleValue);
-
-      case 'customerManager':
-        // Customer Manager 创建的用户必须是 Customer
-        return roleValue === 'customer';
+    switch (callerRole) {
+      case 'eventManager':
+        // Event Manager 可以自由勾选所有角色
+        return false;
 
       default:
-        return false;
+        // 其他角色无权限，所有角色都禁用
+        return true;
     }
   };
 
@@ -262,7 +247,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
       const response = await safeFetch(
-        'https://us-central1-mybazaar-c4881.cloudfunctions.net/createUserByEventManagerHttp',
+        '/api/createUserByEventManagerHttp',
         {
           method: 'POST',
           headers: {
@@ -515,7 +500,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
               {roleOptions.map(role => {
                 const isChecked = formData.roles.includes(role.value);
                 const isDisabled = isRoleDisabled(role.value);
-                
+
                 return (
                   <div
                     key={role.value}

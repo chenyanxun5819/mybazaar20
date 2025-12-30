@@ -199,7 +199,7 @@ async function updatePinVerificationStatus(userRef, success, currentAttempts = 0
  */
 exports.createCustomer = onCall(async (request) => {
   const { data } = request;  // ← 关键！从 request.data 取数据
-  
+
   try {
     // ✨ 修正1：添加 transactionPin 参数
     const {
@@ -319,7 +319,14 @@ exports.createCustomer = onCall(async (request) => {
     console.log('[createCustomer] 🔐 密码加密完成');
 
     // === 生成用户ID ===
-    const userId = `customer_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    // === 生成 authUid ===
+    // ✅ 统一格式：使用 phone_60xxx 格式
+    const authUid = `phone_60${parsedPhone.localDigits}`;
+    console.log('[createCustomer] 🔑 生成 authUid:', authUid);
+
+    // === 生成用户ID ===
+    // ✅ 统一格式：userId = authUid (phone_60xxx)
+    const userId = authUid;
 
     console.log('[createCustomer] 🆔 生成用户ID:', userId);
 
@@ -529,20 +536,20 @@ exports.createCustomer = onCall(async (request) => {
 exports.processCustomerPayment = onCall(async (request) => {
   const data = request.data;
   const context = request;
-  
+
   console.log('[processCustomerPayment] ========== 开始处理（PIN验证版）==========');
 
   try {
     // === 提取参数 ===
     const requestData = data?.data || data || {};
-    const { 
-      merchantId, 
-      amount, 
-      organizationId, 
-      eventId, 
+    const {
+      merchantId,
+      amount,
+      organizationId,
+      eventId,
       transactionPin
     } = requestData;
-    
+
     let customerId = context.auth?.uid || null;
 
     console.log('[processCustomerPayment] ✅ 提取的参数:', {

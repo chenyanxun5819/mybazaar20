@@ -51,7 +51,7 @@ const MerchantDashboard = () => {
     updateProfile,
     toggleStatus
   } = useMerchantData(
-    userProfile?.userId || currentUser?.uid,
+    currentUser?.uid,  // ✅ 统一格式后直接使用 user.uid
     organizationId,
     eventId
   );

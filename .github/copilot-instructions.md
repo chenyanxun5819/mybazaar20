@@ -5,7 +5,7 @@ Purpose: help an AI coding agent become immediately productive in this repositor
 - Repository high-level: frontend is a Vite + React app under `src/` (entry points, views, components). Backend uses Firebase Cloud Functions in `functions/`. Firebase services used: Authentication, Firestore and Cloud Functions. Hosting is configured to serve `dist/` produced by `vite build`.
 
 - Key files to read first:
-  - `src/config/firebase.js` — Firebase app initialization, `auth`, `db`, `functions` (region `us-central1`) exports. Any work touching Firebase should refer to this file.
+  - `src/config/firebase.js` — Firebase app initialization, `auth`, `db`, `functions` (region `asia-southeast1`) exports. Any work touching Firebase should refer to this file.
   - `src/views/auth/PhoneOtpLogin.jsx` — current phone OTP flow and reCAPTCHA handling. This is the main area where Firebase Auth client logic lives and where most recent edits occurred.
   - `functions/admin.js` — large collection of admin-related Cloud Functions (callables and HTTP endpoints). Contains phone auth helper functions (`sendPhoneAuthOtp`, `verifyPhoneOtp`, `authWithPhoneOtp`), normalization `normalizeE164`, and admin authorization logic.
   - `functions/index.js` — functions export entry (check which functions are exported and region settings).
@@ -29,7 +29,7 @@ Purpose: help an AI coding agent become immediately productive in this repositor
   - `auth` usage: client uses Firebase Auth's phone sign-in; server sometimes issues custom tokens with `admin.auth().createCustomToken(userId)` for session migration — preserve this pattern where applicable.
 
 - Integration points and external dependencies:
-  - Firebase project config is in `src/config/firebase.js` — includes `apiKey`, `authDomain`, `projectId`, and uses `getFunctions(app, 'us-central1')`.
+  - Firebase project config is in `src/config/firebase.js` — includes `apiKey`, `authDomain`, `projectId`, and uses `getFunctions(app, 'asia-southeast1')`.
   - reCAPTCHA Enterprise integration is controlled via Firebase Console > Authentication > Settings (reCAPTCHA config). Domain whitelists and API key restrictions can cause `INVALID_APP_CREDENTIAL` and other failures.
   - If you change reCAPTCHA or phone auth behavior, update both client (`PhoneOtpLogin.jsx`) and server (`functions/admin.js`) and consider API key/referrer settings in Google Cloud Console.
 

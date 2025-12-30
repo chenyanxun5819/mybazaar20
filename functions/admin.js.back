@@ -1,22 +1,9 @@
-﻿const admin = require('firebase-admin');
-const functions = require('firebase-functions');
-const crypto = require('crypto');
-const cors = require('cors');
+﻿REM Backup file retired on 2025-12-30
+REM This file previously contained a backup of admin.js (createEventManager implementation).
+REM The active codebase has removed the old createEventManager callable and createEventManagerHttp.
+REM If you need to restore the old implementation, retrieve it from your version control history.
 
-// 配置允許的來源
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://mybazaar-c4881.web.app',
-  'https://mybazaar-c4881.firebaseapp.com'
-];
-
-const corsHandler = cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-});
+echo Admin.js backup retired. Delete this file if you no longer need it.
 
 function getDb() {
   return admin.firestore();

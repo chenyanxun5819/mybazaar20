@@ -389,7 +389,7 @@ const EventCard = ({ event, organization, onReload }) => {
       const idToken = await auth.currentUser.getIdToken();
 
       // 3️⃣ 调用 Cloud Function
-      const functionUrl = 'https://us-central1-mybazaar-c4881.cloudfunctions.net/deleteEventHttp';
+      const functionUrl = '/api/deleteEventHttp';
 
       const resp = await safeFetch(functionUrl, {
         method: 'POST',

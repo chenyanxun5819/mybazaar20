@@ -636,7 +636,7 @@ const SubmitModal = ({
       console.log('[SubmitCash] 獲取 ID Token 成功');
 
       // ========== 步驟 5: 調用 Cloud Function ==========
-      const functionUrl = 'https://submitcashtofinancehttp-zgmq4nw2bq-as.a.run.app';
+      const functionUrl = '/api/submitCashToFinanceHttp';
 
       console.log('[SubmitCash] 開始調用 Cloud Function...');
       console.log('  - URL:', functionUrl);
