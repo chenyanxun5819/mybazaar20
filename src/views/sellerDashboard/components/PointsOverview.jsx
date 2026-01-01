@@ -1,8 +1,10 @@
 import React from 'react';
 import { useSellerStats } from '../hooks/useSellerStats';
+import { useAuth } from '../../../contexts/AuthContext';
 
 function PointsOverview() {
   const { stats, loading, error } = useSellerStats();
+  const { userProfile } = useAuth();
 
   console.log('=== PointsOverview Debug ===');
   console.log('1. Loading:', loading);
@@ -14,6 +16,12 @@ function PointsOverview() {
   console.log('7. Stats keys:', stats ? Object.keys(stats) : 'N/A');
   console.log('8. availablePoints:', stats?.availablePoints);
   console.log('============================');
+
+  // 🔧 判断用户类型
+  const identityTag = userProfile?.identityTag || userProfile?.identityInfo?.userType;
+  const isStudent = identityTag === 'student';
+
+  console.log('[PointsOverview] 用户类型:', { identityTag, isStudent });
 
   if (loading) {
     console.log('[PointsOverview] 显示加载中...');
@@ -78,7 +86,13 @@ function PointsOverview() {
           <div className="cash-item highlight">
             <span className="cash-label">手上现金</span>
             <span className="cash-amount">RM {stats.pendingCollection || 0}</span>
-            <small className="cash-hint">待上交给 Seller Manager</small>
+            {/* 🔧 根据用户类型显示不同提示 */}
+            <small className="cash-hint">
+              {isStudent 
+                ? '待上交给 Seller Manager' 
+                : '待上交现金'
+              }
+            </small>
           </div>
           
           <div className="cash-divider"></div>
@@ -94,21 +108,14 @@ function PointsOverview() {
           <div className="collection-reminder">
             <span className="reminder-icon">💡</span>
             <span className="reminder-text">
-              记得上交现金给 Seller Manager
+              {/* 🔧 根据用户类型显示不同提醒 */}
+              {isStudent 
+                ? '记得上交现金给 Seller Manager' 
+                : '记得上交现金'
+              }
             </span>
           </div>
         )}
-      </div>
-
-      {/* 交易提示 */}
-      <div className="card info-card">
-        <h3 className="info-title">📌 提示</h3>
-        <ul className="info-list">
-          <li>您的点数用于销售给客户</li>
-          <li>客户支付现金，您转移点数</li>
-          <li>收到的现金需上交给 Seller Manager</li>
-          <li>1 点 = RM 1</li>
-        </ul>
       </div>
     </div>
   );

@@ -3208,8 +3208,18 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
       // ❌ 移除 contactPerson 驗證
 
       // ✅ 驗證 eventManagerInfo
-      if (!eventManagerInfo || !eventManagerInfo.phoneNumber || !eventManagerInfo.password || !eventManagerInfo.englishName) {
-        return res.status(400).json({ error: 'invalid-argument: 缺少 Event Manager 信息（phoneNumber, password, englishName）' });
+      if (!eventManagerInfo || !eventManagerInfo.phoneNumber || !eventManagerInfo.englishName) {
+        return res.status(400).json({ error: 'invalid-argument: 缺少 Event Manager 信息（phoneNumber, englishName）' });
+      }
+
+      // ✅ 預設密碼邏輯 (對齊 BatchImportUser.jsx)
+      let finalPassword = eventManagerInfo.password;
+      if (!finalPassword) {
+        finalPassword = `${orgCode}${eventCode}`;
+        if (finalPassword.length < 8 || !(/[a-zA-Z]/.test(finalPassword) && /\d/.test(finalPassword))) {
+          finalPassword = `${finalPassword}Ab12`;
+        }
+        console.log('[createEventByPlatformAdminHttp] 使用預設密碼:', finalPassword);
       }
 
       // ✅ 驗證手機號格式
@@ -3218,11 +3228,11 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
       }
 
       // ✅ 驗證密碼強度
-      if (eventManagerInfo.password.length < 8) {
+      if (finalPassword.length < 8) {
         return res.status(400).json({ error: 'invalid-argument: Event Manager 密碼至少需要8個字符' });
       }
 
-      if (!/[a-zA-Z]/.test(eventManagerInfo.password) || !/\d/.test(eventManagerInfo.password)) {
+      if (!/[a-zA-Z]/.test(finalPassword) || !/\d/.test(finalPassword)) {
         return res.status(400).json({ error: 'invalid-argument: Event Manager 密碼必須包含英文字母和數字' });
       }
 
@@ -3346,7 +3356,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
 
       // ✅ 第四步：生成密碼哈希
       const passwordSalt = crypto.randomBytes(16).toString('hex');
-      const passwordHash = sha256(eventManagerInfo.password + passwordSalt);
+      const passwordHash = sha256(finalPassword + passwordSalt);
 
       // ✅ 第五步：生成 userId
       const normalizePhone = (phone) => {
@@ -3360,11 +3370,13 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
       // ✅ 第六步：在 users 集合創建 Event Manager 文檔
       const eventManagerData = {
         userId: userId,
+        authUid: userId,
         roles: ['eventManager', 'seller', 'customer'],
+        identityTag: eventManagerInfo.identityTag,
         identityInfo: {
-          identityId: eventManagerInfo.identityId || `${eventManagerInfo.identityTag.toUpperCase()}_${Date.now()}`,
-          identityTag: eventManagerInfo.identityTag,
+          identityId: eventManagerInfo.identityId || `${orgCode}${eventCode}`,
           identityName: validTag.name['zh-CN'] || validTag.name['en-US'] || eventManagerInfo.identityTag,
+          identityNameEn: validTag.name['en-US'] || validTag.name['zh-CN'] || eventManagerInfo.identityTag,
           department: deptName,
           position: eventManagerInfo.position || '活动负责人'  // ✅ 新增 position 字段
         },
@@ -3384,7 +3396,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           pinFailedAttempts: 0,
           pinLockedUntil: null,
           pinLastChanged: null,
-          isPhoneVerified: false
+          isPhoneVerified: true
         },// 初始化 seller 账户
         seller: {
           availablePoints: 0,

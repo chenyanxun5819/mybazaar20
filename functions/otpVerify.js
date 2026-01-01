@@ -616,20 +616,17 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
 
       const organizationId = orgQuery.docs[0].id;
 
-      // 查找活动
+      // 查找活动 (支持多个同名活动)
       const eventQuery = await db
         .collection('organizations').doc(organizationId)
         .collection('events')
         .where('eventCode', '==', otpData.eventCode)
-        .limit(1)
         .get();
 
       if (eventQuery.empty) {
         console.warn('[verifyOtpHttp] ❌ 活动不存在:', otpData.eventCode);
         return res.status(404).json({ error: { code: 'not-found', message: '活动不存在' } });
       }
-
-      const eventId = eventQuery.docs[0].id;
 
       // 查找用户（保留原有逻辑）
       const normalizePhone = (p) => {
@@ -652,23 +649,31 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       let userData = null;
       let userId = null;
       let userDoc = null;
+      let eventId = null;
 
-      for (const variant of variants) {
-        const userSnapshot = await db
-          .collection('organizations').doc(organizationId)
-          .collection('events').doc(eventId)
-          .collection('users')
-          .where('basicInfo.phoneNumber', '==', variant)
-          .limit(1)
-          .get();
+      // 遍历所有匹配的活动，查找用户
+      for (const eventDoc of eventQuery.docs) {
+        const currentEventId = eventDoc.id;
+        
+        for (const variant of variants) {
+          const userSnapshot = await db
+            .collection('organizations').doc(organizationId)
+            .collection('events').doc(currentEventId)
+            .collection('users')
+            .where('basicInfo.phoneNumber', '==', variant)
+            .limit(1)
+            .get();
 
-        if (!userSnapshot.empty) {
-          userDoc = userSnapshot.docs[0];
-          userData = userDoc.data();
-          userId = userDoc.id;
-          console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, roles: userData.roles });
-          break;
+          if (!userSnapshot.empty) {
+            userDoc = userSnapshot.docs[0];
+            userData = userDoc.data();
+            userId = userDoc.id;
+            eventId = currentEventId; // 找到用户所在的活动 ID
+            console.log('[verifyOtpHttp] ✅ 用户找到:', { userId, eventId, roles: userData.roles });
+            break;
+          }
         }
+        if (userData) break;
       }
 
       if (!userData) {
@@ -753,7 +758,8 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
       sessionId: otpDoc.id,
       scenario: otpData.scenario,
       scenarioData: otpData.scenarioData || {},
-      userId: otpData.userId,
+      // ✅ 修正：如果是 'universal' 占位符，则返回 null，让前端使用 userData 中的真实 userId
+      userId: otpData.userId === 'universal' ? null : otpData.userId,
       phoneNumber: otpData.phoneNumber,
       devMode: otpData.devMode || false
     });

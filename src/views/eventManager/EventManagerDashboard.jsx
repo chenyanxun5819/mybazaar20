@@ -6,9 +6,21 @@ import { signOut } from 'firebase/auth';
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
 import UserList from '../../components/common/UserList';
-import UserManagement from '../../components/common/UserManagement'; // 🆕 用户管理和点数分配
+import PointsManagement from '../../components/common/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
 import DepartmentManagement from '../../components/common/DepartmentManagement'; // 部门管理
 import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
+import { safeFetch } from '../../services/safeFetch'; // 🆕 用于调用 Cloud Functions
+
+// 🆕 角色配置
+const ROLE_CONFIG = {
+  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
+  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
+  customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
+  financeManager: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
+  seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
+  merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
+  customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }
+};
 
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
@@ -36,7 +48,7 @@ const EventManagerDashboard = () => {
     totalAllocatedPoints: 0  // 🆕 新增
   });
   const [showUserList, setShowUserList] = useState(false);
-  const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 用户管理
+  const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 点数管理
   const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
   const [users, setUsers] = useState([]); // 用户列表（表格显示）
   const [showUserTable, setShowUserTable] = useState(true); // 默认显示用户表格
@@ -48,12 +60,33 @@ const EventManagerDashboard = () => {
   const [searchTerm, setSearchTerm] = useState(''); // 🆕 搜索词
   const [showEditModal, setShowEditModal] = useState(false); // 🆕 编辑模态框
   const [editingUser, setEditingUser] = useState(null); // 🆕 正在编辑的用户
-  const [editForm, setEditForm] = useState({ // 🆕 编辑表单
+  
+  // 🔄 扩展 editForm，添加角色和部门字段
+  const [editForm, setEditForm] = useState({ 
     chineseName: '',
     englishName: '',
     phoneNumber: '',
-    identityId: ''
+    identityId: '',
+    department: '' // 🆕 部门
   });
+  
+  // 🆕 角色选择状态
+  const [selectedRoles, setSelectedRoles] = useState({
+    sellerManager: false,
+    merchantManager: false,
+    customerManager: false,
+    financeManager: false,
+    seller: false,
+    merchant: false,
+    customer: false
+  });
+  
+  // 🆕 Seller Manager 管理部门
+  const [managedDepartments, setManagedDepartments] = useState([]);
+  
+  // 🆕 部门列表
+  const [departments, setDepartments] = useState([]);
+  
   const [isSaving, setIsSaving] = useState(false); // 🆕 保存中状态
   const [visibleColumns, setVisibleColumns] = useState({
     序号: true,
@@ -79,19 +112,35 @@ const EventManagerDashboard = () => {
     return `${first3}${middle}${last3}`;
   };
 
-  // 🆕 打开编辑模态框
+  // 🔄 修改：打开编辑模态框，初始化角色和部门
   const openEditModal = (user) => {
     setEditingUser(user);
     setEditForm({
       chineseName: user.basicInfo?.chineseName || '',
       englishName: user.basicInfo?.englishName || '',
       phoneNumber: user.basicInfo?.phoneNumber || '',
-      identityId: user.identityInfo?.identityId || ''
+      identityId: user.identityInfo?.identityId || '',
+      department: user.identityInfo?.department || '' // 🆕 初始化部门
     });
+    
+    // 🆕 初始化角色选择
+    setSelectedRoles({
+      sellerManager: user.roles?.includes('sellerManager') || false,
+      merchantManager: user.roles?.includes('merchantManager') || false,
+      customerManager: user.roles?.includes('customerManager') || false,
+      financeManager: user.roles?.includes('financeManager') || false,
+      seller: user.roles?.includes('seller') || false,
+      merchant: user.roles?.includes('merchant') || false,
+      customer: user.roles?.includes('customer') || false
+    });
+    
+    // 🆕 初始化管理部门
+    setManagedDepartments(user.sellerManager?.managedDepartments || []);
+    
     setShowEditModal(true);
   };
 
-  // 🆕 保存用户编辑
+  // 🔄 修改：保存用户编辑（包含角色和部门）
   const handleSaveEdit = async () => {
     if (!editingUser) return;
 
@@ -120,10 +169,41 @@ const EventManagerDashboard = () => {
       return;
     }
 
+    // 🆕 验证角色组合
+    const hasEventManager = editingUser.roles?.includes('eventManager') || false;
+    const hasOtherManagerRoles = selectedRoles.sellerManager ||
+      selectedRoles.merchantManager ||
+      selectedRoles.customerManager ||
+      selectedRoles.financeManager;
+
+    // 检查是否是当前用户在修改自己的角色
+    const currentUserPhone = auth.currentUser?.phoneNumber?.replace(/^\+60/, '0') || '';
+    const targetUserPhone = editForm.phoneNumber || '';
+    const isModifyingSelf = currentUserPhone === targetUserPhone;
+
+    // 🚫 禁止 Event Manager 修改自己的角色
+    if (isModifyingSelf && hasEventManager) {
+      alert('Event Manager 不能修改自己的角色');
+      return;
+    }
+
+    // 🚫 Event Manager 不能同时拥有其他 manager 角色
+    if (hasEventManager && hasOtherManagerRoles) {
+      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Finance Manager');
+      return;
+    }
+
+    // 🆕 如果勾选了 sellerManager 但没有选择管理部门，提示用户
+    if (selectedRoles.sellerManager && managedDepartments.length === 0) {
+      if (!confirm('您勾选了 Seller Manager 角色但未选择管理部门。\n是否继续？（该用户将无法管理任何部门）')) {
+        return;
+      }
+    }
+
     try {
       setIsSaving(true);
 
-      // 更新 Firestore
+      // Step 1: 更新基本信息和部门
       const userRef = doc(
         db,
         'organizations', organizationId,
@@ -136,10 +216,36 @@ const EventManagerDashboard = () => {
         'basicInfo.englishName': editForm.englishName.trim(),
         'basicInfo.phoneNumber': editForm.phoneNumber.trim(),
         'identityInfo.identityId': editForm.identityId.trim(),
+        'identityInfo.department': editForm.department || '', // 🆕 更新部门
         'accountStatus.lastModifiedAt': new Date()
       });
 
-      alert('✅ 用户信息更新成功!');
+      // Step 2: 更新角色（调用 Cloud Function）
+      const idToken = await auth.currentUser.getIdToken();
+      
+      const response = await safeFetch('/api/updateUserRoles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          userId: editingUser.id,
+          roles: selectedRoles,
+          managedDepartments: selectedRoles.sellerManager ? managedDepartments : [],
+          previousRoles: editingUser.roles || [],
+          idToken
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '角色更新失败');
+      }
+
+      alert('✅ 用户信息和角色更新成功!');
       setShowEditModal(false);
       setEditingUser(null);
       
@@ -180,7 +286,16 @@ const EventManagerDashboard = () => {
       // 加载组织信息
       const orgDoc = await getDoc(doc(db, 'organizations', info.organizationId));
       if (orgDoc.exists()) {
-        setOrgData(orgDoc.data());
+        const orgInfo = orgDoc.data();
+        setOrgData(orgInfo);
+        
+        // 🆕 提取部门列表
+        if (orgInfo.departments) {
+          const activeDepts = orgInfo.departments
+            .filter(d => d.isActive !== false)
+            .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+          setDepartments(activeDepts.map(d => d.name));
+        }
       }
 
       // 加载活动信息（使用子集合）
@@ -262,155 +377,146 @@ const EventManagerDashboard = () => {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
-    setCurrentPage(1); // 重置分页
   };
-
-  // 获取用户点数信息
-  const getUserPointsInfo = (user) => {
-    let availablePoints = 0;
-    let totalPointsSold = 0;
-
-    if (user.seller) {
-      availablePoints += user.seller.availablePoints || 0;
-      totalPointsSold += user.seller.totalPointsSold || 0;
-    }
-    if (user.merchant) {
-      availablePoints += user.merchant.availablePoints || 0;
-      totalPointsSold += user.merchant.totalPointsSold || 0;
-    }
-    if (user.customer) {
-      availablePoints += user.customer.availablePoints || 0;
-    }
-
-    return { availablePoints, totalPointsSold };
-  };
-
-  // 切换列显示
-  const toggleColumn = (columnName) => {
-    setVisibleColumns(prev => ({
-      ...prev,
-      [columnName]: !prev[columnName]
-    }));
-  };
-
-  const getSortedUsers = () => {
-    // 先进行角色过滤
-    let filtered = [...users];
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(user => user.roles?.includes(roleFilter));
-    }
-
-    // 🆕 搜索过滤（姓名、电话、身份ID）
-    if (searchTerm.trim()) {
-      const search = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter(user => {
-        const chineseName = (user.basicInfo?.chineseName || '').toLowerCase();
-        const englishName = (user.basicInfo?.englishName || '').toLowerCase();
-        const phoneNumber = (user.basicInfo?.phoneNumber || '');
-        const identityId = (user.identityInfo?.identityId || '').toLowerCase();
-        
-        return chineseName.includes(search) || 
-               englishName.includes(search) || 
-               phoneNumber.includes(search) || 
-               identityId.includes(search);
-      });
-    }
-
-    // 然后进行排序
-    const sorted = [...filtered].sort((a, b) => {
-      let aVal = a[sortConfig.key];
-      let bVal = b[sortConfig.key];
-
-      // 处理嵌套字段
-      if (sortConfig.key === 'chineseName') {
-        aVal = a.basicInfo?.chineseName || '';
-        bVal = b.basicInfo?.chineseName || '';
-      } else if (sortConfig.key === 'department') {
-        aVal = a.identityInfo?.department || '';
-        bVal = b.identityInfo?.department || '';
-      } else if (sortConfig.key === 'identityId') {
-        aVal = a.identityInfo?.identityId || '';
-        bVal = b.identityInfo?.identityId || '';
-      } else if (sortConfig.key === 'identityTag') {
-        aVal = a.identityTag?.value || '';
-        bVal = b.identityTag?.value || '';
-      }
-
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  };
-
-  const getPaginatedUsers = () => {
-    const sorted = getSortedUsers();
-    const startIndex = (currentPage - 1) * pageSize;
-    return sorted.slice(startIndex, startIndex + pageSize);
-  };
-
-  const totalPages = Math.ceil(getSortedUsers().length / pageSize); // 🆕 使用过滤后的数量计算总页数
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
       localStorage.removeItem('eventManagerInfo');
-      localStorage.removeItem('eventManagerLogin');
+      localStorage.removeItem('eventManagerLogin'); // 清除兼容 key
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
-      console.error('[Logout] 错误:', error);
-      alert('退出登录失败');
+      console.error('登出失败:', error);
+      alert('登出失败');
     }
   };
 
-  // 加载中状态
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+  };
+
+  const handlePageSizeChange = (e) => {
+    setPageSize(Number(e.target.value));
+    setCurrentPage(1); // 重置到第一页
+  };
+
+  const toggleColumnVisibility = (column) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [column]: !prev[column]
+    }));
+  };
+
+  // 🆕 过滤和排序用户数据
+  const getFilteredAndSortedUsers = () => {
+    let filtered = [...users];
+
+    // 角色过滤
+    if (roleFilter !== 'all') {
+      filtered = filtered.filter(user => user.roles?.includes(roleFilter));
+    }
+
+    // 搜索过滤
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(user =>
+        user.basicInfo?.chineseName?.toLowerCase().includes(search) ||
+        user.basicInfo?.englishName?.toLowerCase().includes(search) ||
+        user.basicInfo?.phoneNumber?.includes(search) ||
+        user.identityInfo?.identityId?.toLowerCase().includes(search) ||
+        user.identityInfo?.department?.toLowerCase().includes(search)
+      );
+    }
+
+    // 排序
+    if (sortConfig.key) {
+      filtered.sort((a, b) => {
+        let aValue, bValue;
+
+        switch (sortConfig.key) {
+          case 'chineseName':
+            aValue = a.basicInfo?.chineseName || '';
+            bValue = b.basicInfo?.chineseName || '';
+            break;
+          case 'phoneNumber':
+            aValue = a.basicInfo?.phoneNumber || '';
+            bValue = b.basicInfo?.phoneNumber || '';
+            break;
+          case 'department':
+            aValue = a.identityInfo?.department || '';
+            bValue = b.identityInfo?.department || '';
+            break;
+          case 'identityId':
+            aValue = a.identityInfo?.identityId || '';
+            bValue = b.identityInfo?.identityId || '';
+            break;
+          case 'availablePoints':
+            aValue = a.seller?.availablePoints || 0;
+            bValue = b.seller?.availablePoints || 0;
+            break;
+          case 'totalPointsSold':
+            aValue = a.seller?.totalPointsSold || 0;
+            bValue = b.seller?.totalPointsSold || 0;
+            break;
+          case 'createdAt':
+            aValue = a.accountStatus?.createdAt?.toDate?.() || new Date(0);
+            bValue = b.accountStatus?.createdAt?.toDate?.() || new Date(0);
+            break;
+          default:
+            aValue = '';
+            bValue = '';
+        }
+
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  };
+
+  // 🆕 获取分页后的数据
+  const getPaginatedUsers = () => {
+    const filtered = getFilteredAndSortedUsers();
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filtered.slice(startIndex, endIndex);
+  };
+
+  const totalPages = Math.ceil(getFilteredAndSortedUsers().length / pageSize);
+
   if (loading) {
     return (
-      <div style={styles.container}>
-        <div style={styles.loadingContainer}>
-          <div style={styles.spinner}></div>
-          <p>加载中...</p>
-        </div>
+      <div style={styles.loadingContainer}>
+        <div style={styles.spinner}></div>
+        <p>加载中...</p>
       </div>
     );
   }
 
   return (
     <div style={styles.container}>
-      {/* Header with Role Switcher */}
+      {/* Header */}
       <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div>
-            <h1 style={styles.title}>
-              🎯 Event Manager Dashboard
-            </h1>
-            <p style={styles.subtitle}>
-              {orgData?.orgName?.['zh-CN'] || '组织'} - {eventData?.eventName?.['zh-CN'] || '活动'}
-            </p>
-          </div>
-          {/* 🆕 角色切换器 */}
-          {userInfo?.availableRoles && userInfo.availableRoles.length > 1 && (
-            <div style={styles.roleSwitcherWrapper}>
-              <RoleSwitcher
-                currentRole={userInfo.currentRole || 'eventManager'}
-                availableRoles={userInfo.availableRoles}
-                orgEventCode={orgEventCode}
-                userInfo={userInfo}
-              />
-            </div>
-          )}
+        <div>
+          <h1 style={styles.title}>Event Manager Dashboard</h1>
+          <p style={styles.subtitle}>
+            {orgData?.basicInfo?.organizationName} - {eventData?.basicInfo?.eventName}
+          </p>
+          <p style={styles.userGreeting}>
+            欢迎, {userInfo?.chineseName || userInfo?.englishName}
+          </p>
         </div>
-        <div style={styles.headerActions}>
-          <div style={styles.userInfo}>
-            <span style={styles.userName}>👤 {userInfo?.englishName}</span>
-          </div>
-          <button style={styles.logoutButton} onClick={handleLogout}>
-            退出登录
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+          <RoleSwitcher currentRole="eventManager" orgEventCode={orgEventCode} />
+          <button onClick={handleLogout} style={styles.logoutButton}>
+            登出
           </button>
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics */}
       <div style={styles.statsGrid}>
         <StatCard
           title="总用户数"
@@ -419,54 +525,47 @@ const EventManagerDashboard = () => {
           color="#667eea"
         />
         <StatCard
-          title="Event Managers"
-          value={statistics.totalEventManagers}
-          icon="🎯"
-          color="#7c3aed"
-        />
-        <StatCard
           title="Seller Managers"
           value={statistics.totalSellerManagers}
-          icon="💰"
-          color="#10b981"
-        />
-        <StatCard
-          title="Merchant Managers"
-          value={statistics.totalMerchantManagers}
-          icon="🏪"
+          icon="🛍️"
           color="#f59e0b"
         />
         <StatCard
-          title="Customer Managers"
-          value={statistics.totalCustomerManagers}
-          icon="🎫"
-          color="#ec4899"
-        />
-        <StatCard
           title="Finance Managers"
-          value={statistics.totalFinanceManagers || 0}
+          value={statistics.totalFinanceManagers}
           icon="💵"
           color="#3b82f6"
         />
         <StatCard
-          title="已分配总点数"
-          value={statistics.totalAllocatedPoints?.toLocaleString() || '0'}
-          icon="🎁"
-          color="#16a34a"
+          title="Sellers"
+          value={statistics.totalSellers}
+          icon="🛒"
+          color="#ec4899"
         />
-
+        <StatCard
+          title="Merchants"
+          value={statistics.totalMerchants}
+          icon="🏬"
+          color="#06b6d4"
+        />
+        <StatCard
+          title="Customers"
+          value={statistics.totalCustomers}
+          icon="👤"
+          color="#84cc16"
+        />
+        <StatCard
+          title="已分配点数"
+          value={statistics.totalAllocatedPoints.toLocaleString()}
+          icon="💎"
+          color="#10b981"
+        />
       </div>
 
-      {/* Quick Actions Bar */}
-      <div style={styles.quickActionsBar}>
+      {/* Action Buttons */}
+      <div style={styles.actionButtons}>
         <button
           style={styles.primaryButton}
-          onClick={() => setShowBatchImport(true)}
-        >
-          📥 批量导入用户
-        </button>
-        <button
-          style={styles.secondaryButton}
           onClick={() => setShowAddUser(true)}
         >
           ➕ 单个创建用户
@@ -481,7 +580,7 @@ const EventManagerDashboard = () => {
           style={{ ...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981' }}
           onClick={() => setShowUserManagement(true)}
         >
-          🎭 角色分配 & 点数
+          📊 点数管理
         </button>
       </div>
 
@@ -503,19 +602,18 @@ const EventManagerDashboard = () => {
               value={roleFilter}
               onChange={(e) => {
                 setRoleFilter(e.target.value);
-                setCurrentPage(1); // 重置到第一页
+                setCurrentPage(1);
               }}
               style={{
-                padding: '0.5rem 0.75rem',
+                padding: '0.5rem',
                 border: '2px solid #e5e7eb',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 fontSize: '0.875rem',
-                cursor: 'pointer',
-                background: 'white',
-                minWidth: '180px'
+                cursor: 'pointer'
               }}
             >
-              <option value="all">全部用户</option>
+              <option value="all">全部角色</option>
+              <option value="eventManager">Event Manager</option>
               <option value="sellerManager">Seller Manager</option>
               <option value="merchantManager">Merchant Manager</option>
               <option value="customerManager">Customer Manager</option>
@@ -526,442 +624,349 @@ const EventManagerDashboard = () => {
             </select>
           </div>
 
-          {/* 列显示按钮 */}
+          {/* 搜索框 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: '600', color: '#374151' }}>
+              搜索:
+            </label>
+            <input
+              type="text"
+              placeholder="搜索姓名、电话、身份ID、部门..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                flex: 1,
+                padding: '0.5rem',
+                border: '2px solid #e5e7eb',
+                borderRadius: '6px',
+                fontSize: '0.875rem'
+              }}
+            />
+          </div>
+
+          {/* 列显示选择器 */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowColumnSelector(!showColumnSelector)}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: '#667eea',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '600'
+              }}
+            >
+              📋 列显示
+            </button>
+            {showColumnSelector && (
+              <div style={{
+                position: 'absolute',
+                right: 0,
+                top: '100%',
+                marginTop: '0.5rem',
+                backgroundColor: 'white',
+                border: '2px solid #e5e7eb',
+                borderRadius: '8px',
+                padding: '1rem',
+                minWidth: '200px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                zIndex: 10
+              }}>
+                {Object.keys(visibleColumns).map(column => (
+                  <label key={column} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns[column]}
+                      onChange={() => toggleColumnVisibility(column)}
+                    />
+                    {column}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 批量导入按钮 */}
           <button
-            onClick={() => setShowColumnSelector(!showColumnSelector)}
+            onClick={() => setShowBatchImport(true)}
             style={{
               padding: '0.5rem 1rem',
-              background: '#f3f4f6',
-              color: '#374151',
-              border: '2px solid #e5e7eb',
-              borderRadius: '8px',
+              backgroundColor: '#8b5cf6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '0.875rem',
               fontWeight: '600'
             }}
           >
-            ⚙️ 列显示设置
+            📥 批量导入
           </button>
         </div>
-
-        {/* 列显示选择器 */}
-        {showColumnSelector && (
-          <div style={{
-            marginTop: '1rem',
-            padding: '1rem',
-            background: '#f9fafb',
-            borderRadius: '8px'
-          }}>
-            <div style={{
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: '0.75rem'
-            }}>
-              选择要显示的列:
-            </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-              gap: '0.75rem'
-            }}>
-              {Object.keys(visibleColumns).map(columnName => (
-                <label
-                  key={columnName}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.875rem',
-                    color: '#374151',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={visibleColumns[columnName]}
-                    onChange={() => toggleColumn(columnName)}
-                    style={{ marginRight: '0.5rem' }}
-                  />
-                  {columnName}
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* User Table Section */}
-      <div style={styles.tableSection}>
-        <div style={styles.tableHeader}>
-          <h2 style={styles.sectionTitle}>用户管理</h2>
-          <div style={styles.tableStats}>
-            {searchTerm ? (
-              <>找到 <strong>{getSortedUsers().length}</strong> 个用户 / 共 <strong>{users.length}</strong> 个</>
-            ) : (
-              <>共 <strong>{users.length}</strong> 个用户（第 <strong>{currentPage}</strong> / <strong>{totalPages}</strong> 页）</>
-            )}
-          </div>
-        </div>
-
-        {/* 🆕 搜索框 */}
-        <div style={styles.searchSection}>
-          <input
-            type="text"
-            placeholder="🔍 搜索姓名、电话号码或身份ID..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1); // 搜索时重置到第一页
-            }}
-            style={styles.searchInput}
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              style={styles.clearSearchButton}
-              title="清除搜索"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        {/* 分页控制 */}
-        {users.length > 0 && (
-          <div style={styles.paginationControl}>
-            <div style={styles.pageSizeControl}>
-              <label style={styles.pageSizeLabel}>每页显示:</label>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(parseInt(e.target.value));
-                  setCurrentPage(1);
-                }}
-                style={styles.pageSizeSelect}
-              >
-                <option value={30}>30人</option>
-                <option value={50}>50人</option>
-                <option value={100}>100人</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {users.length > 0 ? (
-          <div style={styles.tableWrapper}>
+      {/* User Table */}
+      {showUserTable && (
+        <div style={styles.tableContainer}>
+          <div style={{ overflowX: 'auto' }}>
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeaderRow}>
-                  {visibleColumns.序号 && <th style={styles.tableCell}>序号</th>}
+                  {visibleColumns.序号 && (
+                    <th style={styles.tableHeaderCell}>序号</th>
+                  )}
                   {visibleColumns.姓名 && (
-                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('chineseName')}>
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('chineseName')}
+                    >
                       姓名 {sortConfig.key === 'chineseName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
-                  {visibleColumns.电话 && <th style={styles.tableCell}>电话</th>}
-                  {visibleColumns.身份标签 && (
-                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('identityTag')}>
-                      身份标签 {sortConfig.key === 'identityTag' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  {visibleColumns.电话 && (
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('phoneNumber')}
+                    >
+                      电话 {sortConfig.key === 'phoneNumber' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
+                  {visibleColumns.身份标签 && (
+                    <th style={styles.tableHeaderCell}>身份标签</th>
+                  )}
                   {visibleColumns.部门 && (
-                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('department')}>
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('department')}
+                    >
                       部门 {sortConfig.key === 'department' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
                   {visibleColumns.身份ID && (
-                    <th style={{ ...styles.tableCell, cursor: 'pointer' }} onClick={() => handleSort('identityId')}>
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('identityId')}
+                    >
                       身份ID {sortConfig.key === 'identityId' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
-                  {visibleColumns.角色 && <th style={styles.tableCell}>角色</th>}
-                  {visibleColumns.现有点数 && <th style={styles.tableCell}>现有点数</th>}
-                  {visibleColumns.已销售点数 && <th style={styles.tableCell}>已销售点数</th>}
-                  <th style={styles.tableCell}>操作</th>
+                  {visibleColumns.角色 && (
+                    <th style={styles.tableHeaderCell}>角色</th>
+                  )}
+                  {visibleColumns.现有点数 && (
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('availablePoints')}
+                    >
+                      现有点数 {sortConfig.key === 'availablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.已销售点数 && (
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('totalPointsSold')}
+                    >
+                      已销售点数 {sortConfig.key === 'totalPointsSold' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  <th style={styles.tableHeaderCell}>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {getPaginatedUsers().map((user, index) => {
-                  const globalIndex = (currentPage - 1) * pageSize + index + 1;
-                  const pointsInfo = getUserPointsInfo(user);
-
-                  return (
-                    <tr key={user.id} style={{ ...styles.tableRow, backgroundColor: index % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
-                      {visibleColumns.序号 && (
-                        <td style={styles.tableCell}>{globalIndex}</td>
-                      )}
-
-                      {visibleColumns.姓名 && (
-                        <td style={styles.tableCell}>
-                          <div>
-                            <strong>{user.basicInfo?.chineseName || '-'}</strong>
-                            {user.basicInfo?.englishName && (
-                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                                {user.basicInfo.englishName}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      )}
-
-                      {visibleColumns.电话 && (
-                        <td style={styles.tableCell}>
-                          <span style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                            {maskPhone(user.basicInfo?.phoneNumber)}
-                          </span>
-                        </td>
-                      )}
-
-                      {visibleColumns.身份标签 && (
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.badge,
-                            backgroundColor:
-                              user.identityTag?.value === 'student' ? '#dbeafe' :
-                                user.identityTag?.value === 'teacher' ? '#d1fae5' :
-                                  user.identityTag?.value === 'staff' ? '#fef3c7' :
-                                    user.identityTag?.value === 'board' ? '#e9d5ff' : '#f3f4f6',
-                            color:
-                              user.identityTag?.value === 'student' ? '#1e40af' :
-                                user.identityTag?.value === 'teacher' ? '#065f46' :
-                                  user.identityTag?.value === 'staff' ? '#92400e' :
-                                    user.identityTag?.value === 'board' ? '#6b21a8' : '#374151'
-                          }}>
-                            {user.identityInfo?.identityName || user.identityTag?.value || '-'}
-                          </span>
-                        </td>
-                      )}
-
-                      {visibleColumns.部门 && (
-                        <td style={styles.tableCell}>
-                          {user.identityInfo?.department || '-'}
-                        </td>
-                      )}
-
-                      {visibleColumns.身份ID && (
-                        <td style={styles.tableCell}>
-                          {user.identityInfo?.identityId || '-'}
-                        </td>
-                      )}
-
-                      {visibleColumns.角色 && (
-                        <td style={styles.tableCell}>
-                          <div style={styles.rolesContainer}>
-                            {user.roles && user.roles.length > 0 ? user.roles.map(role => {
-                              const roleLabels = {
-                                'eventManager': 'EM',
-                                'sellerManager': 'SM',
-                                'merchantManager': 'MM',
-                                'customerManager': 'CM',
-                                'financeManager': 'FM',
-                                'seller': 'S',
-                                'merchant': 'M',
-                                'customer': 'C'
-                              };
-                              const roleColors = {
-                                'eventManager': '#7c3aed',
-                                'sellerManager': '#10b981',
-                                'merchantManager': '#f59e0b',
-                                'customerManager': '#ec4899',
-                                'financeManager': '#3b82f6',
-                                'seller': '#06b6d4',
-                                'merchant': '#84cc16',
-                                'customer': '#8b5cf6'
-                              };
-                              return (
-                                <span
-                                  key={role}
-                                  style={{
-                                    ...styles.roleBadge,
-                                    backgroundColor: `${roleColors[role] || '#6b7280'}20`,
-                                    color: roleColors[role] || '#6b7280'
-                                  }}
-                                >
-                                  {roleLabels[role] || role}
-                                </span>
-                              );
-                            }) : '-'}
-                          </div>
-                        </td>
-                      )}
-
-                      {visibleColumns.现有点数 && (
-                        <td style={styles.tableCell}>
-                          <span style={{ fontWeight: '600', color: '#10b981' }}>
-                            {pointsInfo.availablePoints > 0
-                              ? pointsInfo.availablePoints.toLocaleString()
-                              : '-'}
-                          </span>
-                        </td>
-                      )}
-
-                      {visibleColumns.已销售点数 && (
-                        <td style={styles.tableCell}>
-                          <span style={{ fontWeight: '600', color: '#3b82f6' }}>
-                            {pointsInfo.totalPointsSold > 0
-                              ? pointsInfo.totalPointsSold.toLocaleString()
-                              : '-'}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* 🆕 操作列 */}
+                {getPaginatedUsers().map((user, index) => (
+                  <tr
+                    key={user.id}
+                    style={styles.tableRow}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    {visibleColumns.序号 && (
+                      <td style={styles.tableCell}>{(currentPage - 1) * pageSize + index + 1}</td>
+                    )}
+                    {visibleColumns.姓名 && (
                       <td style={styles.tableCell}>
-                        <button
-                          onClick={() => openEditModal(user)}
-                          style={styles.editButton}
-                          title="编辑用户信息"
-                        >
-                          ✏️ 编辑
-                        </button>
+                        <div style={styles.nameCell}>
+                          <div style={styles.chineseName}>{user.basicInfo?.chineseName}</div>
+                          <div style={styles.englishName}>{user.basicInfo?.englishName}</div>
+                        </div>
                       </td>
-                    </tr>
-                  );
-                })}
+                    )}
+                    {visibleColumns.电话 && (
+                      <td style={styles.tableCell}>{maskPhone(user.basicInfo?.phoneNumber)}</td>
+                    )}
+                    {visibleColumns.身份标签 && (
+                      <td style={styles.tableCell}>{user.identityInfo?.identityTag || '-'}</td>
+                    )}
+                    {visibleColumns.部门 && (
+                      <td style={styles.tableCell}>{user.identityInfo?.department || '-'}</td>
+                    )}
+                    {visibleColumns.身份ID && (
+                      <td style={styles.tableCell}>{user.identityInfo?.identityId || '-'}</td>
+                    )}
+                    {visibleColumns.角色 && (
+                      <td style={styles.tableCell}>
+                        <div style={styles.rolesCell}>
+                          {user.roles?.map(role => {
+                            const config = ROLE_CONFIG[role];
+                            if (!config) return null;
+                            return (
+                              <div
+                                key={role}
+                                style={{
+                                  ...styles.roleBadge,
+                                  backgroundColor: config.color
+                                }}
+                                title={config.fullLabel}
+                              >
+                                {config.icon}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    )}
+                    {visibleColumns.现有点数 && (
+                      <td style={styles.tableCell}>
+                        <span style={styles.pointsValue}>
+                          {user.seller?.availablePoints || 0}
+                        </span>
+                      </td>
+                    )}
+                    {visibleColumns.已销售点数 && (
+                      <td style={styles.tableCell}>
+                        {user.seller?.totalPointsSold || 0}
+                      </td>
+                    )}
+                    <td style={styles.tableCell}>
+                      <button
+                        onClick={() => openEditModal(user)}
+                        style={styles.actionButton}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#667eea';
+                          e.currentTarget.style.color = 'white';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'white';
+                          e.currentTarget.style.color = '#374151';
+                        }}
+                      >
+                        ✏️ 编辑
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        ) : (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyText}>📭 暂无用户</div>
-            <button
-              style={styles.secondaryButton}
-              onClick={() => setShowAddUser(true)}
-            >
-              创建第一个用户
-            </button>
-          </div>
-        )}
 
-        {/* 分页导航 */}
-        {users.length > 0 && totalPages > 1 && (
-          <div style={styles.paginationNav}>
-            <button
-              style={{
-                ...styles.paginationButton,
-                opacity: currentPage === 1 ? 0.5 : 1,
-                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-              }}
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-            >
-              首页
-            </button>
-            <button
-              style={{
-                ...styles.paginationButton,
-                opacity: currentPage === 1 ? 0.5 : 1,
-                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-              }}
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              上一页
-            </button>
-
-            <div style={styles.pageIndicator}>
-              {(() => {
-                const pages = [];
-                const maxVisible = 5;
-                let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-                let end = Math.min(totalPages, start + maxVisible - 1);
-
-                if (end - start < maxVisible - 1) {
-                  start = Math.max(1, end - maxVisible + 1);
-                }
-
-                for (let i = start; i <= end; i++) {
-                  pages.push(
-                    <button
-                      key={i}
-                      style={{
-                        ...styles.pageNumber,
-                        backgroundColor: i === currentPage ? '#667eea' : '#e5e7eb',
-                        color: i === currentPage ? 'white' : '#374151'
-                      }}
-                      onClick={() => setCurrentPage(i)}
-                    >
-                      {i}
-                    </button>
-                  );
-                }
-                return pages;
-              })()}
+          {/* Pagination */}
+          <div style={styles.pagination}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.875rem', color: '#6b7280' }}>每页显示:</label>
+              <select
+                value={pageSize}
+                onChange={handlePageSizeChange}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '4px',
+                  fontSize: '0.875rem'
+                }}
+              >
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, getFilteredAndSortedUsers().length)} / 共 {getFilteredAndSortedUsers().length} 条
+              </span>
             </div>
-
-            <button
-              style={{
-                ...styles.paginationButton,
-                opacity: currentPage === totalPages ? 0.5 : 1,
-                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-              }}
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              下一页
-            </button>
-            <button
-              style={{
-                ...styles.paginationButton,
-                opacity: currentPage === totalPages ? 0.5 : 1,
-                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-              }}
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-            >
-              末页
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                style={{
+                  ...styles.paginationButton,
+                  opacity: currentPage === 1 ? 0.5 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                上一页
+              </button>
+              <span style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', color: '#374151' }}>
+                第 {currentPage} / {totalPages} 页
+              </span>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                style={{
+                  ...styles.paginationButton,
+                  opacity: currentPage === totalPages ? 0.5 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                下一页
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Modals */}
+      {/* 🆕 AddUser 组件 */}
       {showAddUser && (
         <AddUser
           organizationId={organizationId}
           eventId={eventId}
           callerRole="eventManager"
-          onClose={() => {
-            setShowAddUser(false);
-            loadDashboardData(); // 重新加载数据
-          }}
+          onClose={() => setShowAddUser(false)}
+          onSuccess={loadDashboardData}
         />
       )}
 
+      {/* 🆕 BatchImportUser 组件 */}
       {showBatchImport && (
         <BatchImportUser
           organizationId={organizationId}
           eventId={eventId}
-          onClose={() => {
-            setShowBatchImport(false);
-            loadDashboardData();
-          }}
+          onClose={() => setShowBatchImport(false)}
+          onImportComplete={loadDashboardData}
         />
       )}
 
+      {/* 🔄 重命名：UserManagement → PointsManagement */}
+      {showUserManagement && (
+        <PointsManagement
+          organizationId={organizationId}
+          eventId={eventId}
+          onClose={() => setShowUserManagement(false)}
+          onUpdate={loadDashboardData}
+        />
+      )}
+
+      {/* 部门管理组件 */}
       {showDepartmentManagement && (
         <DepartmentManagement
           organizationId={organizationId}
-          eventId={eventId}
-          onClose={() => {
-            setShowDepartmentManagement(false);
-            loadDashboardData();
-          }}
+          onClose={() => setShowDepartmentManagement(false)}
+          onUpdate={loadDashboardData}
         />
       )}
 
-      {showUserManagement && (
-        <UserManagement
-          organizationId={organizationId}
-          eventId={eventId}
-          onClose={() => {
-            setShowUserManagement(false);
-            loadDashboardData();
-          }}
-        />
-      )}
-
-      {/* 🆕 编辑用户模态框 */}
+      {/* 🔄 修改：扩展编辑模态框 - 添加角色和部门选择 */}
       {showEditModal && editingUser && (
         <div style={styles.modalOverlay} onClick={() => setShowEditModal(false)}>
           <div style={styles.editModalContent} onClick={(e) => e.stopPropagation()}>
@@ -976,6 +981,7 @@ const EventManagerDashboard = () => {
             </div>
 
             <div style={styles.modalBody}>
+              {/* 基本信息 */}
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>
                   中文姓名 <span style={{ color: '#ef4444' }}>*</span>
@@ -1031,8 +1037,93 @@ const EventManagerDashboard = () => {
                 />
               </div>
 
+              {/* 🆕 部门选择 */}
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  部门
+                </label>
+                <select
+                  value={editForm.department}
+                  onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                  style={styles.formInput}
+                >
+                  <option value="">请选择部门</option>
+                  {departments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 🆕 角色分配 */}
+              <div style={{ ...styles.formGroup, marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '2px solid #e5e7eb' }}>
+                <label style={styles.formLabel}>
+                  角色分配
+                </label>
+                <div style={styles.rolesGrid}>
+                  {Object.entries(ROLE_CONFIG).map(([roleId, config]) => (
+                    <div
+                      key={roleId}
+                      style={{
+                        ...styles.roleCheckbox,
+                        borderColor: selectedRoles[roleId] ? config.color : '#e5e7eb',
+                        backgroundColor: selectedRoles[roleId] ? `${config.color}10` : 'white'
+                      }}
+                      onClick={() => setSelectedRoles({ ...selectedRoles, [roleId]: !selectedRoles[roleId] })}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedRoles[roleId]}
+                        onChange={() => {}}
+                        style={styles.checkbox}
+                      />
+                      <div style={styles.roleInfo}>
+                        <span style={styles.roleIcon}>{config.icon}</span>
+                        <span style={styles.roleLabel}>{config.fullLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 🆕 Seller Manager 管理部门 */}
+              {selectedRoles.sellerManager && (
+                <div style={styles.managedDepartmentsSection}>
+                  <div style={styles.sectionTitle}>
+                    🏢 管理的部门 (Seller Manager)
+                  </div>
+                  <div style={styles.departmentsGrid}>
+                    {departments.map(dept => (
+                      <div
+                        key={dept}
+                        style={styles.departmentCheckbox}
+                        onClick={() => {
+                          setManagedDepartments(prev =>
+                            prev.includes(dept)
+                              ? prev.filter(d => d !== dept)
+                              : [...prev, dept]
+                          );
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={managedDepartments.includes(dept)}
+                          onChange={() => {}}
+                          style={styles.checkbox}
+                        />
+                        {dept}
+                      </div>
+                    ))}
+                  </div>
+                  {managedDepartments.length === 0 && (
+                    <div style={{ ...styles.formHint, color: '#f59e0b', marginTop: '0.5rem' }}>
+                      ⚠️ 建议至少选择一个管理部门
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={styles.infoBox}>
-                💡 <strong>注意</strong>: 修改用户信息后将立即生效,请仔细核对。
+                💡 <strong>注意</strong>: 修改用户信息和角色后将立即生效,请仔细核对。
               </div>
             </div>
 
@@ -1098,59 +1189,38 @@ const styles = {
     alignItems: 'flex-start',
     marginBottom: '2rem',
     background: 'white',
-    padding: '1.5rem',
+    padding: '2rem',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '2rem'
-  },
-  roleSwitcherWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    paddingTop: '0.5rem'
   },
   title: {
     fontSize: '2rem',
     fontWeight: 'bold',
     color: '#1f2937',
-    margin: '0 0 0.5rem 0'
+    marginBottom: '0.5rem'
   },
   subtitle: {
     color: '#6b7280',
-    margin: 0
+    fontSize: '1.125rem'
   },
-  headerActions: {
-    display: 'flex',
-    gap: '1rem',
-    alignItems: 'center'
-  },
-  userInfo: {
-    padding: '0.5rem 1rem',
-    background: '#f3f4f6',
-    borderRadius: '8px'
-  },
-  userName: {
+  userGreeting: {
+    color: '#667eea',
     fontSize: '0.875rem',
-    fontWeight: '500',
-    color: '#374151'
+    marginTop: '0.5rem'
   },
   logoutButton: {
-    padding: '0.5rem 1rem',
-    background: '#ef4444',
+    padding: '0.75rem 1.5rem',
+    backgroundColor: '#ef4444',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '0.875rem',
-    fontWeight: '500',
-    transition: 'all 0.2s'
+    fontWeight: '600',
+    transition: 'background-color 0.2s'
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: '1.5rem',
     marginBottom: '2rem'
   },
@@ -1173,212 +1243,135 @@ const styles = {
     color: '#1f2937'
   },
   statLabel: {
+    color: '#6b7280',
     fontSize: '0.875rem',
-    color: '#6b7280'
+    marginTop: '0.25rem'
   },
-  quickActionsBar: {
+  actionButtons: {
     display: 'flex',
     gap: '1rem',
     marginBottom: '2rem',
     flexWrap: 'wrap'
   },
   primaryButton: {
-    padding: '0.75rem 1.5rem',
-    background: '#667eea',
+    padding: '0.875rem 1.5rem',
+    backgroundColor: '#667eea',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '1rem',
     fontWeight: '600',
-    transition: 'all 0.2s'
+    fontSize: '1rem',
+    transition: 'all 0.2s',
+    boxShadow: '0 2px 4px rgba(102, 126, 234, 0.4)'
   },
   secondaryButton: {
-    padding: '0.75rem 1.5rem',
-    background: 'white',
+    padding: '0.875rem 1.5rem',
+    backgroundColor: 'white',
     color: '#374151',
     border: '2px solid #e5e7eb',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '1rem',
     fontWeight: '600',
+    fontSize: '1rem',
     transition: 'all 0.2s'
   },
-  tableSection: {
+  tableContainer: {
     background: 'white',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    padding: '1.5rem'
-  },
-  tableHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1rem'
-  },
-  sectionTitle: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    margin: 0
-  },
-  tableStats: {
-    fontSize: '0.875rem',
-    color: '#6b7280'
-  },
-  tableWrapper: {
-    overflowX: 'auto'
+    overflow: 'hidden'
   },
   table: {
     width: '100%',
-    borderCollapse: 'collapse'
+    borderCollapse: 'collapse',
+    fontSize: '0.875rem'
   },
   tableHeaderRow: {
-    background: '#f9fafb',
-    borderBottom: '2px solid #e5e7eb'
+    backgroundColor: '#f9fafb',
+    borderBottom: '2px solid #e5e7eb',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10
+  },
+  tableHeaderCell: {
+    padding: '1rem 0.75rem',
+    textAlign: 'left',
+    fontWeight: '600',
+    color: '#374151',
+    whiteSpace: 'nowrap'
   },
   tableRow: {
-    borderBottom: '1px solid #e5e7eb'
+    borderBottom: '1px solid #e5e7eb',
+    transition: 'background-color 0.2s'
   },
   tableCell: {
-    padding: '1rem',
-    textAlign: 'left',
-    fontSize: '0.875rem',
-    color: '#374151'
+    padding: '1rem 0.75rem',
+    color: '#374151',
+    verticalAlign: 'middle'
   },
-  badge: {
-    display: 'inline-block',
-    padding: '0.25rem 0.75rem',
-    borderRadius: '12px',
-    fontSize: '0.75rem',
-    fontWeight: '600'
-  },
-  rolesContainer: {
+  nameCell: {
     display: 'flex',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: '0.25rem'
   },
+  chineseName: {
+    fontWeight: '600',
+    color: '#1f2937'
+  },
+  englishName: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+    textTransform: 'uppercase'
+  },
+  rolesCell: {
+    display: 'flex',
+    gap: '0.35rem',
+    flexWrap: 'wrap'
+  },
   roleBadge: {
-    display: 'inline-block',
-    padding: '0.25rem 0.5rem',
-    borderRadius: '8px',
-    fontSize: '0.7rem',
-    fontWeight: '700'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '3rem',
-    color: '#6b7280'
-  },
-  emptyText: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '28px',
+    height: '28px',
+    borderRadius: '6px',
     fontSize: '1rem',
-    marginBottom: '1rem'
+    color: 'white',
+    fontWeight: '600'
   },
-  paginationControl: {
+  pointsValue: {
+    fontWeight: '600',
+    color: '#10b981'
+  },
+  actionButton: {
+    padding: '0.5rem 0.75rem',
+    fontSize: '1rem',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
+    backgroundColor: 'white',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  pagination: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '1rem',
-    padding: '1rem',
-    background: '#f9fafb',
-    borderRadius: '8px'
-  },
-  pageSizeControl: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem'
-  },
-  pageSizeLabel: {
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#374151'
-  },
-  pageSizeSelect: {
-    padding: '0.5rem 0.75rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-    background: 'white'
-  },
-  paginationNav: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '0.5rem',
-    marginTop: '1.5rem',
-    padding: '1rem',
-    background: '#f9fafb',
-    borderRadius: '8px'
+    padding: '1rem 1.5rem',
+    borderTop: '1px solid #e5e7eb',
+    flexWrap: 'wrap',
+    gap: '1rem'
   },
   paginationButton: {
     padding: '0.5rem 1rem',
-    background: '#e5e7eb',
-    color: '#374151',
-    border: 'none',
+    border: '1px solid #e5e7eb',
     borderRadius: '6px',
+    backgroundColor: 'white',
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600',
     transition: 'all 0.2s'
   },
-  pageIndicator: {
-    display: 'flex',
-    gap: '0.25rem',
-    alignItems: 'center'
-  },
-  pageNumber: {
-    padding: '0.5rem 0.75rem',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    transition: 'all 0.2s'
-  },
-  // 🆕 搜索框样式
-  searchSection: {
-    position: 'relative',
-    marginBottom: '1.5rem'
-  },
-  searchInput: {
-    width: '100%',
-    padding: '0.75rem 3rem 0.75rem 1rem',
-    fontSize: '0.875rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '8px',
-    outline: 'none',
-    boxSizing: 'border-box',
-    transition: 'border-color 0.2s'
-  },
-  clearSearchButton: {
-    position: 'absolute',
-    right: '0.75rem',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    padding: '0.25rem 0.5rem',
-    backgroundColor: '#f3f4f6',
-    border: 'none',
-    borderRadius: '4px',
-    fontSize: '1rem',
-    cursor: 'pointer',
-    color: '#6b7280',
-    transition: 'all 0.2s'
-  },
-  // 🆕 编辑按钮样式
-  editButton: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    whiteSpace: 'nowrap'
-  },
-  // 🆕 模态框样式
   modalOverlay: {
     position: 'fixed',
     top: 0,
@@ -1389,158 +1382,179 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 2000,
+    zIndex: 1000,
     padding: '1rem'
   },
   editModalContent: {
     backgroundColor: 'white',
     borderRadius: '12px',
-    width: '100%',
-    maxWidth: '500px',
+    width: '90%',
+    maxWidth: '600px',
     maxHeight: '90vh',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+    overflow: 'auto',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '1.5rem',
-    borderBottom: '1px solid #e5e7eb'
+    borderBottom: '2px solid #e5e7eb',
+    position: 'sticky',
+    top: 0,
+    backgroundColor: 'white',
+    zIndex: 10
   },
   modalTitle: {
-    fontSize: '1.25rem',
+    fontSize: '1.5rem',
     fontWeight: '600',
-    color: '#1f2937',
-    margin: 0
+    color: '#1f2937'
   },
   closeButton: {
-    padding: '0.5rem',
-    backgroundColor: 'transparent',
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
     border: 'none',
-    fontSize: '1.5rem',
+    backgroundColor: '#f3f4f6',
     color: '#6b7280',
+    fontSize: '1.25rem',
     cursor: 'pointer',
-    lineHeight: 1,
-    transition: 'color 0.2s'
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s'
   },
   modalBody: {
-    flex: 1,
-    overflow: 'auto',
-    padding: '1.5rem'
+    padding: '1.5rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.25rem'
   },
   formGroup: {
-    marginBottom: '1.5rem'
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
   },
   formLabel: {
-    display: 'block',
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: '0.5rem'
+    color: '#374151'
   },
   formInput: {
-    width: '100%',
     padding: '0.75rem',
     fontSize: '0.875rem',
     border: '2px solid #e5e7eb',
     borderRadius: '8px',
     outline: 'none',
-    boxSizing: 'border-box',
     transition: 'border-color 0.2s'
   },
   formHint: {
-    marginTop: '0.5rem',
     fontSize: '0.75rem',
-    color: '#6b7280'
+    color: '#6b7280',
+    marginTop: '0.25rem'
+  },
+  rolesGrid: {
+    display: 'grid',
+    gap: '0.75rem'
+  },
+  roleCheckbox: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0.75rem',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    marginRight: '0.75rem',
+    cursor: 'pointer'
+  },
+  roleInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    flex: 1
+  },
+  roleIcon: {
+    fontSize: '1.25rem',
+    marginRight: '0.5rem'
+  },
+  roleLabel: {
+    fontWeight: '500',
+    color: '#374151'
+  },
+  managedDepartmentsSection: {
+    marginTop: '1rem',
+    padding: '1rem',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px'
+  },
+  sectionTitle: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: '0.75rem'
+  },
+  departmentsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+    gap: '0.5rem'
+  },
+  departmentCheckbox: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0.5rem',
+    backgroundColor: 'white',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    transition: 'all 0.2s'
   },
   infoBox: {
     padding: '0.75rem 1rem',
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#f0fdf4',
+    border: '1px solid #86efac',
     borderRadius: '8px',
     fontSize: '0.875rem',
-    color: '#1e40af',
-    border: '1px solid #bfdbfe',
-    marginTop: '1rem'
+    color: '#166534',
+    fontWeight: '500'
   },
   modalFooter: {
     display: 'flex',
     gap: '1rem',
-    justifyContent: 'flex-end',
     padding: '1.5rem',
-    borderTop: '1px solid #e5e7eb'
+    borderTop: '1px solid #e5e7eb',
+    position: 'sticky',
+    bottom: 0,
+    backgroundColor: 'white'
   },
   cancelButton: {
-    padding: '0.75rem 1.5rem',
-    backgroundColor: '#f3f4f6',
-    color: '#374151',
-    border: 'none',
-    borderRadius: '8px',
+    flex: 1,
+    padding: '0.75rem',
     fontSize: '0.875rem',
     fontWeight: '600',
+    color: '#6b7280',
+    backgroundColor: 'white',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
     cursor: 'pointer',
     transition: 'all 0.2s'
   },
   saveButton: {
-    padding: '0.75rem 1.5rem',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
+    flex: 1,
+    padding: '0.75rem',
     fontSize: '0.875rem',
     fontWeight: '600',
+    color: 'white',
+    backgroundColor: '#8b5cf6',
+    border: 'none',
+    borderRadius: '8px',
     cursor: 'pointer',
     transition: 'all 0.2s'
   }
 };
-
-// 🆕 添加动画和hover效果
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  /* 搜索框焦点效果 */
-  input:focus {
-    border-color: #3b82f6 !important;
-  }
-  
-  /* 按钮hover效果 */
-  button:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  
-  /* 编辑按钮特殊效果 */
-  button[title="编辑用户信息"]:hover {
-    background-color: #2563eb !important;
-    box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
-  }
-  
-  /* 清除搜索按钮hover */
-  button[title="清除搜索"]:hover {
-    background-color: #e5e7eb !important;
-    color: #1f2937 !important;
-  }
-  
-  /* 关闭按钮hover */
-  button:has(+ *):hover {
-    color: #1f2937 !important;
-  }
-  
-  /* 表格行hover效果 */
-  tbody tr:hover {
-    background-color: #f9fafb !important;
-  }
-`;
-
-// 避免重复添加
-if (!document.head.querySelector('style[data-event-manager-styles]')) {
-  styleSheet.setAttribute('data-event-manager-styles', 'true');
-  document.head.appendChild(styleSheet);
-}
 
 export default EventManagerDashboard;

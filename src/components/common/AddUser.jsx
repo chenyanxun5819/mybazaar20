@@ -20,8 +20,6 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     englishName: '',
     chineseName: '',
     email: '',
-    password: '',
-    confirmPassword: '',
     identityTag: '', // ✨ 不再设置默认值
     department: '',
     identityId: '', // ✨ 新增：学号/工号
@@ -222,22 +220,6 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       return;
     }
 
-    // 验证密码
-    if (formData.password !== formData.confirmPassword) {
-      setError('两次输入的密码不一致');
-      return;
-    }
-
-    if (formData.password.length < 8) {
-      setError('密码至少需要 8 个字符');
-      return;
-    }
-
-    if (!/[a-zA-Z]/.test(formData.password) || !/\d/.test(formData.password)) {
-      setError('密码必须包含英文字母和数字');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -245,6 +227,13 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
       // 注意：需要從 Firebase Auth 获取 idToken
       const auth = getAuth();
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
+      // ✅ 默认密码：参考 BatchImportUser.jsx 的逻辑
+      const orgDoc = await getDoc(doc(db, 'organizations', organizationId));
+      const eventDoc = await getDoc(doc(db, 'organizations', organizationId, 'events', eventId));
+      const orgCode = orgDoc.exists() ? (orgDoc.data().orgCode || orgDoc.data().organizationCode || organizationId) : organizationId;
+      const eventCode = eventDoc.exists() ? (eventDoc.data().eventCode || eventDoc.data().code || eventId) : eventId;
+      let defaultPassword = `${orgCode}${eventCode}`;
 
       const response = await safeFetch(
         '/api/createUserByEventManagerHttp',
@@ -258,7 +247,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             organizationId,
             eventId,
             phoneNumber: formData.phoneNumber,
-            password: formData.password,
+            password: defaultPassword,
             englishName: formData.englishName,
             chineseName: formData.chineseName,
             email: formData.email || '', // ✅ email 改为可选，空字符串也可以
@@ -452,40 +441,6 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 ))}
               </select>
               <span style={styles.hint}>可选，如果没有合适的部门可以留空</span>
-            </div>
-          </div>
-
-          {/* 密码设置 */}
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>
-              <span>🔒</span>
-              密码设置
-            </h3>
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>密码 *</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  style={styles.input}
-                  placeholder="至少8位，包含字母和数字"
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>确认密码 *</label>
-                <input
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  style={styles.input}
-                  placeholder="再次输入密码"
-                  required
-                  disabled={loading}
-                />
-              </div>
             </div>
           </div>
 

@@ -1,16 +1,17 @@
 /**
- * Pending Submissions Component
- * Tab 2: 待确认收款 - 显示和处理待确认的现金上交记录
+ * Pending Submissions Component - Desktop Table Layout
+ * Tab 2: 待认领收款池 - 表格列表模式
  */
 
 import React, { useState } from 'react';
+import TransactionPinDialog from './TransactionPinDialog';
 import './PendingSubmissions.css';
 
-const PendingSubmissions = ({ submissions, onConfirm, onRefresh }) => {
-  const [selectedSubmissions, setSelectedSubmissions] = useState([]);
-  const [confirmingId, setConfirmingId] = useState(null);
-  const [showDetailId, setShowDetailId] = useState(null);
-  const [confirmNote, setConfirmNote] = useState('');
+const PendingSubmissions = ({ submissions, onClaim, onRefresh, currentUser }) => {
+  const [claimingId, setClaimingId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
 
   // 格式化金额
   const formatAmount = (amount) => {
@@ -54,40 +55,52 @@ const PendingSubmissions = ({ submissions, onConfirm, onRefresh }) => {
     return roleMap[role] || role;
   };
 
-  // 处理选中
-  const handleToggleSelection = (submissionId) => {
-    setSelectedSubmissions(prev => {
-      if (prev.includes(submissionId)) {
-        return prev.filter(id => id !== submissionId);
-      } else {
-        return [...prev, submissionId];
-      }
-    });
+  // 获取角色图标
+  const getRoleIcon = (role) => {
+    const iconMap = {
+      seller: '🛍️',
+      sellerManager: '👨‍🏫',
+      pointSeller: '💳'
+    };
+    return iconMap[role] || '👤';
   };
 
-  // 确认单笔收款
-  const handleConfirmSingle = async (submissionId) => {
-    if (confirmingId) return; // 防止重复点击
+  // 处理接单确认按钮点击
+  const handleClaimClick = (submission) => {
+    setSelectedSubmission(submission);
+    setShowPinDialog(true);
+  };
 
-    const confirmed = window.confirm('确认收到此笔现金？');
-    if (!confirmed) return;
+  // 处理交易密码确认
+  const handlePinConfirm = async (pin, confirmationNote) => {
+    if (!selectedSubmission) return;
 
     try {
-      setConfirmingId(submissionId);
-      await onConfirm(submissionId, confirmNote);
-      setConfirmNote('');
-      alert('收款确认成功！');
+      setClaimingId(selectedSubmission.id);
+      setShowPinDialog(false);
+
+      await onClaim(selectedSubmission.id, pin, confirmationNote);
+
+      alert('✅ 收款确认成功！');
+      setSelectedSubmission(null);
       onRefresh();
     } catch (error) {
-      alert('确认失败: ' + error.message);
+      console.error('接单确认失败:', error);
+      alert('❌ 确认失败: ' + error.message);
     } finally {
-      setConfirmingId(null);
+      setClaimingId(null);
     }
   };
 
-  // 查看明细
-  const handleToggleDetail = (submissionId) => {
-    setShowDetailId(showDetailId === submissionId ? null : submissionId);
+  // 处理取消
+  const handlePinCancel = () => {
+    setShowPinDialog(false);
+    setSelectedSubmission(null);
+  };
+
+  // 切换展开/收起
+  const toggleExpanded = (submissionId) => {
+    setExpandedId(expandedId === submissionId ? null : submissionId);
   };
 
   // 计算总金额
@@ -97,144 +110,181 @@ const PendingSubmissions = ({ submissions, onConfirm, onRefresh }) => {
     <div className="pending-submissions">
       {/* 头部 */}
       <div className="pending-header">
-        <h2>💵 待确认收款</h2>
+        <h2>💰 待认领收款池</h2>
         <button className="refresh-button" onClick={onRefresh}>
           🔄 刷新
         </button>
+      </div>
+
+      {/* 说明提示 */}
+      <div className="info-banner">
+        <span className="info-icon">ℹ️</span>
+        <span className="info-text">
+          <strong>接单制收款：</strong>任何Finance Manager都可以接单处理，先到先得。提交者携带现金到财务室后，点击"接单确认"完成收款。
+        </span>
       </div>
 
       {/* 统计摘要 */}
       {submissions.length > 0 && (
         <div className="pending-summary-bar">
           <div className="summary-info">
-            <span className="summary-icon">⚠️</span>
+            <span className="summary-icon">📋</span>
             <span className="summary-text">
-              您有 <strong>{submissions.length}</strong> 笔待确认，
+              当前池子有 <strong>{submissions.length}</strong> 笔待认领，
               总额 <strong>{formatAmount(totalAmount)}</strong>
             </span>
           </div>
         </div>
       )}
 
-      {/* 待确认列表 */}
-      <div className="submissions-list">
-        {submissions.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">✅</div>
-            <p className="empty-message">太棒了！没有待确认的收款</p>
-            <p className="empty-hint">所有现金上交都已处理完毕</p>
-          </div>
-        ) : (
-          submissions.map(submission => (
-            <div key={submission.id} className="submission-card">
-              {/* 卡片头部 */}
-              <div className="card-header">
-                <div className="header-left">
-                  <span className="submission-number">
-                    {submission.submissionNumber || submission.id.slice(0, 8)}
-                  </span>
-                  <span className="separator">|</span>
-                  <span className="submitter-name">{submission.submitterName}</span>
-                  <span className="role-badge">{getRoleLabel(submission.submitterRole)}</span>
-                </div>
-                <div className="header-right">
-                  <span className="amount-large">{formatAmount(submission.amount)}</span>
-                </div>
-              </div>
-
-              {/* 卡片内容 */}
-              <div className="card-content">
-                <div className="info-row">
-                  <div className="info-item">
-                    <span className="info-label">提交时间：</span>
-                    <span className="info-value">{formatFullDateTime(submission.submittedAt)}</span>
-                  </div>
-                  {submission.submitterDepartment && (
-                    <div className="info-item">
-                      <span className="info-label">部门：</span>
-                      <span className="info-value">{submission.submitterDepartment}</span>
-                    </div>
-                  )}
-                </div>
-
-                {submission.note && (
-                  <div className="info-row">
-                    <div className="info-item full-width">
-                      <span className="info-label">备注：</span>
-                      <span className="info-value">{submission.note}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* 销售明细 */}
-                {submission.includedSales && submission.includedSales.length > 0 && (
-                  <div className="sales-detail">
-                    <button 
-                      className="detail-toggle"
-                      onClick={() => handleToggleDetail(submission.id)}
-                    >
-                      {showDetailId === submission.id ? '▼' : '▶'} 
-                      包含 {submission.includedSales.length} 笔销售
-                    </button>
-
-                    {showDetailId === submission.id && (
-                      <div className="detail-content">
-                        <table className="sales-table">
-                          <thead>
-                            <tr>
-                              <th>Seller</th>
-                              <th>销售日期</th>
-                              <th>金额</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {submission.includedSales.map((sale, index) => (
-                              <tr key={index}>
-                                <td>{sale.sellerName}</td>
-                                <td>{sale.salesDate}</td>
-                                <td>{formatAmount(sale.amount)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 卡片操作 */}
-              <div className="card-actions">
-                <button
-                  className="confirm-button"
-                  onClick={() => handleConfirmSingle(submission.id)}
-                  disabled={confirmingId === submission.id}
-                >
-                  {confirmingId === submission.id ? (
-                    <>⏳ 确认中...</>
-                  ) : (
-                    <>✅ 确认收款</>
-                  )}
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* 备注输入（全局） */}
-      {submissions.length > 0 && (
-        <div className="global-note">
-          <label htmlFor="confirmNote">确认备注（可选）：</label>
-          <input
-            id="confirmNote"
-            type="text"
-            value={confirmNote}
-            onChange={(e) => setConfirmNote(e.target.value)}
-            placeholder="例如：已核对无误"
-            maxLength={100}
-          />
+      {/* 待认领表格 */}
+      {submissions.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">✅</div>
+          <p className="empty-message">太棒了！待认领池子是空的</p>
+          <p className="empty-hint">所有现金上交都已处理完毕</p>
         </div>
+      ) : (
+        <div className="table-container">
+          <table className="submissions-table">
+            <thead>
+              <tr>
+                <th>提交者</th>
+                <th>金额</th>
+                <th>提交时间</th>
+                <th>备注</th>
+                <th>明细</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {submissions.map(submission => (
+                <React.Fragment key={submission.id}>
+                  {/* 主行 */}
+                  <tr>
+                    {/* 提交者列 */}
+                    <td>
+                      <div className="submitter-cell">
+                        <span className="role-icon">{getRoleIcon(submission.submitterRole)}</span>
+                        <div className="submitter-info">
+                          <div className="submitter-name">{submission.submitterName}</div>
+                          <div className="submitter-meta">
+                            <span className="role-badge">{getRoleLabel(submission.submitterRole)}</span>
+                            {submission.submitterDepartment && (
+                              <span className="department-text">• {submission.submitterDepartment}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* 金额列 */}
+                    <td>
+                      <div className="amount-cell">{formatAmount(submission.amount)}</div>
+                    </td>
+
+                    {/* 时间列 */}
+                    <td>
+                      <div className="time-cell">{formatFullDateTime(submission.submittedAt)}</div>
+                    </td>
+
+                    {/* 备注列 */}
+                    <td>
+                      <div className={`note-cell ${!submission.note ? 'empty' : ''}`}>
+                        {submission.note || '-'}
+                      </div>
+                    </td>
+
+                    {/* 明细列 */}
+                    <td className="detail-cell">
+                      {(submission.includedSales?.length > 0 || submission.pointCardInfo) ? (
+                        <button 
+                          className="detail-button"
+                          onClick={() => toggleExpanded(submission.id)}
+                        >
+                          {expandedId === submission.id ? '▼' : '▶'} 查看
+                        </button>
+                      ) : (
+                        <span style={{ color: '#d1d5db' }}>-</span>
+                      )}
+                    </td>
+
+                    {/* 操作列 */}
+                    <td className="action-cell">
+                      <button
+                        className="claim-button"
+                        onClick={() => handleClaimClick(submission)}
+                        disabled={claimingId === submission.id}
+                      >
+                        {claimingId === submission.id ? '⏳ 处理中...' : '🎯 接单确认'}
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* 展开行 */}
+                  {expandedId === submission.id && (
+                    <tr className="expanded-row">
+                      <td colSpan="6">
+                        <div className="expanded-content">
+                          {/* 点数卡信息 */}
+                          {submission.pointCardInfo && (
+                            <div className="expanded-section">
+                              <div className="section-title">💳 点数卡信息</div>
+                              <div className="pointcard-info">
+                                <div className="pointcard-item">
+                                  <span className="pointcard-label">发行卡数：</span>
+                                  <span className="pointcard-value">{submission.pointCardInfo.cardsIssued} 张</span>
+                                </div>
+                                <div className="pointcard-item">
+                                  <span className="pointcard-label">总点数：</span>
+                                  <span className="pointcard-value">{submission.pointCardInfo.totalPoints} 点</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 销售明细 */}
+                          {submission.includedSales && submission.includedSales.length > 0 && (
+                            <div className="expanded-section">
+                              <div className="section-title">📊 包含销售明细 ({submission.includedSales.length} 笔)</div>
+                              <table className="sales-table">
+                                <thead>
+                                  <tr>
+                                    <th>Seller</th>
+                                    <th>销售日期</th>
+                                    <th>金额</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {submission.includedSales.map((sale, index) => (
+                                    <tr key={index}>
+                                      <td>{sale.sellerName}</td>
+                                      <td>{sale.salesDate}</td>
+                                      <td>{formatAmount(sale.amount)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 交易密码对话框 */}
+      {showPinDialog && selectedSubmission && (
+        <TransactionPinDialog
+          submission={selectedSubmission}
+          onConfirm={handlePinConfirm}
+          onCancel={handlePinCancel}
+        />
       )}
     </div>
   );

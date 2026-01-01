@@ -28,12 +28,19 @@ exports.resetTransactionPin = onCall(async (request) => {
 
     // ========== 2. 提取参数 ==========
     const {
-      userId,
       organizationId,
       eventId,
       otpCode,
       newTransactionPin
     } = data;
+    
+    let userId = data.userId;
+
+    // ✅ 修正：如果 userId 是 'universal'，尝试使用 auth.uid
+    if (userId === 'universal' && auth && auth.uid) {
+      console.log('[resetTransactionPin] 检测到 userId 为 universal，使用 auth.uid:', auth.uid);
+      userId = auth.uid;
+    }
 
     console.log('[resetTransactionPin] 收到重置请求:', {
       userId,
@@ -49,7 +56,8 @@ exports.resetTransactionPin = onCall(async (request) => {
     }
 
     // 验证用户只能重置自己的 PIN
-    if (auth.uid !== userId) {
+    const callerUserId = auth.token?.userId;
+    if (auth.uid !== userId && callerUserId !== userId) {
       throw new HttpsError('permission-denied', '无权重置其他用户的交易密码');
     }
 
@@ -111,7 +119,7 @@ exports.resetTransactionPin = onCall(async (request) => {
     // ========== 7. 加密新 PIN ==========
     const { hash: newPinHash, salt: newPinSalt } = await hashPin(newTransactionPin);
 
-    // ========== 8. 更新用户文档 ==========
+    // ========== 7. 更新用户文档 ==========
     const updateData = {
       'basicInfo.transactionPinHash': newPinHash,
       'basicInfo.transactionPinSalt': newPinSalt,
@@ -125,7 +133,7 @@ exports.resetTransactionPin = onCall(async (request) => {
 
     console.log('[resetTransactionPin] 交易密码重置成功:', userId);
 
-    // ========== 9. 返回成功 ==========
+    // ========== 8. 返回成功 ==========
     return {
       success: true,
       message: '交易密码重置成功',

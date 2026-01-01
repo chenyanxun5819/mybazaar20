@@ -1,9 +1,18 @@
+/**
+ * SellerDashboard.jsx (更新版 v2.1)
+ * ✅ 修复：SellerSubmitCash不再需要传递userInfo
+ * 
+ * @version 2.1
+ * @date 2025-01-01
+ */
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
 import { TransactionHistory } from './components/TransactionHistory';
+import SellerSubmitCash from './components/SellerSubmitCash'; // 🆕 新增
 import './SellerDashboard.css';
 
 function SellerDashboard() {
@@ -11,10 +20,13 @@ function SellerDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
 
+  // 🔧 从seller对象获取手上现金（用于显示徽章）
+  // 注意：这里可能需要使用useSellerStats来获取实时数据
+  const cashOnHand = userProfile?.seller?.pendingCollection || 0;
+
   const handleLogout = async () => {
     try {
       await logout();
-      // 从 userProfile 获取组织和活动 ID
       const orgId = userProfile?.organizationId?.replace('organization_', '') || '';
       const evtId = userProfile?.eventId?.replace('event_', '') || '';
       const orgEventCode = `${orgId}-${evtId}`;
@@ -65,6 +77,20 @@ function SellerDashboard() {
           <span className="tab-icon">📋</span>
           <span className="tab-label">历史</span>
         </button>
+        {/* 🆕 新增Tab */}
+        <button
+          className={`tab-button ${activeTab === 'submit' ? 'active' : ''}`}
+          onClick={() => setActiveTab('submit')}
+        >
+          <span className="tab-icon">📤</span>
+          <span className="tab-label">上交现金</span>
+          {/* 🆕 显示待上交金额徽章 */}
+          {cashOnHand > 0 && (
+            <span className="badge">
+              RM {cashOnHand.toLocaleString()}
+            </span>
+          )}
+        </button>
       </nav>
 
       {/* Tab 内容 */}
@@ -72,6 +98,8 @@ function SellerDashboard() {
         {activeTab === 'overview' && <PointsOverview />}
         {activeTab === 'sale' && <MakeSale />}
         {activeTab === 'history' && <TransactionHistory />}
+        {/* 🔧 修复：不再传递userInfo，组件自己用useSellerStats获取数据 */}
+        {activeTab === 'submit' && <SellerSubmitCash />}
       </main>
     </div>
   );

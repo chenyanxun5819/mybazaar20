@@ -1,7 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');  // ✅ 改用 v2 导入
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const { hashPin, verifyPin } = require('./utils/bcryptHelper');
+const { hashPin, verifyPin } = require('../../utils/bcryptHelper');
 
 // 定義缺失的常量
 const MAX_PIN_FAILED_ATTEMPTS = 5;

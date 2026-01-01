@@ -64,13 +64,7 @@ function App() {
       {/* ⭐ 新增：密码设置路由 */}
       <Route
         path="/setup-passwords/:orgEventCode"
-        element={
-          <EventProvider>
-            <AuthProvider>
-              <InitialPasswordSetup />
-            </AuthProvider>
-          </EventProvider>
-        }
+        element={<InitialPasswordSetup />}
       />
       {/* 📄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />
@@ -135,30 +129,78 @@ function App() {
       } />
 
       {/* 🆕 Event Manager 仪表板 */}
-      <Route path="/event-manager/:orgEventCode/dashboard" element={<EventManagerDashboard />} />
+      <Route path="/event-manager/:orgEventCode/dashboard" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["eventManager"]}>
+                <EventManagerDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
+      } />
 
       {/* ✅ 向后兼容 */}
-      <Route path="/event-admin/:orgEventCode" element={<EventManagerDashboard />} />
+      <Route path="/event-admin/:orgEventCode" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["eventManager"]}>
+                <EventManagerDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
+      } />
 
       {/* 🆕 Manager Dashboards - Desktop 版本 */}
-      <Route path="/seller-manager/:orgEventCode/dashboard" element={<SellerManagerDashboard />} />
+      <Route path="/seller-manager/:orgEventCode/dashboard" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["sellerManager"]}>
+                <SellerManagerDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
+      } />
       <Route path="/merchant-manager/:orgEventCode/dashboard" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h2>Merchant Manager Dashboard</h2>
-          <p>功能开发中...</p>
-        </div>
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["merchantManager"]}>
+                <div style={{ padding: '2rem', textAlign: 'center' }}>
+                  <h2>Merchant Manager Dashboard</h2>
+                  <p>功能开发中...</p>
+                </div>
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
       } />
       <Route path="/customer-manager/:orgEventCode/dashboard" element={
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h2>Customer Manager Dashboard</h2>
-          <p>功能开发中...</p>
-        </div>
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["customerManager"]}>
+                <div style={{ padding: '2rem', textAlign: 'center' }}>
+                  <h2>Customer Manager Dashboard</h2>
+                  <p>功能开发中...</p>
+                </div>
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
       } />
       <Route path="/finance-manager/:orgEventCode/dashboard" element={
         <DesktopGuard>
           <EventProvider>
             <AuthProvider>
-              <FinanceManagerDashboard />
+              <ProtectedRoute allowedRoles={["financeManager"]}>
+                <FinanceManagerDashboard />
+              </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
         </DesktopGuard>
@@ -169,7 +211,7 @@ function App() {
       <Route path="/seller/:orgEventCode/dashboard" element={
         <EventProvider>
           <AuthProvider>
-            <ProtectedRoute allowedRoles={["seller"]}>
+            <ProtectedRoute allowedRoles={["seller", "pointSeller"]}>
               <SellerDashboard />
             </ProtectedRoute>
           </AuthProvider>

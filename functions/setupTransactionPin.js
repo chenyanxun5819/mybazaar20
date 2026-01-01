@@ -23,11 +23,18 @@ exports.setupTransactionPin = onCall(async (request) => {
 
     // ========== 2. 提取参数 ==========
     const {
-      userId,
       organizationId,
       eventId,
       transactionPin
     } = data;
+    
+    let userId = data.userId;
+
+    // ✅ 修正：如果 userId 是 'universal'，尝试使用 auth.uid
+    if (userId === 'universal' && auth && auth.uid) {
+      console.log('[setupTransactionPin] 检测到 userId 为 universal，使用 auth.uid:', auth.uid);
+      userId = auth.uid;
+    }
 
     console.log('[setupTransactionPin] 收到请求:', {
       userId,
@@ -42,7 +49,8 @@ exports.setupTransactionPin = onCall(async (request) => {
     }
 
     // 验证用户只能设置自己的 PIN
-    if (auth.uid !== userId) {
+    const callerUserId = auth.token?.userId;
+    if (auth.uid !== userId && callerUserId !== userId) {
       throw new HttpsError('permission-denied', '无权设置其他用户的交易密码');
     }
 

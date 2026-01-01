@@ -1203,8 +1203,6 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
 
     // ✅ Event Manager 信息（完整字段）
     emPhoneNumber: '',
-    emPassword: '',
-    emConfirmPassword: '',
     emEnglishName: '',
     emChineseName: '',
     emEmail: '',
@@ -1250,28 +1248,13 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     // ❌ 移除 contactPerson 驗證
 
     // Event Manager 驗證
-    if (!formData.emPhoneNumber || !formData.emPassword || !formData.emEnglishName || !formData.emDepartment) {
-      setError('请填写 Event Manager 的必填字段（手机号、密码、英文名、部门）');
+    if (!formData.emPhoneNumber || !formData.emEnglishName || !formData.emDepartment) {
+      setError('请填写 Event Manager 的必填字段（手机号、英文名、部门）');
       return false;
     }
 
     if (!/^01\d{8,9}$/.test(formData.emPhoneNumber)) {
       setError('Event Manager 手机号格式不正确，请输入01开头的10-11位数字');
-      return false;
-    }
-
-    if (formData.emPassword.length < 8) {
-      setError('Event Manager 密码至少需要8个字符');
-      return false;
-    }
-
-    if (!/[a-zA-Z]/.test(formData.emPassword) || !/\d/.test(formData.emPassword)) {
-      setError('Event Manager 密码必须包含英文字母和数字');
-      return false;
-    }
-
-    if (formData.emPassword !== formData.emConfirmPassword) {
-      setError('Event Manager 密码与确认密码不一致');
       return false;
     }
 
@@ -1325,7 +1308,6 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
           // ✅ Event Manager 信息
           eventManagerInfo: {
             phoneNumber: formData.emPhoneNumber,
-            password: formData.emPassword,
             englishName: formData.emEnglishName,
             chineseName: formData.emChineseName,
             email: formData.emEmail,
@@ -1543,34 +1525,6 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   onChange={handleChange}
                   placeholder="例如：john@school.edu.my"
                   style={styles.input}
-                />
-              </div>
-            </div>
-
-            {/* 密码 */}
-            <div style={styles.formRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>密码 * (至少8位，含英文和数字)</label>
-                <input
-                  type="password"
-                  name="emPassword"
-                  value={formData.emPassword}
-                  onChange={handleChange}
-                  placeholder="请输入密码"
-                  style={styles.input}
-                  required
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>确认密码 *</label>
-                <input
-                  type="password"
-                  name="emConfirmPassword"
-                  value={formData.emConfirmPassword}
-                  onChange={handleChange}
-                  placeholder="再次输入密码"
-                  style={styles.input}
-                  required
                 />
               </div>
             </div>

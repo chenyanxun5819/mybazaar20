@@ -5,6 +5,8 @@ import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import QRCodeDisplay from '../../components/QRCodeDisplay';
 import { generateCustomerReceivePointsQR } from '../../utils/qrCodeGenerator';
+import { safeFetch } from '../../services/safeFetch';
+
 /**
  * Customer Dashboard 主页
  * 
@@ -37,7 +39,7 @@ const CustomerDashboard = () => {
 
       // 从custom claims获取组织和活动ID
       const tokenResult = await user.getIdTokenResult();
-      const { organizationId, eventId } = tokenResult.claims;
+      const { organizationId, eventId, userId } = tokenResult.claims;
 
       if (!organizationId || !eventId) {
         console.error('[CustomerDashboard] 缺少组织或活动信息');
@@ -46,30 +48,58 @@ const CustomerDashboard = () => {
         return;
       }
 
-      // ✅ 直接使用 user.uid 访问文档（统一格式后 user.uid = userId）
-      const customerRef = doc(
-        db,
-        'organizations', organizationId,
-        'events', eventId,
-        'users', user.uid // 统一格式后，user.uid 就是文档 ID
-      );
+      // ✅ 优先使用 claims 中的 userId，回退到 user.uid
+      const targetUserId = userId || user.uid;
+      console.log('[CustomerDashboard] Loading user data:', {
+        organizationId,
+        eventId,
+        targetUserId,
+        authUid: user.uid
+      });
 
-      const customerSnap = await getDoc(customerRef);
+      // 尝试直接读取 Firestore
+      try {
+        const customerRef = doc(
+          db,
+          'organizations', organizationId,
+          'events', eventId,
+          'users', targetUserId
+        );
+        const customerSnap = await getDoc(customerRef);
 
-      if (!customerSnap.exists()) {
-        console.error('[CustomerDashboard] Customer文档不存在');
-        alert('找不到用户数据');
-        return;
+        if (customerSnap.exists()) {
+          const data = customerSnap.data();
+          console.log('[CustomerDashboard] Customer数据加载成功 (Firestore):', data);
+          setCustomerData({ ...data, organizationId, eventId });
+          return;
+        } else {
+          console.warn('[CustomerDashboard] Firestore 读取失败: 文档不存在，尝试 HTTP 回退...');
+        }
+      } catch (fsError) {
+        console.warn('[CustomerDashboard] Firestore 读取出错，尝试 HTTP 回退:', fsError);
       }
 
-      const data = customerSnap.data();
-      console.log('[CustomerDashboard] Customer数据加载成功:', data);
-
-      setCustomerData({
-        ...data,
-        organizationId,
-        eventId
+      // 🚀 HTTP 回退机制 (解决 "Customer文档不存在" 或连接问题)
+      console.log('[CustomerDashboard] 使用 HTTP 获取数据...');
+      const resp = await safeFetch('/api/getCustomerDashboardDataHttp', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenResult.token}`
+        }
       });
+
+      if (!resp.ok) {
+        const errData = await resp.json();
+        throw new Error(errData?.error?.message || '无法获取用户数据');
+      }
+
+      const httpData = await resp.json();
+      if (httpData.success && httpData.data) {
+        console.log('[CustomerDashboard] Customer数据加载成功 (HTTP):', httpData.data);
+        setCustomerData({ ...httpData.data, organizationId, eventId });
+      } else {
+        throw new Error('数据格式错误');
+      }
 
     } catch (error) {
       console.error('[CustomerDashboard] 加载失败:', error);

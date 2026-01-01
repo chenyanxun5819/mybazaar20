@@ -1,0 +1,626 @@
+/**
+ * Collection History Styles - Desktop 1000px Layout
+ * VERSION: 2.0.0
+ * LAST UPDATE: 2026-01-01 09:25:18
+ * 强制单行显示统计卡片 + FM统计
+ */
+
+.collection-history {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+/* 头部 */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.2rem;
+}
+
+.header-title h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.header-subtitle {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin: 0.3rem 0 0 0;
+}
+
+.refresh-button {
+  padding: 0.5rem 1rem;
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.refresh-button:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* 统计卡片 - 强制单行无底色 */
+.collection-history .history-stats {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  grid-auto-flow: column !important;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+/* 确保卡片不会换行 */
+.collection-history .history-stats .stat-card {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  border-color: #9ca3af;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.stat-amount {
+  font-size: 0.85rem;
+  color: #374151;
+  font-weight: 600;
+}
+
+/* Finance Manager统计行 */
+.fm-statistics {
+  background: white;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.2rem;
+  border: 1px solid #e5e7eb;
+}
+
+.fm-statistics h3 {
+  margin: 0 0 0.8rem 0;
+  font-size: 1rem;
+  color: #374151;
+  font-weight: 600;
+}
+
+.fm-list {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.fm-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.fm-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.fm-count {
+  font-size: 0.8rem;
+  color: #667eea;
+  font-weight: 600;
+  background: #f0f4ff;
+  padding: 0.2rem 0.6rem;
+  border-radius: 10px;
+}
+
+.fm-amount {
+  font-size: 0.8rem;
+  color: #10b981;
+  font-weight: 600;
+}
+
+/* 筛选器 */
+.history-filters {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 6px;
+  align-items: flex-end;
+  border: 1px solid #e5e7eb;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.filter-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.filter-select {
+  padding: 0.45rem 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  font-size: 0.8rem;
+  min-width: 110px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #374151;
+}
+
+.filter-select:hover {
+  border-color: #9ca3af;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.search-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.45rem 2rem 0.45rem 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.2rem;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.clear-search-btn:hover {
+  color: #6b7280;
+}
+
+.reset-filters-btn {
+  padding: 0.45rem 1rem;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b7280;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.reset-filters-btn:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+/* 表格容器 */
+.table-container {
+  background: white;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  min-width: 1200px;
+  width: 100%;
+}
+
+/* 主表格 */
+.history-table {
+  width: 100%;
+  min-width: 1200px;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.history-table thead {
+  background: #f9fafb;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.history-table th {
+  padding: 0.7rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.history-table tbody tr {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.15s;
+}
+
+.history-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.history-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.history-table td {
+  padding: 0.7rem 0.6rem;
+  vertical-align: middle;
+}
+
+/* 状态行颜色 */
+.history-table tbody tr.status-confirmed {
+  border-left: 3px solid #10b981;
+}
+
+.history-table tbody tr.status-pending {
+  border-left: 3px solid #f59e0b;
+}
+
+.history-table tbody tr.status-disputed {
+  border-left: 3px solid #ef4444;
+}
+
+.history-table tbody tr.status-rejected {
+  border-left: 3px solid #dc2626;
+}
+
+/* 提交者信息列 */
+.submitter-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.role-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.submitter-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.submitter-name {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.8rem;
+}
+
+.submitter-meta {
+  font-size: 0.65rem;
+  color: #6b7280;
+}
+
+.role-badge {
+  padding: 0.15rem 0.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: inline-block;
+}
+
+/* 电话列 */
+.phone-cell {
+  color: #4b5563;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* 工号列 */
+.employee-id-cell {
+  color: #4b5563;
+  font-size: 0.75rem;
+  font-family: 'Courier New', monospace;
+}
+
+/* 金额列 */
+.amount-cell {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #10b981;
+  white-space: nowrap;
+}
+
+/* 状态徽章 */
+.status-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.status-badge.status-confirmed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.status-disputed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-badge.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* 时间列 */
+.time-cell {
+  color: #6b7280;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* 接收者列 */
+.receiver-cell {
+  color: #4b5563;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* 明细列 */
+.detail-cell {
+  text-align: center;
+}
+
+.detail-button {
+  padding: 0.3rem 0.6rem;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.detail-button:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+/* 展开行 */
+.expanded-row {
+  background: #f9fafb;
+}
+
+.expanded-content {
+  padding: 1rem;
+}
+
+.expanded-section {
+  margin-bottom: 0.8rem;
+}
+
+.expanded-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* 确认信息 */
+.confirmed-info {
+  padding: 0.6rem 0.8rem;
+  background: #d1fae5;
+  border-radius: 4px;
+  border-left: 3px solid #10b981;
+}
+
+.confirmed-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.confirmed-item:last-child {
+  margin-bottom: 0;
+}
+
+.confirmed-label {
+  font-size: 0.7rem;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.confirmed-value {
+  font-size: 0.75rem;
+  color: #047857;
+  font-weight: 500;
+}
+
+/* 点数卡信息 */
+.pointcard-info {
+  display: flex;
+  gap: 1rem;
+  padding: 0.6rem 0.8rem;
+  background: #fef3c7;
+  border-radius: 4px;
+  border-left: 3px solid #f59e0b;
+}
+
+.pointcard-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.pointcard-label {
+  font-size: 0.7rem;
+  color: #92400e;
+  font-weight: 500;
+}
+
+.pointcard-value {
+  font-size: 0.75rem;
+  color: #92400e;
+  font-weight: 600;
+}
+
+/* 销售明细表格 */
+.sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  background: white;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.sales-table th,
+.sales-table td {
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.sales-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sales-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sales-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.empty-message {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.reset-btn {
+  padding: 0.5rem 1.2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.25);
+}
+
+.reset-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.35);
+}

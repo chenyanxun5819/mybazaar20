@@ -259,7 +259,9 @@ export const EventProvider = ({ children }) => {
           code === 'permission-denied' ||
           code === 'failed-precondition' ||
           /Missing or insufficient permissions/i.test(msg);
-        if (isPerm) {
+        const isTimeout = /载入逾时|載入逾時/i.test(msg);
+
+        if (isPerm || isTimeout) {
           await resolveViaHttp();
           setLoading(false);
           return;
@@ -303,7 +305,9 @@ export const EventProvider = ({ children }) => {
           code === 'permission-denied' ||
           code === 'failed-precondition' ||
           /Missing or insufficient permissions/i.test(msg);
-        if (isPerm) {
+        const isTimeout = /载入逾时|載入逾時/i.test(msg);
+
+        if (isPerm || isTimeout) {
           await resolveViaHttp();
           setLoading(false);
           return;

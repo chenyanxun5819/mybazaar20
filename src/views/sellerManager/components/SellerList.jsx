@@ -10,7 +10,7 @@
  * @version 1.1 (2024-12-15)
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, increment, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 

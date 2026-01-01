@@ -1,6 +1,11 @@
 /**
  * Finance Manager Dashboard
  * 财务经理控制台 - 管理现金收款和财务统计
+ * 
+ * Tabs:
+ * 1. 收款概览 - 统计和图表
+ * 2. 待认领 - 待认领池子
+ * 3. 收款记录 - 历史查询（所有FM可互相查看）
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,11 +21,12 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import './FinanceManagerDashboard.css';
+// 移除旧的 CSS 引用，改用内联样式或新的 CSS 策略
+// import './FinanceManagerDashboard.css';
 
 // 导入子组件
 import CollectionOverview from './CollectionOverview';
-import PendingSubmissions from './PendingSubmissions';
+import CollectionHistory from './CollectionHistory';
 
 const FinanceManagerDashboard = () => {
   const { orgEventCode } = useParams();
@@ -28,10 +34,37 @@ const FinanceManagerDashboard = () => {
   const { currentUser, userProfile, loading: authLoading, logout } = useAuth();
   const { organizationId, eventId, loading: eventLoading, error: eventError } = useEvent();
 
+  // ===== 🆕 强制全宽布局 =====
+  useEffect(() => {
+    // 强制覆盖 #root 样式以允许全宽显示
+    const root = document.getElementById('root');
+    const originalMaxWidth = root?.style.maxWidth;
+    const originalPadding = root?.style.padding;
+    const originalTextAlign = root?.style.textAlign;
+    const originalMargin = root?.style.margin;
+
+    if (root) {
+      root.style.maxWidth = '100%';
+      root.style.padding = '0';
+      root.style.textAlign = 'left';
+      root.style.margin = '0';
+    }
+
+    return () => {
+      // 卸载时恢复原始样式
+      if (root) {
+        root.style.maxWidth = originalMaxWidth || '1280px';
+        root.style.padding = originalPadding || '2rem';
+        root.style.textAlign = originalTextAlign || 'center';
+        root.style.margin = originalMargin || '0 auto';
+      }
+    };
+  }, []);
+
   const withTimeout = (promise, ms, label) => {
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(`请求逾时（${ms}ms）：${label}`)), ms);
+      timeoutId = setTimeout(() => reject(new Error(`请求超时（${ms}ms）：${label}`)), ms);
     });
     return Promise.race([promise, timeoutPromise]).finally(() => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -60,7 +93,6 @@ const FinanceManagerDashboard = () => {
 
       if (!isUnauth) throw err;
 
-      // Fallback: 以 fetch 明確帶上 Authorization: Bearer <idToken>
       const idToken = await getFreshIdToken();
       const url = `/api/${name}`;
 
@@ -90,19 +122,19 @@ const FinanceManagerDashboard = () => {
         throw new Error(serverMsg);
       }
 
-      // 模擬 httpsCallable 的回傳形狀：{ data: ... }
       return { data: json?.result };
     }
   };
 
   // 状态管理
-  const [activeTab, setActiveTab] = useState('overview'); // overview | pending
+  const [activeTab, setActiveTab] = useState('overview'); // overview | pending | history
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // 数据状态
   const [financeData, setFinanceData] = useState(null);
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
+  const [allSubmissions, setAllSubmissions] = useState([]);
   const [statistics, setStatistics] = useState({
     cashStats: {
       totalCollected: 0,
@@ -121,7 +153,7 @@ const FinanceManagerDashboard = () => {
   // 解析 orgEventCode
   const [orgCode, eventCode] = orgEventCode?.split('-') || [];
 
-  // ⭐ 新增：登出处理
+  // 登出处理
   const handleLogout = async () => {
     const confirmed = window.confirm('确定要退出登录吗？');
     if (!confirmed) return;
@@ -137,7 +169,6 @@ const FinanceManagerDashboard = () => {
 
   // ===== 1. 权限验证 =====
   useEffect(() => {
-    // 等待 Context 初始化完成
     if (authLoading || eventLoading) return;
 
     if (eventError) {
@@ -171,8 +202,6 @@ const FinanceManagerDashboard = () => {
   const loadFinanceData = async () => {
     try {
       setLoading(true);
-
-      // 确保 Token 已可用（并在必要时用于 fetch fallback）
       await getFreshIdToken();
 
       const orgId = userProfile?.organizationId || organizationId;
@@ -184,7 +213,6 @@ const FinanceManagerDashboard = () => {
         return;
       }
 
-      // 调用 Cloud Function 获取统计数据
       const result = await callOnCallWithAuthFallback(
         'getFinanceStats',
         { orgId, eventId: evtId },
@@ -198,13 +226,11 @@ const FinanceManagerDashboard = () => {
           cashStats: data.cashStats || {},
           pendingStats: data.pendingStats || {}
         });
-        setPendingSubmissions(data.pendingSubmissions || []);
       }
 
       setLoading(false);
     } catch (err) {
       console.error('加载财务数据失败:', err);
-      // 如果 Cloud Function 不存在，使用模拟数据
       console.log('使用模拟数据...');
       setFinanceData({
         basicInfo: {
@@ -215,9 +241,8 @@ const FinanceManagerDashboard = () => {
     }
   };
 
-  // ===== 3. 实时监听待确认记录 =====
+  // ===== 3. 实时监听待认领池子 =====
   useEffect(() => {
-    // 获取 organizationId 和 eventId
     const orgId = userProfile?.organizationId || organizationId;
     const evtId = userProfile?.eventId || eventId;
 
@@ -232,10 +257,12 @@ const FinanceManagerDashboard = () => {
       'cashSubmissions'
     );
 
+    // 查询待认领池子（receivedBy=null）
     const q = query(
       submissionsRef,
       where('status', '==', 'pending'),
-      orderBy('submittedAt', 'desc')
+      where('receivedBy', '==', null),
+      orderBy('submittedAt', 'asc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -245,7 +272,7 @@ const FinanceManagerDashboard = () => {
       }));
       setPendingSubmissions(submissions);
 
-      // 更新待确认统计
+      // 更新待认领统计
       const pendingAmount = submissions.reduce((sum, s) => sum + (s.amount || 0), 0);
       setStatistics(prev => ({
         ...prev,
@@ -256,16 +283,51 @@ const FinanceManagerDashboard = () => {
         }
       }));
     }, (error) => {
-      console.error('监听待确认记录失败:', error);
+      console.error('监听待认领记录失败:', error);
     });
 
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, organizationId, eventId]);
 
-  // ===== 4. 确认收款 =====
-  const handleConfirmSubmission = async (submissionId, note) => {
+  // ===== 🆕 4. 实时监听所有收款记录（Tab 3用 - 所有FM可互相查看） =====
+  useEffect(() => {
+    const orgId = userProfile?.organizationId || organizationId;
+    const evtId = userProfile?.eventId || eventId;
+
+    if (!orgId || !evtId) return;
+
+    const submissionsRef = collection(
+      db,
+      'organizations',
+      orgId,
+      'events',
+      evtId,
+      'cashSubmissions'
+    );
+
+    // 🔴 修改：查询所有收款记录（不限制receivedBy）
+    // 所有FM都能看到所有记录，互相监督
+    const q = query(
+      submissionsRef,
+      orderBy('submittedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const submissions = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAllSubmissions(submissions);
+    }, (error) => {
+      console.error('监听收款记录失败:', error);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile?.organizationId, userProfile?.eventId, organizationId, eventId]);
+
+  // ===== 5. 接单确认收款 =====
+  const handleClaimSubmission = async (submissionId, transactionPin, confirmationNote) => {
     try {
-      // 确保 Token 已可用（并在必要时用于 fetch fallback）
       await getFreshIdToken();
 
       const orgId = userProfile?.organizationId || organizationId;
@@ -276,107 +338,109 @@ const FinanceManagerDashboard = () => {
       }
 
       const result = await callOnCallWithAuthFallback(
-        'confirmCashSubmission',
+        'claimAndConfirmCashSubmission',
         {
           orgId,
           eventId: evtId,
           submissionId,
-          confirmationNote: note || ''
+          transactionPin,
+          confirmationNote: confirmationNote || ''
         },
-        12000
+        15000
       );
 
       if (result.data.success) {
-        // 刷新数据
         await loadFinanceData();
         return true;
       }
 
       return false;
     } catch (err) {
-      console.error('确认收款失败:', err);
+      console.error('接单确认失败:', err);
       throw err;
     }
   };
 
-  // ===== 5. 渲染 =====
+  // ===== 6. 渲染 =====
   if (loading) {
     return (
-      <div className="finance-dashboard">
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>加载中...</p>
-        </div>
+      <div style={styles.loadingContainer}>
+        <div style={styles.spinner}></div>
+        <p>加载中...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="finance-dashboard">
-        <div className="error-container">
-          <p className="error-message">{error}</p>
-          <button onClick={() => navigate(`/login/${orgEventCode}`)}>返回登录</button>
-        </div>
+      <div style={styles.errorContainer}>
+        <p style={styles.errorMessage}>{error}</p>
+        <button style={styles.button} onClick={() => navigate(`/login/${orgEventCode}`)}>返回登录</button>
       </div>
     );
   }
 
-
   return (
-    <div className="finance-dashboard">
+    <div style={styles.container}>
       {/* 头部 */}
-      <header className="dashboard-header">
-        <div className="header-content">
-          <div className="header-left">
-            <h1>💰 财务管理</h1>
-            <p className="welcome-text">
-              欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '财务经理'}
-            </p>
-          </div>
-          <div className="header-right">
-            <span className="date">{new Date().toLocaleDateString('zh-CN')}</span>
-            <button className="logout-button" onClick={handleLogout}>
-              🚪 退出登录
-            </button>
-          </div>
+      <header style={styles.header}>
+        <div style={styles.headerLeft}>
+          <h1 style={styles.title}>💰 财务管理</h1>
+          <p style={styles.welcomeText}>
+            欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '财务经理'}
+          </p>
+        </div>
+        <div style={styles.headerRight}>
+          <span style={styles.date}>{new Date().toLocaleDateString('zh-CN')}</span>
+          <button style={styles.logoutButton} onClick={handleLogout}>
+            🚪 退出登录
+          </button>
         </div>
       </header>
 
       {/* Tab 导航 */}
-      <nav className="tab-navigation">
+      <nav style={styles.tabNav}>
         <button
-          className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'overview' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('overview')}
         >
-          <span className="tab-icon">📊</span>
-          <span className="tab-label">收款概览</span>
+          <span style={styles.tabIcon}>📊</span>
+          <span>收款概览</span>
         </button>
+        
         <button
-          className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}
-          onClick={() => setActiveTab('pending')}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'history' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('history')}
         >
-          <span className="tab-icon">💵</span>
-          <span className="tab-label">待确认</span>
-          {statistics.pendingStats.pendingCount > 0 && (
-            <span className="badge">{statistics.pendingStats.pendingCount}</span>
+          <span style={styles.tabIcon}>📋</span>
+          <span>收款记录</span>
+          {allSubmissions.length > 0 && (
+            <span style={styles.badge}>{allSubmissions.length}</span>
           )}
         </button>
       </nav>
 
       {/* Tab 内容 */}
-      <main className="dashboard-content">
+      <main style={styles.content}>
         {activeTab === 'overview' && (
           <CollectionOverview
+            pendingSubmissions={pendingSubmissions}
             statistics={statistics}
+            onClaim={handleClaimSubmission}
             onRefresh={loadFinanceData}
+            currentUser={currentUser}
           />
         )}
 
-        {activeTab === 'pending' && (
-          <PendingSubmissions
-            submissions={pendingSubmissions}
-            onConfirm={handleConfirmSubmission}
+        {activeTab === 'history' && (
+          <CollectionHistory
+            submissions={allSubmissions}
             onRefresh={loadFinanceData}
           />
         )}
@@ -384,5 +448,154 @@ const FinanceManagerDashboard = () => {
     </div>
   );
 };
+
+// 内联样式定义 (参考 UserList.jsx 风格)
+const styles = {
+  container: {
+    minHeight: '100vh',
+    backgroundColor: '#f3f4f6',
+    display: 'flex',
+    flexDirection: 'column',
+    width: '100%',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+  },
+  header: {
+    backgroundColor: 'white',
+    padding: '1.5rem 2rem',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid #e5e7eb',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+  },
+  headerLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  title: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#1f2937',
+    margin: 0
+  },
+  welcomeText: {
+    fontSize: '0.875rem',
+    color: '#6b7280',
+    margin: 0
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1.5rem'
+  },
+  date: {
+    fontSize: '0.875rem',
+    color: '#6b7280'
+  },
+  logoutButton: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  tabNav: {
+    backgroundColor: 'white',
+    padding: '0 2rem',
+    display: 'flex',
+    gap: '2rem',
+    borderBottom: '1px solid #e5e7eb'
+  },
+  tabButton: {
+    padding: '1rem 0.5rem',
+    background: 'none',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    color: '#6b7280',
+    fontSize: '0.95rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    transition: 'all 0.2s'
+  },
+  tabButtonActive: {
+    color: '#3b82f6',
+    borderBottomColor: '#3b82f6'
+  },
+  tabIcon: {
+    fontSize: '1.1rem'
+  },
+  badge: {
+    backgroundColor: '#ef4444',
+    color: 'white',
+    fontSize: '0.75rem',
+    padding: '0.1rem 0.4rem',
+    borderRadius: '9999px',
+    marginLeft: '0.25rem'
+  },
+  content: {
+    flex: 1,
+    padding: '2rem',
+    width: '100%',
+    maxWidth: '100%',
+    overflowX: 'hidden'
+  },
+  loadingContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '100vh',
+    backgroundColor: '#f3f4f6'
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #e5e7eb',
+    borderTop: '4px solid #3b82f6',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    marginBottom: '1rem'
+  },
+  errorContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '100vh',
+    padding: '2rem',
+    backgroundColor: '#f3f4f6'
+  },
+  errorMessage: {
+    color: '#dc2626',
+    fontSize: '1.1rem',
+    marginBottom: '1rem'
+  },
+  button: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer'
+  }
+};
+
+// 添加全局动画
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+document.head.appendChild(styleSheet);
 
 export default FinanceManagerDashboard;

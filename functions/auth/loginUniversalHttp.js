@@ -101,14 +101,13 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       orgName: orgData.orgName?.['zh-CN']
     });
 
-    // 📋 Step 2: 查找活动
+    // 📋 Step 2: 查找活动 (支持多个同名活动)
     console.log('[loginUniversalHttp] Step 2: 查找活动', { eventCode });
 
     const eventSnapshot = await db
       .collection('organizations').doc(organizationId)
       .collection('events')
       .where('eventCode', '==', eventCode)
-      .limit(1)
       .get();
 
     if (eventSnapshot.empty) {
@@ -118,17 +117,12 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       });
     }
 
-    const eventDoc = eventSnapshot.docs[0];
-    const eventId = eventDoc.id;
-    const eventData = eventDoc.data();
-
-    console.log('[loginUniversalHttp] 活动找到', {
-      eventId,
-      eventName: eventData.eventName?.['zh-CN']
-    });
-
-    // 📋 Step 3A: 先检查是否为 Event Manager 登录（匹配 event.eventManager）
-    console.log('[loginUniversalHttp] Step 3A: 检查是否为 Event Manager 登录');
+    // 遍历所有匹配的活动，查找用户
+    let foundEventId = null;
+    let foundEventData = null;
+    let foundUserDoc = null;
+    let foundEventManagerData = null;
+    let isEventManagerLogin = false;
 
     const norm = normalizePhoneNumber(phoneNumber);
     const variants = [
@@ -139,40 +133,94 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       String(phoneNumber)
     ];
 
-    let isEventManagerLogin = false;
-    let eventManagerData = null;
-    if (eventData && eventData.eventManager && eventData.eventManager.phoneNumber) {
-      const emPhone = String(eventData.eventManager.phoneNumber);
-      const emNorm = normalizePhoneNumber(emPhone);
-      const emVariants = [emNorm, `0${emNorm}`, `60${emNorm}`, `+60${emNorm}`, emPhone];
-      const phoneMatched = variants.some(v => emVariants.includes(String(v)));
-      if (phoneMatched) {
-        // 验证 Event Manager 密码（hash+salt）
-        const emSalt = eventData.eventManager.passwordSalt;
-        const emHash = eventData.eventManager.password;
-        if (emSalt && emHash) {
-          const computed = sha256(String(password) + String(emSalt));
-          if (computed === emHash) {
-            isEventManagerLogin = true;
-            eventManagerData = eventData.eventManager;
-            console.log('[loginUniversalHttp] Event Manager 手机匹配且密码正确');
-          } else {
-            console.warn('[loginUniversalHttp] Event Manager 密码错误');
+    for (const eventDoc of eventSnapshot.docs) {
+      const currentEventId = eventDoc.id;
+      const currentEventData = eventDoc.data();
+
+      // 📋 Step 3A: 检查是否为 Event Manager 登录
+      if (currentEventData && currentEventData.eventManager && currentEventData.eventManager.phoneNumber) {
+        const emPhone = String(currentEventData.eventManager.phoneNumber);
+        const emNorm = normalizePhoneNumber(emPhone);
+        const emVariants = [emNorm, `0${emNorm}`, `60${emNorm}`, `+60${emNorm}`, emPhone];
+        const phoneMatched = variants.some(v => emVariants.includes(String(v)));
+        
+        if (phoneMatched) {
+          // 验证 Event Manager 密码
+          const emSalt = currentEventData.eventManager.passwordSalt;
+          const emHash = currentEventData.eventManager.password;
+          if (emSalt && emHash) {
+            const computed = sha256(String(password) + String(emSalt));
+            if (computed === emHash) {
+              isEventManagerLogin = true;
+              foundEventManagerData = currentEventData.eventManager;
+              foundEventId = currentEventId;
+              foundEventData = currentEventData;
+              console.log('[loginUniversalHttp] Event Manager 手机匹配且密码正确, EventId:', currentEventId);
+              break; // 找到即停止
+            }
           }
         }
-      } else {
-        console.log('[loginUniversalHttp] 非 Event Manager 手机或不匹配');
       }
+
+      // 📋 Step 3B: 普通用户登录（从 users 集合）
+      for (const variant of variants) {
+        const snap = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(currentEventId)
+          .collection('users')
+          .where('basicInfo.phoneNumber', '==', variant)
+          .limit(1)
+          .get();
+        
+        if (!snap.empty) {
+          const userDoc = snap.docs[0];
+          const userData = userDoc.data();
+          
+          // 验证密码
+          const passwordSalt = userData.basicInfo?.passwordSalt || userData.basicInfo?.pinSalt;
+          const hashStored = userData.basicInfo?.passwordHash || userData.basicInfo?.pinHash;
+          const plainStored = userData.accountStatus?.password;
+
+          let passOk = false;
+          if (hashStored && passwordSalt) {
+            const computed = sha256(String(password) + String(passwordSalt));
+            passOk = computed === hashStored;
+          } else if (plainStored) {
+            passOk = String(plainStored) === String(password);
+          }
+
+          if (passOk) {
+            foundUserDoc = userDoc;
+            foundEventId = currentEventId;
+            foundEventData = currentEventData;
+            console.log('[loginUniversalHttp] 普通用户找到且密码正确, EventId:', currentEventId);
+            break; // 找到用户且密码正确，停止内层循环
+          }
+        }
+      }
+      
+      if (foundUserDoc || isEventManagerLogin) break; // 找到用户或 Event Manager，停止外层循环
     }
+
+    if (!foundUserDoc && !isEventManagerLogin) {
+       console.warn('[loginUniversalHttp] 用户不存在或密码错误');
+       return res.status(401).json({ error: { message: '手机号或密码错误' } });
+    }
+
+    const eventId = foundEventId;
+    const eventData = foundEventData;
 
     if (isEventManagerLogin) {
       // 生成 Custom Token（使用 eventManager.authUid，确保后端权限检查通过）
-      const authUidForToken = eventManagerData.authUid || `eventManager_${norm}`;
+      // ✅ 修正：优先使用 authUid，否则使用 phone_60... 格式，避免使用 'eventManager'
+      const eventManagerData = foundEventManagerData;
+      const realUserId = eventManagerData.authUid || `phone_60${norm}`;
+      const authUidForToken = realUserId;
 
       const customClaims = {
         organizationId,
         eventId,
-        userId: 'eventManager',
+        userId: realUserId, // ✅ 修正：使用真实的 userId
         roles: ['eventManager'],
         managedDepartments: [],
         department: '',
@@ -184,7 +232,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
 
       // 返回成功结果（使用 eventManagerData 信息）
       const elapsedMs = Date.now() - startTime;
-      console.log('[loginUniversalHttp] ✅ 登录成功 (Event Manager)', { elapsedMs });
+      console.log('[loginUniversalHttp] ✅ 登录成功 (Event Manager)', { elapsedMs, userId: realUserId });
       // ⭐ 新增：检查 Event Manager 密码状态
       const needsPasswordSetup =
         eventManagerData.hasDefaultPassword === true ||
@@ -201,7 +249,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       return res.status(200).json({
         success: true,
         customToken,
-        userId: 'eventManager',
+        userId: realUserId, // ✅ 修正：返回真实的 userId
         organizationId,
         eventId,
         englishName: eventManagerData.englishName || eventManagerData.displayName || '',
@@ -221,27 +269,8 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     }
 
     // 📋 Step 3B: 普通用户登录（从 users 集合）
-    console.log('[loginUniversalHttp] Step 3B: 普通用户登录，查找 users 集合');
-
-    let userDoc = null;
-    for (const variant of variants) {
-      const snap = await db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('users')
-        .where('basicInfo.phoneNumber', '==', variant)
-        .limit(1)
-        .get();
-      if (!snap.empty) {
-        userDoc = snap.docs[0];
-        break;
-      }
-    }
-
-    if (!userDoc) {
-      console.warn('[loginUniversalHttp] 用户不存在(所有变体均未命中)', { phoneNumber, variants });
-      return res.status(401).json({ error: { message: '手机号或密码错误' } });
-    }
+    // (Already handled in loop)
+    const userDoc = foundUserDoc;
     const userId = userDoc.id;
     const userData = userDoc.data();
 
@@ -251,24 +280,9 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       roles: userData.roles
     });
 
-    // 🔐 Step 4: 验证密码（支持 hash+salt 与简易明文两种存储）
-    console.log('[loginUniversalHttp] Step 4: 验证密码');
-    const passwordSalt = userData.basicInfo?.passwordSalt || userData.basicInfo?.pinSalt;
-    const hashStored = userData.basicInfo?.passwordHash || userData.basicInfo?.pinHash;
-    const plainStored = userData.accountStatus?.password;
-
-    let passOk = false;
-    if (hashStored && passwordSalt) {
-      const computed = sha256(String(password) + String(passwordSalt));
-      passOk = computed === hashStored;
-    } else if (plainStored) {
-      passOk = String(plainStored) === String(password);
-    }
-
-    if (!passOk) {
-      console.warn('[loginUniversalHttp] 密码错误');
-      return res.status(401).json({ error: { message: '手机号或密码错误' } });
-    }
+    // 🔐 Step 4: 验证密码
+    // (Already verified in loop)
+    console.log('[loginUniversalHttp] Step 4: 验证密码 (已在循环中验证)');
 
     // ✅ Step 5: 检查用户角色
     console.log('[loginUniversalHttp] Step 5: 检查角色');

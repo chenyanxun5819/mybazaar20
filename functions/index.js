@@ -32,13 +32,22 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
+const { getCustomerDashboardDataHttp } = require('./src/finance/customerHttpFunctions');
+
+// Finance: claim + confirm cash submission (callable)
+const { claimAndConfirmCashSubmission } = require('./src/finance/Claimandconfirmcashsubmission');
+
+// Cash Submission (callable)
+const { submitCashToFinance } = require('./src/cash/Submitcashtofinance');
+const { submitCashToSellerManager } = require('./src/cash/Submitcashtosellermanager');
+
 // 導入 Customer 相關 callable 函式
 const {
   createCustomer,
   processCustomerPayment,
   transferPoints,
   topupFromPointCard
-} = require('./customerFunctions');
+} = require('./src/finance/customerFunctions');
 
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
@@ -83,6 +92,7 @@ exports.onSellerManagerAllocation = onSellerManagerAllocation;
 // 导出 Seller Manager HTTP Functions
 exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
 exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
+exports.getCustomerDashboardDataHttp = getCustomerDashboardDataHttp;
 
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
@@ -90,6 +100,13 @@ exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
 // 导出 Finance Manager callable functions
 exports.getFinanceStats = financeManagerFunctions.getFinanceStats;
 exports.confirmCashSubmission = financeManagerFunctions.confirmCashSubmission;
+
+// Finance: claim + confirm cash submission (callable)
+exports.claimAndConfirmCashSubmission = claimAndConfirmCashSubmission;
+
+// Cash Submission (callable)
+exports.submitCashToFinance = submitCashToFinance;
+exports.submitCashToSellerManager = submitCashToSellerManager;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
 exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;

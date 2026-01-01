@@ -39,7 +39,18 @@ const UniversalLogin = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [userData, setUserData] = useState(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const detectIsMobile = () => {
+    try {
+      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+      const isMobileUA = mobileRegex.test(userAgent);
+      const isSmallScreen = window.innerWidth <= 768;
+      return isMobileUA || isSmallScreen;
+    } catch {
+      return window.innerWidth <= 768;
+    }
+  };
+  const [isMobile, setIsMobile] = useState(detectIsMobile);
 
   // SMS OTP 相关状态
   const [otpStep, setOtpStep] = useState(false);
@@ -53,8 +64,9 @@ const UniversalLogin = () => {
   useEffect(() => {
     const checkDeviceType = () => {
       const width = window.innerWidth;
-      setIsMobile(width < 480);
-      console.log('[UniversalLogin] 🖥️ 设备检测 - 窗口宽度:', width, 'px, 设备类型:', width < 480 ? 'Mobile 📱' : 'Desktop 💻');
+      const nextIsMobile = detectIsMobile();
+      setIsMobile(nextIsMobile);
+      console.log('[UniversalLogin] 🖥️ 设备检测 - 窗口宽度:', width, 'px, 设备类型:', nextIsMobile ? 'Mobile 📱' : 'Desktop 💻');
     };
 
     checkDeviceType();
@@ -76,7 +88,49 @@ const UniversalLogin = () => {
         return;
       }
 
-      const navPath = getNavigationPath(userProfile);
+      // ✅ 修复：使用本地逻辑根据设备类型决定跳转路径
+      const availableRoles = filterRolesByDevice(userProfile.roles);
+      
+      // 🚨 手机端限制检查：如果用户在手机上，但没有移动端角色（只有经理角色）
+      if (isMobile && availableRoles.length === 0) {
+        console.warn('[UniversalLogin] 📱 手机端检测到仅有经理角色，阻止跳转');
+        setError('管理后台仅支持桌面电脑访问，请使用电脑登录。');
+        return;
+      }
+
+      const selectedRole = getPriorityRole(availableRoles);
+      
+      let navPath = '';
+      
+      // 尝试构建目标 orgEventCode
+      let targetCode = orgEventCode;
+      if (!targetCode && userProfile.organizationCode && userProfile.eventCode) {
+         targetCode = `${userProfile.organizationCode}-${userProfile.eventCode}`;
+      }
+      if (!targetCode && userProfile.orgEventCode) {
+         targetCode = userProfile.orgEventCode;
+      }
+
+      if (selectedRole && targetCode) {
+         // 临时构造一个 path
+         if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'financeManager') navPath = `/finance-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
+         
+         // Mobile Roles
+         else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
+         else if (selectedRole === 'merchant') navPath = `/merchant/${targetCode}/dashboard`;
+        // pointSeller 目前沿用 Seller Dashboard
+        else if (selectedRole === 'pointSeller') navPath = `/seller/${targetCode}/dashboard`;
+         else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
+         
+         else navPath = getNavigationPath(userProfile);
+      } else {
+         navPath = getNavigationPath(userProfile);
+      }
+
       const currentPath = window.location.pathname;
 
       // 避免重定向到当前路径
@@ -100,6 +154,36 @@ const UniversalLogin = () => {
       console.log('[UniversalLogin] 🔍 检测到已登录用户，准备自动跳转');
       console.log('[UniversalLogin] 从:', currentPath);
       console.log('[UniversalLogin] 到:', navPath);
+      console.log('[UniversalLogin] 设备:', isMobile ? 'Mobile' : 'Desktop', '选中角色:', selectedRole);
+
+      // ✅ 修复：确保 Legacy LocalStorage Keys 存在 (防止 EventManagerDashboard 报错)
+      // 这里的 userProfile 来自 AuthContext，已经包含了 claims 信息
+      if (userProfile) {
+        // 忽略设备限制，直接检查角色
+        const roles = userProfile.roles || [];
+        const userInfoToSave = {
+          ...userProfile,
+          selectedRole: selectedRole || roles[0], // 使用选中的角色
+          lastLogin: new Date().toISOString()
+        };
+
+        if (roles.includes('eventManager')) {
+          console.log('[UniversalLogin] 💾 恢复 Event Manager Legacy Storage (Force)');
+          localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
+          localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
+        } 
+        
+        if (roles.includes('sellerManager')) {
+          console.log('[UniversalLogin] 💾 恢复 Seller Manager Legacy Storage (Force)');
+          localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
+        }
+
+        if (roles.includes('financeManager')) {
+          console.log('[UniversalLogin] 💾 恢复 Finance Manager Legacy Storage (Force)');
+          localStorage.setItem('financeManagerInfo', JSON.stringify(userInfoToSave));
+        }
+      }
+
       navigate(navPath, { replace: true });
     };
 
@@ -107,7 +191,7 @@ const UniversalLogin = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, userProfile, getNavigationPath, navigate]);
+  }, [isAuthenticated, userProfile, getNavigationPath, navigate, isMobile, orgEventCode]);
   // 验证 orgEventCode 格式
   const isValidOrgEventCode = orgCode && eventCode;
 
@@ -132,6 +216,9 @@ const UniversalLogin = () => {
       return `/seller/${orgEventCode}/dashboard`;
     } else if (role === 'merchant') {
       return `/merchant/${orgEventCode}/dashboard`;
+    } else if (role === 'pointSeller') {
+      // pointSeller 目前沿用 Seller Dashboard
+      return `/seller/${orgEventCode}/dashboard`;
     } else if (role === 'customer') {
       return `/customer/${orgEventCode}/dashboard`;
     } else {
@@ -210,8 +297,21 @@ const UniversalLogin = () => {
         managedDepartments: data.managedDepartments || [],
         phoneNumber: formData.phoneNumber,
         customToken: data.customToken,
-        roleSpecificData: data.roleSpecificData || {}
+        roleSpecificData: data.roleSpecificData || {},
+        // ⭐ 新增：保存密码状态字段
+        needsPasswordSetup: data.needsPasswordSetup,
+        hasDefaultPassword: data.hasDefaultPassword,
+        isFirstLogin: data.isFirstLogin,
+        hasTransactionPin: data.hasTransactionPin
       };
+
+      // ⭐ 添加调试日志
+      console.log('[UniversalLogin] 密码状态字段:', {
+        needsPasswordSetup: data.needsPasswordSetup,
+        hasDefaultPassword: data.hasDefaultPassword,
+        isFirstLogin: data.isFirstLogin,
+        hasTransactionPin: data.hasTransactionPin
+      });
 
       setUserData(tempUserData);
 
@@ -317,9 +417,9 @@ const UniversalLogin = () => {
     console.log('[UniversalLogin] filterRolesByDevice - 设备类型:', isMobile ? 'Mobile' : 'Desktop');
 
     if (isMobile) {
-      // Mobile: 只支持通用角色
-      const phoneRoles = ['customer', 'seller', 'merchant'];
-      const filtered = roles.filter(role => phoneRoles.includes(role));
+      // Mobile: 只支持手机角色（manager 一律不允许）
+      const phoneRoles = ['seller', 'merchant', 'pointSeller', 'customer'];
+      const filtered = (roles || []).filter(role => phoneRoles.includes(role));
       console.log('[UniversalLogin] filterRolesByDevice - Mobile 过滤结果:', filtered);
       return filtered;
     } else {
@@ -330,11 +430,12 @@ const UniversalLogin = () => {
         'merchantManager',
         'customerManager',
         'financeManager',
-        'seller',        // 允许 seller 在 Desktop 上访问 Seller Manager Dashboard
-        'customer',      // 允许 customer 在 Desktop 上访问
-        'merchant'       // 允许 merchant 在 Desktop 上访问
+        'seller',
+        'merchant',
+        'pointSeller',
+        'customer'
       ];
-      const filtered = roles.filter(role => desktopRoles.includes(role));
+      const filtered = (roles || []).filter(role => desktopRoles.includes(role));
       console.log('[UniversalLogin] filterRolesByDevice - Desktop 过滤结果:', filtered);
       return filtered;
     }
@@ -347,7 +448,8 @@ const UniversalLogin = () => {
     console.log('[UniversalLogin] getPriorityRole - 输入角色:', roles);
 
     if (isMobile) {
-      const priority = ['seller', 'merchant', 'customer'];
+      // 手机端优先级：seller > merchant > pointSeller > customer
+      const priority = ['seller', 'merchant', 'pointSeller', 'customer'];
       for (const role of priority) {
         if (roles.includes(role)) {
           console.log('[UniversalLogin] getPriorityRole - Mobile 选中角色:', role);
@@ -555,18 +657,26 @@ const UniversalLogin = () => {
       localStorage.setItem('currentUser', JSON.stringify(userInfoToSave));
 
       // ✅ 向後相容：Desktop Manager Dashboards 仍在讀取舊 key
-      if (selectedRole === 'sellerManager') {
+      // 注意：selectedRole 可能是手机端角色（例如 seller），但用户仍可能拥有 manager 身份
+      // 为避免桌面端后续访问报错，这里按“是否拥有该角色”写入 legacy keys
+      const allRoles = verifiedUser.roles || [];
+      if (allRoles.includes('sellerManager')) {
         localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
       }
-      if (selectedRole === 'eventManager') {
+      if (allRoles.includes('eventManager')) {
         localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
         localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
+      }
+      if (allRoles.includes('financeManager')) {
+        localStorage.setItem('financeManagerInfo', JSON.stringify(userInfoToSave));
       }
 
       console.log('[UniversalLogin] ✅ 用户信息已保存到 localStorage');
 
       // 根据角色和设备类型跳转
-      const dashboardPath = getNavigationPath(verifiedUser);
+      // ✅ 关键修复：不要用 getNavigationPath（它不区分设备，会优先导向 manager）
+      // 这里必须使用 selectedRole 的结果，确保手机一定进入手机角色页面
+      const dashboardPath = getRoleDashboardPath(selectedRole, isMobile);
       console.log('[UniversalLogin] 🚀 跳转到:', dashboardPath);
       navigate(dashboardPath, { replace: true });
 

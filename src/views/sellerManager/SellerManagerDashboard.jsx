@@ -6,11 +6,19 @@ import { signOut } from 'firebase/auth';
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
-import SubmitCash from './components/SubmitCash';    // 新增
-import CollectCash from './components/CollectCash';    // ✅ 新增这行
+import SubmitCash from './components/SubmitCash';
+import CollectCash from './components/CollectCash';
+
 /**
- * Seller Manager Dashboard (简化版)
- * 移除部门过滤，直接显示所有 Sellers
+ * Seller Manager Dashboard (完整版 v2.0)
+ * ✅ 更新：添加"上交现金" Tab
+ * 
+ * Tabs:
+ * 1. overview - 总览统计
+ * 2. allocate - 分配点数
+ * 3. collect - 收取现金
+ * 4. submit - 上交现金 (🆕 新增)
+ * 5. sellers - Sellers管理
  */
 
 // 全域輔助：根據活動資料取得每次最高可分配點數（提供穩定 fallback）
@@ -62,7 +70,7 @@ const SellerManagerDashboard = () => {
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState(null);
 
-  // 新增：标签页管理
+  // 标签页管理
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
@@ -177,7 +185,6 @@ const SellerManagerDashboard = () => {
       const q = query(
         collection(db, 'organizations', currentUser.organizationId, 'events', eventId, 'users'),
         where('roles', 'array-contains', 'seller')
-        // ❌ 移除这行：where('identityInfo.department', 'in', currentUser.managedDepartments.slice(0, 10))
       );
 
       const unsubscribe = onSnapshot(
@@ -215,7 +222,7 @@ const SellerManagerDashboard = () => {
           setSellers(list);
           setLoadingSellers(false);
 
-          // ✅ 聚合数据（保持原有逻辑）
+          // ✅ 聚合数据
           const aggregatedStats = aggregateManagedUsersStats(list);
           const aggregatedDepts = aggregateDepartmentStats(list);
 
@@ -229,7 +236,6 @@ const SellerManagerDashboard = () => {
         }
       );
 
-      // 保存 unsubscribe 以便清理
       return unsubscribe;
 
     } catch (error) {
@@ -242,12 +248,8 @@ const SellerManagerDashboard = () => {
 
 
 
-  // Line 300 之后添加
-
   /**
    * 聚合被管理的 Sellers 的统计数据
-   * @param {Array} sellersList - sellers 数组
-   * @returns {Object} 聚合后的统计数据
    */
   const aggregateManagedUsersStats = (sellersList) => {
     if (!Array.isArray(sellersList) || sellersList.length === 0) {
@@ -286,18 +288,15 @@ const SellerManagerDashboard = () => {
       }
 
       currentBalance += availablePoints;
-      totalRevenue += totalSold;
+      totalRevenue += (sellerData.totalRevenue || 0);
       totalCollected += totalCashCollected;
+      pendingCollection += (sellerData.pendingCollection || 0);
 
-      const pending = totalSold - totalCashCollected;
-      pendingCollection += pending;
-
-      // 检查收款警示
-      if (sellerData.collectionAlert) {
+      // 检查警示
+      const collectionAlert = sellerData.collectionAlert || {};
+      if (collectionAlert.hasWarning) {
         usersWithWarnings++;
-
-        const pendingRatio = totalSold > 0 ? pending / totalSold : 0;
-        if (pendingRatio >= 0.5) {
+        if (collectionAlert.warningLevel === 'high') {
           highRiskUsers++;
         }
       }
@@ -319,9 +318,7 @@ const SellerManagerDashboard = () => {
   };
 
   /**
-   * 按部门聚合 Sellers 的统计数据
-   * @param {Array} sellersList - sellers 数组
-   * @returns {Array} 各部门的聚合数据
+   * 聚合部门统计数据
    */
   const aggregateDepartmentStats = (sellersList) => {
     if (!Array.isArray(sellersList) || sellersList.length === 0) {
@@ -331,81 +328,72 @@ const SellerManagerDashboard = () => {
     const deptMap = {};
 
     sellersList.forEach(seller => {
-      const dept = seller.identityInfo?.department || 'unknown';
-      const sellerData = seller.seller || {};
+      const deptCode = seller.identityInfo?.department;
+      if (!deptCode) return;
 
-      if (!deptMap[dept]) {
-        deptMap[dept] = {
-          id: dept,
-          departmentCode: dept,
-          departmentName: dept,  // 可以从 eventData.departments 获取完整名称
-          membersStats: {
-            totalCount: 0,
-            activeCount: 0
-          },
-          pointsStats: {
-            currentBalance: 0,
-            totalRevenue: 0,
-            totalCollected: 0,
-            pendingCollection: 0,
-            collectionRate: 0
-          },
-          collectionAlerts: {
-            usersWithWarnings: 0,
-            highRiskUsers: []
-          },
-          allocationStats: {
-            totalAllocations: 0,
-            byEventManager: { count: 0, totalPoints: 0 },
-            bySellerManager: { count: 0, totalPoints: 0 }
-          }
+      if (!deptMap[deptCode]) {
+        deptMap[deptCode] = {
+          departmentCode: deptCode,
+          departmentName: seller.identityInfo?.departmentName || deptCode,
+          totalCount: 0,
+          activeCount: 0,
+          currentBalance: 0,
+          totalRevenue: 0,
+          totalCollected: 0,
+          pendingCollection: 0,
+          usersWithWarnings: 0,
+          highRiskUsers: 0
         };
       }
 
-      const deptStats = deptMap[dept];
-      deptStats.membersStats.totalCount++;
+      const dept = deptMap[deptCode];
+      const sellerData = seller.seller || {};
 
-      const availablePoints = sellerData.availablePoints || 0;
-      const totalSold = sellerData.totalPointsSold || 0;
-      const totalCollected = sellerData.totalCashCollected || 0;
-      const pending = totalSold - totalCollected;
-
-      if (totalSold > 0) {
-        deptStats.membersStats.activeCount++;
+      dept.totalCount++;
+      if ((sellerData.totalPointsSold || 0) > 0) {
+        dept.activeCount++;
       }
 
-      deptStats.pointsStats.currentBalance += availablePoints;
-      deptStats.pointsStats.totalRevenue += totalSold;
-      deptStats.pointsStats.totalCollected += totalCollected;
-      deptStats.pointsStats.pendingCollection += pending;
+      dept.currentBalance += (sellerData.availablePoints || 0);
+      dept.totalRevenue += (sellerData.totalRevenue || 0);
+      dept.totalCollected += (sellerData.totalCashCollected || 0);
+      dept.pendingCollection += (sellerData.pendingCollection || 0);
 
-      // 检查警示
-      if (sellerData.collectionAlert) {
-        deptStats.collectionAlerts.usersWithWarnings++;
-
-        const pendingRatio = totalSold > 0 ? pending / totalSold : 0;
-        if (pendingRatio >= 0.5) {
-          deptStats.collectionAlerts.highRiskUsers.push(seller.userId);
+      const collectionAlert = sellerData.collectionAlert || {};
+      if (collectionAlert.hasWarning) {
+        dept.usersWithWarnings++;
+        if (collectionAlert.warningLevel === 'high') {
+          dept.highRiskUsers++;
         }
       }
     });
 
-    // 计算各部门的收款率
-    Object.values(deptMap).forEach(dept => {
-      const { totalRevenue, totalCollected } = dept.pointsStats;
-      dept.pointsStats.collectionRate = totalRevenue > 0 ? totalCollected / totalRevenue : 0;
-    });
+    // 转为数组并计算收款率
+    const deptArray = Object.values(deptMap).map(dept => ({
+      ...dept,
+      id: dept.departmentCode,
+      membersStats: {
+        totalCount: dept.totalCount,
+        activeCount: dept.activeCount
+      },
+      pointsStats: {
+        currentBalance: dept.currentBalance,
+        totalRevenue: dept.totalRevenue,
+        totalCollected: dept.totalCollected,
+        pendingCollection: dept.pendingCollection,
+        collectionRate: dept.totalRevenue > 0 ? dept.totalCollected / dept.totalRevenue : 0
+      },
+      collectionAlerts: {
+        usersWithWarnings: dept.usersWithWarnings,
+        highRiskUsers: dept.highRiskUsers > 0 ? [/* 这里可以添加具体用户ID */] : []
+      }
+    }));
 
-    return Object.values(deptMap);
+    return deptArray;
   };
 
   const handleAllocatePoints = (seller) => {
-    if (!seller || typeof seller !== 'object') {
-      console.error('[SM Dashboard] 无效的 seller 对象');
-      return;
-    }
-
-    console.log('[SM Dashboard] 准备为 Seller 分配点数:', seller.userId);
+    console.log('[SM Dashboard] 选择 Seller 进行分配:', seller);
     setSelectedSeller(seller);
     setShowAllocatePoints(true);
   };
@@ -414,20 +402,14 @@ const SellerManagerDashboard = () => {
     try {
       await signOut(auth);
       localStorage.removeItem('sellerManagerInfo');
+      localStorage.removeItem('currentUser');
+      console.log('[SM Dashboard] 用户已登出');
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
-      console.error('[SM Dashboard] 退出登录失败:', error);
-      alert('退出登录失败');
+      console.error('[SM Dashboard] 登出失败:', error);
+      alert('登出失败，请重试');
     }
   };
-
-  const safeCurrentUser = currentUser || {};
-  const safeEventData = eventData || {};
-  const safeSellers = Array.isArray(sellers) ? sellers : [];
-  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
-
-  const maxPerAllocation = resolveMaxPerAllocation(eventData);
-  const warningThreshold = resolveWarningThreshold(eventData);
 
   if (loading) {
     return (
@@ -440,158 +422,175 @@ const SellerManagerDashboard = () => {
     );
   }
 
-  // 默认统计数据
-  const getDefaultStats = () => ({
-    managedUsersStats: {
-      totalUsers: 0,
-      activeUsers: 0,
-      currentBalance: 0,
-      totalRevenue: 0,
-      totalCollected: 0,
-      pendingCollection: 0,
-      collectionRate: 0,
-      usersWithWarnings: 0,
-      highRiskUsers: 0
-    },
+  const safeCurrentUser = currentUser || {};
+  const safeEventData = eventData || {};
+  const safeSellers = Array.isArray(sellers) ? sellers : [];
+  const safeManagedUsersStats = managedUsersStats || {};
+  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
+
+  const maxPerAllocation = resolveMaxPerAllocation(safeEventData);
+  const warningThreshold = resolveWarningThreshold(safeEventData);
+
+  const userName = safeCurrentUser.basicInfo?.chineseName || safeCurrentUser.basicInfo?.englishName || '未知用户';
+  const eventName = getLocalizedText(safeEventData.eventName) || '活动名称';
+
+  // ✅ 构建SM统计对象
+  const smStatsForOverview = {
+    managedUsersStats: safeManagedUsersStats,
     allocationStats: {
       totalAllocations: 0,
       totalPointsAllocated: 0,
       averagePerAllocation: 0
     },
     collectionManagement: {
-      usersWithWarnings: 0,
-      highRiskUsers: 0
+      usersWithWarnings: safeManagedUsersStats.usersWithWarnings || 0,
+      highRiskUsers: safeManagedUsersStats.highRiskUsers || 0
     }
-  });
+  };
 
   return (
     <div style={styles.container}>
+      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div>
-            <h1 style={styles.title}>Seller Manager 仪表板</h1>
-            <p style={styles.subtitle}>
-              欢迎, {safeCurrentUser.displayName || safeCurrentUser.phoneNumber || '未知用户'}
-            </p>
+            <h1 style={styles.title}>Seller Manager 控制台</h1>
+            <p style={styles.subtitle}>{eventName}</p>
             <p style={styles.roleLabel}>
-              管理部门: {Array.isArray(safeCurrentUser.managedDepartments) ? safeCurrentUser.managedDepartments.join(', ') : '无'}
+              管理 {safeCurrentUser.managedDepartments?.length || 0} 个部门
             </p>
           </div>
         </div>
+
         <div style={styles.headerActions}>
           <div style={styles.userInfo}>
-            <div style={styles.userName}>
-              {getLocalizedText(safeEventData.eventName) || '义卖活动'}
-            </div>
+            <div style={styles.userName}>{userName}</div>
             <div style={styles.allocationLimit}>
               每次最高分配: RM {maxPerAllocation}
             </div>
           </div>
-          <div style={styles.versionBadge} title="目前載入的前端版本戳記">
-            Build: {BUILD_TIMESTAMP}
-          </div>
           <button style={styles.logoutButton} onClick={handleLogout}>
-            退出登录
+            登出
           </button>
+          {BUILD_TIMESTAMP && (
+            <div style={styles.versionBadge}>
+              {BUILD_TIMESTAMP}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 标签页导航 */}
+      {/* Tabs */}
       <div style={styles.tabs}>
         <button
-          onClick={() => setActiveTab('overview')}
           style={{
             ...styles.tab,
             ...(activeTab === 'overview' ? styles.activeTab : {})
           }}
+          onClick={() => setActiveTab('overview')}
         >
-          📊 概览
+          📊 总览
         </button>
         <button
-          onClick={() => setActiveTab('departments')}
           style={{
             ...styles.tab,
-            ...(activeTab === 'departments' ? styles.activeTab : {})
+            ...(activeTab === 'allocate' ? styles.activeTab : {})
           }}
+          onClick={() => setActiveTab('allocate')}
         >
-          🏫 部门管理
+          📦 分配点数
         </button>
         <button
-          onClick={() => setActiveTab('sellers')}
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'sellers' ? styles.activeTab : {})
-          }}
-        >
-          👥 Sellers 管理
-        </button>
-        {/* ✅ 新增：收款现金 Tab */}
-        <button
-          onClick={() => setActiveTab('collect')}
           style={{
             ...styles.tab,
             ...(activeTab === 'collect' ? styles.activeTab : {})
           }}
+          onClick={() => setActiveTab('collect')}
         >
-          💰 收款现金
+          💵 收取现金
         </button>
+        {/* 🆕 新增Tab */}
         <button
-          onClick={() => setActiveTab('submit')}
           style={{
             ...styles.tab,
             ...(activeTab === 'submit' ? styles.activeTab : {})
           }}
+          onClick={() => setActiveTab('submit')}
         >
           📤 上交现金
         </button>
+        <button
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'sellers' ? styles.activeTab : {})
+          }}
+          onClick={() => setActiveTab('sellers')}
+        >
+          👥 Sellers
+        </button>
       </div>
 
-      {/* 内容区域 */}
+      {/* Content */}
       <div style={styles.content}>
         {activeTab === 'overview' && (
-          <div style={styles.section}>
+          <div>
             <OverviewStats
-              smStats={smStats || getDefaultStats()}
+              smStats={smStatsForOverview}
               departmentStats={safeDepartmentStats}
               eventData={safeEventData}
             />
           </div>
         )}
 
-        {activeTab === 'departments' && (
+        {activeTab === 'allocate' && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>🏫 部门管理</h2>
+              <h2 style={styles.sectionTitle}>📦 分配点数</h2>
+              <p style={{ margin: 0, color: '#6b7280', fontSize: '0.875rem' }}>
+                选择 Seller 分配点数（每次最高 {maxPerAllocation} 点）
+              </p>
             </div>
-            {safeDepartmentStats.length === 0 ? (
-              <div style={styles.emptyState}>
-                <p>暂无部门数据</p>
+
+            {loadingSellers ? (
+              <div style={styles.loadingCard}>
+                <div style={styles.spinner}></div>
+                <p>加载 Sellers...</p>
               </div>
             ) : (
-              <div style={styles.departmentGrid}>
-                {safeDepartmentStats.map(dept => (
-                  <div key={dept.id} style={styles.departmentCard}>
-                    <div style={styles.deptCode}>{dept.departmentCode}</div>
-                    <div style={styles.deptName}>{dept.departmentName}</div>
-                    <div style={styles.deptStats}>
-                      <div>成员: {dept.membersStats?.totalCount || 0}</div>
-                      <div>销售额: RM {(dept.pointsStats?.totalRevenue || 0).toLocaleString()}</div>
-                      <div>已收款: RM {(dept.pointsStats?.totalCollected || 0).toLocaleString()}</div>
-                      <div style={{
-                        color: (dept.pointsStats?.collectionRate || 0) >= 0.8 ? '#10b981' : '#f59e0b'
-                      }}>
-                        收款率: {Math.round((dept.pointsStats?.collectionRate || 0) * 100)}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SellerList
+                sellers={safeSellers}
+                selectedDepartment={null}
+                onSelectSeller={handleAllocatePoints}
+                eventId={eventId}
+                orgId={safeCurrentUser.organizationId}
+                currentUser={safeCurrentUser}
+              />
             )}
           </div>
         )}
 
-        {activeTab === 'sellers' && (
+        {activeTab === 'collect' && (
           <div style={styles.section}>
+            <CollectCash
+              userInfo={safeCurrentUser}
+              eventData={safeEventData}
+              sellers={safeSellers}
+            />
+          </div>
+        )}
+
+        {/* 🆕 新增Tab内容 */}
+        {activeTab === 'submit' && (
+          <div style={styles.section}>
+            <SubmitCash
+              userInfo={safeCurrentUser}
+              eventData={safeEventData}
+            />
+          </div>
+        )}
+
+        {activeTab === 'sellers' && (
+          <div>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>👥 Sellers ({safeSellers.length})</h2>
               <div style={styles.actionsBar}>
@@ -621,25 +620,9 @@ const SellerManagerDashboard = () => {
             )}
           </div>
         )}
-        {/* ✅ 新增：收款现金内容 */}
-        {activeTab === 'collect' && (
-          <div style={styles.section}>
-            <CollectCash
-              userInfo={safeCurrentUser}
-              eventData={safeEventData}
-              sellers={safeSellers}
-            />
-          </div>
-        )}
-
-        {activeTab === 'submit' && (
-          <SubmitCash
-            userInfo={safeCurrentUser}
-            eventData={safeEventData}
-          />
-        )}
       </div>
 
+      {/* Allocate Points Modal */}
       {showAllocatePoints && selectedSeller && (
         <AllocatePoints
           seller={selectedSeller}
@@ -800,7 +783,7 @@ const styles = {
     fontSize: '0.875rem',
     fontWeight: '500'
   },
-  // 新增：标签页样式
+  // Tab样式
   tabs: {
     display: 'flex',
     gap: '0.5rem',
@@ -833,7 +816,6 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     marginBottom: '1rem'
   },
-  // 新增：部门管理样式
   departmentGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
