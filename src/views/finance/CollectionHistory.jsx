@@ -140,17 +140,20 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
       .forEach(s => {
         const key = s.receivedBy;
         if (!fmMap.has(key)) {
-          // 优先使用receivedByName，如果没有则使用receivedBy但格式化显示
-          let displayName = s.receivedByName;
-          if (!displayName || displayName.trim() === '') {
-            // 如果receivedBy看起来像UID（包含下划线），尝试提取有意义的部分
-            const uid = s.receivedBy;
-            if (uid.includes('_')) {
-              // 例如: phone_60112345678 -> 60112345678
-              displayName = uid.split('_').pop();
-            } else {
-              displayName = uid;
-            }
+          // 组合中英文名显示
+          const chineseName = s.receiverChineseName || '';
+          const englishName = s.receiverEnglishName || '';
+          
+          let displayName = '';
+          if (chineseName && englishName) {
+            displayName = `${chineseName} ${englishName}`;
+          } else if (chineseName) {
+            displayName = chineseName;
+          } else if (englishName) {
+            displayName = englishName;
+          } else {
+            // 向后兼容：如果新字段不存在，使用receiverName
+            displayName = s.receiverName || s.receivedBy;
           }
           
           fmMap.set(key, {
@@ -364,7 +367,21 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
                     {/* 接收者列 */}
                     <td>
                       <div className="receiver-cell">
-                        {submission.receivedByName || '-'}
+                        {(() => {
+                          const chineseName = submission.receiverChineseName || '';
+                          const englishName = submission.receiverEnglishName || '';
+                          
+                          if (chineseName && englishName) {
+                            return `${chineseName} ${englishName}`;
+                          } else if (chineseName) {
+                            return chineseName;
+                          } else if (englishName) {
+                            return englishName;
+                          } else {
+                            // 向后兼容
+                            return submission.receiverName || '-';
+                          }
+                        })()}
                       </div>
                     </td>
 
@@ -395,12 +412,20 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
                             <div className="expanded-section">
                               <div className="section-title">✅ 确认信息</div>
                               <div className="confirmed-info">
-                                {submission.receivedByName && (
-                                  <div className="confirmed-item">
-                                    <span className="confirmed-label">接收者：</span>
-                                    <span className="confirmed-value">{submission.receivedByName}</span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const chineseName = submission.receiverChineseName || '';
+                                  const englishName = submission.receiverEnglishName || '';
+                                  const receiverDisplay = chineseName && englishName 
+                                    ? `${chineseName} ${englishName}`
+                                    : chineseName || englishName || submission.receiverName;
+                                  
+                                  return receiverDisplay && (
+                                    <div className="confirmed-item">
+                                      <span className="confirmed-label">接收者：</span>
+                                      <span className="confirmed-value">{receiverDisplay}</span>
+                                    </div>
+                                  );
+                                })()}
                                 {submission.confirmedAt && (
                                   <div className="confirmed-item">
                                     <span className="confirmed-label">确认时间：</span>

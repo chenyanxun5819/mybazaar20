@@ -20,7 +20,7 @@ function sha256(str) {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
 
-exports.changeLoginPassword = onCall(async (request) => {
+exports.changeLoginPassword = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
 
   try {

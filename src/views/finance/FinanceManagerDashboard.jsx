@@ -4,8 +4,7 @@
  * 
  * Tabs:
  * 1. 收款概览 - 统计和图表
- * 2. 待认领 - 待认领池子
- * 3. 收款记录 - 历史查询（所有FM可互相查看）
+ * 2. 收款记录 - 历史查询（所有FM可互相查看）
  */
 
 import React, { useState, useEffect } from 'react';
@@ -21,6 +20,8 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import './FinanceManagerDashboard.css';
+
 // 移除旧的 CSS 引用，改用内联样式或新的 CSS 策略
 // import './FinanceManagerDashboard.css';
 
@@ -46,7 +47,7 @@ const FinanceManagerDashboard = () => {
     if (root) {
       root.style.maxWidth = '100%';
       root.style.padding = '0';
-      root.style.textAlign = 'left';
+      root.style.textAlign = 'center';
       root.style.margin = '0';
     }
 
@@ -364,8 +365,8 @@ const FinanceManagerDashboard = () => {
   // ===== 6. 渲染 =====
   if (loading) {
     return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.spinner}></div>
+      <div className="fm-loading-container">
+        <div className="fm-spinner"></div>
         <p>加载中...</p>
       </div>
     );
@@ -373,61 +374,55 @@ const FinanceManagerDashboard = () => {
 
   if (error) {
     return (
-      <div style={styles.errorContainer}>
-        <p style={styles.errorMessage}>{error}</p>
-        <button style={styles.button} onClick={() => navigate(`/login/${orgEventCode}`)}>返回登录</button>
+      <div className="fm-error-container">
+        <p className="fm-error-message">{error}</p>
+        <button className="fm-button" onClick={() => navigate(`/login/${orgEventCode}`)}>返回登录</button>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
+    <div className="fm-container">
       {/* 头部 */}
-      <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <h1 style={styles.title}>💰 财务管理</h1>
-          <p style={styles.welcomeText}>
+      <header className="fm-header">
+        <div className="fm-header-left">
+          <h1 className="fm-title">💰 财务管理</h1>
+          <p className="fm-welcome-text">
             欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '财务经理'}
           </p>
         </div>
-        <div style={styles.headerRight}>
-          <span style={styles.date}>{new Date().toLocaleDateString('zh-CN')}</span>
-          <button style={styles.logoutButton} onClick={handleLogout}>
+        <div className="fm-header-right">
+          <span className="fm-date">{new Date().toLocaleDateString('zh-CN')}</span>
+          <button className="fm-logout-button" onClick={handleLogout}>
             🚪 退出登录
           </button>
         </div>
       </header>
 
       {/* Tab 导航 */}
-      <nav style={styles.tabNav}>
+      <nav className="fm-tab-nav">
         <button
-          style={{
-            ...styles.tabButton,
-            ...(activeTab === 'overview' ? styles.tabButtonActive : {})
-          }}
+          className={`fm-tab-button ${activeTab === 'overview' ? 'fm-tab-button-active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
-          <span style={styles.tabIcon}>📊</span>
+          <span className="fm-tab-icon">📊</span>
           <span>收款概览</span>
         </button>
         
         <button
-          style={{
-            ...styles.tabButton,
-            ...(activeTab === 'history' ? styles.tabButtonActive : {})
-          }}
+          className={`fm-tab-button ${activeTab === 'history' ? 'fm-tab-button-active' : ''}`}
           onClick={() => setActiveTab('history')}
         >
-          <span style={styles.tabIcon}>📋</span>
+          <span className="fm-tab-icon">📋</span>
           <span>收款记录</span>
           {allSubmissions.length > 0 && (
-            <span style={styles.badge}>{allSubmissions.length}</span>
+            <span className="fm-badge">{allSubmissions.length}</span>
           )}
         </button>
       </nav>
 
       {/* Tab 内容 */}
-      <main style={styles.content}>
+      <main className="fm-content">
         {activeTab === 'overview' && (
           <CollectionOverview
             pendingSubmissions={pendingSubmissions}
@@ -449,6 +444,7 @@ const FinanceManagerDashboard = () => {
   );
 };
 
+// // filepath: c:\mybazaar20\src\views\finance\FinanceManagerDashboard.jsx
 // 内联样式定义 (参考 UserList.jsx 风格)
 const styles = {
   container: {
@@ -588,14 +584,7 @@ const styles = {
   }
 };
 
-// 添加全局动画
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-document.head.appendChild(styleSheet);
+// 全局動畫已移至外部 CSS 檔案
 
 export default FinanceManagerDashboard;
+

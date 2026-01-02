@@ -1,10 +1,10 @@
 /**
- * SellerSubmitCash.jsx (使用 useSellerStats 版本 v2.0)
- * ✅ 修复：使用 useSellerStats hook 获取实时数据
- * ✅ 修复：正确显示老师/职员的提示信息
+ * SellerSubmitCash.jsx (修复版 v2.1 - 正确架构)
+ * ✅ 修复：正确读取identityTag（根级别，不是identityInfo.userType）
+ * ✅ 修复：使用department查找SellerManager，不使用managedBy
  * 
- * @version 2.0
- * @date 2025-01-01
+ * @version 2.1
+ * @date 2025-01-02
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -13,17 +13,17 @@ import {
   query,
   where,
   onSnapshot,
-  orderBy
+  orderBy,
+  getDocs
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, functions } from '../../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { useSellerStats } from '../hooks/useSellerStats'; // 🔧 使用同样的hook
+import { useSellerStats } from '../hooks/useSellerStats';
 import { useAuth } from '../../../contexts/AuthContext';
 import './SellerSubmitCash.css';
 
 const SellerSubmitCash = () => {
-  // 🔧 使用useSellerStats获取实时数据（和PointsOverview一样）
   const { stats, loading: statsLoading, error: statsError } = useSellerStats();
   const { userProfile } = useAuth();
   
@@ -33,33 +33,92 @@ const SellerSubmitCash = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitAmount, setSubmitAmount] = useState('');
   const [submitNote, setSubmitNote] = useState('');
+  const [sellerManager, setSellerManager] = useState(null);
 
-  // 从userProfile获取基本信息
   const orgId = userProfile?.organizationId;
   const eventId = userProfile?.eventId;
   const sellerId = userProfile?.userId;
   
-  // 🔧 从stats获取现金数据（和PointsOverview一样）
   const cashOnHand = stats?.pendingCollection || 0;
   
-  // 🔧 判断用户类型
-  const identityTag = userProfile?.identityTag || userProfile?.identityInfo?.userType;
+  // 🔧 正确读取identityTag（在根级别）
+  const identityTag = userProfile?.identityTag;
   const isStudent = identityTag === 'student';
   
-  // 获取管理者
-  const sellerManager = userProfile?.managedBy?.[0];
+  // 学生的department
+  const department = userProfile?.identityInfo?.department;
 
   console.log('[SellerSubmitCash] 🔍 数据状态:', {
     statsLoading,
     statsError,
     stats,
     cashOnHand,
-    identityTag,
+    identityTag,  // ← 应该显示 'student' 或 'staff'/'teacher'
     isStudent,
+    department,
     orgId,
     eventId,
     sellerId
   });
+
+  // ========== 查找SellerManager ==========
+
+  useEffect(() => {
+    // 只有学生需要查找SM
+    if (!isStudent || !orgId || !eventId || !department) {
+      return;
+    }
+
+    const findSellerManager = async () => {
+      try {
+        console.log('[SellerSubmitCash] 🔍 查找SellerManager，department:', department);
+
+        const usersRef = collection(
+          db,
+          `organizations/${orgId}/events/${eventId}/users`
+        );
+
+        // 查询SellerManager角色
+        const smQuery = query(
+          usersRef,
+          where('roles', 'array-contains', 'sellerManager')
+        );
+
+        const smSnapshot = await getDocs(smQuery);
+
+        // 在结果中找到管理这个department的SM
+        let foundSM = null;
+        smSnapshot.forEach(doc => {
+          const smData = doc.data();
+          const managedDepts = smData.sellerManager?.managedDepartments || [];
+          
+          console.log('[SellerSubmitCash] SM:', {
+            id: doc.id,
+            name: smData.basicInfo?.chineseName,
+            managedDepts
+          });
+
+          if (managedDepts.includes(department)) {
+            foundSM = {
+              id: doc.id,
+              name: smData.basicInfo?.chineseName || smData.basicInfo?.englishName || 'SM'
+            };
+            console.log('[SellerSubmitCash] ✅ 找到管理者:', foundSM);
+          }
+        });
+
+        if (foundSM) {
+          setSellerManager(foundSM);
+        } else {
+          console.warn('[SellerSubmitCash] ⚠️ 未找到管理这个department的SM');
+        }
+      } catch (error) {
+        console.error('[SellerSubmitCash] ❌ 查找SM失败:', error);
+      }
+    };
+
+    findSellerManager();
+  }, [isStudent, orgId, eventId, department]);
 
   // ========== 数据加载 ==========
 
@@ -136,6 +195,7 @@ const SellerSubmitCash = () => {
     
     if (isStudent && !sellerManager) {
       alert('错误：未找到您的Seller Manager，请联系管理员');
+      console.error('[SellerSubmitCash] ❌ 学生但没有找到SM');
       return;
     }
 
@@ -156,7 +216,7 @@ const SellerSubmitCash = () => {
     console.log('[SellerSubmitCash] 📤 开始上交:', {
       amount,
       isStudent,
-      sellerManager,
+      sellerManagerId: sellerManager?.id,
       orgId,
       eventId
     });
@@ -182,7 +242,7 @@ const SellerSubmitCash = () => {
       }
 
       if (isStudent) {
-        console.log('[SellerSubmitCash] 🎓 学生上交给SM:', sellerManager);
+        console.log('[SellerSubmitCash] 🎓 学生上交给SM:', sellerManager.id);
         
         const submitToManager = httpsCallable(functions, 'submitCashToSellerManager');
         
@@ -191,11 +251,11 @@ const SellerSubmitCash = () => {
           eventId,
           amount,
           note: submitNote,
-          sellerManagerId: sellerManager
+          sellerManagerId: sellerManager.id
         });
 
         if (result.data.success) {
-          alert('✅ 上交成功！请将现金交给您的Seller Manager。');
+          alert(`✅ 上交成功！请将现金交给您的Seller Manager (${sellerManager.name})。`);
           handleCloseSubmitModal();
         } else {
           throw new Error(result.data.message || '上交失败');
@@ -268,9 +328,11 @@ const SellerSubmitCash = () => {
   const getRecipientInfo = () => {
     if (isStudent) {
       return {
-        title: '上交给 Seller Manager',
+        title: `上交给 Seller Manager${sellerManager ? ` (${sellerManager.name})` : ''}`,
         icon: '👨‍🏫',
-        description: '请将现金交给您的Seller Manager'
+        description: sellerManager 
+          ? `请将现金交给您的Seller Manager: ${sellerManager.name}`
+          : '正在查找您的Seller Manager...'
       };
     } else {
       return {
@@ -359,10 +421,10 @@ const SellerSubmitCash = () => {
             onClick={handleOpenSubmitModal}
             style={{
               ...styles.submitButton,
-              opacity: cashOnHand <= 0 ? 0.5 : 1,
-              cursor: cashOnHand <= 0 ? 'not-allowed' : 'pointer'
+              opacity: cashOnHand <= 0 || (isStudent && !sellerManager) ? 0.5 : 1,
+              cursor: cashOnHand <= 0 || (isStudent && !sellerManager) ? 'not-allowed' : 'pointer'
             }}
-            disabled={cashOnHand <= 0}
+            disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
           >
             📤 上交现金
           </button>
@@ -420,7 +482,7 @@ const SellerSubmitCash = () => {
   );
 };
 
-// ========== 子组件 ==========
+// ========== 子组件（和之前一样）==========
 
 const StatCard = ({ icon, title, value, color, description }) => (
   <div style={{ ...styles.statCard, borderLeftColor: color }}>
@@ -574,7 +636,7 @@ const SubmitModal = ({
   );
 };
 
-// ========== 样式 ==========
+// ========== 样式（和之前一样）==========
 
 const styles = {
   container: { padding: '20px', maxWidth: '1200px', margin: '0 auto' },

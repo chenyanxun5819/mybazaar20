@@ -197,7 +197,7 @@ async function updatePinVerificationStatus(userRef, success, currentAttempts = 0
  * @param {string} data.transactionPin - 交易密码（6位数字）✨ 新增
  * @param {string} [data.email] - 邮箱（可选）
  */
-exports.createCustomer = onCall(async (request) => {
+exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data } = request;  // ← 关键！从 request.data 取数据
 
   try {
@@ -324,6 +324,18 @@ exports.createCustomer = onCall(async (request) => {
     const authUid = `phone_60${parsedPhone.localDigits}`;
     console.log('[createCustomer] 🔑 生成 authUid:', authUid);
 
+    // === 检查 Auth 中是否已存在该 UID ===
+    let existingAuthUser = null;
+    try {
+      existingAuthUser = await admin.auth().getUser(authUid);
+      console.log('[createCustomer] ⚠️ Auth 中已存在该 UID:', authUid);
+    } catch (e) {
+      // 用户不存在，这是正常的
+      if (e.code !== 'auth/user-not-found') {
+        console.warn('[createCustomer] 检查 Auth 用户时出错:', e.message);
+      }
+    }
+
     // === 生成用户ID ===
     // ✅ 统一格式：userId = authUid (phone_60xxx)
     const userId = authUid;
@@ -435,14 +447,23 @@ exports.createCustomer = onCall(async (request) => {
     console.log('[createCustomer] 🔑 创建 Firebase Auth 账户...');
 
     try {
-      await admin.auth().createUser({
-        uid: userId,
-        phoneNumber: parsedPhone.e164,  // ✅ Auth 使用 E.164
-        password: password,
-        displayName: displayName
-      });
+      // 如果 Auth 中已存在该 UID，则跳过创建（用户可能在其他事件已注册）
+      if (!existingAuthUser) {
+        await admin.auth().createUser({
+          uid: userId,
+          phoneNumber: parsedPhone.e164,  // ✅ Auth 使用 E.164
+          password: password,
+          displayName: displayName
+        });
 
-      console.log('[createCustomer] ✅ Firebase Auth 账户创建成功');
+        console.log('[createCustomer] ✅ Firebase Auth 账户创建成功');
+      } else {
+        console.log('[createCustomer] ℹ️ Auth 账户已存在，跳过创建:', userId);
+        
+        // 如果用户在 Auth 中已存在，但在本 Event 中是新增的，这是允许的
+        // （用户可能在其他 Event 已注册）
+        // 只需更新 Auth 信息（可选）
+      }
     } catch (authError) {
       const authErrorMsg = authError instanceof Error ? authError.message : String(authError);
       console.error('[createCustomer] ❌ 创建 Auth 账户失败:', authErrorMsg);
@@ -458,6 +479,13 @@ exports.createCustomer = onCall(async (request) => {
         throw new HttpsError(
           'already-exists',
           '该手机号已被使用'
+        );
+      }
+      
+      if (authError.code === 'auth/uid-already-exists') {
+        throw new HttpsError(
+          'already-exists',
+          '用户账户已存在，请直接登录'
         );
       }
 
@@ -533,7 +561,7 @@ exports.createCustomer = onCall(async (request) => {
  * @param {string} data.eventId - 活动ID
  * @param {string} data.transactionPin - 交易密码（6位数字）
  */
-exports.processCustomerPayment = onCall(async (request) => {
+exports.processCustomerPayment = onCall({ region: 'asia-southeast1' }, async (request) => {
   const data = request.data;
   const context = request;
 
@@ -788,7 +816,7 @@ exports.processCustomerPayment = onCall(async (request) => {
  * @param {number} data.amount - 转让金额
  * @param {string} data.transactionPin - 交易密码（6位数字）
  */
-exports.transferPoints = onCall(async (request) => {
+exports.transferPoints = onCall({ region: 'asia-southeast1' }, async (request) => {
   const data = request.data;
   const context = request;
   try {
@@ -1043,7 +1071,7 @@ exports.transferPoints = onCall(async (request) => {
  * @param {object} data
  * @param {string} data.cardId - 点数卡ID
  */
-exports.topupFromPointCard = onCall(async (request) => {
+exports.topupFromPointCard = onCall({ region: 'asia-southeast1' }, async (request) => {
   const data = request.data;
   const context = request;
   try {

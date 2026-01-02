@@ -271,17 +271,38 @@
   border-radius: 6px;
   overflow-x: auto;
   border: 1px solid #e5e7eb;
-  min-width: 1200px;
+  min-width: 0 !important;
   width: 100%;
+  overflow-x: hidden !important;
 }
 
 /* 主表格 */
 .history-table {
-  width: 100%;
-  min-width: 1200px;
+  width: 100% !important;
+  table-layout: fixed;
+  min-width: 0 !important;
   border-collapse: collapse;
   font-size: 0.8rem;
 }
+
+/* header 與 cell 允許換行/斷詞，避免水平滾動 */
+.history-table thead th,
+.history-table th,
+.history-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 保留保護性 min-width（幫助桌面版維持可讀性） */
+.history-table th:nth-child(1) { width: 18%;  min-width: 150px; } /* 提交者 */
+.history-table th:nth-child(2) { width: 120px; min-width: 100px; } /* 電話 */
+.history-table th:nth-child(3) { width: 120px; min-width: 100px; } /* 工號 */
+.history-table th:nth-child(4) { width: 120px; min-width: 100px; } /* 金額 */
+.history-table th:nth-child(5) { width: 100px; min-width: 80px;  } /* 狀態 */
+.history-table th:nth-child(6) { width: 160px; min-width: 120px; } /* 提交時間 */
+.history-table th:nth-child(7) { width: 140px; min-width: 100px; } /* 接收者 */
+.history-table th:nth-child(8) { width: 60px;  min-width: 60px;  } /* 明細 */
 
 .history-table thead {
   background: #f9fafb;
@@ -624,3 +645,42 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.35);
 }
+
+/* A — 讓表格在容器內自適應，不顯示水平捲軸（欄位換行/斷詞）*/
+/* .table-container {
+  min-width: 0 !important;
+  width: 100%;
+  overflow-x: hidden !important;
+}
+
+.history-table {
+  width: 100% !important;
+  table-layout: fixed;
+  min-width: 0 !important;
+  border-collapse: collapse;
+} */
+
+/* header 與 cell 允許換行/斷詞，避免水平滾動 */
+/* .history-table thead th,
+.history-table th,
+.history-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+} */
+
+/* 保留保護性 min-width（幫助桌面版維持可讀性） */
+/* .history-table th:nth-child(1) { width: 18%;  min-width: 150px; } */ /* 提交者 */
+/* .history-table th:nth-child(2) { width: 120px; min-width: 100px; } */ /* 電話 */
+/* .history-table th:nth-child(3) { width: 120px; min-width: 100px; } */ /* 工號 */
+/* .history-table th:nth-child(4) { width: 120px; min-width: 100px; } */ /* 金額 */
+/* .history-table th:nth-child(5) { width: 100px; min-width: 80px;  } */ /* 狀態 */
+/* .history-table th:nth-child(6) { width: 160px; min-width: 120px; } */ /* 提交時間 */
+/* .history-table th:nth-child(7) { width: 140px; min-width: 100px; } */ /* 接收者 */
+/* .history-table th:nth-child(8) { width: 60px;  min-width: 60px;  } */ /* 明細 */
+
+/* 在非常窄的螢幕下仍允許使用者水平捲動（備援） */
+/* @media (max-width: 520px) {
+  .table-container { overflow-x: auto !important; }
+  .history-table thead th { white-space: nowrap; }
+} */

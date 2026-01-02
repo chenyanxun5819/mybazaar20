@@ -12,7 +12,7 @@ const admin = require('firebase-admin');
 const { hashPin } = require('./utils/bcryptHelper');
 const { validateTransactionPin } = require('./utils/validators');
 
-exports.setupTransactionPin = onCall(async (request) => {
+exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
 
   try {

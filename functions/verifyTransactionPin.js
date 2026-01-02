@@ -22,7 +22,7 @@ const MAX_FAILED_ATTEMPTS = 5;
 // 锁定时长（毫秒）：1小时
 const LOCK_DURATION_MS = 60 * 60 * 1000;
 
-exports.verifyTransactionPin = onCall(async (request) => {
+exports.verifyTransactionPin = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
 
   try {

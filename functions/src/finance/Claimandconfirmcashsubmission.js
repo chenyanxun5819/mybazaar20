@@ -160,6 +160,8 @@ exports.claimAndConfirmCashSubmission = onCall({ region: 'asia-southeast1' }, as
         transaction.update(submissionRef, {
           receivedBy: fmUserId,
           receiverName: userData.basicInfo?.chineseName || userData.basicInfo?.englishName || 'Finance Manager',
+          receiverChineseName: userData.basicInfo?.chineseName || '',
+          receiverEnglishName: userData.basicInfo?.englishName || '',
           status: 'confirmed',
           confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
           confirmationNote: confirmationNote || '',

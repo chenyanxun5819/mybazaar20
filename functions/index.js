@@ -32,7 +32,7 @@ const sellerManagerHttpFunctions = require('./sellerManagerHttpFunctions');
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
 const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
-const { getCustomerDashboardDataHttp } = require('./src/finance/customerHttpFunctions');
+const { getCustomerDashboardDataHttp } = require('./src/customer/customerHttpFunctions');
 
 // Finance: claim + confirm cash submission (callable)
 const { claimAndConfirmCashSubmission } = require('./src/finance/Claimandconfirmcashsubmission');
@@ -47,7 +47,7 @@ const {
   processCustomerPayment,
   transferPoints,
   topupFromPointCard
-} = require('./src/finance/customerFunctions');
+} = require('./src/customer/customerFunctions');
 
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');

@@ -17,7 +17,7 @@ const admin = require('firebase-admin');
 const { hashPin } = require('./utils/bcryptHelper');
 const { validateTransactionPin } = require('./utils/validators');
 
-exports.resetTransactionPin = onCall(async (request) => {
+exports.resetTransactionPin = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
 
   try {
