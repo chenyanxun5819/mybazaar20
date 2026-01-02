@@ -9,66 +9,6 @@
     {
       "source": "functions",
       "codebase": "default",
-      "runtime": "nodejs22",
-      "region": "asia-southeast1",
-      "endpoints": {
-        "pingHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "loginUniversalHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "sendOtpHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "verifyOtpHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "generateTestOtp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "updateUserRoles": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        },
-        "batchImportUsersHttp": {
-          "httpsOptions": {
-            "invoker": [
-              "public"
-            ]
-          },
-          "region": "asia-southeast1"
-        }
-      },
       "ignore": [
         "node_modules",
         ".git",

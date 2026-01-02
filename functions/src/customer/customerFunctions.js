@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');  // ✅ �
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { hashPin, verifyPin } = require('../../utils/bcryptHelper');
+const { updateUserCustomClaims } = require('../../customClaimsHelper');  // ✅ 新增：Custom Claims 辅助函数
 
 // 定義缺失的常量
 const MAX_PIN_FAILED_ATTEMPTS = 5;
@@ -507,6 +508,35 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       });
 
     console.log('[createCustomer] ✅ Event 统计更新成功');
+
+    // === ✅ 新增：设置 Custom Claims（支持多事件）===
+    try {
+      console.log('[createCustomer] 🔐 设置 Custom Claims...');
+      
+      // 读取 event 文档获取 orgCode 和 eventCode
+      const eventDoc = await db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .get();
+      
+      if (eventDoc.exists) {
+        const eventData = eventDoc.data();
+        const orgCode = eventData.orgCode;
+        const eventCode = eventData.eventCode;
+        
+        if (orgCode && eventCode) {
+          await updateUserCustomClaims(userId, orgCode, eventCode, 'add');
+          console.log('[createCustomer] ✅ Custom Claims 设置成功');
+        } else {
+          console.warn('[createCustomer] ⚠️ Event 文档缺少 orgCode 或 eventCode');
+        }
+      } else {
+        console.warn('[createCustomer] ⚠️ Event 文档不存在');
+      }
+    } catch (claimsError) {
+      // Custom Claims 设置失败不影响用户创建
+      console.error('[createCustomer] ⚠️ Custom Claims 设置失败（非致命）:', claimsError.message);
+    }
 
     // === 生成 Custom Token（用于自动登录）===
     console.log('[createCustomer] 🎫 生成 Custom Token...');

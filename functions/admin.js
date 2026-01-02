@@ -1,4 +1,5 @@
 ﻿const admin = require('firebase-admin');
+const { updateUserCustomClaims } = require('./customClaimsHelper');  // ✅ 新增：Custom Claims 辅助函数
 const functions = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
 const crypto = require('crypto');
@@ -1120,28 +1121,30 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       await usersCol.doc(userId).set(userDoc);
       console.log('[createUserByEventManagerHttp] User created:', userId);
 
-      // ✅ 添加：设置 Custom Claims
+      // ✅ 修改：设置 Custom Claims（支持多事件）
       try {
-        const customClaims = {
-          userId: userId,
-          organizationId: organizationId,
-          eventId: eventId,
-          roles: roles,
-          identityTag: identityTag || 'staff',
-          department: department || '未分配'
-        };
-
-        // 如果是 Seller Manager，添加管理的部门
-        if (roles.includes('sellerManager') && department && department.trim()) {
-          customClaims.managedDepartments = [department.trim()];
+        // 读取 event 文档获取 orgCode 和 eventCode
+        const eventDoc = await eventsCol.doc(eventId).get();
+        
+        if (eventDoc.exists) {
+          const eventData = eventDoc.data();
+          const orgCode = eventData.orgCode;
+          const eventCode = eventData.eventCode;
+          
+          if (orgCode && eventCode) {
+            await updateUserCustomClaims(authUid, orgCode, eventCode, 'add');
+            console.log('[createUserByEventManagerHttp] ✅ Custom Claims 设置成功:', authUid);
+          } else {
+            console.warn('[createUserByEventManagerHttp] ⚠️ Event 文档缺少 orgCode 或 eventCode');
+          }
+        } else {
+          console.warn('[createUserByEventManagerHttp] ⚠️ Event 文档不存在');
         }
-
-        await admin.auth().setCustomUserClaims(authUid, customClaims);
-        console.log('[createUserByEventManagerHttp] Set Custom Claims for', authUid, customClaims);
       } catch (e) {
-        console.error('[createUserByEventManagerHttp] Failed to set Custom Claims:', e);
-        // 不阻止用户创建，记录错误即可
+        console.error('[createUserByEventManagerHttp] ⚠️ Custom Claims 设置失败（非致命）:', e.message);
+        // 不阻止用户创建
       }
+
 
 
       // 10. 更新活动统计
@@ -2629,27 +2632,26 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         batchOpCount++;
         existingPhones.add(phoneNumber); // 避免後續列表中重複
 
-        // ✅ 添加：设置 Custom Claims
+        // ✅ 修改：设置 Custom Claims（支持多事件）
         if (!skipAuth) {
           try {
-            const customClaims = {
-              userId: userId,
-              organizationId: organizationId,
-              eventId: eventId,
-              roles: roles,
-              identityTag: identityTag,
-              department: department || '未分配'
-            };
-
-            // 如果是 Seller Manager，添加管理的部门
-            if (roles.includes('sellerManager') && department && department.trim()) {
-              customClaims.managedDepartments = [department.trim()];
+            // 读取 event 文档获取 orgCode 和 eventCode
+            const eventDoc = await eventRef.get();
+            
+            if (eventDoc.exists) {
+              const eventData = eventDoc.data();
+              const orgCode = eventData.orgCode;
+              const eventCode = eventData.eventCode;
+              
+              if (orgCode && eventCode) {
+                await updateUserCustomClaims(authUid, orgCode, eventCode, 'add');
+                console.log(`[batchImportUsersHttp] ✅ Custom Claims 设置成功: ${authUid}`);
+              } else {
+                console.warn(`[batchImportUsersHttp] ⚠️ Event 文档缺少 orgCode 或 eventCode`);
+              }
             }
-
-            await admin.auth().setCustomUserClaims(authUid, customClaims);
-            console.log(`[batchImportUsersHttp] Set Custom Claims for ${authUid}`, customClaims);
           } catch (e) {
-            console.error(`[batchImportUsersHttp] Failed to set Custom Claims for ${authUid}:`, e);
+            console.error(`[batchImportUsersHttp] ⚠️ Custom Claims 设置失败（非致命）: ${e.message}`);
             // 记录错误但不阻止创建
             errors.push({ phoneNumber, reason: '设置权限失败: ' + e.message });
           }

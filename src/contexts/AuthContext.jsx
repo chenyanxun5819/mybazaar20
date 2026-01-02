@@ -57,26 +57,33 @@ export const AuthProvider = ({ children }) => {
     return null;
   };
 
-  // 从 Custom Claims 构建基本 userProfile
+  // ✅ 修改：从 Custom Claims 检查用户是否有权限访问当前事件
   const buildProfileFromClaims = (claims) => {
-    if (!claims || !claims.userId || !claims.roles) {
+    // 检查 claims 基本结构
+    if (!claims || !claims.authUid || !claims.events) {
+      console.log('[AuthContext] Claims 缺少必要字段 (authUid 或 events)');
       return null;
     }
 
-    console.log('[AuthContext] 从 Custom Claims 构建用户数据');
-    
+    // 检查当前事件是否在用户的事件列表中
+    const currentEventKey = `${orgCode}-${eventCode}`;
+    const hasAccess = claims.events.includes(currentEventKey);
+
+    console.log('[AuthContext] 检查事件访问权限:', {
+      currentEventKey,
+      userEvents: claims.events,
+      hasAccess
+    });
+
+    if (!hasAccess) {
+      console.log('[AuthContext] ⚠️ 用户未参与当前事件');
+      return null;
+    }
+
+    // 返回基本标记，实际用户数据需要从 Firestore 查询
     return {
-      userId: claims.userId,
-      organizationId: claims.organizationId,
-      eventId: claims.eventId,
-      roles: claims.roles,
-      identityInfo: {
-        department: claims.department || '',
-        identityTag: claims.identityTag || ''
-      },
-      sellerManager: claims.managedDepartments ? {
-        managedDepartments: claims.managedDepartments
-      } : undefined
+      authUid: claims.authUid,
+      needsFirestoreLoad: true  // 标记需要从 Firestore 加载完整数据
     };
   };
 
@@ -182,59 +189,83 @@ export const AuthProvider = ({ children }) => {
             return;
           }
 
-          // 步骤 3: 尝试从 Custom Claims 恢复基本信息
+          // ✅ 步骤 3: 从 Custom Claims 检查权限
           let profile = buildProfileFromClaims(c);
 
-          // 步骤 4: 尝试从 localStorage 补充详细信息
-          if (c.roles && c.roles.length > 0) {
-            const primaryRole = c.roles[0]; // 使用第一个角色
-            const storedProfile = restoreUserFromLocalStorage(primaryRole);
+          if (!profile) {
+            // 用户没有权限访问当前事件
+            console.log('[AuthContext] ⚠️ 用户未参与当前事件，清除登录状态');
             
-            if (storedProfile) {
-              // 合并 Claims 和 localStorage 的数据
-              profile = {
-                ...profile,
-                ...storedProfile,
-                // Claims 的数据优先级更高（更新）
-                roles: c.roles,
-                organizationId: c.organizationId || storedProfile.organizationId,
-                eventId: c.eventId || storedProfile.eventId
-              };
-              console.log('[AuthContext] ✅ 合并 Claims + localStorage 数据');
+            if (!isLoginPage) {
+              console.warn('[AuthContext] 需要重新登录');
+            }
+            
+            try {
+              await auth.signOut();
+            } catch (signOutErr) {
+              // 忽略错误
+            }
+            
+            setLoading(false);
+            return;
+          }
+
+          // ✅ 步骤 4: 从 Firestore 加载完整用户数据
+          if (profile.needsFirestoreLoad) {
+            console.log('[AuthContext] 从 Firestore 加载用户数据...', {
+              authUid: profile.authUid,
+              organizationId,
+              eventId
+            });
+
+            try {
+              // 查询路径：organizations/{orgId}/events/{eventId}/users/{authUid}
+              const userDocRef = doc(
+                db, 
+                'organizations', organizationId,
+                'events', eventId,
+                'users', profile.authUid
+              );
+              
+              const userDocSnap = await getDoc(userDocRef);
+
+              if (userDocSnap.exists()) {
+                const userData = userDocSnap.data();
+                profile = {
+                  id: userDocSnap.id,
+                  ...userData,
+                  organizationCode: orgCode,
+                  eventCode: eventCode
+                };
+                console.log('[AuthContext] ✅ 从 Firestore 加载成功:', {
+                  userId: profile.userId,
+                  roles: profile.roles,
+                  englishName: profile.basicInfo?.englishName
+                });
+              } else {
+                console.error('[AuthContext] ❌ Firestore 中找不到用户文档');
+                profile = null;
+              }
+            } catch (err) {
+              console.error('[AuthContext] ❌ Firestore 查询失败:', err);
+              profile = null;
             }
           }
 
-          // 步骤 5: 如果还是没有，尝试从 Firestore 读取（fallback）
-          if (!profile || !profile.userId) {
-            console.log('[AuthContext] 尝试从 Firestore 读取用户数据...');
+          // ✅ 步骤 5: 如果仍然没有数据，清除登录状态
+          if (!profile) {
+            if (!isLoginPage) {
+              console.warn('[AuthContext] ⚠️ 无法获取用户数据，需要重新登录');
+            }
             
             try {
-              const effOrgId = (c && c.organizationId) || organizationId;
-              const effEventId = (c && c.eventId) || eventId;
-              
-              let firestoreProfile = await authService.getUserProfile(user.uid, effOrgId, effEventId);
-
-              // 若因规则导致查询失败，尝试顶层 users 集合
-              if (!firestoreProfile) {
-                const claimedUserId = c && c.userId;
-                if (claimedUserId) {
-                  console.log('[AuthContext] Fallback: reading top-level users/', claimedUserId);
-                  const userDocRef = doc(db, 'users', claimedUserId);
-                  const userDocSnap = await getDoc(userDocRef);
-                  if (userDocSnap.exists()) {
-                    firestoreProfile = { id: userDocSnap.id, ...userDocSnap.data() };
-                  }
-                }
-              }
-
-              if (firestoreProfile) {
-                profile = firestoreProfile;
-                console.log('[AuthContext] ✅ 从 Firestore 读取成功');
-              }
-            } catch (err) {
-              console.warn('[AuthContext] Firestore 读取失败（非致命错误）:', err.message);
-              // 继续使用 Claims/localStorage 的数据
+              await auth.signOut();
+            } catch (signOutErr) {
+              // 忽略错误
             }
+            
+            setLoading(false);
+            return;
           }
 
           // 步骤 6: 规范化角色名称
@@ -251,21 +282,8 @@ export const AuthProvider = ({ children }) => {
               roles: normalized.roles,
               source: userProfile?.userId ? 'login' : profile.basicInfo ? 'localStorage' : 'claims'
             });
-          } else {
-            // ✅ 在登录页面时静默处理
-            if (!isLoginPage) {
-              console.warn('[AuthContext] ⚠️ 无法获取用户数据，可能需要重新登录');
-            }
-            
-            // ✅ 自动清除旧的 Auth 状态
-            try {
-              console.log('[AuthContext] 正在清除旧的登录状态...');
-              await auth.signOut();
-            } catch (signOutErr) {
-              // 忽略 signOut 错误
-            }
-          }
 
+          }
         } catch (e) {
           // ✅ 根据页面类型决定日志级别
           if (isLoginPage) {
