@@ -57,17 +57,119 @@ exports.confirmCashSubmission = onCall(
         .collection('events').doc(eventId)
         .collection('users');
 
+      // 🔍 詳細的 Token 和參數日誌
+      console.log('[confirmCashSubmission] 🔍 Token & Params Debug:', {
+        authUid,
+        claimsUserId: auth.token?.userId,
+        claimsUserId2: auth.token?.user_id,
+        orgId,
+        eventId,
+        submissionId,
+        authTokenKeys: auth.token ? Object.keys(auth.token) : []
+      });
+
       console.log('[confirmCashSubmission] 📊 查询SellerManager，authUid:', authUid);
 
-      const smQuery = usersRef.where('authUid', '==', authUid);
-      const smSnapshot = await smQuery.get();
+      // ----- 更魯棒的查找流程（不修改前端/AuthContext） -----
+      // 優先嘗試 docId (可能為 claims.userId 或 phone_xxx)，再 fallback 到 where('authUid', authUid)
+      let smDoc = null;
+      const triedDocIds = [];
+      const claimUserId =
+        (auth.token && (auth.token.userId || auth.token.user_id)) || null;
 
-      if (smSnapshot.empty) {
-        console.error('[confirmCashSubmission] ❌ SellerManager不存在');
-        throw new Error('SellerManager不存在');
+      const candidateDocIds = Array.from(new Set([claimUserId, auth.uid].filter(Boolean)));
+
+      // 參考路徑
+      const eventUsersRef = db.collection('organizations').doc(orgId).collection('events').doc(eventId).collection('users');
+      const orgUsersRef = db.collection('organizations').doc(orgId).collection('users');
+      const rootUsersRef = db.collection('users');
+
+      // 1) 先以 candidateDocIds 嘗試多個可能的 doc path
+      for (const candidateId of candidateDocIds) {
+        triedDocIds.push(candidateId);
+        try {
+          // event-level
+          let snap = await eventUsersRef.doc(candidateId).get();
+          if (snap.exists) {
+            smDoc = snap;
+            console.log('[confirmCashSubmission] 找到 SellerManager by event users doc:', candidateId);
+            break;
+          }
+          // org-level
+          snap = await orgUsersRef.doc(candidateId).get();
+          if (snap.exists) {
+            smDoc = snap;
+            console.log('[confirmCashSubmission] 找到 SellerManager by org users doc:', candidateId);
+            break;
+          }
+          // root-level
+          snap = await rootUsersRef.doc(candidateId).get();
+          if (snap.exists) {
+            smDoc = snap;
+            console.log('[confirmCashSubmission] 找到 SellerManager by root users doc:', candidateId);
+            break;
+          }
+
+          console.log('[confirmCashSubmission] SellerManager doc not found for id (all paths):', candidateId);
+        } catch (err) {
+          console.warn('[confirmCashSubmission] 嘗試以 docId 讀取失敗 (忽略):', candidateId, err && err.message);
+        }
       }
 
-      const smDoc = smSnapshot.docs[0];
+      // 2) 如果還沒找到，嘗試以 authUid field 在多個 collection 查詢
+      if (!smDoc) {
+        try {
+          // event-level query
+          let qSnap = await eventUsersRef.where('authUid', '==', authUid).limit(1).get();
+          if (!qSnap.empty) {
+            smDoc = qSnap.docs[0];
+            console.log('[confirmCashSubmission] 找到 SellerManager by event users query:', smDoc.id);
+          }
+          // org-level query
+          if (!smDoc) {
+            qSnap = await orgUsersRef.where('authUid', '==', authUid).limit(1).get();
+            if (!qSnap.empty) {
+              smDoc = qSnap.docs[0];
+              console.log('[confirmCashSubmission] 找到 SellerManager by org users query:', smDoc.id);
+            }
+          }
+          // root-level query
+          if (!smDoc) {
+            qSnap = await rootUsersRef.where('authUid', '==', authUid).limit(1).get();
+            if (!qSnap.empty) {
+              smDoc = qSnap.docs[0];
+              console.log('[confirmCashSubmission] 找到 SellerManager by root users query:', smDoc.id);
+            }
+          }
+        } catch (err) {
+          console.warn('[confirmCashSubmission] authUid query failed (ignoring):', err && err.message);
+        }
+      }
+
+      if (!smDoc) {
+        // 🔍 診斷：列出所有可用的用戶 docId
+        let allUserDocs = [];
+        try {
+          const allDocs = await eventUsersRef.get();
+          allUserDocs = allDocs.docs.map(d => ({
+            docId: d.id,
+            authUid: d.data().authUid,
+            roles: d.data().roles
+          }));
+          console.warn('[confirmCashSubmission] 📋 當前 event 中所有用戶:', allUserDocs);
+        } catch (err) {
+          console.warn('[confirmCashSubmission] 無法列出用戶:', err.message);
+        }
+
+        console.warn('[confirmCashSubmission] ⚠️ 用户文档不存在:', {
+          triedDocIds,
+          authUid,
+          claimUserId,
+          foundUserDocs: allUserDocs
+        });
+        throw new Error('用户不存在');
+      }
+
       const smData = smDoc.data();
       const smId = smDoc.id;
 

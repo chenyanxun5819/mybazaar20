@@ -35,13 +35,20 @@ exports.confirmCashSubmission = onCall(
       throw new Error('用户未登录');
     }
 
-    const { orgId, eventId, submissionId, confirmationNote } = data;
+    const { orgId: rawOrgId, eventId: rawEventId, submissionId, confirmationNote } = data;
+
+    // ===== 🛡️ 防御性处理：确保移除前缀 =====
+    const orgId = rawOrgId?.replace('organization_', '') || rawOrgId || '';
+    const eventId = rawEventId?.replace('event_', '') || rawEventId || '';
 
     console.log('[confirmCashSubmission] 📥 收到请求:', {
+      rawOrgId,
+      rawEventId,
       orgId,
       eventId,
       submissionId,
-      userId: auth.uid
+      userId: auth.uid,
+      didRemovePrefix: rawOrgId !== orgId || rawEventId !== eventId
     });
 
     if (!orgId || !eventId || !submissionId) {
@@ -76,13 +83,13 @@ exports.confirmCashSubmission = onCall(
         roles: userData.roles
       });
       
-      // 检查是否是 Finance Manager
-      if (!userData.roles || !userData.roles.includes('financeManager')) {
+      // 检查是否是 Seller Manager
+      if (!userData.roles || !userData.roles.includes('sellerManager')) {
         console.warn('[confirmCashSubmission] ⚠️ 权限不足:', {
           userId,
           roles: userData.roles
         });
-        throw new Error('只有财务经理可以确认收款');
+        throw new Error('只有 Seller Manager 可以确认收款');
       }
 
       // ===== 3. 获取上交记录 =====
@@ -99,80 +106,71 @@ exports.confirmCashSubmission = onCall(
 
       const submissionData = submissionDoc.data();
 
-      // 检查状态
-      if (submissionData.status !== 'pending') {
-        throw new Error(`无法确认：当前状态为 ${submissionData.status}`);
+      console.log('[confirmCashSubmission] ✅ 找到提交记录:', {
+        submissionNumber: submissionData.submissionNumber,
+        amount: submissionData.amount,
+        status: submissionData.status,
+        receivedBy: submissionData.receivedBy,
+        submittedBy: submissionData.submittedBy,
+        submitterRole: submissionData.submitterRole
+      });
+
+      // 验证 receivedBy 是当前 SellerManager
+      if (submissionData.receivedBy !== userId) {
+        console.error('[confirmCashSubmission] ❌ 不是接收人');
+        throw new Error('您不是此笔现金的接收人');
       }
+
+      // 验证状态
+      if (submissionData.status !== 'pending') {
+        console.error('[confirmCashSubmission] ❌ 状态不是pending:', submissionData.status);
+        throw new Error(`此记录状态为${submissionData.status}，无法确认`);
+      }
+
+      // 验证是 Seller 提交的
+      if (submissionData.submitterRole !== 'seller') {
+        console.error('[confirmCashSubmission] ❌ 提交者不是Seller');
+        throw new Error('只能确认Seller提交的现金');
+      }
+
+      console.log('[confirmCashSubmission] ✅ 验证通过，开始确认收款');
 
       // ===== 4. 使用事务确认收款 =====
       const result = await db.runTransaction(async (transaction) => {
         const now = FieldValue.serverTimestamp();
+        const amount = submissionData.amount || 0;
         
         // 4.1 更新上交记录状态
         transaction.update(submissionRef, {
           status: 'confirmed',
           confirmedAt: now,
-          receivedBy: userId,
-          receiverName: userData.basicInfo?.name || '财务经理',
           confirmationNote: confirmationNote || '',
           'metadata.updatedAt': now
         });
 
-        // 4.2 更新 Finance Manager 统计
-        const amount = submissionData.amount || 0;
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-
-        // 获取用户文档引用
+        // 4.2 更新 SellerManager.cashStats 统计（完全匹配JSON架构）
         const userDocRef = db
           .collection('organizations').doc(orgId)
           .collection('events').doc(eventId)
           .collection('users').doc(userId);
 
-        // 获取当前统计数据
-        const currentFinanceData = (await transaction.get(userDocRef)).data();
-        const currentCashStats = currentFinanceData.financeManager?.cashStats || {};
-        
-        // 计算今日收款
-        const lastCollection = currentCashStats.lastCollectionAt;
-        const isToday = lastCollection && lastCollection.toDate() >= todayStart;
-        
         transaction.update(userDocRef, {
-          'financeManager.cashStats.totalCollected': FieldValue.increment(amount),
-          'financeManager.cashStats.todayCollected': isToday 
-            ? FieldValue.increment(amount) 
-            : amount,
-          'financeManager.cashStats.totalCollections': FieldValue.increment(1),
-          'financeManager.cashStats.todayCollections': isToday 
-            ? FieldValue.increment(1) 
-            : 1,
-          'financeManager.cashStats.lastCollectionAt': now,
-          
-          // 更新待确认统计（减少）
-          'financeManager.pendingStats.pendingAmount': FieldValue.increment(-amount),
-          'financeManager.pendingStats.pendingCount': FieldValue.increment(-1)
+          // 减少待收款
+          'sellerManager.cashStats.pendingFromSellers': FieldValue.increment(-amount),
+          // 增加已确认收款
+          'sellerManager.cashStats.confirmedFromSellers': FieldValue.increment(amount),
+          // 增加持有现金
+          'sellerManager.cashStats.cashOnHand': FieldValue.increment(amount),
+          // 更新最后确认时间
+          'sellerManager.cashStats.lastConfirmedAt': now
         });
-
-        // 4.3 更新提交者的收款状态（如果是 SellerManager）
-        if (submissionData.submitterRole === 'sellerManager') {
-          const submitterRef = db
-            .collection('organizations').doc(orgId)
-            .collection('events').doc(eventId)
-            .collection('users').doc(submissionData.submittedBy);
-
-          transaction.update(submitterRef, {
-            'sellerManager.cashStats.totalSubmitted': FieldValue.increment(amount),
-            'sellerManager.cashStats.totalConfirmed': FieldValue.increment(amount),
-            'sellerManager.cashStats.pendingSubmission': FieldValue.increment(-amount),
-            'sellerManager.cashStats.lastSubmittedAt': now
-          });
-        }
 
         return {
           success: true,
           submissionId,
+          submissionNumber: submissionData.submissionNumber,
           amount,
-          confirmedAt: now
+          sellerName: submissionData.submitterName
         };
       });
 
@@ -181,13 +179,17 @@ exports.confirmCashSubmission = onCall(
       // ===== 5. 返回结果 =====
       return {
         success: true,
-        message: '收款确认成功',
+        message: `已确认收到 ${result.sellerName} 的 RM ${result.amount}`,
         data: result
       };
 
     } catch (error) {
-      console.error('[confirmCashSubmission] ❌ 确认收款失败:', error);
-      throw new Error('确认收款失败: ' + error.message);
+      console.error('[confirmCashSubmission] ❌ 确认失败:', {
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      
+      throw new Error('确认失败: ' + error.message);
     }
   }
 );

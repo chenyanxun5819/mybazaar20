@@ -1,0 +1,335 @@
+/**
+ * Transaction PIN Dialog Styles
+ * 交易密码对话框样式
+ */
+
+/* ===== 遮罩层 ===== */
+.pin-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ===== 对话框 ===== */
+.pin-dialog {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ===== 对话框头部 ===== */
+.pin-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pin-dialog-header h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0;
+}
+
+.close-button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #f7fafc;
+  border-radius: 50%;
+  font-size: 20px;
+  color: #718096;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  background: #e2e8f0;
+  color: #2d3748;
+}
+
+/* ===== 对话框内容 ===== */
+.pin-dialog-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ===== 消息提示 ===== */
+.message-box {
+  background: #ebf8ff;
+  border: 2px solid #90cdf4;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.message-text {
+  font-size: 15px;
+  color: #2c5282;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ===== 密码输入区域 ===== */
+.pin-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pin-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label-icon {
+  font-size: 18px;
+}
+
+.pin-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 8px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.pin-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.pin-input.error {
+  border-color: #fc8181;
+  background: #fff5f5;
+}
+
+.pin-input::placeholder {
+  letter-spacing: normal;
+  font-weight: normal;
+  opacity: 0.5;
+}
+
+/* ===== 密码点显示 ===== */
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pin-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.pin-dot.filled {
+  background: #667eea;
+  transform: scale(1.2);
+}
+
+/* ===== 错误提示 ===== */
+.error-message {
+  color: #c53030;
+  font-size: 13px;
+  margin: 0;
+  padding: 8px 12px;
+  background: #fff5f5;
+  border-radius: 6px;
+  border: 1px solid #fc8181;
+}
+
+/* ===== 备注区域 ===== */
+.note-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.note-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: all 0.3s ease;
+}
+
+.note-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.char-count {
+  font-size: 12px;
+  color: #a0aec0;
+  text-align: right;
+}
+
+/* ===== 安全提示 ===== */
+.security-tip {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-radius: 8px;
+}
+
+.tip-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.tip-text {
+  font-size: 13px;
+  color: #744210;
+  line-height: 1.5;
+}
+
+/* ===== 对话框底部 ===== */
+.pin-dialog-footer {
+  display: flex;
+  gap: 12px;
+  padding: 24px;
+  border-top: 2px solid #e2e8f0;
+}
+
+.cancel-btn,
+.confirm-btn {
+  flex: 1;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-btn {
+  background: #f7fafc;
+  color: #4a5568;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.cancel-btn:disabled,
+.confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .pin-dialog {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .pin-dialog-header,
+  .pin-dialog-content,
+  .pin-dialog-footer {
+    padding: 20px;
+  }
+
+  .pin-dialog-header h3 {
+    font-size: 18px;
+  }
+
+  .pin-input {
+    font-size: 16px;
+    letter-spacing: 6px;
+  }
+
+  .pin-dots {
+    gap: 10px;
+  }
+
+  .pin-dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  .pin-dialog-footer {
+    flex-direction: column;
+  }
+
+  .cancel-btn,
+  .confirm-btn {
+    width: 100%;
+  }
+}

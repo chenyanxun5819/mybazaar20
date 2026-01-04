@@ -60,6 +60,10 @@ export const AuthProvider = ({ children }) => {
         r === 'event_manager' ? 'eventManager' : r
       );
     }
+    // 保險：若 identityTag 沒在頂層，嘗試從 identityInfo 提升
+    if (!normalized.identityTag && normalized.identityInfo?.identityTag) {
+      normalized.identityTag = normalized.identityInfo.identityTag;
+    }
     return normalized;
   };
 
@@ -323,11 +327,22 @@ export const AuthProvider = ({ children }) => {
           console.log('[AuthContext] Loaded custom claims:', c);
 
           // 步驟 2: 檢查 Profile 是否完整
-          // 修正：放寬檢查條件，避免無限加載。只要有 userId 且不是正在登入過程中，就視為可用。
-          // identityTag 僅作為輔助檢查，不應阻塞整個 App 的加載。
+          // ✅ 增强检查：对于需要 identityTag 的角色，必须有 identityTag
           const hasBasicInfo = userProfile && userProfile.userId && userProfile.roles;
           
-          if (hasBasicInfo) {
+          // 🔧 关键修复：检查数据完整性
+          const needsIdentityTag = userProfile?.roles?.some(role => 
+            ['seller', 'customer', 'merchant'].includes(role)
+          );
+          const hasIdentityTag = !!userProfile?.identityTag;
+          
+          // 如果需要 identityTag 但没有，强制重新加载
+          if (hasBasicInfo && needsIdentityTag && !hasIdentityTag) {
+            console.warn('[AuthContext] ⚠️ Profile 缺少 identityTag，强制从 Firestore 重新加载');
+            console.warn('[AuthContext] 当前 roles:', userProfile.roles);
+            console.warn('[AuthContext] identityTag:', userProfile.identityTag);
+            // 不使用旧的 profile，强制重新加载
+          } else if (hasBasicInfo) {
             console.log('[AuthContext] ✅ 使用已有的 userProfile');
             setLoading(false);
             return;
@@ -499,15 +514,48 @@ export const AuthProvider = ({ children }) => {
   // 公开的 setUserProfile 方法（供 UniversalLogin 使用）
   const updateUserProfile = (profile) => {
     console.log('[AuthContext] updateUserProfile called:', profile);
-    
-    // ⭐ 确保包含 organizationCode 和 eventCode
-    const enrichedProfile = {
-      ...profile,
-      organizationCode: profile.organizationCode || orgCode,
-      eventCode: profile.eventCode || eventCode
-    };
-    
-    setUserProfile(enrichedProfile);
+
+    setUserProfile((prev) => {
+      // 角色规范化（兼容 event_manager）
+      const normalizedRoles = Array.isArray(profile?.roles)
+        ? profile.roles.map((r) => (r === 'event_manager' ? 'eventManager' : r))
+        : prev?.roles;
+
+      // 合并 identityInfo（避免被 undefined 覆盖）
+      const mergedIdentityInfo = {
+        ...(prev?.identityInfo || {}),
+        ...(profile?.identityInfo || {})
+      };
+
+      // 合并 basicInfo（避免覆盖掉已存在字段）
+      const mergedBasicInfo = {
+        ...(prev?.basicInfo || {}),
+        ...(profile?.basicInfo || {})
+      };
+
+      // 关键：保留既有 identityTag（避免 InitialPasswordSetup 之类的 payload 没带就把它洗掉）
+      const resolvedIdentityTag =
+        profile?.identityTag ||
+        profile?.identityInfo?.identityTag ||
+        prev?.identityTag ||
+        prev?.identityInfo?.identityTag ||
+        mergedIdentityInfo?.identityTag;
+
+      const enrichedProfile = {
+        ...(prev || {}),
+        ...profile,
+        roles: normalizedRoles || profile?.roles,
+        basicInfo: mergedBasicInfo,
+        identityInfo: Object.keys(mergedIdentityInfo).length ? mergedIdentityInfo : undefined,
+        identityTag: resolvedIdentityTag,
+        // ⭐ 确保包含 organizationCode 和 eventCode（用于导航）
+        organizationCode:
+          profile?.organizationCode || profile?.orgCode || prev?.organizationCode || orgCode,
+        eventCode: profile?.eventCode || prev?.eventCode || eventCode
+      };
+
+      return enrichedProfile;
+    });
   };
 
   const value = {

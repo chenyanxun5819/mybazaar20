@@ -157,8 +157,8 @@ const CollectCash = ({ userInfo, eventData }) => {
       const confirmFunc = httpsCallable(functions, 'confirmCashSubmission');
       
       const result = await confirmFunc({
-        orgId: `organization_${orgId}`,
-        eventId: `event_${eventId}`,
+        orgId: orgId,  // ✅ 不添加前缀，直接使用纯ID
+        eventId: eventId,  // ✅ 不添加前缀，直接使用纯ID
         submissionId: selectedSubmission.id,
         note: confirmNote
       });

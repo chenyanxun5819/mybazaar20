@@ -1,0 +1,284 @@
+/**
+ * Direct Sale Styles
+ * 直接销售点数样式
+ */
+
+.direct-sale {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* ===== Seller库存显示 ===== */
+.seller-inventory {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  padding: 24px;
+  border-radius: 12px;
+  color: #fff;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.inventory-label {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.inventory-amount {
+  font-size: 48px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.inventory-hint {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* ===== 表单区域 ===== */
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.input-group {
+  display: flex;
+  gap: 12px;
+}
+
+.input-group input {
+  flex: 1;
+  padding: 14px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.input-group input:disabled {
+  background: #f7fafc;
+  cursor: not-allowed;
+}
+
+.search-button {
+  padding: 14px 28px;
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+}
+
+.search-button:hover:not(:disabled) {
+  background: #5a67d8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.search-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== 客户信息显示 ===== */
+.customer-info {
+  background: #c6f6d5;
+  border: 2px solid #9ae6b4;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.customer-name {
+  font-size: 16px;
+  color: #22543d;
+  margin-bottom: 8px;
+}
+
+.customer-balance {
+  font-size: 14px;
+  color: #276749;
+}
+
+.success-box {
+  background: #c6f6d5;
+  border-color: #9ae6b4;
+}
+
+/* ===== 金额输入 ===== */
+.amount-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f7fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 4px;
+  transition: all 0.3s ease;
+}
+
+.amount-input-wrapper:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.amount-input-wrapper input {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.amount-input-wrapper input:focus {
+  outline: none;
+}
+
+.input-suffix {
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+  white-space: nowrap;
+}
+
+/* ===== 余额检查 ===== */
+.balance-check {
+  margin-top: 8px;
+}
+
+.balance-ok {
+  color: #22543d;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.balance-insufficient {
+  color: #c53030;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ===== 提示信息 ===== */
+.hint {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 4px;
+}
+
+.error-message {
+  background: #fed7d7;
+  color: #c53030;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #fc8181;
+}
+
+.success-message {
+  background: #c6f6d5;
+  color: #22543d;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #9ae6b4;
+}
+
+/* ===== 提交按钮 ===== */
+.submit-button {
+  width: 100%;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.submit-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== 信息框 ===== */
+.info-box {
+  background: #ebf8ff;
+  border: 2px solid #90cdf4;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.info-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2c5282;
+  margin: 0 0 12px 0;
+}
+
+.info-list {
+  margin: 0;
+  padding-left: 24px;
+  color: #2c5282;
+}
+
+.info-list li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .input-group {
+    flex-direction: column;
+  }
+
+  .search-button {
+    width: 100%;
+  }
+
+  .amount-input-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .input-suffix {
+    text-align: center;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .inventory-amount {
+    font-size: 36px;
+  }
+}

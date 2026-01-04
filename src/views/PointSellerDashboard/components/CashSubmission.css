@@ -1,0 +1,408 @@
+/**
+ * Cash Submission Styles
+ * 现金上交样式
+ */
+
+.cash-submission {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* ===== 现金统计 ===== */
+.cash-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.summary-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  border-left: 4px solid;
+}
+
+.summary-card.total {
+  border-color: #4299e1;
+}
+
+.summary-card.submitted {
+  border-color: #48bb78;
+}
+
+.summary-card.pending {
+  border-color: #ed8936;
+}
+
+.summary-label {
+  font-size: 14px;
+  color: #718096;
+  margin-bottom: 8px;
+}
+
+.summary-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.summary-value.highlight {
+  color: #ed8936;
+}
+
+/* ===== 可上交记录区域 ===== */
+.available-section {
+  margin-bottom: 32px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0;
+}
+
+.select-all-btn {
+  padding: 8px 16px;
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.select-all-btn:hover {
+  background: #5a67d8;
+  transform: translateY(-2px);
+}
+
+/* ===== 记录列表 ===== */
+.records-list {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.record-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.record-item:last-child {
+  border-bottom: none;
+}
+
+.record-item:hover {
+  background: #f7fafc;
+}
+
+.record-item.selected {
+  background: #ebf8ff;
+  border-color: #90cdf4;
+}
+
+.record-checkbox {
+  flex-shrink: 0;
+}
+
+.record-checkbox input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.record-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.record-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.record-details {
+  font-size: 13px;
+  color: #718096;
+}
+
+.record-time {
+  font-size: 12px;
+  color: #a0aec0;
+}
+
+.record-amount {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  white-space: nowrap;
+}
+
+/* ===== 空状态 ===== */
+.records-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #718096;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.empty-message {
+  font-size: 16px;
+  margin: 0;
+}
+
+/* ===== 提交面板 ===== */
+.submission-panel {
+  background: #f7fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 16px;
+}
+
+.selected-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.selected-count {
+  font-size: 16px;
+  color: #4a5568;
+  font-weight: 600;
+}
+
+.selected-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.note-group {
+  margin-bottom: 20px;
+}
+
+.note-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 8px;
+}
+
+.note-group textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: all 0.3s ease;
+}
+
+.note-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.char-count {
+  font-size: 12px;
+  color: #a0aec0;
+  text-align: right;
+  margin-top: 4px;
+}
+
+.submit-cash-btn {
+  width: 100%;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.submit-cash-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(72, 187, 120, 0.4);
+}
+
+.submit-cash-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== 提示信息 ===== */
+.error-message {
+  background: #fed7d7;
+  color: #c53030;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #fc8181;
+  margin-bottom: 16px;
+}
+
+.success-message {
+  background: #c6f6d5;
+  color: #22543d;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid #9ae6b4;
+  margin-bottom: 16px;
+}
+
+/* ===== 待确认/已确认记录 ===== */
+.pending-section,
+.confirmed-section {
+  margin-top: 32px;
+}
+
+.pending-section h3,
+.confirmed-section h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0 0 16px 0;
+}
+
+.pending-list,
+.confirmed-list {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pending-item,
+.confirmed-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pending-item:last-child,
+.confirmed-item:last-child {
+  border-bottom: none;
+}
+
+.pending-info,
+.confirmed-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pending-amount,
+.confirmed-amount {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.pending-time,
+.confirmed-time {
+  font-size: 13px;
+  color: #718096;
+}
+
+.confirmed-receiver {
+  font-size: 13px;
+  color: #718096;
+}
+
+.pending-note {
+  font-size: 13px;
+  color: #4a5568;
+  font-style: italic;
+}
+
+.pending-status,
+.confirmed-status {
+  flex-shrink: 0;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-badge.pending {
+  background: #fed7d7;
+  color: #c53030;
+}
+
+.status-badge.confirmed {
+  background: #c6f6d5;
+  color: #22543d;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .cash-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .record-item {
+    flex-wrap: wrap;
+  }
+
+  .record-amount {
+    width: 100%;
+    text-align: right;
+    margin-top: 8px;
+  }
+
+  .selected-summary {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .summary-value {
+    font-size: 24px;
+  }
+}
