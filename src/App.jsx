@@ -64,7 +64,13 @@ function App() {
       {/* ⭐ 新增：密码设置路由 */}
       <Route
         path="/setup-passwords/:orgEventCode"
-        element={<InitialPasswordSetup />}
+        element={
+          <EventProvider>
+            <AuthProvider>
+              <InitialPasswordSetup />
+            </AuthProvider>
+          </EventProvider>
+        }
       />
       {/* 📄 Event Manager 专用登录 - 重定向到统一登录 */}
       <Route path="/event-manager/:orgEventCode/login" element={<EventManagerLogin />} />

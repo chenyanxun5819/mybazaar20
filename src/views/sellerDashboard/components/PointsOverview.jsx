@@ -17,9 +17,9 @@ function PointsOverview() {
   console.log('8. availablePoints:', stats?.availablePoints);
   console.log('============================');
 
-  // 🔧 正确读取identityTag（在根级别，不是identityInfo.userType）
-  const identityTag = userProfile?.identityTag;
-  const isStudent = identityTag === 'student';
+  // 🔧 正确读取 identityTag (支持 student/students)
+  const identityTag = userProfile?.identityTag || userProfile?.identityInfo?.identityTag;
+  const isStudent = identityTag === 'student' || identityTag === 'students';
 
   console.log('[PointsOverview] 用户类型:', { identityTag, isStudent });
 

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import { useAuth } from '../../contexts/AuthContext'; // 🆕 導入 AuthContext
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
 import UserList from '../../components/common/UserList';
@@ -25,6 +26,7 @@ const ROLE_CONFIG = {
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
+  const { userProfile, loading: authLoading, isAuthenticated } = useAuth(); // 🆕 使用 AuthContext
 
   const [loading, setLoading] = useState(true);
   const [eventData, setEventData] = useState(null);
@@ -99,6 +101,23 @@ const EventManagerDashboard = () => {
     现有点数: true,
     已销售点数: true
   });
+
+  // 🆕 計算已被其他 Seller Manager 佔用的部門
+  const takenDepartments = useMemo(() => {
+    const taken = {};
+    users.forEach(u => {
+      // 跳過正在編輯的本人
+      if (u.id === editingUser?.id) return;
+      
+      // 檢查該用戶是否為 Seller Manager 且有管理的部門
+      if (u.roles?.includes('sellerManager') && u.sellerManager?.managedDepartments) {
+        u.sellerManager.managedDepartments.forEach(dept => {
+          taken[dept] = u.basicInfo?.chineseName || u.basicInfo?.englishName || '其他管理员';
+        });
+      }
+    });
+    return taken;
+  }, [users, editingUser]);
 
   // 🆕 电话号码遮罩函数
   const maskPhone = (phone) => {
@@ -260,112 +279,138 @@ const EventManagerDashboard = () => {
   };
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (!authLoading) {
+      loadDashboardData();
+    }
+  }, [authLoading, userProfile, orgEventCode]);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
 
-      // 从 localStorage 获取用户信息（兼容两种 key）
-      const storedInfo = localStorage.getItem('eventManagerInfo') || localStorage.getItem('eventManagerLogin');
-      if (!storedInfo) {
-        alert('请先登录');
-        if (orgEventCode) {
-          navigate(`/login/${orgEventCode}`);
-        }
-        return;
-      }
-
-      const info = JSON.parse(storedInfo);
-      setUserInfo(info);
-      // 同步设置 organizationId 和 eventId，以供 UserList 等组件使用
-      if (info?.organizationId) setOrganizationId(info.organizationId);
-      if (info?.eventId) setEventId(info.eventId);
-
-      // 加载组织信息
-      const orgDoc = await getDoc(doc(db, 'organizations', info.organizationId));
-      if (orgDoc.exists()) {
-        const orgInfo = orgDoc.data();
-        setOrgData(orgInfo);
-        
-        // 🆕 提取部门列表
-        if (orgInfo.departments) {
-          const activeDepts = orgInfo.departments
-            .filter(d => d.isActive !== false)
-            .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
-          setDepartments(activeDepts.map(d => d.name));
-        }
-      }
-
-      // 加载活动信息（使用子集合）
-      const eventDoc = await getDoc(
-        doc(db, 'organizations', info.organizationId, 'events', info.eventId)
+      // 設置一個超時保護，防止無限加載
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('加載超時')), 20000)
       );
 
-      if (eventDoc.exists()) {
-        const eventInfo = eventDoc.data();
-        setEventData(eventInfo);
+      const dataPromise = (async () => {
+        // 🆕 優先使用 AuthContext 的數據
+        let info = userProfile;
+        console.log('[EventManagerDashboard] loadDashboardData - userProfile:', info);
 
-        // 加载用户统计（使用子集合）
-        const usersSnapshot = await getDocs(
-          collection(db, 'organizations', info.organizationId, 'events', info.eventId, 'users')
+        // 如果 AuthContext 還在加載，先不報錯，等待 useEffect 觸發
+        if (authLoading) {
+          return;
+        }
+
+        // 如果 AuthContext 加載完成但沒有用戶，嘗試從 localStorage 恢復（兼容舊邏輯）
+        if (!info) {
+          const storedInfo = localStorage.getItem('eventManagerInfo') || localStorage.getItem('eventManagerLogin');
+          if (storedInfo) {
+            try {
+              info = JSON.parse(storedInfo);
+            } catch (e) {
+              console.error('[EventManagerDashboard] localStorage 解析失敗:', e);
+              info = null;
+            }
+          }
+        }
+
+        if (!info) {
+          // 只有在確定沒有登入狀態時才報錯
+          if (!authLoading) {
+            console.warn('[EventManagerDashboard] 未找到用戶資訊');
+            if (orgEventCode) navigate(`/login/${orgEventCode}`);
+          }
+          return;
+        }
+
+        setUserInfo(info);
+        // 同步设置 organizationId 和 eventId，以供 UserList 等组件使用
+        const currentOrgId = info.organizationId || organizationId;
+        const currentEventId = info.eventId || eventId;
+        
+        if (currentOrgId) setOrganizationId(currentOrgId);
+        if (currentEventId) setEventId(currentEventId);
+
+        if (!currentOrgId || !currentEventId) {
+          return;
+        }
+
+        // 加载组织信息
+        const orgDoc = await getDoc(doc(db, 'organizations', currentOrgId));
+        if (orgDoc.exists()) {
+          const orgInfo = orgDoc.data();
+          setOrgData(orgInfo);
+          
+          // 🆕 提取部门列表
+          if (orgInfo.departments) {
+            const activeDepts = orgInfo.departments
+              .filter(d => d.isActive !== false)
+              .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+            setDepartments(activeDepts.map(d => d.name));
+          }
+        }
+
+        // 加载活动信息（使用子集合）
+        const eventDoc = await getDoc(
+          doc(db, 'organizations', currentOrgId, 'events', currentEventId)
         );
 
-        let stats = {
-          totalUsers: usersSnapshot.size,
-          totalEventManagers: 0,
-          totalSellerManagers: 0,
-          totalMerchantManagers: 0,
-          totalCustomerManagers: 0,
-          totalFinanceManagers: 0,
-          totalSellers: 0,
-          totalMerchants: 0,
-          totalCustomers: 0,
-          totalAllocatedPoints: 0  // 🆕 新增：已分配的总点数
-        };
+        if (eventDoc.exists()) {
+          const eventInfo = eventDoc.data();
+          setEventData(eventInfo);
 
-        // 加载用户列表数据（用于表格显示）
-        const userList = [];
-        let totalAllocated = 0;  // 🆕 累计已分配点数
+          // 加载用户统计（使用子集合）
+          const usersSnapshot = await getDocs(
+            collection(db, 'organizations', currentOrgId, 'events', currentEventId, 'users')
+          );
 
-        usersSnapshot.forEach(doc => {
-          const userData = doc.data();
-          userList.push({
-            id: doc.id,
-            ...userData
+          let stats = {
+            totalUsers: usersSnapshot.size,
+            totalEventManagers: 0,
+            totalSellerManagers: 0,
+            totalMerchantManagers: 0,
+            totalCustomerManagers: 0,
+            totalFinanceManagers: 0,
+            totalSellers: 0,
+            totalMerchants: 0,
+            totalCustomers: 0,
+            totalAllocatedPoints: 0
+          };
+
+          const userList = [];
+          let totalAllocated = 0;
+
+          usersSnapshot.forEach(doc => {
+            const userData = doc.data();
+            userList.push({ id: doc.id, ...userData });
+
+            if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
+            if (userData.roles?.includes('financeManager')) stats.totalFinanceManagers++;
+            if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
+            if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
+            if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
+            if (userData.roles?.includes('seller')) stats.totalSellers++;
+            if (userData.roles?.includes('merchant')) stats.totalMerchants++;
+            if (userData.roles?.includes('customer')) stats.totalCustomers++;
+            
+            if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
+            if (userData.merchant?.availablePoints) totalAllocated += userData.merchant.availablePoints;
+            if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
+            if (userData.seller?.totalPointsSold) totalAllocated += userData.seller.totalPointsSold;
+            if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
           });
 
-          // ✅ 新架构：Event Manager 在 users 集合中，通过 roles 识别
-          if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
-          if (userData.roles?.includes('financeManager')) stats.totalFinanceManagers++;
-          if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
-          if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
-          if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
-          if (userData.roles?.includes('seller')) stats.totalSellers++;
-          if (userData.roles?.includes('merchant')) stats.totalMerchants++;
-          if (userData.roles?.includes('customer')) stats.totalCustomers++;
-          
-          // 🆕 累加所有用户的可用点数（已分配但未使用）
-          if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
-          if (userData.merchant?.availablePoints) totalAllocated += userData.merchant.availablePoints;
-          if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
-          
-          // 🆕 累加所有用户的已销售点数（已分配且已使用）
-          if (userData.seller?.totalPointsSold) totalAllocated += userData.seller.totalPointsSold;
-          if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
-        });
+          stats.totalAllocatedPoints = totalAllocated;
+          setStatistics(stats);
+          setUsers(userList);
+        }
+      })();
 
-        // ✅ 新架构：eventManager 是单个对象，不是数组
-        // Event Manager 数量固定为 1（如果存在）或 0（如果不存在）
-        stats.totalAllocatedPoints = totalAllocated;  // 🆕 设置已分配总点数
-
-        setStatistics(stats);
-        setUsers(userList); // 保存用户列表
-      }
+      await Promise.race([dataPromise, timeoutPromise]);
     } catch (error) {
       console.error('[EventManagerDashboard] 加载失败:', error);
-      alert(`加载失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -384,7 +429,11 @@ const EventManagerDashboard = () => {
       await signOut(auth);
       localStorage.removeItem('eventManagerInfo');
       localStorage.removeItem('eventManagerLogin'); // 清除兼容 key
-      navigate(`/login/${orgEventCode}`);
+      // 🔧 修复：使用 userProfile 中的 organizationCode 和 eventCode
+      const orgCode = userProfile?.organizationCode || '';
+      const evtCode = userProfile?.eventCode || '';
+      const orgEventCodeRoute = `${orgCode}-${evtCode}`;
+      navigate(`/login/${orgEventCodeRoute}`);
     } catch (error) {
       console.error('登出失败:', error);
       alert('登出失败');
@@ -1092,27 +1141,57 @@ const EventManagerDashboard = () => {
                     🏢 管理的部门 (Seller Manager)
                   </div>
                   <div style={styles.departmentsGrid}>
-                    {departments.map(dept => (
-                      <div
-                        key={dept}
-                        style={styles.departmentCheckbox}
-                        onClick={() => {
-                          setManagedDepartments(prev =>
-                            prev.includes(dept)
-                              ? prev.filter(d => d !== dept)
-                              : [...prev, dept]
-                          );
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={managedDepartments.includes(dept)}
-                          onChange={() => {}}
-                          style={styles.checkbox}
-                        />
-                        {dept}
-                      </div>
-                    ))}
+                    {departments.map(dept => {
+                      const managerName = takenDepartments[dept];
+                      const isTaken = !!managerName;
+
+                      return (
+                        <div
+                          key={dept}
+                          style={{
+                            ...styles.departmentCheckbox,
+                            opacity: isTaken ? 0.6 : 1,
+                            backgroundColor: isTaken ? '#f3f4f6' : 'white',
+                            cursor: isTaken ? 'not-allowed' : 'pointer',
+                            borderColor: isTaken ? '#e5e7eb' : (managedDepartments.includes(dept) ? '#8b5cf6' : '#e5e7eb'),
+                            position: 'relative'
+                          }}
+                          onClick={() => {
+                            if (isTaken) return;
+                            setManagedDepartments(prev =>
+                              prev.includes(dept)
+                                ? prev.filter(d => d !== dept)
+                                : [...prev, dept]
+                            );
+                          }}
+                          title={isTaken ? `该部门已由 ${managerName} 管理` : ''}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={managedDepartments.includes(dept)}
+                            onChange={() => {}}
+                            disabled={isTaken}
+                            style={{
+                              ...styles.checkbox,
+                              cursor: isTaken ? 'not-allowed' : 'pointer'
+                            }}
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ 
+                              fontWeight: managedDepartments.includes(dept) ? '600' : '400',
+                              color: isTaken ? '#9ca3af' : '#374151'
+                            }}>
+                              {dept}
+                            </span>
+                            {isTaken && (
+                              <span style={{ fontSize: '0.65rem', color: '#ef4444' }}>
+                                👤 {managerName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   {managedDepartments.length === 0 && (
                     <div style={{ ...styles.formHint, color: '#f59e0b', marginTop: '0.5rem' }}>

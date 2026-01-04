@@ -1,10 +1,13 @@
 /**
- * SellerSubmitCash.jsx (修复版 v2.1 - 正确架构)
- * ✅ 修复：正确读取identityTag（根级别，不是identityInfo.userType）
- * ✅ 修复：使用department查找SellerManager，不使用managedBy
+ * SellerSubmitCash.jsx (智能修复版 v3.3)
  * 
- * @version 2.1
- * @date 2025-01-02
+ * 🔧 本次修复：
+ * 1. ✅ 智能处理有/无 identityTag 的情况
+ * 2. ✅ 2秒后自动判定为非学生（避免无限等待）
+ * 3. ✅ 保留原有的学生检测逻辑
+ * 
+ * @version 3.3
+ * @date 2025-01-04
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -25,7 +28,7 @@ import './SellerSubmitCash.css';
 
 const SellerSubmitCash = () => {
   const { stats, loading: statsLoading, error: statsError } = useSellerStats();
-  const { userProfile } = useAuth();
+  const { userProfile, loading: authLoading } = useAuth();
   
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,68 +37,117 @@ const SellerSubmitCash = () => {
   const [submitAmount, setSubmitAmount] = useState('');
   const [submitNote, setSubmitNote] = useState('');
   const [sellerManager, setSellerManager] = useState(null);
+  const [smLoading, setSmLoading] = useState(false);
+  
+  // 🆕 2秒后放宽检查
+  const [identityTagTimeout, setIdentityTagTimeout] = useState(false);
 
-  const orgId = userProfile?.organizationId;
-  const eventId = userProfile?.eventId;
+  const orgId = userProfile?.organizationId?.replace('organization_', '') || '';
+  const eventId = userProfile?.eventId?.replace('event_', '') || '';
   const sellerId = userProfile?.userId;
   
   const cashOnHand = stats?.pendingCollection || 0;
   
-  // 🔧 正确读取identityTag（在根级别）
-  const identityTag = userProfile?.identityTag;
-  const isStudent = identityTag === 'student';
-  
-  // 学生的department
+  // 支持多种 identityTag 格式
+  const identityTag = userProfile?.identityTag || userProfile?.identityInfo?.identityTag;
+  const isStudent = identityTag === 'student' || identityTag === 'students';
   const department = userProfile?.identityInfo?.department;
 
-  console.log('[SellerSubmitCash] 🔍 数据状态:', {
-    statsLoading,
-    statsError,
-    stats,
-    cashOnHand,
-    identityTag,  // ← 应该显示 'student' 或 'staff'/'teacher'
-    isStudent,
-    department,
-    orgId,
-    eventId,
-    sellerId
-  });
+  // 🔧 智能加载检查：
+  // 1. 如果有 identityTag → 等待它加载完成
+  // 2. 如果 2 秒后还没有 identityTag → 判定为非学生，继续
+  const hasSellerRole = userProfile?.roles?.includes('seller');
+  const hasBasicProfile = !!userProfile && !!userProfile.roles;
+  const hasIdentityTag = !!identityTag;
+  
+  const isUserProfileLoaded = hasBasicProfile && 
+                               (!hasSellerRole || hasIdentityTag || identityTagTimeout);
+
+  console.log('=================================');
+  console.log('[SellerSubmitCash] 🔍 加载状态检查:');
+  console.log('  authLoading:', authLoading);
+  console.log('  userProfile存在:', !!userProfile);
+  console.log('  roles:', userProfile?.roles);
+  console.log('  hasSellerRole:', hasSellerRole);
+  console.log('  identityTag:', identityTag);
+  console.log('  hasIdentityTag:', hasIdentityTag);
+  console.log('  identityTagTimeout:', identityTagTimeout);
+  console.log('  isStudent:', isStudent);
+  console.log('  isUserProfileLoaded:', isUserProfileLoaded);
+  console.log('  department:', department);
+  console.log('  smLoading:', smLoading);
+  console.log('  sellerManager:', sellerManager);
+  console.log('=================================');
+
+  // 🆕 2秒超时机制：如果Seller角色但没有identityTag，2秒后自动判定为非学生
+  useEffect(() => {
+    if (hasSellerRole && !hasIdentityTag && !identityTagTimeout) {
+      console.warn('[SellerSubmitCash] ⚠️ Seller角色但identityTag未加载，启动2秒超时...');
+      
+      const timer = setTimeout(() => {
+        console.warn('[SellerSubmitCash] ⏰ identityTag超时！判定为非学生角色');
+        setIdentityTagTimeout(true);
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [hasSellerRole, hasIdentityTag, identityTagTimeout]);
 
   // ========== 查找SellerManager ==========
 
   useEffect(() => {
+    // 等待 userProfile 完全加载
+    if (authLoading || !isUserProfileLoaded) {
+      console.log('[SellerSubmitCash] ⏳ 等待 userProfile 加载...');
+      return;
+    }
+
     // 只有学生需要查找SM
-    if (!isStudent || !orgId || !eventId || !department) {
+    if (!isStudent) {
+      console.log('[SellerSubmitCash] ⏭️ 不是学生，跳过SM查找');
+      setSellerManager(null);
+      setSmLoading(false);
+      return;
+    }
+
+    if (!orgId || !eventId || !department) {
+      console.log('[SellerSubmitCash] ⏭️ 缺少必要参数，跳过SM查找:', { orgId, eventId, department });
+      setSmLoading(false);
       return;
     }
 
     const findSellerManager = async () => {
+      setSmLoading(true);
+      
       try {
-        console.log('[SellerSubmitCash] 🔍 查找SellerManager，department:', department);
+        console.log('[SellerSubmitCash] 🔍 开始查找SellerManager');
+        console.log('  orgId:', orgId);
+        console.log('  eventId:', eventId);
+        console.log('  department:', department);
 
         const usersRef = collection(
           db,
           `organizations/${orgId}/events/${eventId}/users`
         );
 
-        // 查询SellerManager角色
         const smQuery = query(
           usersRef,
           where('roles', 'array-contains', 'sellerManager')
         );
 
         const smSnapshot = await getDocs(smQuery);
+        console.log('[SellerSubmitCash] 📊 找到', smSnapshot.size, '个SellerManager');
 
-        // 在结果中找到管理这个department的SM
         let foundSM = null;
         smSnapshot.forEach(doc => {
           const smData = doc.data();
           const managedDepts = smData.sellerManager?.managedDepartments || [];
           
-          console.log('[SellerSubmitCash] SM:', {
+          console.log('[SellerSubmitCash] 检查SM:', {
             id: doc.id,
             name: smData.basicInfo?.chineseName,
-            managedDepts
+            managedDepts,
+            matchesDepartment: managedDepts.includes(department)
           });
 
           if (managedDepts.includes(department)) {
@@ -109,22 +161,27 @@ const SellerSubmitCash = () => {
 
         if (foundSM) {
           setSellerManager(foundSM);
+          console.log('[SellerSubmitCash] ✅ 设置sellerManager:', foundSM);
         } else {
-          console.warn('[SellerSubmitCash] ⚠️ 未找到管理这个department的SM');
+          console.warn('[SellerSubmitCash] ⚠️ 未找到管理', department, '的SellerManager');
+          setSellerManager(null);
         }
       } catch (error) {
         console.error('[SellerSubmitCash] ❌ 查找SM失败:', error);
+        setSellerManager(null);
+      } finally {
+        setSmLoading(false);
       }
     };
 
     findSellerManager();
-  }, [isStudent, orgId, eventId, department]);
+  }, [authLoading, isUserProfileLoaded, isStudent, orgId, eventId, department]);
 
   // ========== 数据加载 ==========
 
   useEffect(() => {
     if (!orgId || !eventId || !sellerId) {
-      console.warn('[SellerSubmitCash] ⚠️ 缺少必要参数');
+      console.warn('[SellerSubmitCash] ⚠️ 缺少必要参数:', { orgId, eventId, sellerId });
       setLoading(false);
       return;
     }
@@ -186,7 +243,7 @@ const SellerSubmitCash = () => {
   // ========== 事件处理 ==========
 
   const handleOpenSubmitModal = () => {
-    console.log('[SellerSubmitCash] 🔘 打开上交模态框, cashOnHand:', cashOnHand);
+    console.log('[SellerSubmitCash] 🔓 打开上交模态框');
     
     if (cashOnHand <= 0) {
       alert('您目前没有可上交的现金');
@@ -194,59 +251,47 @@ const SellerSubmitCash = () => {
     }
     
     if (isStudent && !sellerManager) {
-      alert('错误：未找到您的Seller Manager，请联系管理员');
-      console.error('[SellerSubmitCash] ❌ 学生但没有找到SM');
+      alert('未找到您的班级管理者（Seller Manager）。\n\n请联系管理员为您的班级（' + department + '）分配管理者。');
       return;
     }
-
-    setSubmitAmount(cashOnHand.toString());
-    setSubmitNote('');
+    
     setShowSubmitModal(true);
-  };
-
-  const handleCloseSubmitModal = () => {
-    setShowSubmitModal(false);
-    setSubmitAmount('');
-    setSubmitNote('');
   };
 
   const handleSubmit = async () => {
     const amount = parseFloat(submitAmount);
-
-    console.log('[SellerSubmitCash] 📤 开始上交:', {
-      amount,
-      isStudent,
-      sellerManagerId: sellerManager?.id,
-      orgId,
-      eventId
-    });
+    
+    console.log('[SellerSubmitCash] 🔄 开始验证提交...');
+    console.log('  amount:', amount);
+    console.log('  isStudent:', isStudent);
+    console.log('  sellerManager:', sellerManager);
 
     if (!amount || amount <= 0) {
-      alert('请输入有效的金额');
+      alert('请输入有效金额');
       return;
     }
 
     if (amount > cashOnHand) {
-      alert(`上交金额不能超过手上现金 (RM ${cashOnHand})`);
+      alert(`上交金额不能超过手上现金（RM ${cashOnHand}）`);
       return;
     }
 
-    try {
-      setSubmitting(true);
+    if (isStudent && !sellerManager) {
+      alert('未找到您的班级管理者（Seller Manager）。请联系管理员设置。');
+      return;
+    }
 
-      const auth = getAuth();
-      const user = auth.currentUser;
-      
-      if (!user) {
-        throw new Error('用户未登录，请重新登录');
-      }
+    setSubmitting(true);
+
+    try {
+      console.log('[SellerSubmitCash] 🔄 开始上交...');
+      let result;
 
       if (isStudent) {
-        console.log('[SellerSubmitCash] 🎓 学生上交给SM:', sellerManager.id);
+        console.log('[SellerSubmitCash] 📤 学生上交给SellerManager:', sellerManager.id);
         
         const submitToManager = httpsCallable(functions, 'submitCashToSellerManager');
-        
-        const result = await submitToManager({
+        result = await submitToManager({
           orgId,
           eventId,
           amount,
@@ -254,104 +299,86 @@ const SellerSubmitCash = () => {
           sellerManagerId: sellerManager.id
         });
 
-        if (result.data.success) {
-          alert(`✅ 上交成功！请将现金交给您的Seller Manager (${sellerManager.name})。`);
-          handleCloseSubmitModal();
-        } else {
-          throw new Error(result.data.message || '上交失败');
-        }
+        console.log('[SellerSubmitCash] ✅ 上交到SellerManager成功:', result.data);
+        alert(`✅ 成功上交 RM ${amount} 给 ${sellerManager.name}`);
       } else {
-        console.log('[SellerSubmitCash] 👨‍🏫 职员/老师直接上交到FM');
+        console.log('[SellerSubmitCash] 📤 职员/老师上交到Finance Manager待认领池子');
         
         const submitToFinance = httpsCallable(functions, 'submitCashToFinance');
-        
-        const result = await submitToFinance({
+        result = await submitToFinance({
           orgId,
           eventId,
           amount,
           note: submitNote
         });
 
-        if (result.data.success) {
-          alert('✅ 上交成功！现金已提交到待认领池子，等待Finance Manager确认。');
-          handleCloseSubmitModal();
-        } else {
-          throw new Error(result.data.message || '上交失败');
-        }
+        console.log('[SellerSubmitCash] ✅ 上交到Finance Manager成功:', result.data);
+        alert(`✅ 成功上交 RM ${amount} 到待认领池子`);
       }
 
+      setSubmitAmount('');
+      setSubmitNote('');
+      setShowSubmitModal(false);
     } catch (error) {
       console.error('[SellerSubmitCash] ❌ 上交失败:', error);
-      
-      let errorMessage = '上交失败: ';
-      
-      if (error.code === 'functions/not-found') {
-        errorMessage += 'Cloud Function不存在，请确认已部署Functions';
-      } else if (error.code === 'functions/unauthenticated') {
-        errorMessage += '用户未登录，请重新登录';
-      } else if (error.code === 'functions/permission-denied') {
-        errorMessage += '权限不足';
-      } else {
-        errorMessage += error.message;
-      }
-      
-      alert('❌ ' + errorMessage);
+      alert('上交失败: ' + (error.message || '未知错误'));
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ========== 辅助函数 ==========
-
   const formatDate = (timestamp) => {
-    if (!timestamp) return '未知';
+    if (!timestamp) return '未知时间';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
   };
-
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      pending: { label: '⏳ 待确认', color: '#f59e0b' },
-      confirmed: { label: '✅ 已确认', color: '#10b981' },
-      disputed: { label: '⚠️ 有异议', color: '#ef4444' },
-      rejected: { label: '❌ 已拒绝', color: '#dc2626' }
-    };
-    return statusMap[status] || { label: status, color: '#6b7280' };
-  };
-
-  const getRecipientInfo = () => {
-    if (isStudent) {
-      return {
-        title: `上交给 Seller Manager${sellerManager ? ` (${sellerManager.name})` : ''}`,
-        icon: '👨‍🏫',
-        description: sellerManager 
-          ? `请将现金交给您的Seller Manager: ${sellerManager.name}`
-          : '正在查找您的Seller Manager...'
-      };
-    } else {
-      return {
-        title: '上交到待认领池子',
-        icon: '💰',
-        description: '现金将提交到待认领池子，等待Finance Manager确认'
-      };
-    }
-  };
-
-  const recipientInfo = getRecipientInfo();
 
   // ========== 渲染 ==========
 
-  if (statsLoading || loading) {
+  // 最终加载检查
+  const isFullyLoaded = !authLoading && 
+                        isUserProfileLoaded && 
+                        (!isStudent || !smLoading);
+
+  console.log('[SellerSubmitCash] 🎯 最终加载状态:');
+  console.log('  authLoading:', authLoading);
+  console.log('  isUserProfileLoaded:', isUserProfileLoaded);
+  console.log('  isStudent:', isStudent);
+  console.log('  smLoading:', smLoading);
+  console.log('  isFullyLoaded:', isFullyLoaded);
+
+  if (!isFullyLoaded) {
     return (
-      <div style={styles.loading}>
-        <div style={styles.spinner}></div>
-        <p>加载中...</p>
+      <div style={styles.container}>
+        <div style={styles.loading}>
+          <div style={styles.spinner}></div>
+          <p>加载中...</p>
+          {smLoading && <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>正在查找班级管理者...</p>}
+          {hasSellerRole && !hasIdentityTag && !identityTagTimeout && (
+            <p style={{ fontSize: '0.875rem', color: '#f59e0b' }}>等待身份信息...</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 如果 Auth 加载完成但没有 Profile，显示错误
+  if (!authLoading && !hasBasicProfile) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorCard}>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2 style={styles.errorTitle}>无法加载用户信息</h2>
+          <p style={styles.errorMessage}>请尝试刷新页面或重新登录</p>
+          <button style={styles.retryButton} onClick={() => window.location.reload()}>
+            刷新页面
+          </button>
+        </div>
       </div>
     );
   }
@@ -361,107 +388,127 @@ const SellerSubmitCash = () => {
       <div style={styles.container}>
         <div style={styles.errorCard}>
           <div style={styles.errorIcon}>⚠️</div>
-          <h3 style={styles.errorTitle}>加载失败</h3>
+          <h2 style={styles.errorTitle}>加载失败</h2>
           <p style={styles.errorMessage}>{statsError}</p>
-          <button 
-            style={styles.retryButton}
-            onClick={() => window.location.reload()}
-          >
-            重新加载
+          <button style={styles.retryButton} onClick={() => window.location.reload()}>
+            重试
           </button>
         </div>
       </div>
     );
   }
 
+  // 根据用户类型设置接收人信息
+  const recipientInfo = isStudent 
+    ? {
+        icon: '👨‍🏫',
+        description: sellerManager 
+          ? `上交给班级管理者: ${sellerManager.name}`
+          : '未设置班级管理者'
+      }
+    : {
+        icon: '🏦',
+        description: '上交到 Finance Manager 待认领池子'
+      };
+
   return (
     <div style={styles.container}>
       {/* 统计卡片 */}
       <div style={styles.statsGrid}>
-        <StatCard
-          icon="💵"
-          title="手上现金"
-          value={`RM ${cashOnHand.toLocaleString()}`}
-          color="#10b981"
-          description="可上交金额"
-        />
-        <StatCard
-          icon="📤"
-          title="待确认"
-          value={`RM ${summaryStats.pendingAmount.toLocaleString()}`}
-          color="#f59e0b"
-          description={`${summaryStats.pendingCount} 笔`}
-        />
-        <StatCard
-          icon="✅"
-          title="已确认"
-          value={`RM ${summaryStats.confirmedAmount.toLocaleString()}`}
-          color="#3b82f6"
-          description={`${summaryStats.confirmedCount} 笔`}
-        />
-        <StatCard
-          icon="📊"
-          title="累计上交"
-          value={`RM ${summaryStats.totalSubmitted.toLocaleString()}`}
-          color="#8b5cf6"
-          description="历史总额"
-        />
+        <div style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}>
+          <span style={styles.statIcon}>💰</span>
+          <div style={styles.statContent}>
+            <div style={styles.statValue}>RM {summaryStats.cashOnHand.toLocaleString()}</div>
+            <div style={styles.statTitle}>手上现金</div>
+            <div style={styles.statDescription}>
+              {isStudent ? '待上交给 Seller Manager' : '待上交'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
+          <span style={styles.statIcon}>📤</span>
+          <div style={styles.statContent}>
+            <div style={styles.statValue}>{summaryStats.pendingCount} 笔</div>
+            <div style={styles.statTitle}>待确认</div>
+            <div style={styles.statDescription}>
+              金额: RM {summaryStats.pendingAmount.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
+          <span style={styles.statIcon}>✅</span>
+          <div style={styles.statContent}>
+            <div style={styles.statValue}>{summaryStats.confirmedCount} 笔</div>
+            <div style={styles.statTitle}>已确认</div>
+            <div style={styles.statDescription}>
+              金额: RM {summaryStats.confirmedAmount.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...styles.statCard, borderLeftColor: '#8b5cf6' }}>
+          <span style={styles.statIcon}>📊</span>
+          <div style={styles.statContent}>
+            <div style={styles.statValue}>RM {summaryStats.totalSubmitted.toLocaleString()}</div>
+            <div style={styles.statTitle}>累计上交</div>
+            <div style={styles.statDescription}>历史总额</div>
+          </div>
+        </div>
       </div>
 
-      {/* 上交操作区 */}
+      {/* 上交操作卡片 */}
       <div style={styles.actionCard}>
         <div style={styles.actionHeader}>
           <div>
-            <h3 style={styles.actionTitle}>
-              {recipientInfo.icon} {recipientInfo.title}
-            </h3>
+            <h2 style={styles.actionTitle}>📤 上交现金</h2>
             <p style={styles.actionDesc}>{recipientInfo.description}</p>
           </div>
-          <button
+          <button 
+            style={styles.submitButton}
             onClick={handleOpenSubmitModal}
-            style={{
-              ...styles.submitButton,
-              opacity: cashOnHand <= 0 || (isStudent && !sellerManager) ? 0.5 : 1,
-              cursor: cashOnHand <= 0 || (isStudent && !sellerManager) ? 'not-allowed' : 'pointer'
-            }}
             disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
           >
-            📤 上交现金
+            {cashOnHand > 0 ? '立即上交' : '暂无现金'}
           </button>
         </div>
 
         {cashOnHand > 0 && (
           <div style={styles.reminderBox}>
-            💡 您有 <strong>RM {cashOnHand.toLocaleString()}</strong> 现金待上交
+            💡 手上现金: RM {cashOnHand.toLocaleString()} - 记得及时上交
+          </div>
+        )}
+        
+        {isStudent && !sellerManager && (
+          <div style={styles.warningBox}>
+            ⚠️ 您的班级（{department}）还没有分配 Seller Manager，请联系管理员设置后才能上交现金。
           </div>
         )}
       </div>
 
-      {/* 上交历史 */}
-      {submissions.length > 0 && (
-        <div style={styles.historySection}>
-          <h3 style={styles.sectionTitle}>📜 上交历史</h3>
+      {/* 历史记录 */}
+      <div style={styles.historySection}>
+        <h2 style={styles.sectionTitle}>📋 上交历史</h2>
+
+        {submissions.length === 0 ? (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>📭</div>
+            <p>暂无上交记录</p>
+          </div>
+        ) : (
           <div style={styles.submissionsList}>
             {submissions.map(submission => (
-              <SubmissionCard
+              <SubmissionCard 
                 key={submission.id}
                 submission={submission}
                 isStudent={isStudent}
                 formatDate={formatDate}
-                getStatusBadge={getStatusBadge}
               />
             ))}
           </div>
-        </div>
-      )}
-
-      {submissions.length === 0 && (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>📭</div>
-          <h3>暂无上交记录</h3>
-          <p>完成第一笔现金上交后，记录将显示在这里</p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 上交模态框 */}
       {showSubmitModal && (
@@ -475,28 +522,23 @@ const SellerSubmitCash = () => {
           setSubmitNote={setSubmitNote}
           submitting={submitting}
           onSubmit={handleSubmit}
-          onClose={handleCloseSubmitModal}
+          onClose={() => setShowSubmitModal(false)}
         />
       )}
     </div>
   );
 };
 
-// ========== 子组件（和之前一样）==========
+// ========== 子组件 ==========
 
-const StatCard = ({ icon, title, value, color, description }) => (
-  <div style={{ ...styles.statCard, borderLeftColor: color }}>
-    <div style={styles.statIcon}>{icon}</div>
-    <div style={styles.statContent}>
-      <div style={styles.statValue}>{value}</div>
-      <div style={styles.statTitle}>{title}</div>
-      {description && <div style={styles.statDescription}>{description}</div>}
-    </div>
-  </div>
-);
+const SubmissionCard = ({ submission, isStudent, formatDate }) => {
+  const statusConfig = {
+    pending: { label: '待确认', color: '#3b82f6' },
+    confirmed: { label: '已确认', color: '#10b981' },
+    rejected: { label: '已拒绝', color: '#ef4444' }
+  };
 
-const SubmissionCard = ({ submission, isStudent, formatDate, getStatusBadge }) => {
-  const statusInfo = getStatusBadge(submission.status);
+  const statusInfo = statusConfig[submission.status] || { label: '未知', color: '#6b7280' };
 
   return (
     <div style={styles.submissionCard}>
@@ -636,7 +678,7 @@ const SubmitModal = ({
   );
 };
 
-// ========== 样式（和之前一样）==========
+// ========== 样式 ==========
 
 const styles = {
   container: { padding: '20px', maxWidth: '1200px', margin: '0 auto' },
@@ -659,7 +701,8 @@ const styles = {
   actionTitle: { fontSize: '1.25rem', fontWeight: 'bold', margin: '0 0 0.5rem 0' },
   actionDesc: { fontSize: '0.875rem', opacity: 0.9, margin: 0 },
   submitButton: { padding: '0.75rem 1.5rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600', whiteSpace: 'nowrap' },
-  reminderBox: { padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '8px', fontSize: '0.875rem' },
+  reminderBox: { padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '8px', fontSize: '0.875rem', marginTop: '1rem' },
+  warningBox: { padding: '0.75rem 1rem', background: '#fef3c7', border: '2px solid #fbbf24', color: '#92400e', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', marginTop: '1rem' },
   sectionTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1rem' },
   historySection: { marginTop: '2rem' },
   submissionsList: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1rem' },
@@ -687,7 +730,6 @@ const styles = {
   amountInput: { flex: 1, padding: '0.75rem', border: '2px solid #e5e7eb', borderRadius: '8px', fontSize: '1rem', fontWeight: '600' },
   hint: { fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' },
   textarea: { width: '100%', padding: '0.75rem', border: '2px solid #e5e7eb', borderRadius: '8px', fontSize: '0.875rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' },
-  warningBox: { padding: '0.75rem 1rem', background: '#fef3c7', border: '2px solid #fbbf24', color: '#92400e', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500' },
   modalFooter: { padding: '1.5rem', borderTop: '2px solid #e5e7eb', display: 'flex', gap: '1rem', justifyContent: 'flex-end' },
   cancelButton: { padding: '0.75rem 1.5rem', background: 'white', border: '2px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600', color: '#374151' },
   confirmButton: { padding: '0.75rem 1.5rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600' }

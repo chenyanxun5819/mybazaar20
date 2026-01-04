@@ -2,7 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');  // ✅ �
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { hashPin, verifyPin } = require('../../utils/bcryptHelper');
-const { updateUserCustomClaims } = require('../../customClaimsHelper');  // ✅ 新增：Custom Claims 辅助函数
+const { updateUserCustomClaims } = require('../../custom_claims_helper');  // ✅ 新增：Custom Claims 辅助函数
 
 // 定義缺失的常量
 const MAX_PIN_FAILED_ATTEMPTS = 5;

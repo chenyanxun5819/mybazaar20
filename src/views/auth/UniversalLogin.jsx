@@ -82,6 +82,18 @@ const UniversalLogin = () => {
     const run = async () => {
       if (!(isAuthenticated && userProfile && userProfile.roles && userProfile.roles.length > 0)) return;
 
+      // ⭐ 新增：如果检测到需要设置密码，跳过自动跳转到 Dashboard
+      // 优先检查 userData (来自当前登录会话)，其次检查 userProfile (来自 AuthContext/Firestore)
+      // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要特殊处理 eventManager
+      const needsSetup = userData?.needsPasswordSetup || 
+                         userProfile?.basicInfo?.hasDefaultPassword || 
+                         userProfile?.basicInfo?.isFirstLogin;
+
+      if (needsSetup) {
+        console.log('[UniversalLogin] 🔐 检测到需要设置密码，跳过自动跳转');
+        return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       if (params.has('stay') || params.has('noRedirect')) {
         console.log('[UniversalLogin] 🧷 stay/noRedirect 已启用，跳过自动跳转');
@@ -615,6 +627,10 @@ const UniversalLogin = () => {
       }
 
       // 根據 verifyOtp 結果覆蓋/對齊使用者資料（若提供）
+      // 综合后端返回与第一步临时数据，优先使用 verifyOtp 返回的数据
+      const roleSpecificFromVerify = data?.roleSpecificData || {};
+      const roleSpecificFromTemp = userData?.roleSpecificData || {};
+
       const verifiedUser = {
         userId: data?.userId || userData.userId,
         organizationId: data?.organizationId || userData.organizationId,
@@ -622,7 +638,15 @@ const UniversalLogin = () => {
         englishName: data?.englishName || userData.englishName,
         chineseName: data?.chineseName || userData.chineseName,
         roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
-        managedDepartments: data?.managedDepartments || userData.managedDepartments || [],
+        // managedDepartments 可能直接在 data 中，或放在 roleSpecificData.sellerManager
+        managedDepartments:
+          data?.managedDepartments 
+            || (roleSpecificFromVerify?.sellerManager && roleSpecificFromVerify.sellerManager.managedDepartments) 
+            || userData?.managedDepartments 
+            || (roleSpecificFromTemp?.sellerManager && roleSpecificFromTemp.sellerManager.managedDepartments)
+            || [],
+        // 保留 roleSpecificData 以便后续 Dashboard 使用（避免被误判为空）
+        roleSpecificData: roleSpecificFromVerify || roleSpecificFromTemp || {},
         orgCode,
         eventCode,
         orgEventCode
@@ -661,7 +685,13 @@ const UniversalLogin = () => {
       // 为避免桌面端后续访问报错，这里按“是否拥有该角色”写入 legacy keys
       const allRoles = verifiedUser.roles || [];
       if (allRoles.includes('sellerManager')) {
-        localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
+        // 确保 legacy key 包含 managedDepartments & roleSpecificData，避免 Dashboard 误判
+        const sellerLegacy = {
+          ...userInfoToSave,
+          managedDepartments: verifiedUser.managedDepartments || [],
+          roleSpecificData: verifiedUser.roleSpecificData || {}
+        };
+        localStorage.setItem('sellerManagerInfo', JSON.stringify(sellerLegacy));
       }
       if (allRoles.includes('eventManager')) {
         localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));

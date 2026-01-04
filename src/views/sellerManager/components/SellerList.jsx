@@ -24,7 +24,7 @@ import { db } from '../../../config/firebase';
  * @param {Function} props.onRecordCollection - 記錄收款回調
  * @param {Object} props.userInfo - ✨ 新增：當前登入的用戶信息（Seller Manager）
  */
-const SellerList = ({  sellers = [],  selectedDepartment,  onSelectSeller,  onRecordCollection,  userInfo // ✨ 新增 prop
+const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecordCollection, userInfo // ✨ 新增 prop
 }) => {
   const [sortBy, setSortBy] = useState('name');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -175,7 +175,8 @@ const SellerList = ({  sellers = [],  selectedDepartment,  onSelectSeller,  onRe
         sellerId: seller.userId,
         sellerName: seller.basicInfo?.chineseName || '未知',
         sellerDepartment: seller.identityInfo?.department || '未分配',
-        sellerIdentityTag: seller.identityInfo?.identityTag || '未知',
+        sellerIdentityTag: seller.identityInfo?.identityTag || 'student',  // 身份标签（student/teacher/staff）
+        sellerIdentityId: seller.identityInfo?.identityId || '未知',      // 🆕 新增：学号
 
         // ✨ 修正：使用正確的 currentUserId
         collectedBy: currentUserId,
@@ -328,10 +329,10 @@ const SellerList = ({  sellers = [],  selectedDepartment,  onSelectSeller,  onRe
                     <tr style={styles.row}>
                       <td style={styles.td}>{index + 1}</td>
                       <td style={styles.td}>
-                        {seller.basicInfo?.chineseName || '未知'}
+                        {seller.basicInfo?.chineseName || seller.basicInfo?.englishName || '未知'}
                       </td>
                       <td style={styles.td}>
-                        {seller.identityInfo?.identityTag || '-'}
+                        {seller.identityInfo?.identityId || '-'}  {/* 🆕 新增 - JSON第381行 */}
                       </td>
                       <td style={styles.td}>
                         {seller.identityInfo?.department || '-'}
@@ -400,26 +401,52 @@ const SellerList = ({  sellers = [],  selectedDepartment,  onSelectSeller,  onRe
                     {/* 展開的詳情行 */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan="9" style={styles.detailsCell}>
+                        <td colSpan="10" style={styles.detailsCell}>  {/* 注意：colSpan要加1，因为多了学号列 */}
                           <div style={styles.detailsContainer}>
-                            <h4 style={styles.detailsTitle}>詳細信息</h4>
+                            <h4 style={styles.detailsTitle}>详细信息</h4>
                             <div style={styles.detailsGrid}>
+
+                              {/* 现有的详情 */}
                               <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>電話:</span>
-                                <span>{seller.phone || '-'}</span>
+                                <span style={styles.detailLabel}>电话:</span>
+                                <span>{seller.basicInfo?.phoneNumber || '-'}</span>  {/* ✅ 已修正 */}
                               </div>
+
                               <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>累計分配:</span>
+                                <span style={styles.detailLabel}>学号:</span>
+                                <span>{seller.identityInfo?.identityId || '-'}</span>  {/* 🆕 新增 */}
+                              </div>
+
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>累计分配:</span>
                                 <span>{seller.pointsStats?.totalAllocated || 0}</span>
                               </div>
+
                               <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>銷售金額:</span>
+                                <span style={styles.detailLabel}>销售金额:</span>
                                 <span>RM {seller.pointsStats?.currentSalesAmount || 0}</span>
                               </div>
+
+                              {/* 🆕 新增：现金交付情况 */}
                               <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>已收款:</span>
+                                <span style={styles.detailLabel}>手上现金:</span>
+                                <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                                  RM {seller.seller?.pendingCollection || 0}
+                                </span>
+                              </div>
+
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>已交付SM:</span>
+                                <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                                  RM {seller.seller?.totalSubmitted || 0}
+                                </span>
+                              </div>
+
+                              <div style={styles.detailItem}>
+                                <span style={styles.detailLabel}>累计收款:</span>
                                 <span>RM {seller.pointsStats?.cashFlow?.totalCashCollected || 0}</span>
                               </div>
+
                             </div>
                           </div>
                         </td>

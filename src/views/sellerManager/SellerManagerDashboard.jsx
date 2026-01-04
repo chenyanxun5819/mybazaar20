@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
 import { doc, getDoc, collection, query, where, onSnapshot} from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import { useAuth } from '../../contexts/AuthContext'; // 🆕 Use AuthContext
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
@@ -54,6 +55,7 @@ const getLocalizedText = (val) => {
 const SellerManagerDashboard = () => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
+  const { userProfile, loading: authLoading } = useAuth(); // 🆕 Use AuthContext
 
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
@@ -73,9 +75,71 @@ const SellerManagerDashboard = () => {
   // 标签页管理
   const [activeTab, setActiveTab] = useState('overview');
 
+  // 🆕 初始化逻辑 (基于 AuthContext)
   useEffect(() => {
-    initializeDashboard();
-  }, []);
+    if (authLoading) return;
+
+    const init = async () => {
+      try {
+        setLoading(true);
+
+        if (!userProfile) {
+          console.warn('[SM Dashboard] 未找到登录信息');
+          // 如果没有 userProfile，尝试从 localStorage 恢复 (兼容旧逻辑)
+          const storedInfo = localStorage.getItem('sellerManagerInfo');
+          if (storedInfo) {
+             // 如果有旧的 localStorage，可能需要重新登录刷新
+             console.warn('[SM Dashboard] 发现旧的 localStorage，建议重新登录');
+          }
+          navigate(`/login/${orgEventCode}`);
+          return;
+        }
+
+        console.log('[SM Dashboard] 用户信息 (AuthContext):', userProfile);
+
+        if (!userProfile.roles || !userProfile.roles.includes('sellerManager')) {
+          alert('您没有 Seller Manager 权限');
+          navigate(`/login/${orgEventCode}`);
+          return;
+        }
+
+        // 🆕 健壮的部门检查逻辑
+        // 优先检查 sellerManager.managedDepartments，其次检查根目录 managedDepartments
+        const managedDepts = userProfile.sellerManager?.managedDepartments || userProfile.managedDepartments || [];
+
+        if (!Array.isArray(managedDepts) || managedDepts.length === 0) {
+          console.warn('[SM Dashboard] ⚠️ 注意：您还没有被分配管理任何部门');
+          // alert('您还没有被分配管理任何部门'); // 🚫 移除阻塞性 Alert，允许进入 Dashboard 查看空状态
+        }
+
+        // 构建兼容的 userInfo 对象
+        const userInfo = {
+          ...userProfile,
+          managedDepartments: managedDepts
+        };
+
+        setCurrentUser(userInfo);
+        setEventId(userProfile.eventId);
+
+        // 加载活动信息
+        const eventDoc = await getDoc(
+          doc(db, 'organizations', userProfile.organizationId, 'events', userProfile.eventId)
+        );
+
+        if (eventDoc.exists()) {
+          const data = eventDoc.data();
+          setEventData(data || {});
+          console.log('[SM Dashboard] 活动数据加载成功');
+        }
+      } catch (error) {
+        console.error('[SM Dashboard] 初始化失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    init();
+  }, [userProfile, authLoading, orgEventCode, navigate]);
 
   useEffect(() => {
     let unsubscribeStats = null;
@@ -91,79 +155,12 @@ const SellerManagerDashboard = () => {
     };
   }, [currentUser, eventId]);
 
+  // 🚫 移除旧的 initializeDashboard 函数
+  /*
   const initializeDashboard = async () => {
-    try {
-      setLoading(true);
-
-      const storedInfo = localStorage.getItem('sellerManagerInfo') || localStorage.getItem('currentUser');
-      if (!storedInfo) {
-        console.warn('[SM Dashboard] 未找到登录信息');
-        navigate(`/login/${orgEventCode}`);
-        return;
-      }
-
-      let userInfo;
-      try {
-        userInfo = JSON.parse(storedInfo);
-      } catch (e) {
-        console.error('[SM Dashboard] 解析用户信息失败:', e);
-        navigate(`/login/${orgEventCode}`);
-        return;
-      }
-
-      console.log('[SM Dashboard] 用户信息:', userInfo);
-
-      // 验证
-      if (!userInfo || typeof userInfo !== 'object') {
-        console.error('[SM Dashboard] 用户信息格式错误');
-        navigate(`/login/${orgEventCode}`);
-        return;
-      }
-
-      if (!Array.isArray(userInfo.roles) || !userInfo.roles.includes('sellerManager')) {
-        alert('您没有 Seller Manager 权限');
-        navigate(`/login/${orgEventCode}`);
-        return;
-      }
-
-      if (!Array.isArray(userInfo.managedDepartments) || userInfo.managedDepartments.length === 0) {
-        alert('您还没有被分配管理任何部门');
-        navigate(`/login/${orgEventCode}`);
-        return;
-      }
-
-      setCurrentUser(userInfo);
-      setEventId(userInfo.eventId);
-
-      // 加载活动信息
-      const eventDoc = await getDoc(
-        doc(db, 'organizations', userInfo.organizationId, 'events', userInfo.eventId)
-      );
-
-      if (eventDoc.exists()) {
-        const data = eventDoc.data();
-        setEventData(data || {});
-        console.log('[SM Dashboard] 活动数据加载成功');
-
-        // 显示点数分配规则
-        if (data && data.pointAllocationRules && data.pointAllocationRules.sellerManager) {
-          console.log('[SM Dashboard] 点数分配规则:', data.pointAllocationRules.sellerManager);
-          console.log('[SM Dashboard] 每次最高分配:', data.pointAllocationRules.sellerManager.maxPerAllocation);
-        } else {
-          console.warn('[SM Dashboard] ⚠️ 未找到 pointAllocationRules');
-        }
-      } else {
-        throw new Error('活动不存在');
-      }
-
-    } catch (error) {
-      console.error('[SM Dashboard] 初始化失败:', error);
-      alert(`加载失败: ${error.message}`);
-      navigate(`/login/${orgEventCode}`);
-    } finally {
-      setLoading(false);
-    }
+    // ... legacy code ...
   };
+  */
 
 
   const loadSellers = () => {

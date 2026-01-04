@@ -426,6 +426,7 @@
                     "totalCashCollected": "number (累计已收现金)",
                     "pendingCollection": "number (待收款金额)",
                     "transactions": "object (交易记录)",
+                    "totalSubmitted": "number (累计提交现金)",
                     "collectionAlert": {
                       "hasWarning": "boolean (是否有收款警示)",
                       "warningLevel": "string ('none' | 'low' | 'medium' | 'high')",
@@ -511,6 +512,20 @@
                     "managedIdentityTags": [
                       "student"
                     ],
+                    "// === 🆕 现金管理统计 ===": "",
+                    "cashStats": {
+                      "// 从学生收取的现金": "",
+                      "pendingFromSellers": "number (待确认的学生现金 RM - 学生已上交但SM未确认)",
+                      "confirmedFromSellers": "number (已确认的学生现金 RM - SM已确认收到)",
+                      "totalReceivedFromSellers": "number (累计从学生收到的现金 RM)",
+                      "lastConfirmedAt": "timestamp (最后确认收款时间)",
+                      "// SM持有的现金": "",
+                      "cashOnHand": "number (SM当前持有现金 RM - 已确认但未上交)",
+                      "// SM上交给Finance的现金": "",
+                      "totalSubmitted": "number (累计上交给Finance的现金 RM)",
+                      "pendingSubmission": "number (待Finance确认的现金 RM)",
+                      "lastSubmittedAt": "timestamp (最后上交时间)"
+                    },
                     "permissions": {
                       "canAllocatePoints": true,
                       "canCollectCash": true,
@@ -992,8 +1007,9 @@
                   "submitterDepartment": "string (提交者部门，可选)",
                   "submitterPhone": "string (提交者电话)",
                   "// === 接收方信息 ===": "",
-                  "receivedBy": "string (接收者 userId - FinanceManager)",
+                  "receivedBy": "string (接收者 userId - 可以是SellerManager或FinanceManager，或null表示待认领池子)",
                   "receiverName": "string (接收者姓名)",
+                  "receiverRole": "string (接收者角色：'sellerManager' | 'financeManager' | null)", // 🆕 新增
                   "receiverPhone": "string (接收者电话)",
                   "// === 金额信息 ===": "",
                   "amount": "number (上交金额 RM)",
@@ -1041,7 +1057,8 @@
                     "updatedAt": "timestamp",
                     "eventId": "string (冗余字段)",
                     "organizationId": "string (冗余字段)",
-                    "submissionSource": "string ('manual' | 'batch' | 'auto')"
+                    "submissionSource": "string ('manual' | 'batch' | 'auto')",
+                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')" // 🆕 新增
                   }
                 },
                 "indexes": [

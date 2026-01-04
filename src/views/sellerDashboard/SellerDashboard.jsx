@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEvent } from '../../contexts/EventContext'; // 🆕 导入 EventContext
 import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
 import { TransactionHistory } from './components/TransactionHistory';
@@ -18,6 +19,7 @@ import './SellerDashboard.css';
 function SellerDashboard() {
   const navigate = useNavigate();
   const { currentUser, logout, userProfile } = useAuth();
+  const { orgCode, eventCode } = useEvent(); // 🆕 从 EventContext 获取
   const [activeTab, setActiveTab] = useState('overview');
 
   // 🔧 从seller对象获取手上现金（用于显示徽章）
@@ -27,9 +29,8 @@ function SellerDashboard() {
   const handleLogout = async () => {
     try {
       await logout();
-      const orgId = userProfile?.organizationId?.replace('organization_', '') || '';
-      const evtId = userProfile?.eventId?.replace('event_', '') || '';
-      const orgEventCode = `${orgId}-${evtId}`;
+      // 🔧 修复：使用 EventContext 中的 orgCode 和 eventCode
+      const orgEventCode = `${orgCode}-${eventCode}`;
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('登出失败:', error);

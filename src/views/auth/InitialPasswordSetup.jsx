@@ -2,26 +2,23 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { auth, functions } from '../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
+import { useAuth } from '../../contexts/AuthContext';
 import './InitialPasswordSetup.css';
 
 /**
  * 初始密码设置组件
- * 
- * 用于新用户首次登录时设置登录密码和交易密码
- * 
- * 流程：
- * 1. Step 1: 修改登录密码（从默认密码改为新密码）
- * 2. Step 2: 设置交易密码（6位数字）
- * 3. Step 3: 完成，自动跳转到 Dashboard
  */
 const InitialPasswordSetup = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { orgEventCode } = useParams();
+  const { updateUserProfile, refreshProfile } = useAuth();
   const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
 
   // 当前步骤 (1: 登录密码, 2: 交易密码, 3: 完成)
+  // 🔧 修复：所有用户都需要设置交易密码（包括 eventManager）
   const [step, setStep] = useState(1);
+  const [needsTransactionPin, setNeedsTransactionPin] = useState(true);
 
   // 用户信息（从 location.state 或 sessionStorage 获取）
   const [userInfo, setUserInfo] = useState(null);
@@ -60,6 +57,10 @@ const InitialPasswordSetup = () => {
     }
 
     setUserInfo(info);
+
+    // 🔧 修复：所有用户都需要设置交易密码（包括 eventManager）
+    // 交易密码用于确认所有支付和转账操作
+    setNeedsTransactionPin(true);
 
     // 清理 sessionStorage
     if (sessionUserInfo) {
@@ -113,6 +114,15 @@ const InitialPasswordSetup = () => {
       });
 
       console.log('[InitialPasswordSetup] 登录密码修改成功:', result.data);
+
+      // 🔧 修复：如果不需要设置交易密码，直接进入完成步骤
+      if (!needsTransactionPin) {
+        setStep(3);
+        setTimeout(() => {
+          navigateToDashboard();
+        }, 3000);
+        return;
+      }
 
       // 进入 Step 2
       setStep(2);
@@ -176,6 +186,19 @@ const InitialPasswordSetup = () => {
       });
 
       console.log('[InitialPasswordSetup] 交易密码设置成功:', result.data);
+
+      // 🔥 关键修复：手动刷新 AuthContext 中的 userProfile
+      // 这样跳转到 Dashboard 时，userProfile.isFirstLogin 才会是 false，且能拿到完整的 seller/merchant 统计数据
+      console.log('[InitialPasswordSetup] 正在刷新用户资料...');
+      const updatedProfile = await refreshProfile();
+
+      // 更新本地 userInfo 副本，确保 navigateToDashboard 使用最新角色
+      if (updatedProfile) {
+        setUserInfo(prev => ({
+          ...prev,
+          ...updatedProfile
+        }));
+      }
 
       // 进入 Step 3（完成）
       setStep(3);
@@ -247,6 +270,20 @@ const InitialPasswordSetup = () => {
     }
 
     console.log('[InitialPasswordSetup] 跳转到:', dashboardPath);
+    
+    // ⭐ 更新 AuthContext 中的用户信息，标记已完成设置
+    if (updateUserProfile) {
+      updateUserProfile({
+        ...userInfo,
+        basicInfo: {
+          ...userInfo.basicInfo,
+          hasDefaultPassword: false,
+          isFirstLogin: false,
+          hasTransactionPin: true
+        }
+      });
+    }
+
     navigate(dashboardPath, { replace: true });
   };
 
@@ -269,7 +306,9 @@ const InitialPasswordSetup = () => {
         <div className="setup-header">
           <div className="setup-logo">🔐</div>
           <h1 className="setup-title">设置您的密码</h1>
-          <p className="setup-subtitle">首次登录需要设置新密码和交易密码</p>
+          <p className="setup-subtitle">
+            {needsTransactionPin ? '首次登录需要设置新密码和交易密码' : '首次登录需要设置新密码'}
+          </p>
         </div>
 
         {/* 步骤指示器 */}
@@ -278,14 +317,18 @@ const InitialPasswordSetup = () => {
             <div className="step-number">1</div>
             <div className="step-label">登录密码</div>
           </div>
+          {needsTransactionPin && (
+            <>
+              <div className="step-divider"></div>
+              <div className={`step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
+                <div className="step-number">2</div>
+                <div className="step-label">交易密码</div>
+              </div>
+            </>
+          )}
           <div className="step-divider"></div>
-          <div className={`step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
-            <div className="step-number">2</div>
-            <div className="step-label">交易密码</div>
-          </div>
-          <div className="step-divider"></div>
-          <div className={`step ${step >= 3 ? 'active' : ''}`}>
-            <div className="step-number">3</div>
+          <div className={`step ${step >= (needsTransactionPin ? 3 : 2) ? 'active' : ''}`}>
+            <div className="step-number">{needsTransactionPin ? 3 : 2}</div>
             <div className="step-label">完成</div>
           </div>
         </div>
@@ -362,13 +405,13 @@ const InitialPasswordSetup = () => {
               className="submit-button"
               disabled={loading}
             >
-              {loading ? '处理中...' : '下一步'}
+              {loading ? '处理中...' : (needsTransactionPin ? '下一步' : '完成')}
             </button>
           </form>
         )}
 
         {/* Step 2: 设置交易密码 */}
-        {step === 2 && (
+        {step === 2 && needsTransactionPin && (
           <form onSubmit={handleSetupTransactionPin} className="setup-form">
             <div className="form-section">
               <h2 className="section-title">步骤 2: 设置交易密码</h2>

@@ -61,6 +61,8 @@ exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
     }
 
     // ========== 5. 获取用户文档 ==========
+    // 🔧 修复：eventManager 就是普通用户，存储在 users 集合中（roles 包含 "eventManager"）
+    // 不需要特殊检查，所有用户都在同一个结构中
     const db = admin.firestore();
     const userRef = db
       .collection('organizations').doc(organizationId)
@@ -69,7 +71,7 @@ exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
 
     const userDoc = await userRef.get();
 
-    if (!userDoc.exists) {
+    if (!userDoc || !userDoc.exists) {
       throw new HttpsError('not-found', '用户不存在');
     }
 
@@ -87,6 +89,8 @@ exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
     const { hash: pinHash, salt: pinSalt } = await hashPin(transactionPin);
 
     // ========== 8. 更新用户文档 ==========
+    // 🔧 修复：所有用户（包括 eventManager）都用相同的更新逻辑
+    // 因为 eventManager 存储在 users 集合中，与普通用户结构相同
     const updateData = {
       'basicInfo.transactionPinHash': pinHash,
       'basicInfo.transactionPinSalt': pinSalt,
@@ -96,7 +100,6 @@ exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
       'basicInfo.pinLastChanged': admin.firestore.FieldValue.serverTimestamp(),
       'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
     };
-
     await userRef.update(updateData);
 
     console.log('[setupTransactionPin] 交易密码设置成功:', userId);

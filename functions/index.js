@@ -9,7 +9,8 @@ const cors = require('cors');
 // 设置全局选项，确保 v2 触发器使用正确的区域
 setGlobalOptions({ region: 'asia-southeast1' });
 
-// 确保只初始化一次
+// 確保只初始化一次
+// Last deploy: 2026-01-02 21:15
 if (!admin.apps.length) {
   admin.initializeApp();
 }
@@ -375,12 +376,36 @@ exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
       console.log(`[${requestId}] ✅ Login successful in ${duration}ms`);
       console.log(`[${requestId}] ===== LOGIN REQUEST END =====`);
 
+      // 🛡️ 构造安全的 userProfile 返回给前端，避免前端再次查询 Firestore
+      const userProfile = {
+        userId: userDoc.id,
+        organizationId,
+        eventId,
+        roles: userData.roles || [],
+        basicInfo: { ...userData.basicInfo },
+        identityInfo: userData.identityInfo || {},
+        identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
+        sellerManager: userData.sellerManager,
+        accountStatus: userData.accountStatus
+      };
+
+      // 移除敏感信息
+      if (userProfile.basicInfo) {
+        delete userProfile.basicInfo.passwordHash;
+        delete userProfile.basicInfo.passwordSalt;
+        delete userProfile.basicInfo.pinHash;
+        delete userProfile.basicInfo.pinSalt;
+        delete userProfile.basicInfo.transactionPinHash;
+        delete userProfile.basicInfo.transactionPinSalt;
+      }
+
       return res.status(200).json({
         success: true,
         customToken,
         userId,
         organizationId,
         eventId,
+        userProfile, // ✅ 返回完整 Profile
         englishName: userData.basicInfo?.englishName || '',
         chineseName: userData.basicInfo?.chineseName || '',
         message: '登录成功',

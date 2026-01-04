@@ -115,10 +115,11 @@ const CustomerDashboard = () => {
 
     try {
       await signOut(auth);
-      // 获取orgEventCode用于重定向
-      const orgId = customerData?.organizationId?.replace('organization_', '') || '';
-      const evtId = customerData?.eventId?.replace('event_', '') || '';
-      const orgEventCode = `${orgId}-${evtId}`;
+      // 🔧 修复：获取正确的 orgEventCode
+      // 优先使用 userProfile 中的 organizationCode 和 eventCode
+      const orgCode = userProfile?.organizationCode || customerData?.organizationCode || '';
+      const evtCode = userProfile?.eventCode || customerData?.eventCode || '';
+      const orgEventCode = `${orgCode}-${evtCode}`;
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('[CustomerDashboard] 登出失败:', error);

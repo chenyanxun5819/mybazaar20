@@ -1,5 +1,5 @@
 ﻿const admin = require('firebase-admin');
-const { updateUserCustomClaims } = require('./customClaimsHelper');  // ✅ 新增：Custom Claims 辅助函数
+const { updateUserCustomClaims } = require('./custom_claims_helper');  // ✅ 新增：Custom Claims 辅助函数
 const functions = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
 const crypto = require('crypto');
@@ -2791,19 +2791,26 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       const currentRoles = userData.roles || [];
 
       // 检查是否是 Event Manager 修改自己的角色
-      const isModifyingSelf = (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) ||
+      const isModifyingSelf = (callerUid === userId) || 
+        (callerUid === userData.authUid) ||
+        (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) ||
         (callerUid === `eventManager_${userData.basicInfo?.phoneNumber}`);
 
-      console.log('[updateUserRoles] isModifyingSelf:', isModifyingSelf);
-      console.log('[updateUserRoles] currentRoles:', currentRoles);
-      console.log('[updateUserRoles] hasEventManagerRole:', currentRoles.includes('eventManager'));
-
-      // 🚫 禁止 Event Manager 修改自己的角色
-      if (isModifyingSelf && currentRoles.includes('eventManager')) {
-        console.log('[updateUserRoles] ❌ Event Manager 不能修改自己的角色');
+      // 🚫 规则 1: Event Manager 身份是唯一的且不可修改
+      // Event Manager 必须保留其身份，且不能修改自己的任何角色设定
+      if (currentRoles.includes('eventManager')) {
+        console.log('[updateUserRoles] ❌ 尝试修改 Event Manager 角色被拒绝');
         return res.status(403).json({
-          error: 'Event Manager 不能修改自己的角色',
-          code: 'cannot-modify-own-roles'
+          error: 'Event Manager 角色是固定的，不能被修改或移除。',
+          code: 'eventmanager-immutable'
+        });
+      }
+
+      // 🚫 规则 2: 禁止手动指派 Event Manager 角色
+      if (roles.eventManager) {
+        return res.status(400).json({
+          error: '不能手动指派 Event Manager 角色。',
+          code: 'cannot-assign-eventmanager'
         });
       }
 
@@ -2821,39 +2828,38 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       if (roles.merchant) { newRoles.push('merchant'); participantRoles.push('merchant'); }
       if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
 
-      // 验证角色组合规则
-      // 🚫 规则 1: Event Manager 不能同时拥有其他 manager 角色
-      if (currentRoles.includes('eventManager')) {
-        if (managerRoles.length > 0) {
-          console.log('[updateUserRoles] ❌ Event Manager 不能拥有其他 manager 角色');
-          return res.status(400).json({
-            error: 'Event Manager 不能同时拥有其他 manager 角色（Seller Manager、Finance Manager 等）',
-            code: 'eventmanager-cannot-hold-other-manager-roles'
-          });
-        }
-
-        // ✅ Event Manager 可以拥有参与者角色 (seller, merchant, customer)
-        // 保持 eventManager 角色
-        newRoles.push('eventManager');
-      }
-
-      // 🚫 规则 2: 如果尝试添加 eventManager 角色给已有其他 manager 角色的用户
-      if (roles.eventManager && managerRoles.length > 0) {
-        console.log('[updateUserRoles] ❌ 不能给拥有其他 manager 角色的用户添加 eventManager');
-        return res.status(400).json({
-          error: '拥有其他 manager 角色的用户不能成为 Event Manager',
-          code: 'cannot-add-eventmanager-with-other-managers'
-        });
-      }
-
       // 构建更新数据
       const updateData = {
         roles: newRoles,
         'accountStatus.updatedAt': new Date()
       };
 
-      // 如果勾选了 sellerManager，保存管理部门
+      // 如果勾选了 sellerManager，检查部门唯一性并保存管理部门
       if (roles.sellerManager) {
+        // 🆕 检查部门唯一性：一个部门只能有一位 Seller Manager
+        if (managedDepartments && managedDepartments.length > 0) {
+          const usersCol = eventRef.collection('users');
+          const smQuery = await usersCol.where('roles', 'array-contains', 'sellerManager').get();
+          
+          for (const dept of managedDepartments) {
+            const conflictUser = smQuery.docs.find(doc => {
+              if (doc.id === userId) return false; // 跳过正在编辑的本人
+              const data = doc.data();
+              const depts = data.sellerManager?.managedDepartments || [];
+              return depts.includes(dept);
+            });
+            
+            if (conflictUser) {
+              const conflictData = conflictUser.data();
+              const conflictName = conflictData.basicInfo?.chineseName || conflictData.basicInfo?.englishName || '其他管理员';
+              return res.status(400).json({
+                error: `部门 "${dept}" 已经由 ${conflictName} 管理。一个部门只能指派一名 Seller Manager。`,
+                code: 'department-already-managed'
+              });
+            }
+          }
+        }
+
         updateData['sellerManager.managedDepartments'] = managedDepartments || [];
 
         // 如果是新添加的 sellerManager，初始化其他字段
@@ -2875,8 +2881,9 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       }
 
       // ⭐⭐⭐ 修改：merchant 角色 - 创建 merchants 集合文档 ⭐⭐⭐
-      if (roles.merchant && !previousRoles?.includes('merchant')) {
-        console.log('[updateUserRoles] 检测到新增 merchant 角色，准备创建 merchants 文档');
+      // ✅ 优化：只要新角色包含 merchant 就检查文档是否存在，增加自愈能力
+      if (newRoles.includes('merchant')) {
+        console.log('[updateUserRoles] 检测到 merchant 角色，准备检查/创建 merchants 文档');
 
         // 生成 merchantId
         const merchantId = `merchant_${userId}`;
@@ -3465,6 +3472,22 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
       });
 
       console.log('[createEventByPlatformAdminHttp] Event Manager 創建成功:', userId);
+
+      // ✅ 新增：设置 Custom Claims（支持多事件）
+      try {
+        console.log('[createEventByPlatformAdminHttp] 设置 Custom Claims...');
+        
+        // 使用传入的 orgCode 和 eventCode
+        if (orgCode && eventCode) {
+          await updateUserCustomClaims(userId, orgCode, eventCode, 'add');
+          console.log('[createEventByPlatformAdminHttp] ✅ Custom Claims 设置成功:', userId);
+        } else {
+          console.warn('[createEventByPlatformAdminHttp] ⚠️ 缺少 orgCode 或 eventCode');
+        }
+      } catch (claimsError) {
+        // Custom Claims 设置失败不影响 Event Manager 创建
+        console.error('[createEventByPlatformAdminHttp] ⚠️ Custom Claims 设置失败（非致命）:', claimsError.message);
+      }
 
       return res.status(200).json({
         success: true,

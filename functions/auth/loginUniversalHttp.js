@@ -234,10 +234,11 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       const elapsedMs = Date.now() - startTime;
       console.log('[loginUniversalHttp] ✅ 登录成功 (Event Manager)', { elapsedMs, userId: realUserId });
       // ⭐ 新增：检查 Event Manager 密码状态
+      // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要检查 transactionPinHash
+      // 因为 transactionPinHash 在首次设置后就不会改变
       const needsPasswordSetup =
         eventManagerData.hasDefaultPassword === true ||
-        eventManagerData.isFirstLogin === true ||
-        !eventManagerData.transactionPinHash;
+        eventManagerData.isFirstLogin === true;
 
       console.log('[loginUniversalHttp] Event Manager 密码状态:', {
         hasDefaultPassword: eventManagerData.hasDefaultPassword,
@@ -337,10 +338,11 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     // ⭐ 新增：Step 8 - 检查密码状态
     console.log('[loginUniversalHttp] Step 8: 检查密码状态');
 
+    // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要检查 transactionPinHash
+    // 因为 transactionPinHash 在首次设置后就不会改变
     const needsPasswordSetup =
       userData.basicInfo?.hasDefaultPassword === true ||  // 仍是默认密码
-      userData.basicInfo?.isFirstLogin === true ||        // 首次登录
-      !userData.basicInfo?.transactionPinHash;            // 未设置交易密码
+      userData.basicInfo?.isFirstLogin === true;          // 首次登录
 
     console.log('[loginUniversalHttp] 密码状态:', {
       hasDefaultPassword: userData.basicInfo?.hasDefaultPassword,

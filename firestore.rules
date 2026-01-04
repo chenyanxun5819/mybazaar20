@@ -31,14 +31,7 @@ service cloud.firestore {
              request.auth.token.roles.hasAny([role]);
     }
 
-    /**
-     * ✨ 检查用户是否有任意一个角色（从 Custom Claims 读取）
-     */
-    function hasAnyRole(roles) {
-      return isAuthenticated() && 
-             request.auth.token.roles != null &&
-             request.auth.token.roles.hasAny(roles);
-    }
+
     
     /**
      * ✨ 检查 Custom Claims 中的 organizationId 和 eventId 是否匹配
@@ -345,44 +338,55 @@ service cloud.firestore {
         
         match /cashSubmissions/{submissionId} {
           /**
-           * 读取规则：
-           * 1. Seller Manager 可以读取自己提交的记录
-           * 2. Finance Manager 可以读取所有记录
-           * 3. Event Manager 可以读取所有记录
+           * ✅ 读取规则（修复版）
+           * 1. Seller 可以读取自己提交的记录
+           * 2. Seller Manager 可以读取自己提交的和收到的记录
+           * 3. Finance Manager 可以读取所有记录
+           * 4. Event Manager 可以读取所有记录
            */
           allow read: if isEventManager(organizationId, eventId) ||
                          isFinanceManager(organizationId, eventId) ||
-                         (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId);
+                         (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId) ||
+                         (isSellerManager(organizationId, eventId) && 
+                          resource.data.receivedBy == request.auth.token.userId);
           
           /**
-           * 创建规则：
-           * 1. Seller Manager 可以创建上交记录
-           * 2. 必须包含至少一条收款记录
-           * 3. 总金额 > 0
+           * ✅ 创建规则（修复版）
+           * 1. Seller 可以创建上交记录（给 Seller Manager 或待认领池子）
+           * 2. Seller Manager 可以创建上交记录（给 Finance Manager）
+           * 3. Point Seller 可以创建上交记录（给 Finance Manager）
+           * 4. 必须包含必填字段
+           * 5. 状态必须是 pending
+           * 6. organizationId 和 eventId 必须匹配
            */
-          allow create: if isSellerManager(organizationId, eventId) &&
+          allow create: if isAuthenticated() &&
+                           request.resource.data.keys().hasAll([
+                             'submittedBy', 'submitterRole', 'amount',
+                             'status', 'eventId', 'organizationId'
+                           ]) &&
                            request.resource.data.submittedBy == request.auth.token.userId &&
+                           request.resource.data.amount > 0 &&
+                           request.resource.data.status == 'pending' &&
                            request.resource.data.organizationId == organizationId &&
                            request.resource.data.eventId == eventId &&
-                           request.resource.data.type == 'managerToFinance' &&
-                           request.resource.data.amount > 0 &&
-                           request.resource.data.collectionIds.size() > 0 &&
-                           request.resource.data.status == 'pending';
+                           (hasRole('seller') || hasRole('sellerManager') || hasRole('pointSeller'));
           
           /**
-           * 更新规则：
-           * 1. Finance Manager 可以更新状态（验证/确认）
-           * 2. Seller Manager 可以取消自己提交的待审核记录
+           * ✅ 更新规则（修复版）
+           * 1. Seller Manager 可以取消自己提交的待审核记录
+           * 2. Finance Manager 可以更新状态（确认/拒绝/争议）
+           * 3. 只能修改特定字段
            */
-          allow update: if (isFinanceManager(organizationId, eventId) &&
-                           onlyAllowedFields(['status', 'verifiedAt', 'verifiedBy', 'verifiedAmount', 'discrepancy', 'discrepancyReason', 'notes', 'updatedAt'])) ||
-                           (isSellerManager(organizationId, eventId) &&
+          allow update: if (isSellerManager(organizationId, eventId) &&
                            resource.data.submittedBy == request.auth.token.userId &&
                            resource.data.status == 'pending' &&
-                           request.resource.data.status == 'cancelled');
+                           request.resource.data.status == 'cancelled' &&
+                           onlyAllowedFields(['status', 'updatedAt'])) ||
+                           (isFinanceManager(organizationId, eventId) &&
+                           onlyAllowedFields(['status', 'verifiedAt', 'verifiedBy', 'verifiedAmount', 'discrepancy', 'discrepancyReason', 'notes', 'updatedAt', 'confirmationNote', 'receivedBy', 'receiverName']));
           
           /**
-           * 删除规则：只能通过 Cloud Functions 或 Event Manager
+           * ✅ 删除规则：只能通过 Cloud Functions 或 Event Manager
            */
           allow delete: if isEventManager(organizationId, eventId);
         }
