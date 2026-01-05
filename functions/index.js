@@ -50,6 +50,11 @@ const {
   topupFromPointCard
 } = require('./src/customer/customerFunctions');
 
+// 導入 PointSeller 相關 callable 函式
+const { createPointCard } = require('./src/pointseller/createPointCard');
+const { pointSellerDirectSale } = require('./src/pointseller/pointSellerDirectSale');
+const { submitCashAsPointSeller } = require('./src/pointseller/submitCashAsPointSeller');
+
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
 const { setupTransactionPin: setupTransactionPinFn } = require('./setupTransactionPin');
@@ -113,6 +118,12 @@ exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;
 exports.transferPoints = transferPoints;
 exports.topupFromPointCard = topupFromPointCard;
+
+// 將 PointSeller callable 以頂層名稱導出，供前端 httpsCallable 使用
+exports.createPointCard = createPointCard;
+exports.pointSellerDirectSale = pointSellerDirectSale;
+exports.submitCashAsPointSeller = submitCashAsPointSeller;
+
 // 導出密碼與交易密碼相關函式
 exports.changeLoginPassword = changeLoginPasswordFn;
 exports.setupTransactionPin = setupTransactionPinFn;

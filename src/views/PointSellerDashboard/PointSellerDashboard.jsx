@@ -130,15 +130,22 @@ const PointSellerDashboard = () => {
   };
 
   // ===== 检查时效性（6:00-18:00）=====
+  // ⚠️ 测试阶段：时间限制已禁用
   const checkActiveHours = () => {
-    const now = new Date();
-    const hour = now.getHours();
-    const isActive = hour >= 6 && hour < 18;
-    setIsActiveHours(isActive);
-    return isActive;
+    // 🔴 测试阶段：始终返回 true（禁用时间限制）
+    setIsActiveHours(true);
+    return true;
+    
+    // 📝 生产环境代码（已注释）：
+    // const now = new Date();
+    // const hour = now.getHours();
+    // const isActive = hour >= 6 && hour < 18;
+    // setIsActiveHours(isActive);
+    // return isActive;
   };
 
   // 定时检查时效性
+  // ⚠️ 测试阶段：保留检查机制但始终返回 true
   useEffect(() => {
     checkActiveHours();
     const interval = setInterval(checkActiveHours, 60000); // 每分钟检查一次
@@ -335,6 +342,7 @@ const PointSellerDashboard = () => {
         <div className="ps-header-right">
           <span className="ps-date">{new Date().toLocaleDateString('zh-CN')}</span>
           {/* 时效性提示 */}
+          {/* ⚠️ 测试阶段：时间限制已禁用，此徽章不会显示 */}
           {!isActiveHours && (
             <span className="ps-inactive-badge">⏰ 非营业时间</span>
           )}
@@ -344,6 +352,7 @@ const PointSellerDashboard = () => {
         </div>
       </header>
 
+      {/* ⚠️ 测试阶段：时间限制已禁用，此警告不会显示 */}
       {/* 时效性警告 */}
       {!isActiveHours && (
         <div className="ps-warning-banner">

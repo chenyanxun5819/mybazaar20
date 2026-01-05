@@ -478,6 +478,66 @@ service cloud.firestore {
            */
           allow update, delete: if false;
         }
+        
+        // ========================================================================
+        // Point Cards (点数卡 - Event 级别集合)
+        // ========================================================================
+        
+        match /pointCards/{cardId} {
+          /**
+           * 辅助函数：检查是否为 PointSeller
+           */
+          function isPointSeller() {
+            return isAuthenticated() && 
+                   hasRole('pointSeller') &&
+                   isInContext(organizationId, eventId);
+          }
+          
+          /**
+           * 辅助函数：检查是否为 Merchant
+           */
+          function isMerchant() {
+            return isAuthenticated() && 
+                   hasRole('merchant') &&
+                   isInContext(organizationId, eventId);
+          }
+          
+          /**
+           * 创建规则：
+           * PointSeller 可以创建点数卡（必须设置自己为 issuer）
+           */
+          allow create: if isPointSeller() && 
+                           request.resource.data.issuer.pointSellerId == request.auth.uid &&
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId;
+          
+          /**
+           * 读取规则：
+           * 1. PointSeller 可以读取自己发行的点数卡
+           * 2. Merchant 可以读取所有点数卡（用于扫码收款验证余额）
+           * 3. Finance Manager 可以读取所有点数卡（用于财务管理）
+           * 4. Event Manager 可以读取所有点数卡（用于系统管理）
+           */
+          allow read: if (isPointSeller() && 
+                         resource.data.issuer.pointSellerId == request.auth.uid) ||
+                         isMerchant() ||
+                         isFinanceManager(organizationId, eventId) ||
+                         isEventManager(organizationId, eventId);
+          
+          /**
+           * 更新规则：
+           * 1. Merchant 可以更新点数卡余额（扫码收款时）
+           * 2. 只能修改余额相关字段
+           */
+          allow update: if isMerchant() &&
+                           onlyAllowedFields(['balance', 'transactions', 'updatedAt', 'metadata']);
+          
+          /**
+           * 删除规则：
+           * 只能通过 Cloud Functions 或 Event Manager
+           */
+          allow delete: if isEventManager(organizationId, eventId);
+        }
       }
     }
     

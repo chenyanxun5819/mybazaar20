@@ -54,6 +54,7 @@ const IssuePointCard = ({
       return;
     }
 
+    // ⚠️ 测试阶段：时间限制已禁用（isActiveHours 始终为 true）
     if (!isActiveHours) {
       setError('当前不在营业时间内（6:00 AM - 6:00 PM）');
       return;
