@@ -38,11 +38,19 @@ const IssuePointCard = ({
     return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // 单笔限额（PointSeller没有库存限制，但有单笔限额）
+  const MAX_PER_TRANSACTION = 100;
+
   // 处理发行点数卡按钮点击
   const handleIssueClick = () => {
     // 验证
     if (!amount || isNaN(amount) || parseInt(amount) <= 0) {
       setError('请输入有效的金额');
+      return;
+    }
+
+    if (parseInt(amount) > MAX_PER_TRANSACTION) {
+      setError(`单笔发行不能超过 ${MAX_PER_TRANSACTION} 点`);
       return;
     }
 
@@ -243,12 +251,13 @@ const IssuePointCard = ({
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="100"
                   min="1"
+                  max={MAX_PER_TRANSACTION}
                   disabled={loading || !isActiveHours}
                 />
                 <span className="input-suffix">点 = {formatAmount(amount || 0)}</span>
               </div>
               <small className="hint">
-                客户支付 {formatAmount(amount || 0)} 现金，获得点数卡 {amount || 0} 点
+                客户支付 {formatAmount(amount || 0)} 现金，获得点数卡 {amount || 0} 点（单笔最多 {MAX_PER_TRANSACTION} 点）
               </small>
             </div>
 

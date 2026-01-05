@@ -205,6 +205,18 @@ const InitialPasswordSetup = () => {
       setError('');
       setTransactionPinData({ pin: '', confirmPin: '' });
 
+      // 🔐 关键修复：强制刷新 idToken（获取最新 custom claims）
+      try {
+        if (auth.currentUser) {
+          console.log('[InitialPasswordSetup] 强制刷新 idToken...');
+          await auth.currentUser.getIdToken(true);
+          console.log('[InitialPasswordSetup] idToken 刷新成功');
+        }
+      } catch (tokenErr) {
+        console.warn('[InitialPasswordSetup] idToken 刷新失败（非关键）:', tokenErr);
+        // 继续进行，不中断流程
+      }
+
       // 3秒后自动跳转到 Dashboard
       setTimeout(() => {
         navigateToDashboard();

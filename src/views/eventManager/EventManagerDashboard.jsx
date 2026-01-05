@@ -20,7 +20,8 @@ const ROLE_CONFIG = {
   financeManager: { label: 'FM', fullLabel: 'Finance Manager', color: '#3b82f6', icon: '💵', category: 'manager' },
   seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
   merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
-  customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }
+  customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' },
+  pointSeller: { label: 'PS', fullLabel: 'Point Seller', color: '#f97316', icon: '🎟️', category: 'user' }
 };
 
 const EventManagerDashboard = () => {
@@ -80,7 +81,8 @@ const EventManagerDashboard = () => {
     financeManager: false,
     seller: false,
     merchant: false,
-    customer: false
+    customer: false,
+    pointSeller: false
   });
   
   // 🆕 Seller Manager 管理部门
@@ -150,7 +152,8 @@ const EventManagerDashboard = () => {
       financeManager: user.roles?.includes('financeManager') || false,
       seller: user.roles?.includes('seller') || false,
       merchant: user.roles?.includes('merchant') || false,
-      customer: user.roles?.includes('customer') || false
+      customer: user.roles?.includes('customer') || false,
+      pointSeller: user.roles?.includes('pointSeller') || false
     });
     
     // 🆕 初始化管理部门

@@ -83,8 +83,8 @@ export const EventProvider = ({ children }) => {
           }
         }
         
-        // ✅ 支持普通用户路由: seller, merchant, customer
-        if (['seller','merchant','customer'].includes(first)) {
+        // ✅ 支持普通用户路由: seller, merchant, customer, pointseller
+        if (['seller','merchant','customer','pointseller'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
           // 支持 /customer/:orgEventCode/dashboard, /customer/:orgEventCode/register, 等

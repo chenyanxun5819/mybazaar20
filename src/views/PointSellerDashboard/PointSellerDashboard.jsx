@@ -25,10 +25,10 @@ import { httpsCallable } from 'firebase/functions';
 import './PointSellerDashboard.css';
 
 // 导入子组件
-import IssuePointCard from './IssuePointCard';
-import DirectSale from './DirectSale';
-import IssuanceHistory from './IssuanceHistory';
-import CashSubmission from './CashSubmission';
+import IssuePointCard from './components/IssuePointCard';
+import DirectSale from './components/DirectSale';
+import IssuanceHistory from './components/IssuanceHistory';
+import CashSubmission from './components/CashSubmission';
 
 const PointSellerDashboard = () => {
   const { orgEventCode } = useParams();

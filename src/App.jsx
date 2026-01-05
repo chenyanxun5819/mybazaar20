@@ -17,6 +17,7 @@ import FinanceManagerDashboard from './views/finance/FinanceManagerDashboard';
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
+import PointSellerDashboard from './views/PointSellerDashboard/PointSellerDashboard';
 import InitialSetup from './pages/InitialSetup/InitialSetup';
 // ✅ 新增：导入其他Customer页面
 import CustomerRegister from './views/customer/CustomerRegister';
@@ -219,6 +220,17 @@ function App() {
           <AuthProvider>
             <ProtectedRoute allowedRoles={["seller", "pointSeller"]}>
               <SellerDashboard />
+            </ProtectedRoute>
+          </AuthProvider>
+        </EventProvider>
+      } />
+
+      {/* Point Seller Dashboard */}
+      <Route path="/pointseller/:orgEventCode/dashboard" element={
+        <EventProvider>
+          <AuthProvider>
+            <ProtectedRoute allowedRoles={["pointSeller"]}>
+              <PointSellerDashboard />
             </ProtectedRoute>
           </AuthProvider>
         </EventProvider>

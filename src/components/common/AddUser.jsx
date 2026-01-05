@@ -131,6 +131,12 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
       },
+      financeManager: {
+        value: 'financeManager',
+        label: 'Finance Manager',
+        description: '财务管理员 - 管理现金流和财务报表',
+        icon: '💵'
+      },
       seller: {
         value: 'seller',
         label: 'Seller',
@@ -148,6 +154,12 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         label: 'Customer',
         description: '顾客 - 购买和使用固本',
         icon: '👤'
+      },
+      pointSeller: {
+        value: 'pointSeller',
+        label: 'Point Seller',
+        description: '点数销售员 - 为老人和小孩销售点数卡',
+        icon: '🎟️'
       }
     };
 

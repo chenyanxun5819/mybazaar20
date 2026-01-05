@@ -910,7 +910,7 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 验证角色是否有效
-      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
+      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'financeManager', 'seller', 'merchant', 'customer', 'pointSeller'];
       const invalidRoles = roles.filter(role => !validRoles.includes(role));
       if (invalidRoles.length > 0) {
         res.status(400).json({ error: `无效的角色: ${invalidRoles.join(', ')}` });
@@ -947,10 +947,12 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 2. 检查手机号是否已存在
-      const usersCol = getDb()
+      const eventsCol = getDb()
         .collection('organizations')
         .doc(organizationId)
-        .collection('events')
+        .collection('events');
+      
+      const usersCol = eventsCol
         .doc(eventId)
         .collection('users');
 
@@ -1106,6 +1108,15 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
         };
       }
 
+      if (roles.includes('pointSeller')) {
+        userDoc.pointSeller = {
+          sellerId: `PS${Date.now()}`,
+          totalCardsSold: 0,
+          totalSalesAmount: 0,
+          cashOnHand: 0
+        };
+      }
+
       // 8.5. 自动添加部门到组织（如果有department）
       if (department && department.trim()) {
         try {
@@ -1172,13 +1183,16 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       if (roles.includes('customer')) {
         updateData['statistics.totalCustomers'] = admin.firestore.FieldValue.increment(1);
       }
+      if (roles.includes('pointSeller')) {
+        updateData['statistics.totalPointSellers'] = admin.firestore.FieldValue.increment(1);
+      }
 
       await getDb()
         .collection('organizations')
         .doc(organizationId)
         .collection('events')
         .doc(eventId)
-        .update(updateData);
+        .set(updateData, { merge: true });
 
       console.log('[createUserByEventManagerHttp] Success');
 
@@ -2827,6 +2841,7 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       if (roles.seller) { newRoles.push('seller'); participantRoles.push('seller'); }
       if (roles.merchant) { newRoles.push('merchant'); participantRoles.push('merchant'); }
       if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
+      if (roles.pointSeller) { newRoles.push('pointSeller'); participantRoles.push('pointSeller'); }
 
       // 构建更新数据
       const updateData = {
@@ -2958,6 +2973,25 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
         additionalUpdateData['customer.availablePoints'] = 0;
         additionalUpdateData['customer.totalPointsSpent'] = 0;
         additionalUpdateData['customer.transactions'] = {};
+      }
+
+      if (roles.pointSeller && !previousRoles?.includes('pointSeller')) {
+        additionalUpdateData['pointSeller.sellerId'] = `PS${Date.now()}`;
+        additionalUpdateData['pointSeller.totalCardsSold'] = 0;
+        additionalUpdateData['pointSeller.totalSalesAmount'] = 0;
+        additionalUpdateData['pointSeller.cashOnHand'] = 0;
+        additionalUpdateData['pointSeller.todayStats'] = {
+          cardsIssued: 0,
+          totalPointsIssued: 0,
+          totalCashReceived: 0,
+          directSalesCount: 0,
+          directSalesPoints: 0
+        };
+        additionalUpdateData['pointSeller.totalStats'] = {
+          totalCardsIssued: 0,
+          totalPointsIssued: 0,
+          totalCashReceived: 0
+        };
       }
 
       // 合并更新数据
@@ -3468,7 +3502,8 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           phoneNumber: eventManagerInfo.phoneNumber,
           position: eventManagerInfo.position || '活动负责人'
         },
-        'roleStats.eventManagers.count': 1
+        'roleStats.eventManagers.count': 1,
+        'statistics.totalUsers': admin.firestore.FieldValue.increment(1)
       });
 
       console.log('[createEventByPlatformAdminHttp] Event Manager 創建成功:', userId);

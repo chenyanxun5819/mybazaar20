@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { db } from '../../../config/firebase';
 import TransactionPinDialog from '../common/TransactionPinDialog';
 import './DirectSale.css';
 
@@ -36,8 +36,8 @@ const DirectSale = ({
     return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // 获取PointSeller可用点数
-  const availablePoints = userProfile?.pointSeller?.availablePoints || 0;
+  // 单笔限额（PointSeller没有库存限制，但有单笔限额）
+  const MAX_PER_TRANSACTION = 100;
 
   // 查找客户
   const handleSearchCustomer = async () => {
@@ -142,8 +142,8 @@ const DirectSale = ({
       return;
     }
 
-    if (saleAmount > availablePoints) {
-      setError(`您的点数库存不足！当前库存: ${availablePoints} 点`);
+    if (saleAmount > MAX_PER_TRANSACTION) {
+      setError(`单笔销售不能超过 ${MAX_PER_TRANSACTION} 点`);
       return;
     }
 
@@ -236,11 +236,11 @@ const DirectSale = ({
     <div className="direct-sale">
       <h2 className="section-title">🛒 销售点数</h2>
 
-      {/* 显示 PointSeller 库存 */}
+      {/* 显示单笔限额 */}
       <div className="seller-inventory">
-        <div className="inventory-label">您的点数库存</div>
-        <div className="inventory-amount">{availablePoints} 点</div>
-        <div className="inventory-hint">可销售给客户</div>
+        <div className="inventory-label">单笔销售限额</div>
+        <div className="inventory-amount">{MAX_PER_TRANSACTION} 点</div>
+        <div className="inventory-hint">可无限发出点数</div>
       </div>
 
       {/* 查找客户 */}
@@ -293,20 +293,20 @@ const DirectSale = ({
                 onKeyPress={handleAmountKeyPress}
                 placeholder="100"
                 min="1"
-                max={availablePoints}
+                max={MAX_PER_TRANSACTION}
                 disabled={loading || !isActiveHours}
               />
               <span className="input-suffix">点 = {formatAmount(amount || 0)}</span>
             </div>
             {amount && (
               <div className="balance-check">
-                {parseInt(amount) <= availablePoints ? (
+                {parseInt(amount) <= MAX_PER_TRANSACTION ? (
                   <span className="balance-ok">
-                    ✓ 库存充足 (剩余 {availablePoints - parseInt(amount)} 点)
+                    ✓ 符合单笔限额（最多 {MAX_PER_TRANSACTION} 点）
                   </span>
                 ) : (
                   <span className="balance-insufficient">
-                    ✗ 库存不足！您只有 {availablePoints} 点可销售
+                    ✗ 超出单笔限额！单笔最多 {MAX_PER_TRANSACTION} 点
                   </span>
                 )}
               </div>
@@ -335,7 +335,7 @@ const DirectSale = ({
         {customer && amount && (
           <button
             onClick={handleSaleClick}
-            disabled={loading || parseInt(amount) > availablePoints || !isActiveHours}
+            disabled={loading || parseInt(amount) > MAX_PER_TRANSACTION || !isActiveHours}
             className="submit-button"
           >
             {loading ? '处理中...' : `确认销售 ${amount} 点 (收取 ${formatAmount(amount)})`}
