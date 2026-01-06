@@ -20,6 +20,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
 import { auth, db, functions } from '../../config/firebase';
+import { signOut } from 'firebase/auth';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import './PointSellerDashboard.css';
@@ -152,17 +153,17 @@ const PointSellerDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 登出处理
+  // 登出处理（與 SellerManager 相同的行為）
   const handleLogout = async () => {
-    const confirmed = window.confirm('确定要退出登录吗？');
-    if (!confirmed) return;
-
     try {
-      await logout();
+      await signOut(auth);
+      localStorage.removeItem('pointSellerInfo');
+      localStorage.removeItem('currentUser');
+      console.log('[PointSeller] 用户已登出');
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('退出登录失败:', error);
-      alert('退出登录失败: ' + error.message);
+      alert('退出登录失败: ' + (error?.message || '請重試'));
     }
   };
 
