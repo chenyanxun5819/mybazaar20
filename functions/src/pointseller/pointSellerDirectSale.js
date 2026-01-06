@@ -1,14 +1,11 @@
 /**
- * Point Seller Direct Sale Cloud Function
+ * Point Seller Direct Sale Cloud Function - 修复版 v3.0
  * PointSeller 直接销售点数给 Customer
  * 
- * 功能：
- * 1. 验证交易密码
- * 2. 验证时间限制（6:00-18:00）- 测试阶段已禁用
- * 3. 验证单笔限额（100点）
- * 4. 创建交易记录
- * 5. 更新 PointSeller 和 Customer 的点数
- * 6. 更新 PointSeller 统计数据
+ * 修复：
+ * 1. 添加 directSalesCount 和 directSalesPoints 统计
+ * 2. 添加 cashManagement 更新
+ * 3. 修正统计字段名称
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -34,7 +31,7 @@ async function verifyTransactionPin(userId, orgId, eventId, inputPin) {
     throw new HttpsError('failed-precondition', '未设置交易密码');
   }
   
-  // 检查是否 be 锁定
+  // 检查是否被锁定
   const pinLockedUntil = basicInfo.pinLockedUntil;
   const now = admin.firestore.Timestamp.now();
   
@@ -124,16 +121,6 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
       throw error;
     }
     
-    // 5. 时间限制验证（测试阶段已禁用）
-    // const now = new Date();
-    // const hour = now.getHours();
-    // if (hour < 6 || hour >= 18) {
-    //   throw new functions.https.HttpsError(
-    //     'failed-precondition',
-    //     '当前不在营业时间内（6:00 AM - 6:00 PM）'
-    //   );
-    // }
-    
     const db = admin.firestore();
     
     // 6. 获取 PointSeller 和 Customer 引用
@@ -183,6 +170,8 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
           .collection('events').doc(eventId)
           .collection('transactions').doc(transactionId);
         
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        
         const transactionData = {
           transactionId,
           type: 'pointseller_to_customer',
@@ -210,11 +199,11 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
           customerBalanceAfter: (customerData.customer?.pointsAccount?.availablePoints || 0) + amount,
           
           // 时间戳
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          timestamp: now,
           status: 'completed',
           
           metadata: {
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: now,
             source: 'pointSellerDirectSale'
           }
         };
@@ -225,27 +214,36 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
         transaction.update(customerRef, {
           'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(amount),
           'customer.pointsAccount.totalReceived': admin.firestore.FieldValue.increment(amount),
-          'customer.pointsAccount.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp(),
-          'updatedAt': admin.firestore.FieldValue.serverTimestamp()
+          'customer.pointsAccount.lastTransactionAt': now,
+          'updatedAt': now
         });
         
-        // 7.5 更新 PointSeller 统计数据
-        const today = new Date().toISOString().split('T')[0];
-        
-        transaction.update(pointSellerRef, {
+        // 7.5 更新 PointSeller 统计数据（✅ 修正：添加 directSales 统计）
+        const updateData = {
           // 今日统计
-          'pointSeller.todayStats.directSalesCount': admin.firestore.FieldValue.increment(1),
-          'pointSeller.todayStats.directSalesPoints': admin.firestore.FieldValue.increment(amount),
+          'pointSeller.todayStats.directSalesCount': admin.firestore.FieldValue.increment(1),  // ✅ 新增
+          'pointSeller.todayStats.directSalesPoints': admin.firestore.FieldValue.increment(amount),  // ✅ 新增
           'pointSeller.todayStats.totalCashReceived': admin.firestore.FieldValue.increment(amount),
-          'pointSeller.todayStats.lastSaleAt': admin.firestore.FieldValue.serverTimestamp(),
+          'pointSeller.todayStats.lastSaleAt': now,
           
           // 累计统计
           'pointSeller.totalStats.totalDirectSales': admin.firestore.FieldValue.increment(1),
           'pointSeller.totalStats.totalPointsSold': admin.firestore.FieldValue.increment(amount),
           'pointSeller.totalStats.totalCashReceived': admin.firestore.FieldValue.increment(amount),
           
-          'updatedAt': admin.firestore.FieldValue.serverTimestamp()
-        });
+          // 现金管理（✅ 新增）
+          'pointSeller.cashManagement.cashOnHand': admin.firestore.FieldValue.increment(amount),
+          'pointSeller.cashManagement.pendingSubmission': admin.firestore.FieldValue.increment(amount),
+          
+          'updatedAt': now
+        };
+
+        // 如果是首次销售，设置 firstIssueAt
+        if (!pointSellerData.pointSeller?.todayStats?.firstIssueAt) {
+          updateData['pointSeller.todayStats.firstIssueAt'] = now;
+        }
+        
+        transaction.update(pointSellerRef, updateData);
         
         return {
           transactionId,
@@ -262,7 +260,7 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
       };
       
     } catch (error) {
-      console.error('销售失败:', error);
+      console.error('[pointSellerDirectSale] 销售失败:', error);
       
       if (error.code) {
         throw error;

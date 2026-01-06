@@ -1,12 +1,15 @@
 /**
- * Submit Cash As PointSeller Cloud Function
+ * Submit Cash As PointSeller Cloud Function - 修复版 v3.0
  * PointSeller 上交现金给 Finance Manager
  * 
- * 功能：
- * 1. 验证交易密码
- * 2. 验证金额与记录总和匹配
- * 3. 创建 cashSubmissions 文档
- * 4. 状态设置为 pending，等待 Finance Manager 确认
+ * 修复：
+ * 1. 添加 submissionNumber（流水号）
+ * 2. 添加 submitterPhone
+ * 3. 添加 receiverRole
+ * 4. 添加 receiptNumber
+ * 5. 使用 pointCardInfo 结构
+ * 6. 添加 metadata.submissionType
+ * 7. 更新 PointSeller 的 cashManagement
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -88,6 +91,14 @@ async function verifyTransactionPin(userId, orgId, eventId, inputPin) {
   }
 }
 
+// 生成提交流水号
+function generateSubmissionNumber(orgId, eventId) {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+  const timeStr = now.getTime().toString().slice(-4); // 后4位时间戳
+  return `CS-${dateStr}-${timeStr}`;
+}
+
 exports.submitCashAsPointSeller = onCall({ region: 'asia-southeast1' }, async (request) => {
     // 1. 身份验证
     if (!request.auth) {
@@ -118,11 +129,9 @@ exports.submitCashAsPointSeller = onCall({ region: 'asia-southeast1' }, async (r
     }
     
     // 4. 验证金额匹配
+    // ✅ 修正：统一使用前端传递的 amount 字段
     const calculatedTotal = records.reduce((sum, record) => {
-      const recordAmount = record.type === 'point_card' 
-        ? (record.issuer?.cashReceived || 0)
-        : (record.amount || 0);
-      return sum + recordAmount;
+      return sum + (record.amount || 0);
     }, 0);
     
     if (Math.abs(calculatedTotal - amount) > 0.01) {
@@ -141,89 +150,139 @@ exports.submitCashAsPointSeller = onCall({ region: 'asia-southeast1' }, async (r
       .collection('users').doc(pointSellerId);
     
     try {
-      // 6. 读取 PointSeller 数据
-      const pointSellerDoc = await pointSellerRef.get();
-      if (!pointSellerDoc.exists) {
-        throw new HttpsError('not-found', 'PointSeller 不存在');
-      }
-      
-      const pointSellerData = pointSellerDoc.data();
-      
-      // 验证角色
-      if (!pointSellerData.roles || !pointSellerData.roles.includes('pointSeller')) {
-        throw new HttpsError('permission-denied', '用户不是 PointSeller');
-      }
-      
-      // 7. 创建 cashSubmissions 文档
-      const submissionId = `CASH_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const cashSubmissionRef = db
-        .collection('organizations').doc(orgId)
-        .collection('events').doc(eventId)
-        .collection('cashSubmissions').doc(submissionId);
-      
-      const cashSubmissionData = {
-        submissionId,
-        organizationId: orgId,
-        eventId: eventId,
-        
-        // 提交人信息
-        submittedBy: pointSellerId,
-        submitterName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',
-        submitterRole: 'pointSeller',
-        
-        // 金额信息
-        amount: amount,
-        currency: 'MYR',
-        
-        // 记录信息
-        recordIds: recordIds || [],
-        records: records.map(record => ({
-          id: record.id,
-          type: record.type,
-          amount: record.type === 'point_card' 
-            ? (record.issuer?.cashReceived || 0)
-            : (record.amount || 0),
-          cardNumber: record.cardNumber || null,
-          customerName: record.customerName || null,
-          timestamp: record.metadata?.createdAt || record.timestamp || null
-        })),
-        
-        // 状态信息
-        status: 'pending',
-        receivedBy: null,
-        receiverName: null,
-        confirmationNote: null,
-        
-        // 备注
-        note: note || '',
-        
-        // 时间戳
-        submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-        confirmedAt: null,
-        
-        // 元数据
-        metadata: {
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          source: 'submitCashAsPointSeller'
+      // 6. 使用事务创建提交记录并更新统计
+      const result = await db.runTransaction(async (transaction) => {
+        // 6.1 读取 PointSeller 数据
+        const pointSellerDoc = await transaction.get(pointSellerRef);
+        if (!pointSellerDoc.exists) {
+          throw new HttpsError('not-found', 'PointSeller 不存在');
         }
-      };
-      
-      await cashSubmissionRef.set(cashSubmissionData);
+        
+        const pointSellerData = pointSellerDoc.data();
+        
+        // 验证角色
+        if (!pointSellerData.roles || !pointSellerData.roles.includes('pointSeller')) {
+          throw new HttpsError('permission-denied', '用户不是 PointSeller');
+        }
+        
+        // 6.2 生成编号
+        const submissionId = `CASH_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const submissionNumber = generateSubmissionNumber(orgId, eventId);
+        
+        // 6.3 处理点数卡信息
+        const pointCards = records.filter(r => r.type === 'point_card');
+        const directSales = records.filter(r => r.type === 'direct_sale');
+        
+        const pointCardInfo = {
+          cardsIssued: pointCards.length,
+          pointsIssued: pointCards.reduce((sum, card) => sum + (card.balance?.initial || 0), 0),
+          cardIds: pointCards.map(card => card.cardId || card.id)
+        };
+        
+        // 6.4 创建 cashSubmissions 文档（✅ 按 Firestore 架构）
+        const cashSubmissionRef = db
+          .collection('organizations').doc(orgId)
+          .collection('events').doc(eventId)
+          .collection('cashSubmissions').doc(submissionId);
+        
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        
+        const cashSubmissionData = {
+          // 基本信息
+          submissionId,
+          submissionNumber,  // ✅ 新增流水号
+          
+          // 提交方信息
+          submittedBy: pointSellerId,
+          submitterName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',
+          submitterRole: 'pointSeller',
+          submitterDepartment: null,
+          submitterPhone: pointSellerData.basicInfo?.phoneNumber || '',  // ✅ 新增
+          
+          // 接收方信息（null = 待认领池子）
+          receivedBy: null,
+          receiverName: null,
+          receiverRole: null,  // ✅ 新增
+          receiverPhone: null,
+          
+          // 金额信息
+          amount: amount,
+          breakdown: {
+            cash: amount,
+            transfer: 0,
+            check: 0
+          },
+          currency: 'MYR',
+          
+          // 状态信息
+          status: 'pending',
+          submittedAt: now,
+          confirmedAt: null,
+          disputedAt: null,
+          rejectedAt: null,
+          
+          // 备注信息
+          note: note || '',
+          receiptNumber: null,  // ✅ 新增（Finance Manager 确认时填写）
+          confirmationNote: null,
+          disputeReason: null,
+          
+          // 包含的销售记录
+          includedSales: directSales.map(sale => ({
+            sellerId: sale.sellerId,
+            sellerName: sale.sellerName || sale.customerName,
+            amount: sale.amount || 0,
+            salesDate: new Date().toISOString().split('T')[0],
+            transactionIds: [sale.transactionId || sale.id]
+          })),
+          salesCount: directSales.length,
+          
+          // 点数卡信息（✅ 使用规范结构）
+          pointCardInfo: pointCardInfo,
+          
+          // 元数据
+          metadata: {
+            createdAt: now,
+            updatedAt: now,
+            eventId: eventId,
+            organizationId: orgId,
+            submissionSource: 'manual',
+            submissionType: 'pointSellerToFinance'  // ✅ 新增
+          }
+        };
+        
+        transaction.set(cashSubmissionRef, cashSubmissionData);
+        
+        // 6.5 更新 PointSeller 的 cashManagement（✅ 修正逻辑）
+        // 提交现金后：
+        // 1. cashOnHand 减少（现金已交出）
+        // 2. 不更新 totalSubmitted（等确认后才算"已上交"）
+        transaction.update(pointSellerRef, {
+          'pointSeller.cashManagement.cashOnHand': admin.firestore.FieldValue.increment(-amount),
+          'pointSeller.cashManagement.lastSubmissionAt': now,
+          'pointSeller.cashManagement.submissionCount': admin.firestore.FieldValue.increment(1),
+          'updatedAt': now
+        });
+        
+        return {
+          submissionId,
+          submissionNumber,
+          amount,
+          status: 'pending'
+        };
+      });
       
       return {
         success: true,
         data: {
-          submissionId,
-          amount,
-          status: 'pending',
+          ...result,
           submittedAt: new Date().toISOString()
         },
         message: '现金上交成功，等待 Finance Manager 确认'
       };
       
     } catch (error) {
-      console.error('上交现金失败:', error);
+      console.error('[submitCashAsPointSeller] 上交现金失败:', error);
       
       if (error.code) {
         throw error;
