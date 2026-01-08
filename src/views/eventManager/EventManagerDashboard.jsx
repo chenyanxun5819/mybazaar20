@@ -53,6 +53,12 @@ const EventManagerDashboard = () => {
   const [showUserList, setShowUserList] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 点数管理
   const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
+  const [showGrantPointsModal, setShowGrantPointsModal] = useState(false); // 🆕 赠送点数模态框
+  const [grantIdentityTag, setGrantIdentityTag] = useState(''); // 🆕 赠送目标身份标签
+  const [grantAmount, setGrantAmount] = useState(''); // 🆕 赠送点数
+  const [grantNote, setGrantNote] = useState(''); // 🆕 赠送备注
+  const [isGranting, setIsGranting] = useState(false); // 🆕 正在赠送
+  const [identityTags, setIdentityTags] = useState([]); // 🆕 身份标签列表
   const [users, setUsers] = useState([]); // 用户列表（表格显示）
   const [showUserTable, setShowUserTable] = useState(true); // 默认显示用户表格
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' }); // 排序配置
@@ -281,6 +287,86 @@ const EventManagerDashboard = () => {
     }
   };
 
+  // 🆕 处理打开赠送点数Modal
+  const handleOpenGrantPoints = () => {
+    setGrantIdentityTag('');
+    setGrantAmount('');
+    setGrantNote('');
+    setShowGrantPointsModal(true);
+  };
+
+  // 🆕 处理赠送点数
+  const handleGrantPoints = async () => {
+    try {
+      // 验证输入
+      if (!grantIdentityTag) {
+        alert('请选择目标身份标签');
+        return;
+      }
+
+      if (!grantAmount || isNaN(grantAmount) || Number(grantAmount) <= 0) {
+        alert('请输入有效的赠送点数（必须大于0）');
+        return;
+      }
+
+      const pointsToGrant = Number(grantAmount);
+
+      // 确认操作
+      const selectedTag = identityTags.find(tag => tag.id === grantIdentityTag);
+      const tagName = selectedTag ? selectedTag.name['zh-CN'] || selectedTag.name['en-US'] : grantIdentityTag;
+      
+      const confirmMessage = `确认要赠送 ${pointsToGrant} 点数给所有 "${tagName}" 身份的 Customer 吗？`;
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+
+      setIsGranting(true);
+
+      // 获取 ID Token
+      const idToken = await auth.currentUser.getIdToken();
+
+      // 调用 Cloud Function
+      const response = await safeFetch('/api/grantPointsByEventManagerHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          identityTag: grantIdentityTag,
+          points: pointsToGrant,
+          note: grantNote || '组织赠送'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || '赠送点数失败');
+      }
+
+      const result = await response.json();
+      
+      alert(`✅ 赠送成功！\n已赠送给 ${result.grantedCount} 个用户\n每人 ${result.pointsPerUser} 点数\n总计 ${result.totalPoints} 点数`);
+      
+      // 关闭Modal
+      setShowGrantPointsModal(false);
+      setGrantIdentityTag('');
+      setGrantAmount('');
+      setGrantNote('');
+
+      // 刷新数据
+      await loadDashboardData();
+
+    } catch (error) {
+      console.error('❌ 赠送点数失败:', error);
+      alert('赠送失败: ' + error.message);
+    } finally {
+      setIsGranting(false);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading) {
       loadDashboardData();
@@ -352,6 +438,15 @@ const EventManagerDashboard = () => {
               .filter(d => d.isActive !== false)
               .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
             setDepartments(activeDepts.map(d => d.name));
+          }
+          
+          // 🆕 提取身份标签列表（用于赠送点数）
+          if (orgInfo.identityTags) {
+            const activeTags = orgInfo.identityTags
+              .filter(tag => tag.isActive)
+              .sort((a, b) => a.displayOrder - b.displayOrder);
+            setIdentityTags(activeTags);
+            console.log('[EventManagerDashboard] 加载身份标签:', activeTags);
           }
         }
 
@@ -634,6 +729,12 @@ const EventManagerDashboard = () => {
         >
           📊 点数管理
         </button>
+        <button
+          style={{ ...styles.secondaryButton, backgroundColor: '#8b5cf6', color: 'white', borderColor: '#8b5cf6' }}
+          onClick={handleOpenGrantPoints}
+        >
+          🎁 赠送点数
+        </button>
       </div>
 
       {/* 过滤和列显示控制栏 */}
@@ -860,7 +961,7 @@ const EventManagerDashboard = () => {
                       <td style={styles.tableCell}>{maskPhone(user.basicInfo?.phoneNumber)}</td>
                     )}
                     {visibleColumns.身份标签 && (
-                      <td style={styles.tableCell}>{user.identityInfo?.identityTag || '-'}</td>
+                      <td style={styles.tableCell}>{user.identityTag || '-'}</td>
                     )}
                     {visibleColumns.部门 && (
                       <td style={styles.tableCell}>{user.identityInfo?.department || '-'}</td>
@@ -1016,6 +1117,128 @@ const EventManagerDashboard = () => {
           onClose={() => setShowDepartmentManagement(false)}
           onUpdate={loadDashboardData}
         />
+      )}
+
+      {/* 🆕 赠送点数 Modal */}
+      {showGrantPointsModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowGrantPointsModal(false)}>
+          <div style={styles.editModalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>🎁 赠送点数给Customer</h3>
+              <button
+                onClick={() => setShowGrantPointsModal(false)}
+                style={styles.closeButton}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              {/* 说明文字 */}
+              <div style={{
+                padding: '1rem',
+                backgroundColor: '#fef3c7',
+                borderRadius: '8px',
+                border: '1px solid #fbbf24'
+              }}>
+                <p style={{ fontSize: '0.875rem', color: '#92400e', margin: 0 }}>
+                  💡 此功能将赠送指定点数给所有符合选定身份标签的Customer用户。赠送的点数将直接添加到用户的可用余额中，无需现金对冲。
+                </p>
+              </div>
+
+              {/* 选择身份标签 */}
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  目标身份标签 <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <select
+                  value={grantIdentityTag}
+                  onChange={(e) => setGrantIdentityTag(e.target.value)}
+                  style={styles.formInput}
+                >
+                  <option value="">请选择身份标签...</option>
+                  {identityTags.map(tag => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name['zh-CN'] || tag.name['en-US'] || tag.id}
+                    </option>
+                  ))}
+                </select>
+                <div style={styles.formHint}>
+                  系统将赠送点数给所有具有此身份标签的Customer用户
+                </div>
+              </div>
+
+              {/* 赠送点数 */}
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  赠送点数（每人） <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  value={grantAmount}
+                  onChange={(e) => setGrantAmount(e.target.value)}
+                  style={styles.formInput}
+                  placeholder="请输入赠送点数"
+                  min="1"
+                />
+                <div style={styles.formHint}>
+                  每个符合条件的用户将获得此数量的点数
+                </div>
+              </div>
+
+              {/* 备注 */}
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  备注（可选）
+                </label>
+                <textarea
+                  value={grantNote}
+                  onChange={(e) => setGrantNote(e.target.value)}
+                  style={{ ...styles.formInput, minHeight: '80px', resize: 'vertical' }}
+                  placeholder="例如：新年礼物、活动奖励等"
+                />
+              </div>
+
+              {/* 操作按钮 */}
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                <button
+                  onClick={() => setShowGrantPointsModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: '#374151',
+                    backgroundColor: 'white',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                  disabled={isGranting}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleGrantPoints}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'white',
+                    backgroundColor: isGranting ? '#9ca3af' : '#8b5cf6',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: isGranting ? 'not-allowed' : 'pointer'
+                  }}
+                  disabled={isGranting}
+                >
+                  {isGranting ? '赠送中...' : '确认赠送'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 🔄 修改：扩展编辑模态框 - 添加角色和部门选择 */}

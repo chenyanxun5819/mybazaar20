@@ -101,6 +101,10 @@
         "function": "pingHttp"
       },
       {
+        "source": "/api/grantPointsByEventManagerHttp",
+        "function": "grantPointsByEventManagerHttp"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

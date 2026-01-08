@@ -24,6 +24,9 @@ const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
 const { onCashCollection } = require('./src/sellerManager/onCashCollection');
 
+
+// Event Manager Functions
+const { grantPointsByEventManagerHttp } = require('./src/eventManager/grantPointsByEventManagerHttp');
 // Cashier callable / triggers
 const financeManagerFunctions = require('./src/cashier/cashierFunction');
 
@@ -132,6 +135,9 @@ exports.changeLoginPassword = changeLoginPasswordFn;
 exports.setupTransactionPin = setupTransactionPinFn;
 exports.verifyTransactionPin = verifyTransactionPinFn;
 exports.resetTransactionPin = resetTransactionPinFn;
+
+// Event Manager Functions
+exports.grantPointsByEventManagerHttp = grantPointsByEventManagerHttp;
 // CORS 中间件配置
 const allowedOrigins = [
   'http://localhost:5173',
