@@ -1,0 +1,125 @@
+/* SubmitCash.css */
+
+/* 旋转动画 */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .batch-actions {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .action-buttons {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .action-buttons button {
+    flex: 1;
+  }
+
+  .collections-list,
+  .submissions-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  .modal {
+    margin: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-value {
+    font-size: 1.25rem !important;
+  }
+
+  .stat-icon {
+    font-size: 1.5rem !important;
+  }
+
+  .card-amount {
+    font-size: 1rem !important;
+  }
+}
+
+/* 悬停效果 */
+.action-button:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.collection-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.expand-button:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.close-button:hover {
+  color: #374151;
+}
+
+.cancel-button:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.submit-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+/* 焦点样式 */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* 禁用状态 */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input:disabled,
+textarea:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+/* 滚动条样式 */
+.modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.modal::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 4px;
+}
+
+.modal::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}

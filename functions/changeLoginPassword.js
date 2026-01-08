@@ -1,0 +1,288 @@
+/**
+ * changeLoginPassword.js
+ * 修改登录密码
+ * 
+ * 用于：
+ * 1. 首次登录时修改默认密码
+ * 2. 用户主动修改密码
+ */
+
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+const crypto = require('crypto');
+const { hashPassword, verifyPassword } = require('./utils/bcryptHelper');
+const { validateLoginPassword } = require('./utils/validators');
+
+/**
+ * SHA256 哈希函数 (与 loginUniversalHttp 保持一致)
+ */
+function sha256(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+exports.changeLoginPassword = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const { data, auth } = request;
+
+  try {
+    // ========== 1. 验证用户认证 ==========
+    if (!auth) {
+      throw new HttpsError('unauthenticated', '用户未认证');
+    }
+
+    // ========== 2. 提取参数 ==========
+    const {
+      organizationId,
+      eventId,
+      oldPassword,
+      newPassword
+    } = data;
+    
+    let userId = data.userId;
+
+    // ✅ 修正：如果 userId 是 'universal'，尝试使用 auth.uid
+    if (userId === 'universal' && auth && auth.uid) {
+      console.log('[changeLoginPassword] 检测到 userId 为 universal，使用 auth.uid:', auth.uid);
+      userId = auth.uid;
+    }
+
+    console.log('[changeLoginPassword] 收到请求:', {
+      userId,
+      organizationId,
+      eventId,
+      authUid: auth.uid,
+      hasOldPassword: !!oldPassword,
+      hasNewPassword: !!newPassword
+    });
+
+    // ========== 3. 验证必填参数 ==========
+    if (!userId || !organizationId || !eventId || !oldPassword || !newPassword) {
+      throw new HttpsError('invalid-argument', '缺少必填参数');
+    }
+
+    // ========== 4. 获取用户文档（增强兼容性查询）==========
+    const db = admin.firestore();
+    
+    let userRef = null;
+    let userDoc = null;
+    let isEventManager = false;
+
+    // A. 检查是否为 Event Manager (在 event 文档中)
+    const eventRef = db.collection('organizations').doc(organizationId).collection('events').doc(eventId);
+    const eventDoc = await eventRef.get();
+    
+    if (eventDoc.exists) {
+      const eventData = eventDoc.data();
+      // 检查 userId 是否匹配 eventManager.authUid，或者 auth.uid 是否匹配
+      if (eventData.eventManager && (eventData.eventManager.authUid === userId || eventData.eventManager.authUid === auth.uid)) {
+        console.log('[changeLoginPassword] 检测到 Event Manager 修改密码');
+        isEventManager = true;
+        // 尝试从 events/{eventId}/users/{authUid} 读取完整的用户文档（包含 basicInfo.passwordHash）
+        try {
+          const emUid = eventData.eventManager.authUid;
+          const usersColRef = eventRef.collection('users');
+          const emUserRef = usersColRef.doc(emUid);
+          const emUserSnap = await emUserRef.get();
+          if (emUserSnap.exists) {
+            userRef = emUserRef;
+            userDoc = emUserSnap;
+          } else {
+            // 回退：如果 users 集合中没有对应文档，使用 event 内的 eventManager 对象（兼容旧结构）
+            userDoc = {
+              exists: true,
+              data: () => eventData.eventManager,
+              ref: eventRef
+            };
+          }
+        } catch (e) {
+          console.error('[changeLoginPassword] 读取 Event Manager users 文档失败，回退到 eventManager 对象:', e.message);
+          userDoc = {
+            exists: true,
+            data: () => eventData.eventManager,
+            ref: eventRef
+          };
+        }
+      }
+    }
+
+    if (!isEventManager) {
+      // B. 普通用户：先尝试直接用 userId (Document ID) 获取
+      const directRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('users').doc(userId);
+      
+      const directDoc = await directRef.get();
+
+      if (directDoc.exists) {
+        userRef = directRef;
+        userDoc = directDoc;
+      } else {
+        // 如果直接获取失败，尝试通过 authUid 字段查询 (兼容 userId 传的是 authUid 的情况)
+        console.log('[changeLoginPassword] 直接获取失败，尝试通过 authUid 查询:', userId);
+        const querySnapshot = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('users')
+          .where('authUid', '==', userId)
+          .limit(1)
+          .get();
+
+        if (!querySnapshot.empty) {
+          userDoc = querySnapshot.docs[0];
+          userRef = userDoc.ref;
+        } else {
+          // 最后尝试通过手机号查询 (如果 userId 传的是格式化后的手机号)
+          console.log('[changeLoginPassword] authUid 查询失败，尝试通过手机号查询:', userId);
+          const phoneQuery = await db
+            .collection('organizations').doc(organizationId)
+            .collection('events').doc(eventId)
+            .collection('users')
+            .where('basicInfo.phoneNumber', '>=', userId.replace('phone_', ''))
+            .limit(1)
+            .get();
+          
+          if (!phoneQuery.empty) {
+            userDoc = phoneQuery.docs[0];
+            userRef = userDoc.ref;
+          }
+        }
+      }
+    }
+
+    if (!userDoc || !userDoc.exists) {
+      throw new HttpsError('not-found', '用户不存在');
+    }
+
+    const userData = userDoc.data();
+
+    // ========== 5. 权限检查：允许用户修改自己的密码 ==========
+    const callerAuthUid = auth.uid;                    // Firebase Auth 的 uid
+    const callerUserId = auth.token?.userId;           // Custom Claims 中的 userId
+    const userAuthUid = isEventManager ? userData.authUid : userData.authUid; // 统一处理
+    const userDocId = isEventManager ? 'eventManager' : userDoc.id;
+
+    // 多重匹配检查（任一匹配即可）
+    const isOwnPassword = 
+      callerAuthUid === userId ||           // Firebase Auth uid 匹配请求的 userId
+      callerAuthUid === userAuthUid ||      // Firebase Auth uid 匹配用户的 authUid
+      callerUserId === userId ||            // Custom Claims userId 匹配请求的 userId
+      callerUserId === userDocId ||         // Custom Claims userId 匹配文档 ID
+      (isEventManager && callerAuthUid === auth.uid); // Event Manager 且 UID 匹配
+
+    console.log('[changeLoginPassword] 权限检查:', {
+      callerAuthUid,
+      callerUserId,
+      userId,
+      userAuthUid,
+      userDocId,
+      isEventManager,
+      isOwnPassword
+    });
+
+    if (!isOwnPassword) {
+      throw new HttpsError('permission-denied', '无权修改其他用户的密码');
+    }
+
+    // ========== 6. 验证新密码强度 ==========
+    const passwordValidation = validateLoginPassword(newPassword);
+    if (!passwordValidation.isValid) {
+      throw new HttpsError('invalid-argument', passwordValidation.error);
+    }
+
+    // 检查新密码不能与旧密码相同
+    if (oldPassword === newPassword) {
+      throw new HttpsError('invalid-argument', '新密码不能与旧密码相同');
+    }
+
+    // ========== 7. 验证旧密码 ==========
+    // 注意：优先从 users 文档的 basicInfo 中读取密码哈希，如果不存在再回退到旧的 eventManager.passwordHash
+    const currentPasswordHash = userData.basicInfo?.passwordHash || userData.passwordHash;
+    const currentPasswordSalt = userData.basicInfo?.passwordSalt || userData.passwordSalt;
+
+    if (!currentPasswordHash) {
+      throw new HttpsError('failed-precondition', '用户密码未设置');
+    }
+
+    // 验证旧密码 (sha256)
+    const computedOldHash = sha256(String(oldPassword) + String(currentPasswordSalt || ''));
+    const isOldPasswordCorrect = (computedOldHash === currentPasswordHash);
+
+    if (!isOldPasswordCorrect) {
+      // 尝试兼容 bcrypt (如果之前错误地使用了 bcrypt)
+      let isBcryptMatch = false;
+      try {
+        isBcryptMatch = await verifyPassword(oldPassword, currentPasswordHash);
+      } catch (e) {
+        // 忽略 bcrypt 错误
+      }
+
+      if (!isBcryptMatch) {
+        throw new HttpsError('permission-denied', '旧密码错误');
+      }
+    }
+
+    // ========== 8. 加密新密码 (使用 sha256 以保持一致) ==========
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newPasswordHash = sha256(String(newPassword) + newSalt);
+
+    // ========== 9. 更新用户文档 ==========
+    // 更新用户文档：如果我们确实读取到了 users/{uid} 文档（userRef 指向 users 文档），则更新 basicInfo 字段
+    if (userRef && typeof userRef.path === 'string' && userRef.path.includes('/users/')) {
+      const updateData = {
+        'basicInfo.passwordHash': newPasswordHash,
+        'basicInfo.passwordSalt': newSalt,
+        'basicInfo.hasDefaultPassword': false,
+        'basicInfo.isFirstLogin': false,
+        'basicInfo.passwordLastChanged': admin.firestore.FieldValue.serverTimestamp(),
+        'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      };
+      await userRef.update(updateData);
+    } else if (isEventManager && userDoc && userDoc.ref) {
+      // 回退：如果我们只能访问到 eventDoc（旧结构），则更新 eventManager 下的字段
+      const updateData = {
+        'eventManager.passwordHash': newPasswordHash,
+        'eventManager.passwordSalt': newSalt,
+        'eventManager.hasDefaultPassword': false,
+        'eventManager.isFirstLogin': false,
+        'eventManager.passwordLastChanged': admin.firestore.FieldValue.serverTimestamp(),
+        'eventManager.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      };
+      await userDoc.ref.update(updateData);
+    } else {
+      // 普通用户路径（userRef 已经设置为 users 文档引用）
+      const updateData = {
+        'basicInfo.passwordHash': newPasswordHash,
+        'basicInfo.passwordSalt': newSalt,
+        'basicInfo.hasDefaultPassword': false,
+        'basicInfo.isFirstLogin': false,
+        'basicInfo.passwordLastChanged': admin.firestore.FieldValue.serverTimestamp(),
+        'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      };
+      if (userRef) {
+        await userRef.update(updateData);
+      } else if (userDoc && userDoc.ref) {
+        await userDoc.ref.update(updateData);
+      }
+    }
+
+    console.log('[changeLoginPassword] 密码修改成功:', userId);
+
+    // ========== 10. 返回成功 ==========
+    return {
+      success: true,
+      message: '密码修改成功',
+      userId: userId
+    };
+
+  } catch (error) {
+    console.error('[changeLoginPassword] 错误:', error);
+
+    // 如果是已知的 HttpsError，直接抛出
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    // 其他错误包装成 internal 错误
+    throw new HttpsError('internal', error.message || '修改密码失败，请重试');
+  }
+});

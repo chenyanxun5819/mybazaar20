@@ -1,0 +1,389 @@
+/* MerchantDashboard.css */
+
+/* 容器 */
+.merchant-dashboard {
+  min-height: 100vh;
+  background-color: #f9fafb;
+}
+
+/* Header */
+.merchant-header {
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.merchant-header-container {
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.merchant-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Logo & Title */
+.merchant-logo-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  background: linear-gradient(to bottom right, #9333ea, #2563eb);
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.merchant-logo svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: white;
+}
+
+.merchant-title-section h1 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.merchant-title-section p {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Desktop Actions */
+.merchant-desktop-actions {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .merchant-desktop-actions {
+    display: flex;
+  }
+}
+
+.merchant-refresh-btn {
+  padding: 0.5rem 1rem;
+  color: #374151;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-refresh-btn:hover {
+  background-color: #f3f4f6;
+}
+
+.merchant-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  color: #dc2626;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-logout-btn:hover {
+  background-color: #fef2f2;
+}
+
+.merchant-logout-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Mobile Menu Button */
+.merchant-mobile-menu-btn {
+  display: block;
+  padding: 0.5rem;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+@media (min-width: 768px) {
+  .merchant-mobile-menu-btn {
+    display: none;
+  }
+}
+
+.merchant-mobile-menu-btn:hover {
+  background-color: #f3f4f6;
+}
+
+.merchant-mobile-menu-btn svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* Mobile Menu */
+.merchant-mobile-menu {
+  display: block;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+@media (min-width: 768px) {
+  .merchant-mobile-menu {
+    display: none;
+  }
+}
+
+.merchant-mobile-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-mobile-menu .refresh-item {
+  color: #374151;
+  background-color: transparent;
+  margin-bottom: 0.5rem;
+}
+
+.merchant-mobile-menu .refresh-item:hover {
+  background-color: #f3f4f6;
+}
+
+.merchant-mobile-menu .logout-item {
+  color: #dc2626;
+  background-color: transparent;
+}
+
+.merchant-mobile-menu .logout-item:hover {
+  background-color: #fef2f2;
+}
+
+/* Main Content */
+.merchant-main {
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.merchant-stats-section {
+  margin-bottom: 1.5rem;
+}
+
+/* Tabs Navigation */
+.merchant-tabs-container {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+.merchant-tabs-nav {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.merchant-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  font-weight: 500;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: color 0.2s;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+.merchant-tab-btn.inactive {
+  color: #4b5563;
+}
+
+.merchant-tab-btn.inactive:hover {
+  color: #111827;
+}
+
+.merchant-tab-btn.active {
+  color: #9333ea;
+  border-bottom-color: #9333ea;
+}
+
+.merchant-tab-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Loading State */
+.merchant-loading {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.merchant-loading-content {
+  text-align: center;
+}
+
+.merchant-loading-spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid transparent;
+  border-bottom-color: #9333ea;
+  border-radius: 50%;
+  margin: 0 auto 1rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.merchant-loading-text {
+  color: #4b5563;
+}
+
+/* Error State */
+.merchant-error {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.merchant-error-card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  max-width: 28rem;
+  width: 100%;
+  text-align: center;
+}
+
+.merchant-error-icon {
+  width: 3rem;
+  height: 3rem;
+  background-color: #fee2e2;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.merchant-error-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #dc2626;
+}
+
+.merchant-error-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 0.5rem 0;
+}
+
+.merchant-error-message {
+  color: #4b5563;
+  margin: 0 0 1rem 0;
+}
+
+.merchant-error-btn {
+  padding: 0.5rem 1rem;
+  background-color: #9333ea;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-error-btn:hover {
+  background-color: #7e22ce;
+}
+
+/* Not Found State */
+.merchant-not-found {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.merchant-not-found-card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  max-width: 28rem;
+  width: 100%;
+  text-align: center;
+}
+
+.merchant-not-found-icon {
+  width: 3rem;
+  height: 3rem;
+  color: #9ca3af;
+  margin: 0 auto 1rem;
+}
+
+.merchant-not-found-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 0.5rem 0;
+}
+
+.merchant-not-found-message {
+  color: #4b5563;
+  margin: 0 0 1rem 0;
+}
+
+.merchant-not-found-btn {
+  padding: 0.5rem 1rem;
+  background-color: #4b5563;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.merchant-not-found-btn:hover {
+  background-color: #374151;
+}

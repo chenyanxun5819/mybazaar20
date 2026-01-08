@@ -1,0 +1,230 @@
+/**
+ * PinInput.css
+ * 交易密码输入组件样式
+ */
+
+/* ========== 遮罩层 ========== */
+.pin-input-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ========== 弹窗 ========== */
+.pin-input-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 450px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========== 头部 ========== */
+.pin-modal-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.pin-modal-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0 0 8px 0;
+}
+
+.pin-modal-header p {
+  font-size: 14px;
+  color: #718096;
+  margin: 0;
+}
+
+/* ========== PIN 输入框 ========== */
+.pin-boxes-container {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.pin-box {
+  width: 50px;
+  height: 60px;
+  font-size: 32px;
+  font-weight: 700;
+  text-align: center;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  background-color: #f7fafc;
+}
+
+.pin-box:focus {
+  outline: none;
+  border-color: #667eea;
+  background-color: white;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.pin-box:disabled {
+  background-color: #edf2f7;
+  cursor: not-allowed;
+}
+
+/* 有内容时的样式 */
+.pin-box:not(:placeholder-shown) {
+  border-color: #48bb78;
+  background-color: #f0fff4;
+}
+
+/* ========== 错误提示 ========== */
+.pin-error-message {
+  background-color: #fed7d7;
+  color: #c53030;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  animation: shake 0.5s ease;
+}
+
+.error-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  75% { transform: translateX(10px); }
+}
+
+/* ========== 操作按钮 ========== */
+.pin-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.pin-actions button {
+  flex: 1;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-clear {
+  background-color: #edf2f7;
+  color: #4a5568;
+}
+
+.btn-clear:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+.btn-cancel {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background-color: #feb2b2;
+}
+
+.btn-submit {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pin-actions button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ========== 提示文字 ========== */
+.pin-hint {
+  text-align: center;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.pin-hint p {
+  font-size: 13px;
+  color: #718096;
+  margin: 4px 0;
+}
+
+.pin-hint p:first-child {
+  font-weight: 600;
+  color: #4a5568;
+}
+
+/* ========== 响应式设计 ========== */
+@media (max-width: 500px) {
+  .pin-input-modal {
+    padding: 24px 16px;
+  }
+
+  .pin-boxes-container {
+    gap: 8px;
+  }
+
+  .pin-box {
+    width: 40px;
+    height: 50px;
+    font-size: 24px;
+  }
+
+  .pin-modal-header h2 {
+    font-size: 20px;
+  }
+
+  .pin-actions {
+    flex-direction: column;
+  }
+
+  .pin-actions button {
+    width: 100%;
+  }
+}

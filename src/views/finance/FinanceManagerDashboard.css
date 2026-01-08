@@ -1,0 +1,186 @@
+/* Styles for FinanceManagerDashboard
+   Note: most layout uses inline `styles` object in the component.
+   This file contains global animations and a few helper classes.
+*/
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Optional helper class for spinner if needed by markup */
+.fm-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e5e7eb;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.fm-container {
+  min-height: 100vh;
+  background-color: #f3f4f6;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.fm-header {
+  background-color: white;
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.fm-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fm-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.fm-welcome-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.fm-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.fm-date {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.fm-logout-button {
+  padding: 0.5rem 1rem;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fm-logout-button:hover {
+  background-color: #fecaca;
+}
+
+.fm-tab-nav {
+  background-color: white;
+  padding: 0 2rem;
+  display: flex;
+  gap: 2rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.fm-tab-button {
+  padding: 1rem 0.5rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6b7280;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.fm-tab-button-active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.fm-tab-icon {
+  font-size: 1.1rem;
+}
+
+.fm-badge {
+  background-color: #ef4444;
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  margin-left: 0.25rem;
+}
+
+.fm-content {
+  flex: 1;
+  padding: 2rem;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* 限制 collection-overview & collection-history 在 fm-content 內 */
+.fm-content .collection-overview,
+.fm-content .collection-history {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1200px; /* 可調成 1000 / 1280 等 */
+  margin: 0 auto;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+/* 讓內部表格區域在容器內滾動，不會撐出 fm-container */
+.collection-overview .table-container,
+.collection-history .table-container {
+  min-width: 0;
+  width: 100%;
+}
+
+.fm-loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+.fm-error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  background-color: #f3f4f6;
+}
+
+.fm-error-message {
+  color: #dc2626;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.fm-button {
+  padding: 0.5rem 1rem;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}

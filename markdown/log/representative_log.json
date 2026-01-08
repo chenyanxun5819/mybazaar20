@@ -1,0 +1,41 @@
+{
+  "insertId": "1ayhfx0e2v2pc",
+  "logName": "projects/mybazaar-c4881/logs/cloudaudit.googleapis.com%2Factivity",
+  "operation": {
+    "first": true,
+    "id": "operations/noop.DONE_OPERATION",
+  "last": true,
+  "producer": "serviceusage.googleapis.com"
+  },
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "authenticationInfo": {
+      "principalEmail": "weschen@mybazaar.my",
+      "principalSubject": "user:weschen@mybazaar.my"
+    },
+    "methodName": "google.api.serviceusage.v1.ServiceUsage.EnableService",
+    "request": {
+      "@type": "type.googleapis.com/google.api.serviceusage.v1.EnableServiceRequest",
+      "name": "projects/mybazaar-c4881/services/cloudaicompanion.googleapis.com"
+    },
+    "requestMetadata": {
+      "callerIp": "2001:e68:5450:720b:8451:5a2e:c5b4:8201",
+      "callerSuppliedUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36,gzip(gfe)",
+      "destinationAttributes": {},
+      "requestAttributes": {}
+    },
+    "serviceName": "serviceusage.googleapis.com",
+    "status": {}
+  },
+  "receiveTimestamp": "2025-10-21T10:58:21.376593668Z",
+  "resource": {
+    "labels": {
+      "method": "google.api.serviceusage.v1.ServiceUsage.EnableService",
+      "project_id": "mybazaar-c4881",
+      "service": "serviceusage.googleapis.com"
+    },
+    "type": "audited_resource"
+  },
+  "severity": "NOTICE",
+  "timestamp": "2025-10-21T10:58:20.420908Z"
+}

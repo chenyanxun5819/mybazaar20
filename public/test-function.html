@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Firebase Function 測試</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <h1>Cloud Function 連接測試</h1>
+  <div id="result"></div>
+  <button onclick="testFunction()">測試 loginWithPin</button>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBG283nab1vBZ1uWD9n043K2FXpkiba6wQ",
+      authDomain: "mybazaar-c4881.firebaseapp.com",
+      projectId: "mybazaar-c4881",
+      storageBucket: "mybazaar-c4881.firebasestorage.app",
+      messagingSenderId: "1069326034581",
+      appId: "1:1069326034581:web:2e01401e103a54cd295d9c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const functions = getFunctions(app, 'asia-southeast1');
+
+    window.testFunction = async function() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '測試中...';
+      
+      try {
+        const loginWithPinFn = httpsCallable(functions, 'loginWithPin');
+        const result = await loginWithPinFn({
+          phoneNumber: '0123456789',
+          pin: '12345678',
+          organizationId: 'fYqHtUWjh58NVJJsCMan',
+          eventId: 'zcaNnsF3zTMeqZ738x2V'
+        });
+        
+        resultDiv.innerHTML = '<pre style="color: green;">' + JSON.stringify(result, null, 2) + '</pre>';
+      } catch (error) {
+        resultDiv.innerHTML = '<pre style="color: red;">錯誤: ' + error.message + '\n' + JSON.stringify(error, null, 2) + '</pre>';
+      }
+    };
+  </script>
+</body>
+</html>

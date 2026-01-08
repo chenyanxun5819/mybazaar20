@@ -15,13 +15,11 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "*.local"
-      ],
-      "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint"
       ]
     }
   ],
   "hosting": {
+    "site": "mybazaar-c4881",
     "public": "dist",
     "ignore": [
       "firebase.json",
@@ -30,9 +28,98 @@
     ],
     "rewrites": [
       {
+        "source": "/api/sendOtpHttp",
+        "function": "sendOtpHttp"
+      },
+      {
+        "source": "/api/verifyOtpHttp",
+        "function": "verifyOtpHttp"
+      },
+      {
+        "source": "/api/loginUniversalHttp",
+        "function": "loginUniversalHttp"
+      },
+      {
+        "source": "/api/resolveOrgEventHttp",
+        "function": "resolveOrgEventHttp"
+      },
+      
+      {
+        "source": "/api/batchImportUsersHttp",
+        "function": "batchImportUsersHttp"
+      },
+      {
+        "source": "/api/updateUserRoles",
+        "function": "updateUserRoles"
+      },
+      {
+        "source": "/api/createUserByEventManagerHttp",
+        "function": "createUserByEventManagerHttp"
+      },
+      {
+        "source": "/api/departmentsHttp",
+        "function": "departmentsHttp"
+      },
+      {
+        "source": "/api/deleteEventHttp",
+        "function": "deleteEventHttp"
+      },
+      {
+        "source": "/api/checkDuplicateUsers",
+        "function": "checkDuplicateUsers"
+      },
+      {
+        "source": "/api/loginWithPin",
+        "function": "loginWithPin"
+      },
+      {
+        "source": "/api/createEvent",
+        "function": "createEventByPlatformAdminHttp"
+      },
+      {
+        "source": "/api/createEventByPlatformAdminHttp",
+        "function": "createEventByPlatformAdminHttp"
+      },
+      {
+        "source": "/api/allocatePointsBySellerManager",
+        "function": "allocatePointsBySellerManagerHttp"
+      },
+      {
+        "source": "/api/submitCashToFinanceHttp",
+        "function": "submitCashToFinanceHttp"
+      },
+      {
+        "source": "/api/getFinanceStats",
+        "function": "getFinanceStats"
+      },
+      {
+        "source": "/api/confirmCashSubmission",
+        "function": "confirmCashSubmission"
+      },
+      {
+        "source": "/api/ping",
+        "function": "pingHttp"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
     ]
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8081
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
+    "singleProjectMode": true
   }
 }

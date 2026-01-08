@@ -1,68 +1,104 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* src/index.css */
+/* Tailwind directives removed — project styles continue below */
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
+               'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+#root {
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* 旋轉動畫 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
+/* 按鈕 hover 效果 */
 button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 輸入框 focus 效果 */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* 全局 spinner 类，用于 PlatformAuthGuard 或其他加载状态 */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* code 字体样式（若尚未定义） */
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* 兼容性：确保全局 box-sizing 已定义（项目中已设置，但重复无害） */
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+/* 保证 body margin 与字体平滑 */
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 
+ * MyBazaar - 扫描器错误提示隐藏
+ * 
+ * 添加到 src/index.css 或 src/App.css 的末尾
+ */
+
+/* 隐藏 html5-qrcode 的 toString 错误提示 */
+#html5-qrcode-anchor-scan-type-change {
+  display: none !important;
+}
+
+/* 备用方案：隐藏所有 html5-qrcode 的错误元素 */
+.html5-qrcode-element[style*="color: rgb(255, 0, 0)"] {
+  display: none !important;
+}
+
+/* 如果上面都不行，用这个 */
+#qr-reader > div[style*="color: rgb(255, 0, 0)"],
+#qr-reader > div[style*="color:#ff0000"] {
+  display: none !important;
+}
+
+/* 隐藏所有红色文字的错误提示（最后的手段） */
+#qr-reader div[style*="red"],
+#qr-reader div[style*="Red"],
+#qr-reader div[style*="RED"] {
+  /* display: none !important; */  /* 注释掉，因为可能隐藏其他内容 */
 }

@@ -1,0 +1,243 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { auth } from '../../config/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
+
+const EventManagerLogin = () => {
+  const navigate = useNavigate();
+  const { orgEventCode } = useParams();
+
+  const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
+  const isValidOrgEventCode = !!orgCode && !!eventCode;
+
+  const [formData, setFormData] = useState({ phoneNumber: '', password: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [eventManagerData, setEventManagerData] = useState(null);
+
+  const [otpStep, setOtpStep] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+
+  useEffect(() => {
+    if (otpTimer <= 0) return;
+    const timer = setTimeout(() => setOtpTimer((t) => t - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [otpTimer]);
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!isValidOrgEventCode) {
+      setError('無效的活動連結，請檢查網址是否正確');
+      return;
+    }
+    setLoading(true);
+    try {
+      const url = '/api/eventManagerLoginHttp';
+      const payload = {
+        orgCode: orgCode.toLowerCase(),
+        eventCode,
+        phoneNumber: formData.phoneNumber,
+        password: formData.password
+      };
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const text = await resp.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (_) {
+        console.warn('[EventManagerLogin] 非 JSON 響應, status:', resp.status);
+        if (resp.ok) throw new Error('伺服器回傳非 JSON，請稍後重試或聯絡管理員');
+        throw new Error(`HTTP ${resp.status}: ${text?.substring(0,200) || '非 JSON 響應'}`);
+      }
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || `請求失敗 (HTTP ${resp.status})`);
+      }
+      const temp = {
+        phoneNumber: formData.phoneNumber,
+        orgCode,
+        eventCode,
+        orgEventCode,
+        customToken: data.customToken,
+        organizationId: data.organizationId,
+        eventId: data.eventId
+      };
+      setEventManagerData(temp);
+      await sendOtp(formData.phoneNumber);
+      setOtpStep(true);
+      setOtp('');
+    } catch (err) {
+      console.error('[EventManagerLogin] 錯誤:', err);
+      const msg = err?.message || '登錄失敗，請重試';
+      if (/組織|活動|not[- ]?found/i.test(msg)) setError('找不到該組織或活動');
+      else if (/密碼|permission[- ]?denied/i.test(msg)) setError('手機號或密碼不正確');
+      else setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendOtp = async (phoneNumber) => {
+    try {
+      const url = '/api/sendOtp';
+      const payload = { phoneNumber, orgCode: orgCode.toLowerCase(), eventCode };
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const text = await resp.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (_) { console.warn('[EventManagerLogin] 發送 OTP 響應非 JSON'); }
+      if (!resp.ok || !data?.success) throw new Error(data?.error?.message || `發送 OTP 失敗 (HTTP ${resp.status})`);
+      setOtpTimer(60);
+      setError('');
+    } catch (err) {
+      console.error('[EventManagerLogin] 發送 OTP 錯誤:', err);
+      setError(err?.message || '發送 OTP 失敗');
+    }
+  };
+
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!otp || otp.length !== 6) { setError('請輸入 6 位驗證碼'); return; }
+    setOtpLoading(true);
+    try {
+      const url = '/api/verifyOtp';
+      const payload = { phoneNumber: eventManagerData.phoneNumber, otp, orgCode: orgCode.toLowerCase(), eventCode };
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const text = await resp.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (_) { console.warn('[EventManagerLogin] OTP 驗證響應非 JSON'); }
+      if (!resp.ok || !data?.success) throw new Error(data?.error?.message || `OTP 驗證失敗 (HTTP ${resp.status})`);
+      await signInWithCustomToken(auth, eventManagerData.customToken);
+      localStorage.setItem('eventManagerInfo', JSON.stringify({
+        phoneNumber: eventManagerData.phoneNumber,
+        organizationId: eventManagerData.organizationId,
+        eventId: eventManagerData.eventId,
+        orgCode: eventManagerData.orgCode,
+        eventCode: eventManagerData.eventCode,
+        loginTime: new Date().toISOString()
+      }));
+      navigate(`/event-manager/${eventManagerData.orgEventCode}/dashboard`, { replace: true });
+    } catch (err) {
+      console.error('[EventManagerLogin] OTP 驗證錯誤:', err);
+      const msg = err?.message || 'OTP 驗證失敗';
+      if (/expired|timeout/i.test(msg)) setError('驗證碼已過期，請重新發送');
+      else if (/incorrect|invalid|mismatch/i.test(msg)) setError('驗證碼不正確');
+      else setError(msg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => { if (otpTimer > 0) return; await sendOtp(eventManagerData.phoneNumber); };
+  const handleBackToPassword = () => { setOtpStep(false); setOtp(''); setOtpTimer(0); setError(''); };
+
+  if (otpStep) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.loginCard}>
+          <div style={styles.header}>
+            <div style={styles.logo}>📱</div>
+            <h1 style={styles.title}>短信驗證</h1>
+            <p style={styles.subtitle}>驗證碼已發送到 {eventManagerData?.phoneNumber}</p>
+            {isValidOrgEventCode && (
+              <div style={styles.eventBadge}>
+                <span style={styles.eventBadgeIcon}>🏷️</span>
+                <span>{orgCode.toUpperCase()}-{eventCode}</span>
+              </div>
+            )}
+          </div>
+          <form onSubmit={handleOtpSubmit} style={styles.form}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>驗證碼 (6位數字) *</label>
+              <input type="text" maxLength="6" style={styles.otpInput} value={otp} onChange={(e)=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="000000" required />
+              <small style={styles.hint}>請輸入收到的 6 位驗證碼</small>
+            </div>
+            {error && (<div style={styles.errorBox}>⚠️ {error}</div>)}
+            <button type="submit" style={{...styles.submitButton, opacity: otpLoading?0.6:1, cursor: otpLoading?'not-allowed':'pointer'}} disabled={otpLoading}>
+              {otpLoading ? '驗證中...' : '確認驗證'}
+            </button>
+            {otpTimer <= 0 ? (
+              <button type="button" style={styles.resendButton} onClick={handleResendOtp}>重新發送驗證碼</button>
+            ) : (
+              <div style={styles.timerInfo}>重新發送倒數: {Math.floor(otpTimer/60)}:{String(otpTimer%60).padStart(2,'0')}</div>
+            )}
+          </form>
+          <button style={styles.backToLoginButton} onClick={handleBackToPassword}>← 返回登入</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.loginCard}>
+        <div style={styles.header}>
+          <div style={styles.logo}>🎪</div>
+          <h1 style={styles.title}>活動主任登入</h1>
+          <p style={styles.subtitle}>Event Manager Login</p>
+          {isValidOrgEventCode && (
+            <div style={styles.eventBadge}>
+              <span style={styles.eventBadgeIcon}>🏷️</span>
+              <span>{orgCode.toUpperCase()}-{eventCode}</span>
+            </div>
+          )}
+        </div>
+        {!isValidOrgEventCode && (
+          <div style={styles.errorBox}>
+            ⚠️ 無效的活動連結
+            <div style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+              正確格式: /event-manager/組織碼-活動碼/login（例如: /event-manager/fch-2025/login）
+            </div>
+          </div>
+        )}
+        <form onSubmit={handlePasswordSubmit} style={styles.form}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>手機號 *</label>
+            <input type="tel" style={styles.input} value={formData.phoneNumber} onChange={(e)=>setFormData({ ...formData, phoneNumber: e.target.value })} placeholder="60123456789" required disabled={!isValidOrgEventCode} />
+            <small style={styles.hint}>馬來西亞手機號（含國碼 60）</small>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>密碼 *</label>
+            <input type="password" style={styles.input} value={formData.password} onChange={(e)=>setFormData({ ...formData, password: e.target.value })} placeholder="••••••••" required disabled={!isValidOrgEventCode} />
+          </div>
+          {error && (<div style={styles.errorBox}>⚠️ {error}</div>)}
+          <button type="submit" style={{...styles.submitButton, opacity: (loading||!isValidOrgEventCode)?0.6:1, cursor: (loading||!isValidOrgEventCode)?'not-allowed':'pointer'}} disabled={loading||!isValidOrgEventCode}>
+            {loading ? '驗證中...' : '下一步'}
+          </button>
+        </form>
+        <div style={styles.footer}>
+          <p style={styles.helpText}>忘記密碼？請聯絡活動管理員</p>
+          <p style={styles.helpText}>沒有登入連結？請向活動負責人索取</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default EventManagerLogin;
+
+const styles = {
+  container: { minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem' },
+  loginCard: { background: 'white', borderRadius: '16px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', padding: '3rem', maxWidth: '500px', width: '100%' },
+  header: { textAlign: 'center', marginBottom: '2rem' },
+  logo: { fontSize: '4rem', marginBottom: '1rem' },
+  title: { fontSize: '2rem', fontWeight: 'bold', color: '#1f2937', margin: '0 0 0.5rem 0' },
+  subtitle: { color: '#6b7280', margin: '0 0 1rem 0' },
+  eventBadge: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#f3f4f6', padding: '0.5rem 1rem', borderRadius: '20px', fontSize: '0.875rem', fontWeight: '600', color: '#374151', marginTop: '1rem' },
+  eventBadgeIcon: { fontSize: '1.25rem' },
+  form: { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
+  formGroup: { display: 'flex', flexDirection: 'column' },
+  label: { fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' },
+  input: { padding: '0.75rem', border: '2px solid #e5e7eb', borderRadius: '8px', fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s' },
+  otpInput: { padding: '1.5rem', border: '2px solid #e5e7eb', borderRadius: '8px', fontSize: '2rem', textAlign: 'center', letterSpacing: '0.5rem', fontFamily: 'monospace', outline: 'none', transition: 'border-color 0.2s' },
+  hint: { fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' },
+  errorBox: { background: '#fee2e2', color: '#991b1b', padding: '0.75rem', borderRadius: '8px', fontSize: '0.875rem', border: '1px solid #fecaca' },
+  submitButton: { padding: '1rem', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', marginTop: '1rem', transition: 'all 0.2s' },
+  footer: { marginTop: '2rem', textAlign: 'center' },
+  helpText: { fontSize: '0.875rem', color: '#6b7280', margin: '0.5rem 0' },
+  backToLoginButton: { width: '100%', padding: '0.75rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' },
+  resendButton: { width: '100%', padding: '0.75rem', marginTop: '1rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s' },
+  timerInfo: { width: '100%', textAlign: 'center', marginTop: '1rem', padding: '0.75rem', background: '#f0f4ff', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', color: '#667eea' }
+};
+
+export { };

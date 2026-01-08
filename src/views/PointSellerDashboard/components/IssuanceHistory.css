@@ -1,0 +1,381 @@
+/**
+ * Issuance History Styles
+ * 发行记录样式
+ */
+
+.issuance-history {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ===== 头部 ===== */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.history-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0;
+}
+
+.refresh-button {
+  padding: 10px 20px;
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.refresh-button:hover {
+  background: #5a67d8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* ===== 统计卡片 ===== */
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.blue {
+  border-color: #4299e1;
+}
+
+.stat-card.green {
+  border-color: #48bb78;
+}
+
+.stat-card.purple {
+  border-color: #9f7aea;
+}
+
+.stat-card.orange {
+  border-color: #ed8936;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.card-icon {
+  font-size: 24px;
+}
+
+.card-title {
+  font-size: 14px;
+  color: #718096;
+  font-weight: 600;
+}
+
+.card-content {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.card-content .value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.card-content .unit {
+  font-size: 16px;
+  color: #718096;
+}
+
+/* ===== 累计统计 ===== */
+.total-stats {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.total-stats h3 {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 20px 0;
+}
+
+.total-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.total-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.total-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 8px;
+}
+
+.total-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ===== 筛选和搜索 ===== */
+.filter-section {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-btn {
+  padding: 10px 20px;
+  background: #f7fafc;
+  color: #4a5568;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.filter-btn:hover {
+  background: #e2e8f0;
+}
+
+.filter-btn.active {
+  background: #667eea;
+  color: #fff;
+  border-color: #667eea;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 250px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* ===== 记录列表 ===== */
+.records-section h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0 0 16px 0;
+}
+
+.records-table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.records-table thead {
+  background: #f7fafc;
+}
+
+.records-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.records-table td {
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.records-table tbody tr {
+  transition: background 0.2s ease;
+}
+
+.records-table tbody tr:hover {
+  background: #f7fafc;
+}
+
+/* ===== 记录类型标签 ===== */
+.record-type {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.record-type.point_card {
+  background: #bee3f8;
+  color: #2c5282;
+}
+
+.record-type.direct_sale {
+  background: #c6f6d5;
+  color: #22543d;
+}
+
+/* ===== 卡片/客户信息 ===== */
+.card-info,
+.customer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-number,
+.customer-name {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.card-id,
+.customer-id {
+  font-size: 12px;
+  color: #718096;
+  font-family: 'Courier New', monospace;
+}
+
+/* ===== 其他单元格 ===== */
+.points-cell,
+.amount-cell {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.time-cell {
+  font-size: 14px;
+  color: #718096;
+}
+
+/* ===== 状态标签 ===== */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-badge.active,
+.status-badge.completed {
+  background: #c6f6d5;
+  color: #22543d;
+}
+
+.status-badge.inactive,
+.status-badge.pending {
+  background: #fed7d7;
+  color: #c53030;
+}
+
+/* ===== 空状态 ===== */
+.records-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #718096;
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.empty-message {
+  font-size: 16px;
+  margin: 0;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .filter-section {
+    flex-direction: column;
+  }
+
+  .filter-buttons {
+    width: 100%;
+  }
+
+  .filter-btn {
+    flex: 1;
+  }
+
+  .records-table {
+    font-size: 14px;
+  }
+
+  .records-table th,
+  .records-table td {
+    padding: 12px;
+  }
+
+  .card-content .value {
+    font-size: 24px;
+  }
+
+  .total-value {
+    font-size: 20px;
+  }
+}

@@ -1,0 +1,217 @@
+/**
+ * PointSeller Dashboard Styles
+ * 点数卡销售员控制台样式
+ */
+
+/* ===== 容器 ===== */
+.ps-container {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+/* ===== 加载和错误状态 ===== */
+.ps-loading-container,
+.ps-error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: #fff;
+}
+
+.ps-spinner {
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid #fff;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.ps-error-message {
+  font-size: 18px;
+  margin: 20px 0;
+}
+
+.ps-button {
+  padding: 12px 24px;
+  background: #fff;
+  color: #667eea;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ps-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== 头部 ===== */
+.ps-header {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.ps-header-left {
+  flex: 1;
+}
+
+.ps-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0 0 8px 0;
+}
+
+.ps-welcome-text {
+  font-size: 16px;
+  color: #718096;
+  margin: 0;
+}
+
+.ps-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ps-date {
+  font-size: 14px;
+  color: #718096;
+  padding: 8px 16px;
+  background: #f7fafc;
+  border-radius: 6px;
+}
+
+.ps-inactive-badge {
+  padding: 8px 16px;
+  background: #fed7d7;
+  color: #c53030;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ps-logout-button {
+  padding: 10px 20px;
+  background: #e53e3e;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ps-logout-button:hover {
+  background: #c53030;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(229, 62, 62, 0.3);
+}
+
+/* ===== 时效性警告 ===== */
+.ps-warning-banner {
+  background: #fed7d7;
+  color: #c53030;
+  padding: 16px 24px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 16px;
+  text-align: center;
+  font-weight: 600;
+  border: 2px solid #fc8181;
+}
+
+/* ===== Tab导航 ===== */
+.ps-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  padding: 4px;
+}
+
+.ps-tab {
+  flex: 1;
+  min-width: 150px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.ps-tab:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.ps-tab.active {
+  background: #fff;
+  color: #667eea;
+  border-color: #667eea;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+/* ===== 内容区域 ===== */
+.ps-content {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 24px;
+  min-height: 500px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .ps-container {
+    padding: 12px;
+  }
+
+  .ps-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .ps-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ps-tabs {
+    flex-direction: column;
+  }
+
+  .ps-tab {
+    width: 100%;
+  }
+
+  .ps-title {
+    font-size: 24px;
+  }
+}
