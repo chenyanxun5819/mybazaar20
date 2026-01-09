@@ -25,6 +25,14 @@ const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 const { onCashCollection } = require('./src/sellerManager/onCashCollection');
 
 
+// 導入 Platform Admin logo 和活動管理函數
+const {
+  updateOrganizationLogoHttp,
+  updateEventLogoHttp,
+  updateEventDetailsHttp,
+  resetEventUsersHttp
+} = require('./src/platform/admin_logo_event_functions');
+
 // Event Manager Functions
 const { grantPointsByEventManagerHttp } = require('./src/eventManager/grantPointsByEventManagerHttp');
 // Cashier callable / triggers
@@ -138,6 +146,12 @@ exports.resetTransactionPin = resetTransactionPinFn;
 
 // Event Manager Functions
 exports.grantPointsByEventManagerHttp = grantPointsByEventManagerHttp;
+
+// Platform Admin Logo 和活動管理函數
+exports.updateOrganizationLogoHttp = updateOrganizationLogoHttp;
+exports.updateEventLogoHttp = updateEventLogoHttp;
+exports.updateEventDetailsHttp = updateEventDetailsHttp;
+exports.resetEventUsersHttp = resetEventUsersHttp;
 // CORS 中间件配置
 const allowedOrigins = [
   'http://localhost:5173',

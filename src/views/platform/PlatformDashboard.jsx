@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { db, functions } from '../../config/firebase';
+import { db, functions, storage } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
+// ✅ 新增 Storage imports
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const PlatformDashboard = () => {
   const navigate = useNavigate();
@@ -190,6 +192,505 @@ const PlatformDashboard = () => {
   );
 };
 
+// ========== Logo 上传辅助函数 ==========
+
+/**
+ * 上传 logo 到 Firebase Storage
+ * @param {File} file - 图片文件
+ * @param {string} path - Storage 路径（如 'organizations/orgId/logo.png'）
+ * @returns {Promise<string>} - 下载 URL
+ */
+const uploadLogo = async (file, path) => {
+  try {
+    console.log('[uploadLogo] 开始上传:', path);
+    
+    // 验证文件大小（2MB 限制）
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error('文件大小不能超过 2MB');
+    }
+
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      throw new Error('请选择图片文件');
+    }
+
+    const storageRef = ref(storage, path);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    console.log('[uploadLogo] ✅ 上传成功:', downloadURL);
+    return downloadURL;
+  } catch (error) {
+    console.error('[uploadLogo] 上传失败:', error);
+    throw error;
+  }
+};
+
+/**
+ * 调用 Cloud Function 更新组织 logo
+ */
+const updateOrganizationLogo = async (organizationId, logoUrl, idToken) => {
+  try {
+    const response = await fetch(
+      `https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/updateOrganizationLogoHttp`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          logoUrl
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('[updateOrganizationLogo] 错误:', error);
+    throw error;
+  }
+};
+
+/**
+ * 调用 Cloud Function 更新活动 logo
+ */
+const updateEventLogo = async (organizationId, eventId, logoUrl, idToken) => {
+  try {
+    const response = await fetch(
+      `https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/updateEventLogoHttp`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          logoUrl
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('[updateEventLogo] 错误:', error);
+    throw error;
+  }
+};
+
+/**
+ * 调用 Cloud Function 更新活动详情
+ */
+const updateEventDetails = async (organizationId, eventId, updates, idToken) => {
+  try {
+    const response = await fetch(
+      `https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/updateEventDetailsHttp`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          updates
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('[updateEventDetails] 错误:', error);
+    throw error;
+  }
+};
+
+/**
+ * 调用 Cloud Function 重置活动 users
+ */
+const resetEventUsers = async (organizationId, eventId, newEventManager, idToken) => {
+  try {
+    const response = await fetch(
+      `https://asia-southeast1-mybazaar-c4881.cloudfunctions.net/resetEventUsersHttp`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          newEventManager
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('[resetEventUsers] 错误:', error);
+    throw error;
+  }
+};
+
+// ========== Logo 上传组件 ==========
+
+const LogoUploadButton = ({ onUpload, currentLogoUrl, entityType = 'organization' }) => {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setError(null);
+      setUploading(true);
+      await onUpload(file);
+      setUploading(false);
+    } catch (err) {
+      setError(err.message);
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={styles.logoUploadContainer}>
+      {/* Logo 预览 */}
+      <div style={styles.logoPreviewSection}>
+        {currentLogoUrl ? (
+          <img
+            src={currentLogoUrl}
+            alt="Current Logo"
+            style={styles.logoPreview}
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextElementSibling.style.display = 'flex';
+            }}
+          />
+        ) : (
+          <div style={styles.logoPlaceholder}>
+            <span>📷</span>
+          </div>
+        )}
+      </div>
+
+      {/* 上传操作 */}
+      <div style={styles.logoUploadActions}>
+        <label style={styles.uploadButton}>
+          {uploading ? '上传中...' : '选择新 Logo'}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            disabled={uploading}
+            style={{ display: 'none' }}
+          />
+        </label>
+        {error && <span style={styles.errorText}>{error}</span>}
+      </div>
+    </div>
+  );
+};
+
+// ========== 编辑活动 Modal ==========
+
+// ✅ 辅助函数：安全地将 Firestore Timestamp 转换为 ISO 日期字符串
+const convertFirebaseTimestampToDateString = (timestamp) => {
+  try {
+    if (!timestamp) return '';
+    
+    let date;
+    // 处理 Firestore Timestamp 对象
+    if (timestamp.seconds) {
+      date = new Date(timestamp.seconds * 1000);
+    } 
+    // 处理 JavaScript Date 对象
+    else if (timestamp instanceof Date) {
+      date = timestamp;
+    }
+    // 处理 ISO 字符串
+    else if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    }
+    else {
+      return '';
+    }
+
+    // 验证日期是否有效
+    if (isNaN(date.getTime())) {
+      console.warn('[convertFirebaseTimestampToDateString] 无效的日期:', timestamp);
+      return '';
+    }
+
+    // 转换为本地日期字符串 (YYYY-MM-DD 格式)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+    console.error('[convertFirebaseTimestampToDateString] 转换失败:', error);
+    return '';
+  }
+};
+
+const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // 表单状态 - ✅ 改用安全的转换函数
+  const [fairDate, setFairDate] = useState(
+    convertFirebaseTimestampToDateString(event.eventInfo?.fairDate) || ''
+  );
+  const [consumptionStart, setConsumptionStart] = useState(
+    convertFirebaseTimestampToDateString(event.eventInfo?.consumptionPeriod?.start) || ''
+  );
+  const [consumptionEnd, setConsumptionEnd] = useState(
+    convertFirebaseTimestampToDateString(event.eventInfo?.consumptionPeriod?.end) || ''
+  );
+  const [logoUrl, setLogoUrl] = useState(event.logoUrl || '');
+  
+  // 重置 users 相关状态
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetManagerData, setResetManagerData] = useState({
+    chineseName: '',
+    englishName: '',
+    phoneNumber: '',
+    password: ''
+  });
+
+  const handleLogoUpload = async (file) => {
+    try {
+      setError(null);
+      const path = `events/${organization.id}/${event.id}/logo_${Date.now()}`;
+      const downloadUrl = await uploadLogo(file, path);
+      setLogoUrl(downloadUrl);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setError(null);
+      setSubmitting(true);
+
+      const idToken = await auth.currentUser.getIdToken();
+      
+      const updates = {};
+      if (fairDate) {
+        updates.fairDate = new Date(fairDate).getTime();
+      }
+      if (consumptionStart || consumptionEnd) {
+        updates.consumptionPeriod = {};
+        if (consumptionStart) updates.consumptionPeriod.start = new Date(consumptionStart).getTime();
+        if (consumptionEnd) updates.consumptionPeriod.end = new Date(consumptionEnd).getTime();
+      }
+      if (logoUrl !== event.logoUrl) {
+        updates.logoUrl = logoUrl;
+      }
+
+      await updateEventDetails(organization.id, event.id, updates, idToken);
+      alert('活动详情更新成功');
+      setSubmitting(false);
+      onSuccess();
+    } catch (err) {
+      setError(err.message);
+      setSubmitting(false);
+    }
+  };
+
+  const handleResetUsers = async () => {
+    try {
+      setError(null);
+      setSubmitting(true);
+
+      if (!resetManagerData.chineseName || !resetManagerData.phoneNumber || !resetManagerData.password) {
+        throw new Error('请填写所有必填字段');
+      }
+
+      const idToken = await auth.currentUser.getIdToken();
+      await resetEventUsers(organization.id, event.id, resetManagerData, idToken);
+      
+      alert('活动 users 已重置，新 Event Manager 已创建');
+      setSubmitting(false);
+      onSuccess();
+    } catch (err) {
+      setError(err.message);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h2>编辑活动：{event.eventName['zh-CN']}</h2>
+          <button style={styles.closeButton} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={styles.modalBody}>
+          {error && <div style={styles.errorBanner}>{error}</div>}
+
+          {/* 标签页 */}
+          <div style={styles.tabsContainer}>
+            {/* Logo 上传标签页 */}
+            <div style={styles.tabContent}>
+              <h3>活动 Logo</h3>
+              <LogoUploadButton
+                onUpload={handleLogoUpload}
+                currentLogoUrl={logoUrl}
+                entityType="event"
+              />
+            </div>
+
+            {/* 活动日期标签页 */}
+            <div style={styles.tabContent}>
+              <h3>活动日期</h3>
+              <div style={styles.formGroup}>
+                <label>活动日期</label>
+                <input
+                  type="date"
+                  value={fairDate}
+                  onChange={(e) => setFairDate(e.target.value)}
+                  style={styles.formInput}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label>消费开始日期</label>
+                <input
+                  type="date"
+                  value={consumptionStart}
+                  onChange={(e) => setConsumptionStart(e.target.value)}
+                  style={styles.formInput}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label>消费结束日期</label>
+                <input
+                  type="date"
+                  value={consumptionEnd}
+                  onChange={(e) => setConsumptionEnd(e.target.value)}
+                  style={styles.formInput}
+                />
+              </div>
+            </div>
+
+            {/* 重置 Users 标签页 */}
+            <div style={styles.tabContent}>
+              <h3>⚠️ 重置活动 Users</h3>
+              {showResetConfirm ? (
+                <div>
+                  <p style={styles.warningText}>
+                    ⚠️ 此操作将删除该活动的所有 users 并创建新的 Event Manager。无法撤销！
+                  </p>
+                  <div style={styles.formGroup}>
+                    <label>新 Event Manager 中文名</label>
+                    <input
+                      type="text"
+                      value={resetManagerData.chineseName}
+                      onChange={(e) => setResetManagerData({ ...resetManagerData, chineseName: e.target.value })}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label>新 Event Manager 英文名</label>
+                    <input
+                      type="text"
+                      value={resetManagerData.englishName}
+                      onChange={(e) => setResetManagerData({ ...resetManagerData, englishName: e.target.value })}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label>新 Event Manager 手机号</label>
+                    <input
+                      type="tel"
+                      value={resetManagerData.phoneNumber}
+                      onChange={(e) => setResetManagerData({ ...resetManagerData, phoneNumber: e.target.value })}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label>新 Event Manager 密码</label>
+                    <input
+                      type="password"
+                      value={resetManagerData.password}
+                      onChange={(e) => setResetManagerData({ ...resetManagerData, password: e.target.value })}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.buttonGroup}>
+                    <button
+                      style={styles.dangerButton}
+                      onClick={handleResetUsers}
+                      disabled={submitting}
+                    >
+                      {submitting ? '处理中...' : '确认重置'}
+                    </button>
+                    <button
+                      style={styles.secondaryButton}
+                      onClick={() => setShowResetConfirm(false)}
+                      disabled={submitting}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  style={styles.dangerButton}
+                  onClick={() => setShowResetConfirm(true)}
+                >
+                  开始重置 Users
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.modalFooter}>
+          <button
+            style={styles.secondaryButton}
+            onClick={onClose}
+            disabled={submitting}
+          >
+            取消
+          </button>
+          <button
+            style={styles.primaryButton}
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? '保存中...' : '保存更改'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const StatCard = ({ title, value, icon, color }) => (
   <div style={{ ...styles.statCard, borderTopColor: color }}>
     <div style={styles.statIcon}>{icon}</div>
@@ -203,6 +704,26 @@ const StatCard = ({ title, value, icon, color }) => (
 const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
   const [expanded, setExpanded] = useState(false);
   const [showEditIdentityTags, setShowEditIdentityTags] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);  // ✅ 新增
+
+  // ✅ 新增：处理组织 logo 上传
+  const handleOrgLogoUpload = async (file) => {
+    try {
+      setUploadingLogo(true);
+      const path = `organizations/${organization.id}/logo_${Date.now()}`;
+      const downloadUrl = await uploadLogo(file, path);
+      
+      const idToken = await auth.currentUser.getIdToken();
+      await updateOrganizationLogo(organization.id, downloadUrl, idToken);
+      
+      alert('组织 logo 更新成功');
+      onReload();
+      setUploadingLogo(false);
+    } catch (error) {
+      alert('上传失败：' + error.message);
+      setUploadingLogo(false);
+    }
+  };
 
   return (
     <div style={styles.orgCard}>
@@ -226,6 +747,12 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
           </div>
         </div>
         <div style={styles.orgActions}>
+          {/* ✅ 新增：Logo 上传按钮 */}
+          <LogoUploadButton
+            onUpload={handleOrgLogoUpload}
+            currentLogoUrl={organization.logoUrl}
+            entityType="organization"
+          />
           <button
             style={styles.secondaryButton}
             onClick={() => setShowEditIdentityTags(true)}
@@ -313,6 +840,7 @@ const EventCard = ({ event, organization, onReload }) => {
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [showEditEvent, setShowEditEvent] = useState(false);  // ✅ 新增
 
   // ✅ 新架构：直接使用 Event.eventManager 對象
   useEffect(() => {
@@ -581,7 +1109,26 @@ const EventCard = ({ event, organization, onReload }) => {
         >
           {deleting ? '🗑️ 删除中...' : '🗑️ 删除此活动'}
         </button>
+        {/* ✅ 新增：编辑活动按钮 */}
+        <button
+          style={styles.primaryButton}
+          onClick={() => setShowEditEvent(true)}
+        >
+          ✏️ 编辑活动
+        </button>
       </div>
+      {/* ✅ 新增：编辑活动 Modal */}
+      {showEditEvent && (
+        <EditEventModal
+          organization={organization}
+          event={event}
+          onClose={() => setShowEditEvent(false)}
+          onSuccess={() => {
+            setShowEditEvent(false);
+            onReload();
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -2303,6 +2850,107 @@ const styles = {
     backgroundColor: '#f9f9f9',
     borderRadius: '8px',
     border: '1px solid #e0e0e0'
+  },
+  // ✅ 新增：Logo 上传相关样式
+  logoUploadContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '0.75rem',
+    backgroundColor: '#f0f9ff',
+    borderRadius: '6px'
+  },
+  logoPreviewSection: {
+    flex: '0 0 60px',
+    height: '60px',
+    backgroundColor: '#e0e7ff',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden'
+  },
+  logoPreview: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'cover'
+  },
+  logoPlaceholder: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '1.5rem',
+    width: '100%',
+    height: '100%'
+  },
+  logoUploadActions: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  uploadButton: {
+    padding: '0.5rem 1rem',
+    background: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s'
+  },
+  errorText: {
+    fontSize: '0.75rem',
+    color: '#dc2626'
+  },
+  // ✅ 新增：Modal 样式补充
+  tabsContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.5rem'
+  },
+  tabContent: {
+    padding: '1rem',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px'
+  },
+  formInput: {
+    width: '100%',
+    padding: '0.75rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontFamily: 'inherit'
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '0.75rem',
+    marginTop: '1rem'
+  },
+  dangerButton: {
+    padding: '0.75rem 1.5rem',
+    background: '#dc2626',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  warningText: {
+    color: '#991b1b',
+    backgroundColor: '#fee2e2',
+    padding: '0.75rem',
+    borderRadius: '6px',
+    marginBottom: '1rem'
+  },
+  errorBanner: {
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
+    padding: '0.75rem',
+    borderRadius: '6px',
+    marginBottom: '1rem'
   }
 };
 

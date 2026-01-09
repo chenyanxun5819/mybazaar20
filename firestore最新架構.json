@@ -1,9 +1,18 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2025-01-08-v8",
-    "lastUpdated": "2025-01-08",
+    "version": "2026-01-09-v9",
+    "lastUpdated": "2026-01-09",
     "architectureChanges": {
+      "version_2026-01-09-v9": [
+        "🖼️ Organizations 新增 logo 相關字段（logoUrl, logoUpdatedAt, logoUpdatedBy）",
+        "🎨 Events 新增 logo 相關字段（logoUrl, logoUpdatedAt, logoUpdatedBy）",
+        "📅 Events 新增活動修改追蹤字段（eventDateUpdatedAt, usersResetAt, usersResetBy）",
+        "🔧 新增活動修改功能：可更改活動日期、可更改 logos",
+        "🗑️ 新增刪除所有 users 並重新指定 eventManager 功能",
+        "📦 Logo 統一由 Platform Admin 管理（集中管理方案）",
+        "☁️ Logo 儲存於 Firebase Storage（organizations/{orgId}/logo.ext 和 events/{eventId}/logo.ext）"
+      ],
       "version_2025-01-08-v8": [
         "🔄 financeManager 全面改名为 cashier（架构文件已全部更新）",
         "✅ Event Manager 可以分配点数（移除 cannotAllocatePoints 限制）",
@@ -128,6 +137,9 @@
             "email": "string (联系邮箱)",
             "position": "string (职位，如'校长'、'主任')"
           },
+          "logoUrl": "string (組織 logo URL，可選)",
+          "logoUpdatedAt": "timestamp (logo 更新時間，可選)",
+          "logoUpdatedBy": "string (Platform Admin UID，可選)",
           "identityTags": [
             {
               "id": "string (标签ID，如 'student')",
@@ -192,6 +204,9 @@
                   "endDate": "timestamp (消费结束日期)"
                 }
               },
+              "logoUrl": "string (活動 logo URL，可選)",
+              "logoUpdatedAt": "timestamp (logo 更新時間，可選)",
+              "logoUpdatedBy": "string (Platform Admin UID，可選)",
               "eventManager": {
                 "description": "活动负责人基本联络信息（从 users 集合复制）",
                 "chineseName": "string (中文姓名)",
@@ -364,6 +379,9 @@
               "status": "string ('planning' | 'active' | 'completed' | 'cancelled')",
               "createdAt": "timestamp",
               "updatedAt": "timestamp",
+              "eventDateUpdatedAt": "timestamp (活動日期最後修改時間，可選)",
+              "usersResetAt": "timestamp (users 重置時間，可選)",
+              "usersResetBy": "string (執行 users 重置的 Platform Admin UID，可選)",
               "createdBy": "string (Platform Admin UID)"
             },
             "indexes": [
@@ -1032,7 +1050,7 @@
                   "// === 接收方信息 ===": "",
                   "receivedBy": "string (接收者 userId - 可以是SellerManager或Cashier，或null表示待认领池子)",
                   "receiverName": "string (接收者姓名)",
-                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)", 
+                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)",
                   "receiverPhone": "string (接收者电话)",
                   "// === 金额信息 ===": "",
                   "amount": "number (上交金额 RM)",
@@ -1081,7 +1099,7 @@
                     "eventId": "string (冗余字段)",
                     "organizationId": "string (冗余字段)",
                     "submissionSource": "string ('manual' | 'batch' | 'auto')",
-                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')" 
+                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')"
                   }
                 },
                 "indexes": [
@@ -1797,7 +1815,7 @@
           "name": "createPointCard"
         },
         "queryPointCardBalance": {
-          "name": "queryPointCardBalance",
+          "name": "queryPointCardBalance"
         },
         "processPointCardPayment": {
           "name": "processPointCardPayment",
@@ -1825,16 +1843,16 @@
           }
         },
         "confirmCashSubmission": {
-          "name": "confirmCashSubmission",
+          "name": "confirmCashSubmission"
         },
         "batchConfirmSubmissions": {
-          "name": "batchConfirmSubmissions",
+          "name": "batchConfirmSubmissions"
         },
         "generateFinanceReport": {
-          "name": "generateFinanceReport",
+          "name": "generateFinanceReport"
         },
         "submitCashToFinance": {
-          "name": "submitCashToFinance",
+          "name": "submitCashToFinance"
         },
         "verifyTransactionPinInternal": {
           "name": "verifyTransactionPinInternal",

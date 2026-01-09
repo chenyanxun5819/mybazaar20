@@ -1,13 +1,44 @@
 /**
  * Overview Stats Component (超级安全版 v3)
  */
-const OverviewStats = ({ smStats, departmentStats, eventData }) => {
-  // 确保所有输入都是安全的
-  const safeSmStats = (smStats && typeof smStats === 'object') ? smStats : null;
-  const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
-  const safeEventData = (eventData && typeof eventData === 'object') ? eventData : {};
+import { useSellerManagerStats } from '../../../hooks/sellerManager';
 
-  if (!safeSmStats) {
+const OverviewStats = ({ 
+  organizationId,   // ✅ 新增
+  eventId,          // ✅ 新增
+  sellerManagerId,  // ✅ 新增
+  departmentStats,  // 暂时保留
+  eventData 
+}) => {
+  // ✅ 使用Hook获取实时数据
+  const { smStats, loading, error } = useSellerManagerStats(
+    organizationId,
+    eventId,
+    sellerManagerId
+  );
+
+  // ✅ 处理加载状态
+  if (loading) {
+    return (
+      <div style={styles.emptyState}>
+        <div style={styles.emptyIcon}>⏳</div>
+        <p>统计数据加载中...</p>
+      </div>
+    );
+  }
+
+  // ✅ 处理错误状态
+  if (error) {
+    return (
+      <div style={styles.emptyState}>
+        <div style={styles.emptyIcon}>❌</div>
+        <p>加载失败: {error}</p>
+      </div>
+    );
+  }
+
+  // ✅ 处理空数据
+  if (!smStats) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>📊</div>
@@ -16,15 +47,15 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
     );
   }
 
-  // 安全读取
-  const managedStats = (safeSmStats.managedUsersStats && typeof safeSmStats.managedUsersStats === 'object') 
-    ? safeSmStats.managedUsersStats 
+  // ✅ 原有的安全读取逻辑保持不变
+  const managedStats = (smStats.managedUsersStats && typeof smStats.managedUsersStats === 'object') 
+    ? smStats.managedUsersStats 
     : {};
-  const allocationStats = (safeSmStats.allocationStats && typeof safeSmStats.allocationStats === 'object')
-    ? safeSmStats.allocationStats
+  const allocationStats = (smStats.allocationStats && typeof smStats.allocationStats === 'object')
+    ? smStats.allocationStats
     : {};
-  const collectionMgmt = (safeSmStats.collectionManagement && typeof safeSmStats.collectionManagement === 'object')
-    ? safeSmStats.collectionManagement
+  const collectionMgmt = (smStats.collectionManagement && typeof smStats.collectionManagement === 'object')
+    ? smStats.collectionManagement
     : {};
 
   // 读取分配规则
@@ -32,17 +63,21 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
     const defaults = { maxPerAllocation: 100, warningThreshold: 0.3 };
     
     try {
-      if (!safeEventData.pointAllocationRules || 
-          typeof safeEventData.pointAllocationRules !== 'object') {
+      if (!eventData || typeof eventData !== 'object') {
+        return defaults;
+      }
+
+      if (!eventData.pointAllocationRules || 
+          typeof eventData.pointAllocationRules !== 'object') {
         return defaults;
       }
       
-      if (!safeEventData.pointAllocationRules.sellerManager ||
-          typeof safeEventData.pointAllocationRules.sellerManager !== 'object') {
+      if (!eventData.pointAllocationRules.sellerManager ||
+          typeof eventData.pointAllocationRules.sellerManager !== 'object') {
         return defaults;
       }
       
-      const rules = safeEventData.pointAllocationRules.sellerManager;
+      const rules = eventData.pointAllocationRules.sellerManager;
       return {
         maxPerAllocation: typeof rules.maxPerAllocation === 'number' ? rules.maxPerAllocation : 100,
         warningThreshold: typeof rules.warningThreshold === 'number' ? rules.warningThreshold : 0.3
@@ -192,11 +227,11 @@ const OverviewStats = ({ smStats, departmentStats, eventData }) => {
         </div>
       </div>
 
-      {safeDepartmentStats.length > 0 && (
+      {Array.isArray(departmentStats) && departmentStats.length > 0 && (
         <div style={styles.section}>
-          <h3 style={styles.subsectionTitle}>🏫 管理的部门 ({safeDepartmentStats.length})</h3>
+          <h3 style={styles.subsectionTitle}>🏫 管理的部门 ({departmentStats.length})</h3>
           <div style={styles.departmentGrid}>
-            {safeDepartmentStats.map((dept, index) => (
+            {departmentStats.map((dept, index) => (
               <DepartmentMiniCard key={dept.id || dept.departmentCode || `dept-${index}`} dept={dept} />
             ))}
           </div>

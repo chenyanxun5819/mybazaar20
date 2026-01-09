@@ -647,7 +647,18 @@ const EventManagerDashboard = () => {
       {/* Header */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Event Manager Dashboard</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+            {(orgData?.logoUrl || eventData?.logoUrl) && (
+              <img 
+                src={orgData?.logoUrl || eventData?.logoUrl} 
+                alt="Organization Logo" 
+                style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }} 
+              />
+            )}
+            <h1 style={{ ...styles.title, marginBottom: 0 }}>
+              {eventData?.eventName?.['zh-CN'] || 'Event Manager Dashboard'}管理后台
+            </h1>
+          </div>
           <p style={styles.subtitle}>
             {orgData?.basicInfo?.organizationName} - {eventData?.basicInfo?.eventName}
           </p>

@@ -1,0 +1,38 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ============================================================================
+    // 辅助函数
+    // ============================================================================
+    
+    /**
+     * 检查用户是否已认证
+     */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ============================================================================
+    // 组织和活动 Logo 上传
+    // ============================================================================
+    
+    // 组织 Logo 目录
+    match /organizations/{orgId}/{allPaths=**} {
+      allow create, read, update, delete: if isAuthenticated();
+    }
+
+    // 活动 Logo 目录
+    match /events/{orgId}/{eventId}/{allPaths=**} {
+      allow create, read, update, delete: if isAuthenticated();
+    }
+
+    // ============================================================================
+    // 默认规则：禁止未认证用户访问
+    // ============================================================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

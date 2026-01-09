@@ -1583,6 +1583,31 @@ exports.deleteEventHttp = onRequest({ region: 'asia-southeast1' }, async (req, r
         console.error('[deleteEventHttp] Error deleting transactions:', err);
       }
 
+      // 13. Delete pointCards subcollection (新增)
+      console.log('[deleteEventHttp] Starting deletion of pointCards');
+      try {
+        const pointCardsSnapshot = await db
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId)
+          .collection('pointCards')
+          .get();
+
+        if (pointCardsSnapshot.size > 0) {
+          const pcBatch = db.batch();
+          let pcOps = 0;
+
+          pointCardsSnapshot.docs.forEach(doc => {
+            pcBatch.delete(doc.ref);
+            pcOps++;
+          });
+
+          await pcBatch.commit();
+          console.log(`[deleteEventHttp] Deleted ${pcOps} pointCards documents`);
+        }
+      } catch (err) {
+        console.error('[deleteEventHttp] Error deleting pointCards:', err);
+      }
+
       // 進行 department userCount 回沖（減少） - 使用 transaction 保證一致性
       try {
         await db.runTransaction(async (tx) => {

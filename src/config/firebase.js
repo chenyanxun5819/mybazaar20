@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { initializeAuth, browserLocalPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
+import { getStorage } from 'firebase/storage';  // ✅ 添加這行
 
 const firebaseConfig = {
   apiKey: "AIzaSyBG283nab1vBZ1uWD9n043K2FXpkiba6wQ",
@@ -41,6 +42,7 @@ export const auth = initializeAuth(app, {
 });
 export const db = getFirestore(app);
 export const functions = getFunctions(app, FUNCTIONS_REGION);
+export const storage = getStorage(app);  // ✅ 導出 storage
 
 // 禁用 Firebase Auth 的 Google 库预加载（解决 apis.google.com 超时）
 if (auth) {
