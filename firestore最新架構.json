@@ -1,9 +1,16 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2025-12-27-v7",
-    "lastUpdated": "2025-12-27",
+    "version": "2025-01-08-v8",
+    "lastUpdated": "2025-01-08",
     "architectureChanges": {
+      "version_2025-01-08-v8": [
+        "🔄 financeManager 全面改名为 cashier（架构文件已全部更新）",
+        "✅ Event Manager 可以分配点数（移除 cannotAllocatePoints 限制）",
+        "🎁 新增 Event Manager 赠送点数功能（free_grant 交易类型）",
+        "📝 新增 grantPointsByEventManagerHttp Cloud Function",
+        "🎯 支持按 identityTag 批量赠送点数给 Customer"
+      ],
       "version_2025-12-27-v7": [
         "🆕 新增 pointSeller 角色（点数卡销售员）",
         "💰 大幅扩充 cashier 角色统计字段",
@@ -46,7 +53,7 @@
         "Event Manager 从 Event.eventManager 对象移到 users 集合",
         "Event 文档中移除 eventManager 对象，改为 contactPerson（纯联络用途）",
         "Event Manager 成为 users 集合中的特殊角色，与 Cashier 形成制衡",
-        "Event Manager 不分配点数，纯监控所有人员数据",
+        "Event Manager 可以分配点数，并监控所有人员数据",
         "删除 Event 级别的 pointAllocations 集合",
         "Seller Manager 只管理 students，只能单人分配",
         "Platform Admin 创建 Event 时手动输入 contactPerson 信息"
@@ -379,7 +386,6 @@
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
                     "identityId": "string (身份编号，如学号、工号)",
-                    "identityTag": "string (身份标签)",
                     "identityName": "string (身份名称)",
                     "department": "string (部门代码)",
                     "position": "string (职位，如 '活动负责人'、'班主任'，可选)"
@@ -489,7 +495,7 @@
                       "canModifyEventSettings": "boolean (可以修改活动设置)"
                     },
                     "restrictions": {
-                      "cannotAllocatePoints": "boolean (不能分配点数)",
+                      "cannotAllocatePoints": "boolean (可以赠送点数，但不能通过常规分配机制分配)",
                       "cannotModifyOwnRoles": "boolean (不能修改自己的角色)",
                       "cannotDeleteSelf": "boolean (不能删除自己)",
                       "cannotHoldOtherRoles": "boolean (不能兼任其他角色)"
@@ -500,7 +506,7 @@
                       "canMonitorAllTransactions": "boolean (可以查看所有交易记录)",
                       "canViewAllStats": "boolean (可以查看所有统计数据)"
                     },
-                    "notes": "Event Manager 纯监控角色，不参与点数分配和现金流；与 Cashier 形成制衡；每个 Event 只有一个 Event Manager"
+                    "notes": "Event Manager 主要为监控角色，可以赠送点数给Customer但不参与常规点数分配和现金流；与 Cashier 形成制衡；每个 Event 只有一个 Event Manager"
                   },
                   "sellerManager": {
                     "description": "Seller Manager 角色专用数据",
@@ -901,7 +907,8 @@
                       "customer_to_merchant",
                       "customer_transfer",
                       "point_card_payment",
-                      "point_card_topup"
+                      "point_card_topup",
+                      "free_grant"
                     ],
                     "description": "POINTS_SALE: Seller卖点给Customer; Mcustomer_to_merchant: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
                   },
@@ -936,12 +943,28 @@
                   "// === 验证方式（已从OTP改为PIN码验证）===": "",
                   "pinVerified": "boolean (是否通过交易密码验证)",
                   "pinVerifiedAt": "timestamp (交易密码验证时间)",
-                  "verificationMethod": "string (验证方式: 'transaction_pin' | 'otp'，当前统一使用 transaction_pin)""// === point_card 相关字段 ===": "",
+                  "verificationMethod": "string (验证方式: 'transaction_pin' | 'otp'，当前统一使用 transaction_pin)",
+                  "// === point_card 相关字段 ===": "",
                   "cardId": "string (点数卡ID)",
                   "cardNumber": "string (点数卡编号)",
                   "cardBalanceBefore": "number",
                   "cardBalanceAfter": "number",
-                  "cardDestroyed": "boolean"
+                  "cardDestroyed": "boolean",
+                  "// === free_grant 交易说明 ===": "",
+                  "free_grant_description": {
+                    "description": "Event Manager 赠送点数给 Customer",
+                    "fromRole": "eventManager",
+                    "toRole": "customer",
+                    "requiredFields": [
+                      "fromUserId (Event Manager UID)",
+                      "toUserId (Customer UID)",
+                      "amount (赠送点数)",
+                      "note (备注)",
+                      "metadata.identityTag (目标身份标签)",
+                      "metadata.source (固定值: 'event_manager_grant')"
+                    ],
+                    "characteristics": "无需现金对冲，直接增加Customer可用余额"
+                  }
                 },
                 "indexes": [
                   "transactionType",
@@ -1009,7 +1032,7 @@
                   "// === 接收方信息 ===": "",
                   "receivedBy": "string (接收者 userId - 可以是SellerManager或Cashier，或null表示待认领池子)",
                   "receiverName": "string (接收者姓名)",
-                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)", // 🆕 新增
+                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)", 
                   "receiverPhone": "string (接收者电话)",
                   "// === 金额信息 ===": "",
                   "amount": "number (上交金额 RM)",
@@ -1058,7 +1081,7 @@
                     "eventId": "string (冗余字段)",
                     "organizationId": "string (冗余字段)",
                     "submissionSource": "string ('manual' | 'batch' | 'auto')",
-                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')" // 🆕 新增
+                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')" 
                   }
                 },
                 "indexes": [
@@ -1771,7 +1794,7 @@
           }
         },
         "createPointCard": {
-          "name": "createPointCard",
+          "name": "createPointCard"
         },
         "queryPointCardBalance": {
           "name": "queryPointCardBalance",
@@ -1867,6 +1890,28 @@
             "    - 设置 basicInfo.pinLockedUntil = now + 1小时",
             "    - 记录锁定时间"
           ]
+        },
+        "grantPointsByEventManagerHttp": {
+          "name": "grantPointsByEventManagerHttp",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "Event Manager 按 identityTag 批量赠送点数给 Customer",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "identityTag": "string (目标身份标签)",
+            "points": "number (赠送点数)",
+            "note": "string (备注，可选)"
+          },
+          "returns": {
+            "success": "boolean",
+            "grantedCount": "number (赠送用户数)",
+            "totalPoints": "number (总点数)",
+            "pointsPerUser": "number (每人点数)",
+            "userIds": "array (用户ID列表)"
+          },
+          "permissions": "仅 Event Manager 可调用",
+          "notes": "批量操作，使用 Firestore batch write"
         }
       },
       "securityRules": {
