@@ -115,10 +115,9 @@ const CustomerDashboard = () => {
 
     try {
       await signOut(auth);
-      // 🔧 修复：获取正确的 orgEventCode
-      // 优先使用 userProfile 中的 organizationCode 和 eventCode
-      const orgCode = userProfile?.organizationCode || customerData?.organizationCode || '';
-      const evtCode = userProfile?.eventCode || customerData?.eventCode || '';
+      // 🔧 修复：获取正确的 orgEventCode（从 customerData 中提取）
+      const orgCode = customerData?.organizationCode || customerData?.organizationId?.replace('organization_', '') || '';
+      const evtCode = customerData?.eventCode || customerData?.eventId?.replace('event_', '') || '';
       const orgEventCode = `${orgCode}-${evtCode}`;
       navigate(`/login/${orgEventCode}`);
     } catch (error) {

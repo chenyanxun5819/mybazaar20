@@ -91,9 +91,10 @@ exports.setupTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
     // ========== 8. 更新用户文档 ==========
     // 🔧 修复：所有用户（包括 eventManager）都用相同的更新逻辑
     // 因为 eventManager 存储在 users 集合中，与普通用户结构相同
+    // ✅ 修复：pinSalt 现在是空字符串（表示 bcrypt 新格式），可以安全地存储或忽略
     const updateData = {
       'basicInfo.transactionPinHash': pinHash,
-      'basicInfo.transactionPinSalt': pinSalt,
+      'basicInfo.transactionPinSalt': pinSalt || null,  // ✅ 如果 salt 为空字符串，存 null
       'basicInfo.isFirstLogin': false,  // 设置 PIN 后，首次登录标记改为 false
       'basicInfo.pinFailedAttempts': 0,  // 重置错误次数
       'basicInfo.pinLockedUntil': null,  // 清除锁定

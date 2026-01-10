@@ -120,9 +120,10 @@ exports.resetTransactionPin = onCall({ region: 'asia-southeast1' }, async (reque
     const { hash: newPinHash, salt: newPinSalt } = await hashPin(newTransactionPin);
 
     // ========== 7. 更新用户文档 ==========
+    // ✅ 修复：newPinSalt 现在是空字符串（表示 bcrypt 新格式），可以安全地存储或忽略
     const updateData = {
       'basicInfo.transactionPinHash': newPinHash,
-      'basicInfo.transactionPinSalt': newPinSalt,
+      'basicInfo.transactionPinSalt': newPinSalt || null,  // ✅ 如果 salt 为空字符串，存 null
       'basicInfo.pinFailedAttempts': 0,  // 重置错误次数
       'basicInfo.pinLockedUntil': null,  // 清除锁定
       'basicInfo.pinLastChanged': admin.firestore.FieldValue.serverTimestamp(),

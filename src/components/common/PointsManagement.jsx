@@ -42,7 +42,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
   // 🆕 identityTags 相关状态
   const [identityTags, setIdentityTags] = useState([]);
-  const [selectedIdentityTag, setSelectedIdentityTag] = useState('all');
+  const [selectedIdentityTag, setSelectedIdentityTag] = useState([]); // 🔄 改为数组支持复选
 
   // 点数分配状态
   const [pointsAmount, setPointsAmount] = useState('');
@@ -194,7 +194,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
   // 🔧 打开批量分配模态框（清空状态）
   const openBatchModal = () => {
-    setSelectedIdentityTag('all');
+    setSelectedIdentityTag([]);
     setBatchAmount('');
     setBatchNote('');
     setShowBatchModal(true);
@@ -326,8 +326,8 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
   // 🔧 批量点数分配（修改为按 identityTag 过滤）
   const handleBatchAllocate = async () => {
-    if (!selectedIdentityTag || !batchAmount) {
-      alert('请选择身份标签并输入分配点数');
+    if (!selectedIdentityTag || selectedIdentityTag.length === 0 || !batchAmount) {
+      alert('请选择至少一个身份标签并输入分配点数');
       return;
     }
 
@@ -343,22 +343,23 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       user.roles?.some(role => ['seller', 'merchant', 'customer'].includes(role))
     );
 
-    if (selectedIdentityTag !== 'all') {
-      targetUsers = targetUsers.filter(user =>
-        user.identityTag === selectedIdentityTag
-      );
-    }
+    // 过滤多个 identityTag
+    targetUsers = targetUsers.filter(user =>
+      selectedIdentityTag.includes(user.identityTag) || selectedIdentityTag.includes('all')
+    );
 
     if (targetUsers.length === 0) {
-      const tagInfo = getIdentityTagInfo(selectedIdentityTag);
-      alert(`身份标签 "${tagInfo.label}" 中没有可分配点数的用户`);
+      const selectedTags = selectedIdentityTag.map(tagId => getIdentityTagInfo(tagId).label).join('、');
+      alert(`身份标签 "${selectedTags}" 中没有可分配点数的用户`);
       return;
     }
 
     const totalPoints = points * targetUsers.length;
-    const tagInfo = getIdentityTagInfo(selectedIdentityTag);
+    const selectedTags = selectedIdentityTag.includes('all') 
+      ? '全部身份' 
+      : selectedIdentityTag.map(tagId => getIdentityTagInfo(tagId).label).join('、');
 
-    if (!confirm(`确认为 ${targetUsers.length} 个用户各分配 ${points.toLocaleString()} 点数？\n身份标签: ${tagInfo.label}\n总计: ${totalPoints.toLocaleString()} 点数`)) {
+    if (!confirm(`确认为 ${targetUsers.length} 个用户各分配 ${points.toLocaleString()} 点数？\n身份标签: ${selectedTags}\n总计: ${totalPoints.toLocaleString()} 点数`)) {
       return;
     }
 
@@ -381,7 +382,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
             amount: points,
             timestamp: serverTimestamp(),
             allocatedBy: 'eventManager',
-            note: batchNote || `批量分配 - ${tagInfo.label}`
+            note: batchNote || `批量分配 - ${selectedTags}`
           };
 
           const userRef = doc(
@@ -735,11 +736,17 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   {/* 全部身份选项 */}
                   <label style={styles.identityTagOption}>
                     <input
-                      type="radio"
+                      type="checkbox"
                       name="identityTag"
                       value="all"
-                      checked={selectedIdentityTag === 'all'}
-                      onChange={(e) => setSelectedIdentityTag(e.target.value)}
+                      checked={selectedIdentityTag.includes('all')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIdentityTag(['all']);
+                        } else {
+                          setSelectedIdentityTag([]);
+                        }
+                      }}
                       style={styles.radio}
                     />
                     <div style={styles.identityTagLabel}>
@@ -754,11 +761,17 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   {identityTags.map(tag => (
                     <label key={tag.id} style={styles.identityTagOption}>
                       <input
-                        type="radio"
+                        type="checkbox"
                         name="identityTag"
                         value={tag.id}
-                        checked={selectedIdentityTag === tag.id}
-                        onChange={(e) => setSelectedIdentityTag(e.target.value)}
+                        checked={selectedIdentityTag.includes(tag.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIdentityTag(prev => [...prev, tag.id]);
+                          } else {
+                            setSelectedIdentityTag(prev => prev.filter(id => id !== tag.id));
+                          }
+                        }}
                         style={styles.radio}
                       />
                       <div style={styles.identityTagLabel}>

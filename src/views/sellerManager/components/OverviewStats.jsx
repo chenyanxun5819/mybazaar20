@@ -1,24 +1,54 @@
 /**
  * Overview Stats Component (超级安全版 v3)
  */
-import { useSellerManagerStats } from '../../../hooks/sellerManager';
+import { useSellerManagerStats, useManagedUsers } from '../../../hooks/sellerManager';
 
-const OverviewStats = ({ 
-  organizationId,   // ✅ 新增
-  eventId,          // ✅ 新增
-  sellerManagerId,  // ✅ 新增
-  departmentStats,  // 暂时保留
-  eventData 
+
+const OverviewStats = ({
+  organizationId,      // ✅ 新增
+  eventId,             // ✅ 新增
+  sellerManagerId,     // ✅ 新增
+  managedDepartments,  // ✅ 新增
+  eventData            // ✅ 保留
 }) => {
+  // ===================================================================
   // ✅ 使用Hook获取实时数据
+  // ===================================================================
+  // Hook 1: 你的分配统计
   const { smStats, loading, error } = useSellerManagerStats(
     organizationId,
     eventId,
     sellerManagerId
   );
 
+  // ✅ 添加 Hook 2: Sellers实时数据（新增5行）
+  const { users, loading: usersLoading, stats: usersStats } = useManagedUsers(
+    organizationId,
+    eventId,
+    sellerManagerId
+  );
+
+
+  // 修改调试日志（第24-32行）
+  console.log('🔍 [OverviewStats] 收到的参数:', {
+    organizationId,
+    eventId,
+    sellerManagerId,
+    managedDepartments,
+    hasSmStats: !!smStats,
+    loading,
+    error,
+    // ✅ 新增
+    usersCount: users?.length || 0,
+    usersLoading,
+    totalPoints: users?.reduce((sum, u) => sum + (u.seller?.availablePoints || 0), 0) || 0
+  });
+
+  // ===================================================================
   // ✅ 处理加载状态
-  if (loading) {
+  // ===================================================================
+  // 修改loading处理（第37-43行）
+  if (loading || usersLoading) {  // ✅ 添加 usersLoading
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>⏳</div>
@@ -27,56 +57,61 @@ const OverviewStats = ({
     );
   }
 
-  // ✅ 处理错误状态
-  if (error) {
-    return (
-      <div style={styles.emptyState}>
-        <div style={styles.emptyIcon}>❌</div>
-        <p>加载失败: {error}</p>
-      </div>
-    );
-  }
 
-  // ✅ 处理空数据
-  if (!smStats) {
-    return (
-      <div style={styles.emptyState}>
-        <div style={styles.emptyIcon}>📊</div>
-        <p>统计数据加载中...</p>
-      </div>
-    );
-  }
 
-  // ✅ 原有的安全读取逻辑保持不变
-  const managedStats = (smStats.managedUsersStats && typeof smStats.managedUsersStats === 'object') 
-    ? smStats.managedUsersStats 
-    : {};
-  const allocationStats = (smStats.allocationStats && typeof smStats.allocationStats === 'object')
-    ? smStats.allocationStats
-    : {};
-  const collectionMgmt = (smStats.collectionManagement && typeof smStats.collectionManagement === 'object')
-    ? smStats.collectionManagement
-    : {};
 
+  // ✅ 新代码 - 从users实时计算
+  const managedStats = {
+    totalUsers: users.length,
+    activeUsers: users.filter(u => u.status === 'active').length,
+    currentBalance: users.reduce((sum, u) => sum + (u.seller?.availablePoints || 0), 0),
+    totalRevenue: users.reduce((sum, u) => sum + (u.seller?.totalRevenue || 0), 0),
+    totalCollected: users.reduce((sum, u) => sum + (u.seller?.totalCashCollected || 0), 0),
+    pendingCollection: users.reduce((sum, u) => sum + (u.seller?.pendingCollection || 0), 0),
+    collectionRate: (() => {
+      const totalRev = users.reduce((sum, u) => sum + (u.seller?.totalRevenue || 0), 0);
+      const totalCol = users.reduce((sum, u) => sum + (u.seller?.totalCashCollected || 0), 0);
+      return totalRev > 0 ? totalCol / totalRev : 0;
+    })()
+  };
+
+  // allocationStats 仍然从 smStats 读取（只统计你自己的分配）
+  const allocationStats = (smStats && smStats.allocationStats) ? smStats.allocationStats : {
+    totalAllocations: 0,
+    totalPointsAllocated: 0,
+    averagePerAllocation: 0,
+    lastAllocationAt: null
+  };
+
+  // collectionMgmt 从users实时计算
+  const collectionMgmt = {
+    usersWithWarnings: users.filter(u => u.seller?.collectionAlert?.hasWarning).length,
+    highRiskUsers: users.filter(u => {
+      const revenue = u.seller?.totalRevenue || 0;
+      const collected = u.seller?.totalCashCollected || 0;
+      return revenue > 0 && (collected / revenue) < 0.3;
+    }).length,
+    totalCashHolding: users.reduce((sum, u) => sum + (u.seller?.pendingCollection || 0), 0)
+  };
   // 读取分配规则
   const getAllocationRules = () => {
     const defaults = { maxPerAllocation: 100, warningThreshold: 0.3 };
-    
+
     try {
       if (!eventData || typeof eventData !== 'object') {
         return defaults;
       }
 
-      if (!eventData.pointAllocationRules || 
-          typeof eventData.pointAllocationRules !== 'object') {
+      if (!eventData.pointAllocationRules ||
+        typeof eventData.pointAllocationRules !== 'object') {
         return defaults;
       }
-      
+
       if (!eventData.pointAllocationRules.sellerManager ||
-          typeof eventData.pointAllocationRules.sellerManager !== 'object') {
+        typeof eventData.pointAllocationRules.sellerManager !== 'object') {
         return defaults;
       }
-      
+
       const rules = eventData.pointAllocationRules.sellerManager;
       return {
         maxPerAllocation: typeof rules.maxPerAllocation === 'number' ? rules.maxPerAllocation : 100,
@@ -177,7 +212,7 @@ const OverviewStats = ({
               </span>
             </div>
           </div>
-          
+
           <div style={styles.progressBar}>
             <div style={{
               ...styles.progressFill,
@@ -227,16 +262,7 @@ const OverviewStats = ({
         </div>
       </div>
 
-      {Array.isArray(departmentStats) && departmentStats.length > 0 && (
-        <div style={styles.section}>
-          <h3 style={styles.subsectionTitle}>🏫 管理的部门 ({departmentStats.length})</h3>
-          <div style={styles.departmentGrid}>
-            {departmentStats.map((dept, index) => (
-              <DepartmentMiniCard key={dept.id || dept.departmentCode || `dept-${index}`} dept={dept} />
-            ))}
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };
@@ -246,7 +272,7 @@ const StatCard = ({ icon, title, value, subtitle, color, description }) => {
   const safeTitle = String(title || '');
   const safeValue = String(value || '0');
   const safeColor = String(color || '#000000');
-  
+
   return (
     <div style={{ ...styles.statCard, borderLeftColor: safeColor }}>
       <div style={styles.statIcon}>{safeIcon}</div>

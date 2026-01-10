@@ -54,7 +54,7 @@ const EventManagerDashboard = () => {
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 点数管理
   const [showDepartmentManagement, setShowDepartmentManagement] = useState(false); // 部门管理
   const [showGrantPointsModal, setShowGrantPointsModal] = useState(false); // 🆕 赠送点数模态框
-  const [grantIdentityTag, setGrantIdentityTag] = useState(''); // 🆕 赠送目标身份标签
+  const [grantIdentityTag, setGrantIdentityTag] = useState([]); // 🆕 赠送目标身份标签（支持复选）
   const [grantAmount, setGrantAmount] = useState(''); // 🆕 赠送点数
   const [grantNote, setGrantNote] = useState(''); // 🆕 赠送备注
   const [isGranting, setIsGranting] = useState(false); // 🆕 正在赠送
@@ -69,16 +69,16 @@ const EventManagerDashboard = () => {
   const [searchTerm, setSearchTerm] = useState(''); // 🆕 搜索词
   const [showEditModal, setShowEditModal] = useState(false); // 🆕 编辑模态框
   const [editingUser, setEditingUser] = useState(null); // 🆕 正在编辑的用户
-  
+
   // 🔄 扩展 editForm，添加角色和部门字段
-  const [editForm, setEditForm] = useState({ 
+  const [editForm, setEditForm] = useState({
     chineseName: '',
     englishName: '',
     phoneNumber: '',
     identityId: '',
     department: '' // 🆕 部门
   });
-  
+
   // 🆕 角色选择状态
   const [selectedRoles, setSelectedRoles] = useState({
     sellerManager: false,
@@ -90,13 +90,13 @@ const EventManagerDashboard = () => {
     customer: false,
     pointSeller: false
   });
-  
+
   // 🆕 Seller Manager 管理部门
   const [managedDepartments, setManagedDepartments] = useState([]);
-  
+
   // 🆕 部门列表
   const [departments, setDepartments] = useState([]);
-  
+
   const [isSaving, setIsSaving] = useState(false); // 🆕 保存中状态
   const [visibleColumns, setVisibleColumns] = useState({
     序号: true,
@@ -106,7 +106,8 @@ const EventManagerDashboard = () => {
     部门: true,
     身份ID: true,
     角色: true,
-    现有点数: true,
+    可消费点数: true,
+    可销售点数: true,
     已销售点数: true
   });
 
@@ -116,7 +117,7 @@ const EventManagerDashboard = () => {
     users.forEach(u => {
       // 跳過正在編輯的本人
       if (u.id === editingUser?.id) return;
-      
+
       // 檢查該用戶是否為 Seller Manager 且有管理的部門
       if (u.roles?.includes('sellerManager') && u.sellerManager?.managedDepartments) {
         u.sellerManager.managedDepartments.forEach(dept => {
@@ -131,11 +132,11 @@ const EventManagerDashboard = () => {
   const maskPhone = (phone) => {
     if (!phone) return '-';
     if (phone.length < 6) return phone; // 号码太短，直接显示
-    
+
     const first3 = phone.substring(0, 3);
     const last3 = phone.substring(phone.length - 3);
     const middle = '*'.repeat(phone.length - 6);
-    
+
     return `${first3}${middle}${last3}`;
   };
 
@@ -149,7 +150,7 @@ const EventManagerDashboard = () => {
       identityId: user.identityInfo?.identityId || '',
       department: user.identityInfo?.department || '' // 🆕 初始化部门
     });
-    
+
     // 🆕 初始化角色选择
     setSelectedRoles({
       sellerManager: user.roles?.includes('sellerManager') || false,
@@ -161,10 +162,10 @@ const EventManagerDashboard = () => {
       customer: user.roles?.includes('customer') || false,
       pointSeller: user.roles?.includes('pointSeller') || false
     });
-    
+
     // 🆕 初始化管理部门
     setManagedDepartments(user.sellerManager?.managedDepartments || []);
-    
+
     setShowEditModal(true);
   };
 
@@ -250,7 +251,7 @@ const EventManagerDashboard = () => {
 
       // Step 2: 更新角色（调用 Cloud Function）
       const idToken = await auth.currentUser.getIdToken();
-      
+
       const response = await safeFetch('/api/updateUserRoles', {
         method: 'POST',
         headers: {
@@ -276,7 +277,7 @@ const EventManagerDashboard = () => {
       alert('✅ 用户信息和角色更新成功!');
       setShowEditModal(false);
       setEditingUser(null);
-      
+
       // 重新加载用户列表
       await loadDashboardData();
     } catch (error) {
@@ -289,7 +290,7 @@ const EventManagerDashboard = () => {
 
   // 🆕 处理打开赠送点数Modal
   const handleOpenGrantPoints = () => {
-    setGrantIdentityTag('');
+    setGrantIdentityTag([]);
     setGrantAmount('');
     setGrantNote('');
     setShowGrantPointsModal(true);
@@ -299,8 +300,8 @@ const EventManagerDashboard = () => {
   const handleGrantPoints = async () => {
     try {
       // 验证输入
-      if (!grantIdentityTag) {
-        alert('请选择目标身份标签');
+      if (!grantIdentityTag || grantIdentityTag.length === 0) {
+        alert('请选择至少一个目标身份标签');
         return;
       }
 
@@ -312,10 +313,14 @@ const EventManagerDashboard = () => {
       const pointsToGrant = Number(grantAmount);
 
       // 确认操作
-      const selectedTag = identityTags.find(tag => tag.id === grantIdentityTag);
-      const tagName = selectedTag ? selectedTag.name['zh-CN'] || selectedTag.name['en-US'] : grantIdentityTag;
-      
-      const confirmMessage = `确认要赠送 ${pointsToGrant} 点数给所有 "${tagName}" 身份的 Customer 吗？`;
+      const selectedTagNames = grantIdentityTag
+        .map(tagId => {
+          const tag = identityTags.find(t => t.id === tagId);
+          return tag ? (tag.name['zh-CN'] || tag.name['en-US'] || tagId) : tagId;
+        })
+        .join('、');
+
+      const confirmMessage = `确认要赠送 ${pointsToGrant} 点数给所有 "${selectedTagNames}" 身份的 Customer 吗？`;
       if (!window.confirm(confirmMessage)) {
         return;
       }
@@ -325,34 +330,45 @@ const EventManagerDashboard = () => {
       // 获取 ID Token
       const idToken = await auth.currentUser.getIdToken();
 
-      // 调用 Cloud Function
-      const response = await safeFetch('/api/grantPointsByEventManagerHttp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          organizationId,
-          eventId,
-          identityTag: grantIdentityTag,
-          points: pointsToGrant,
-          note: grantNote || '组织赠送'
-        })
-      });
+      // 为每个选中的 identityTag 分别赠送
+      let totalGranted = 0;
+      for (const tagId of grantIdentityTag) {
+        const response = await safeFetch('/api/grantPointsByEventManagerHttp', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({
+            organizationId,
+            eventId,
+            identityTag: tagId,
+            points: pointsToGrant,
+            note: grantNote || '组织赠送'
+          })
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || '赠送点数失败');
+        if (!response.ok) {
+          let errorMessage = '赠送点数失败';
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error?.message || errorData.error || errorMessage;
+          } catch (parseError) {
+            console.error('❌ 错误响应解析失败:', parseError);
+            errorMessage = `${response.status} ${response.statusText}`;
+          }
+          throw new Error(errorMessage);
+        }
+
+        const result = await response.json();
+        totalGranted += result.grantedCount || 0;
       }
 
-      const result = await response.json();
-      
-      alert(`✅ 赠送成功！\n已赠送给 ${result.grantedCount} 个用户\n每人 ${result.pointsPerUser} 点数\n总计 ${result.totalPoints} 点数`);
-      
+      alert(`✅ 赠送成功！\n已赠送给 ${totalGranted} 个用户\n每人 ${pointsToGrant} 点数`);
+
       // 关闭Modal
       setShowGrantPointsModal(false);
-      setGrantIdentityTag('');
+      setGrantIdentityTag([]);
       setGrantAmount('');
       setGrantNote('');
 
@@ -378,7 +394,7 @@ const EventManagerDashboard = () => {
       setLoading(true);
 
       // 設置一個超時保護，防止無限加載
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('加載超時')), 20000)
       );
 
@@ -418,7 +434,7 @@ const EventManagerDashboard = () => {
         // 同步设置 organizationId 和 eventId，以供 UserList 等组件使用
         const currentOrgId = info.organizationId || organizationId;
         const currentEventId = info.eventId || eventId;
-        
+
         if (currentOrgId) setOrganizationId(currentOrgId);
         if (currentEventId) setEventId(currentEventId);
 
@@ -431,7 +447,7 @@ const EventManagerDashboard = () => {
         if (orgDoc.exists()) {
           const orgInfo = orgDoc.data();
           setOrgData(orgInfo);
-          
+
           // 🆕 提取部门列表
           if (orgInfo.departments) {
             const activeDepts = orgInfo.departments
@@ -439,7 +455,7 @@ const EventManagerDashboard = () => {
               .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
             setDepartments(activeDepts.map(d => d.name));
           }
-          
+
           // 🆕 提取身份标签列表（用于赠送点数）
           if (orgInfo.identityTags) {
             const activeTags = orgInfo.identityTags
@@ -492,7 +508,7 @@ const EventManagerDashboard = () => {
             if (userData.roles?.includes('seller')) stats.totalSellers++;
             if (userData.roles?.includes('merchant')) stats.totalMerchants++;
             if (userData.roles?.includes('customer')) stats.totalCustomers++;
-            
+
             if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
             if (userData.merchant?.availablePoints) totalAllocated += userData.merchant.availablePoints;
             if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
@@ -649,10 +665,10 @@ const EventManagerDashboard = () => {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
             {(orgData?.logoUrl || eventData?.logoUrl) && (
-              <img 
-                src={orgData?.logoUrl || eventData?.logoUrl} 
-                alt="Organization Logo" 
-                style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }} 
+              <img
+                src={orgData?.logoUrl || eventData?.logoUrl}
+                alt="Organization Logo"
+                style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }}
               />
             )}
             <h1 style={{ ...styles.title, marginBottom: 0 }}>
@@ -930,20 +946,29 @@ const EventManagerDashboard = () => {
                   {visibleColumns.角色 && (
                     <th style={styles.tableHeaderCell}>角色</th>
                   )}
-                  {visibleColumns.现有点数 && (
+                  {visibleColumns.可销售点数 && (
                     <th
                       style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
                       onClick={() => handleSort('availablePoints')}
                     >
-                      现有点数 {sortConfig.key === 'availablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                      可销售点数 {sortConfig.key === 'availablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
+
                   {visibleColumns.已销售点数 && (
                     <th
                       style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
                       onClick={() => handleSort('totalPointsSold')}
                     >
                       已销售点数 {sortConfig.key === 'totalPointsSold' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                  )}
+                  {visibleColumns.可消费点数 && (
+                    <th
+                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
+                      onClick={() => handleSort('customerAvailablePoints')}
+                    >
+                      可消费点数 {sortConfig.key === 'customerAvailablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
                   <th style={styles.tableHeaderCell}>操作</th>
@@ -1002,7 +1027,7 @@ const EventManagerDashboard = () => {
                         </div>
                       </td>
                     )}
-                    {visibleColumns.现有点数 && (
+                    {visibleColumns.可销售点数 && (
                       <td style={styles.tableCell}>
                         <span style={styles.pointsValue}>
                           {user.seller?.availablePoints || 0}
@@ -1012,6 +1037,13 @@ const EventManagerDashboard = () => {
                     {visibleColumns.已销售点数 && (
                       <td style={styles.tableCell}>
                         {user.seller?.totalPointsSold || 0}
+                      </td>
+                    )}
+                    {visibleColumns.可消费点数 && (
+                      <td style={styles.tableCell}>
+                        <span style={styles.pointsValue}>
+                          {user.customer?.pointsAccount?.availablePoints || 0}
+                        </span>
                       </td>
                     )}
                     <td style={styles.tableCell}>
@@ -1107,7 +1139,7 @@ const EventManagerDashboard = () => {
           organizationId={organizationId}
           eventId={eventId}
           onClose={() => setShowBatchImport(false)}
-          onImportComplete={loadDashboardData}
+          onSuccess={loadDashboardData}
         />
       )}
 
@@ -1162,20 +1194,38 @@ const EventManagerDashboard = () => {
                 <label style={styles.formLabel}>
                   目标身份标签 <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                <select
-                  value={grantIdentityTag}
-                  onChange={(e) => setGrantIdentityTag(e.target.value)}
-                  style={styles.formInput}
-                >
-                  <option value="">请选择身份标签...</option>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
                   {identityTags.map(tag => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name['zh-CN'] || tag.name['en-US'] || tag.id}
-                    </option>
+                    <label key={tag.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '0.75rem',
+                      border: grantIdentityTag.includes(tag.id) ? '2px solid #667eea' : '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      backgroundColor: grantIdentityTag.includes(tag.id) ? '#f0f4ff' : 'white',
+                      transition: 'all 0.2s'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={grantIdentityTag.includes(tag.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setGrantIdentityTag([...grantIdentityTag, tag.id]);
+                          } else {
+                            setGrantIdentityTag(grantIdentityTag.filter(id => id !== tag.id));
+                          }
+                        }}
+                        style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>
+                        {tag.name['zh-CN'] || tag.name['en-US'] || tag.id}
+                      </span>
+                    </label>
                   ))}
-                </select>
+                </div>
                 <div style={styles.formHint}>
-                  系统将赠送点数给所有具有此身份标签的Customer用户
+                  可以选择多个身份标签，将分别为每个标签的 Customer 用户赠送点数
                 </div>
               </div>
 
@@ -1359,7 +1409,7 @@ const EventManagerDashboard = () => {
                       <input
                         type="checkbox"
                         checked={selectedRoles[roleId]}
-                        onChange={() => {}}
+                        onChange={() => { }}
                         style={styles.checkbox}
                       />
                       <div style={styles.roleInfo}>
@@ -1406,7 +1456,7 @@ const EventManagerDashboard = () => {
                           <input
                             type="checkbox"
                             checked={managedDepartments.includes(dept)}
-                            onChange={() => {}}
+                            onChange={() => { }}
                             disabled={isTaken}
                             style={{
                               ...styles.checkbox,
@@ -1414,7 +1464,7 @@ const EventManagerDashboard = () => {
                             }}
                           />
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ 
+                            <span style={{
                               fontWeight: managedDepartments.includes(dept) ? '600' : '400',
                               color: isTaken ? '#9ca3af' : '#374151'
                             }}>

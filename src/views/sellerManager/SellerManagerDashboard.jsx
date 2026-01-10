@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
-import { doc, getDoc, collection, query, where, onSnapshot} from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 Use AuthContext
 import AllocatePoints from './components/AllocatePoints';
@@ -88,8 +88,8 @@ const SellerManagerDashboard = () => {
           // 如果没有 userProfile，尝试从 localStorage 恢复 (兼容旧逻辑)
           const storedInfo = localStorage.getItem('sellerManagerInfo');
           if (storedInfo) {
-             // 如果有旧的 localStorage，可能需要重新登录刷新
-             console.warn('[SM Dashboard] 发现旧的 localStorage，建议重新登录');
+            // 如果有旧的 localStorage，可能需要重新登录刷新
+            console.warn('[SM Dashboard] 发现旧的 localStorage，建议重新登录');
           }
           navigate(`/login/${orgEventCode}`);
           return;
@@ -530,11 +530,13 @@ const SellerManagerDashboard = () => {
       {/* Content */}
       <div style={styles.content}>
         {activeTab === 'overview' && (
-          <div>
+          <div style={styles.section}>
             <OverviewStats
-              smStats={smStatsForOverview}
-              departmentStats={safeDepartmentStats}
-              eventData={safeEventData}
+              organizationId={safeCurrentUser.organizationId}              // ✅ 新增
+              eventId={eventId}                                             // ✅ 新增
+              sellerManagerId={safeCurrentUser.userId}                      // ✅ 新增
+              managedDepartments={safeCurrentUser.managedDepartments || []} // ✅ 新增
+              eventData={safeEventData}                                     // ✅ 保留
             />
           </div>
         )}

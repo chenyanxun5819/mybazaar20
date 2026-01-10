@@ -18,13 +18,13 @@ async function hashPassword(plainPassword) {
     // bcrypt 会自动生成 salt 并包含在 hash 中
     const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
     
-    // bcrypt 的 hash 格式：$2a$10$saltsaltsalthashhashhashhash
-    // 前面的部分就是 salt，但我们可以单独存储完整的 hash
-    const salt = hash.substring(0, 29); // 提取 salt 部分（可选，主要用于记录）
+    // ✅ 修复：bcrypt 的 salt 已经完全包含在 hash 中，不需要单独存储
+    // 返回空字符串作为 salt，表示使用 bcrypt 格式（新格式）
+    // 验证时检测：如果 salt 为空或不存在，就用 bcrypt；否则用 SHA256（旧格式）
     
     return {
       hash: hash,
-      salt: salt // bcrypt 的 salt 已经包含在 hash 中了
+      salt: "" // ✅ 明确表示这是 bcrypt 新格式，salt 不需要单独存储
     };
   } catch (error) {
     console.error('[bcryptHelper] 加密密码失败:', error);

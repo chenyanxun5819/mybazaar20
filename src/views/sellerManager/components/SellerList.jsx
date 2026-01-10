@@ -58,7 +58,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
 
         switch (filterStatus) {
           case 'active':
-            return (seller.pointsStats?.totalSold || 0) > 0;
+            return (seller.seller?.totalPointsSold || 0) > 0;
           case 'warning':
             return collectionAlert.hasWarning === true && collectionAlert.riskLevel !== 'high';
           case 'highRisk':
@@ -102,13 +102,13 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
         break;
       case 'sold':
         sorted.sort((a, b) =>
-          (b.pointsStats?.totalSold || 0) - (a.pointsStats?.totalSold || 0)
+          (b.seller?.totalPointsSold || 0) - (a.seller?.totalPointsSold || 0)
         );
         break;
       case 'pending':
         sorted.sort((a, b) => {
-          const pendingA = (a.pointsStats?.cashFlow?.pendingCollection || 0);
-          const pendingB = (b.pointsStats?.cashFlow?.pendingCollection || 0);
+          const pendingA = (a.seller?.pendingCollection || 0);
+          const pendingB = (b.seller?.pendingCollection || 0);
           return pendingB - pendingA;
         });
         break;
@@ -136,7 +136,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
    */
   const handleRecordCollection = async (seller) => {
     // ✅ 步驟 1: 驗證待收款金額
-    const pendingAmount = seller.pointsStats?.cashFlow?.pendingCollection || 0;
+    const pendingAmount = seller.seller?.pendingCollection || 0;
 
     if (pendingAmount <= 0) {
       alert('該 Seller 沒有待收款金額');
@@ -209,11 +209,11 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
 
       batch.update(sellerRef, {
         // 增加已收款總額
-        'pointsStats.cashFlow.totalCashCollected': increment(pendingAmount),
+        'seller.totalCashCollected': increment(pendingAmount),
         // 清零待收款金額
-        'pointsStats.cashFlow.pendingCollection': 0,
+        'seller.pendingCollection': 0,
         // 更新最後收款時間
-        'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+        'seller.lastCollectionAt': serverTimestamp(),
         // 更新文檔時間
         'updatedAt': serverTimestamp()
       });
@@ -223,12 +223,12 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
       const smRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${currentUserId}`);
 
       batch.update(smRef, {
-        // 增加持有現金
-        'pointsStats.cashFlow.cashHolding': increment(pendingAmount),
-        // 增加累計收款
-        'pointsStats.cashFlow.totalCollected': increment(pendingAmount),
+        // 增加現金統計
+        'sellerManager.cashStats.confirmedFromSellers': increment(pendingAmount),
+        'sellerManager.cashStats.cashOnHand': increment(pendingAmount),
+        'sellerManager.cashStats.totalReceivedFromSellers': increment(pendingAmount),
         // 更新最後收款時間
-        'pointsStats.cashFlow.lastCollectionAt': serverTimestamp(),
+        'sellerManager.cashStats.lastConfirmedAt': serverTimestamp(),
         // 更新文檔時間
         'updatedAt': serverTimestamp()
       });
@@ -341,7 +341,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
                         {seller.seller?.availablePoints || 0}
                       </td>
                       <td style={styles.td}>
-                        {seller.pointsStats?.totalSold || 0}
+                        {seller.seller?.totalPointsSold || 0}
                       </td>
                       <td style={styles.td}>
                         <span style={{
@@ -418,13 +418,8 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
                               </div>
 
                               <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>累计分配:</span>
-                                <span>{seller.pointsStats?.totalAllocated || 0}</span>
-                              </div>
-
-                              <div style={styles.detailItem}>
-                                <span style={styles.detailLabel}>销售金额:</span>
-                                <span>RM {seller.pointsStats?.currentSalesAmount || 0}</span>
+                                <span style={styles.detailLabel}>累计销售额:</span>
+                                <span>RM {seller.seller?.totalRevenue || 0}</span>
                               </div>
 
                               {/* 🆕 新增：现金交付情况 */}
@@ -444,7 +439,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
 
                               <div style={styles.detailItem}>
                                 <span style={styles.detailLabel}>累计收款:</span>
-                                <span>RM {seller.pointsStats?.cashFlow?.totalCashCollected || 0}</span>
+                                <span>RM {seller.seller?.totalCashCollected || 0}</span>
                               </div>
 
                             </div>

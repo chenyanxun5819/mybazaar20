@@ -106,20 +106,23 @@ async function verifyTransactionPinInternal(transactionPin, userData) {
   if (!pinHash) {
     return {
       success: false,
+      missing: true,
       error: '交易密码未设置'
     };
   }
 
   console.log('[verifyTransactionPinInternal] 检测加密方式:', {
-    hasSalt: !!pinSalt,
-    format: pinSalt ? 'SHA256（旧格式）' : 'bcrypt（新格式）'
+    hasSalt: !!pinSalt && pinSalt.length > 0,
+    format: (pinSalt && pinSalt.length > 0) ? 'SHA256（旧格式）' : 'bcrypt（新格式）'
   });
 
   let isPinCorrect = false;
 
   try {
-    // ✅ 兼容处理：检查是否为旧格式（有 pinSalt）
-    if (pinSalt) {
+    // ✅ 修复：检查 pinSalt 是否存在且有实际内容
+    // - 如果有非空 pinSalt：使用 SHA256（旧格式，向后兼容）
+    // - 如果 pinSalt 为空/null/undefined：使用 bcrypt（新格式）
+    if (pinSalt && pinSalt.length > 0) {
       // 旧格式：使用 SHA256 验证
       const inputHash = sha256(transactionPin + pinSalt);
       isPinCorrect = (inputHash === pinHash);
