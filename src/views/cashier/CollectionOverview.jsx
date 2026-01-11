@@ -1,6 +1,7 @@
 /**
  * Collection Overview Component
- * Tab 1: 收款概览 - 显示统计卡片、待确认收款和待认领池子
+ * Tab 1: 收款概览 - 显示统计卡片、待确认收款和待认领池子（带展开详情）
+ * VERSION: 2.0 - 整合了PendingSubmissions的展开详情功能
  */
 
 import React, { useState } from 'react';
@@ -12,6 +13,7 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
   const [claimingId, setClaimingId] = useState(null);
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   // 格式化金额
   const formatAmount = (amount) => {
@@ -96,6 +98,11 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
   const handlePinCancel = () => {
     setShowPinDialog(false);
     setSelectedSubmission(null);
+  };
+
+  // 切换展开/收起
+  const toggleExpanded = (submissionId) => {
+    setExpandedId(expandedId === submissionId ? null : submissionId);
   };
 
   // 统计卡片数据
@@ -201,44 +208,111 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
                   <th>金额</th>
                   <th>提交时间</th>
                   <th>备注</th>
+                  <th>明细</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {pendingSubmissions.map(submission => (
-                  <tr key={submission.id}>
-                    <td>
-                      <div className="submitter-cell">
-                        <span className="role-icon">{getRoleIcon(submission.submitterRole)}</span>
-                        <div className="submitter-info">
-                          <div className="submitter-name">{submission.submitterName}</div>
-                          <div className="submitter-meta">
-                            <span className="role-badge">{getRoleLabel(submission.submitterRole)}</span>
+                  <React.Fragment key={submission.id}>
+                    {/* 主行 */}
+                    <tr>
+                      <td>
+                        <div className="submitter-cell">
+                          <span className="role-icon">{getRoleIcon(submission.submitterRole)}</span>
+                          <div className="submitter-info">
+                            <div className="submitter-name">{submission.submitterName}</div>
+                            <div className="submitter-meta">
+                              <span className="role-badge">{getRoleLabel(submission.submitterRole)}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="amount-cell">{formatAmount(submission.amount)}</div>
-                    </td>
-                    <td>
-                      <div className="time-cell">{formatFullDateTime(submission.submittedAt)}</div>
-                    </td>
-                    <td>
-                      <div className={`note-cell ${!submission.note ? 'empty' : ''}`}>
-                        {submission.note || '-'}
-                      </div>
-                    </td>
-                    <td className="action-cell">
-                      <button
-                        className="claim-button"
-                        onClick={() => handleClaimClick(submission)}
-                        disabled={claimingId === submission.id}
-                      >
-                        {claimingId === submission.id ? '⏳ 处理中...' : '🎯 接单确认'}
-                      </button>
-                    </td>
-                  </tr>
+                      </td>
+                      <td>
+                        <div className="amount-cell">{formatAmount(submission.amount)}</div>
+                      </td>
+                      <td>
+                        <div className="time-cell">{formatFullDateTime(submission.submittedAt)}</div>
+                      </td>
+                      <td>
+                        <div className={`note-cell ${!submission.note ? 'empty' : ''}`}>
+                          {submission.note || '-'}
+                        </div>
+                      </td>
+                      <td className="detail-cell">
+                        {(submission.includedSales?.length > 0 || submission.pointCardInfo) ? (
+                          <button 
+                            className="detail-button"
+                            onClick={() => toggleExpanded(submission.id)}
+                          >
+                            {expandedId === submission.id ? '▼' : '▶'} 查看
+                          </button>
+                        ) : (
+                          <span style={{ color: '#d1d5db' }}>-</span>
+                        )}
+                      </td>
+                      <td className="action-cell">
+                        <button
+                          className="claim-button"
+                          onClick={() => handleClaimClick(submission)}
+                          disabled={claimingId === submission.id}
+                        >
+                          {claimingId === submission.id ? '⏳ 处理中...' : '🎯 接单确认'}
+                        </button>
+                      </td>
+                    </tr>
+
+                    {/* 展开行 */}
+                    {expandedId === submission.id && (
+                      <tr className="expanded-row">
+                        <td colSpan="6">
+                          <div className="expanded-content">
+                            {/* 点数卡信息 */}
+                            {submission.pointCardInfo && (
+                              <div className="expanded-section">
+                                <div className="section-title">💳 点数卡信息</div>
+                                <div className="pointcard-info">
+                                  <div className="pointcard-item">
+                                    <span className="pointcard-label">发行卡数：</span>
+                                    <span className="pointcard-value">{submission.pointCardInfo.cardsIssued} 张</span>
+                                  </div>
+                                  <div className="pointcard-item">
+                                    <span className="pointcard-label">总点数：</span>
+                                    <span className="pointcard-value">{submission.pointCardInfo.totalPoints} 点</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 销售明细 */}
+                            {submission.includedSales && submission.includedSales.length > 0 && (
+                              <div className="expanded-section">
+                                <div className="section-title">📊 包含销售明细 ({submission.includedSales.length} 笔)</div>
+                                <table className="sales-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Seller</th>
+                                      <th>销售日期</th>
+                                      <th>金额</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {submission.includedSales.map((sale, index) => (
+                                      <tr key={index}>
+                                        <td>{sale.sellerName}</td>
+                                        <td>{sale.salesDate}</td>
+                                        <td>{formatAmount(sale.amount)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

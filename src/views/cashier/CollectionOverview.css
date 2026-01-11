@@ -1,8 +1,8 @@
 /**
  * Collection Overview Styles - Desktop 1000px Layout
- * VERSION: 2.0.0
- * LAST UPDATE: 2026-01-01 09:25:18
- * 强制单行显示统计卡片
+ * VERSION: 2.0.1
+ * LAST UPDATE: 2026-01-02 10:30:00
+ * 强制单行显示统计卡片 + 展开行详情功能
  */
 
 .collection-overview {
@@ -309,6 +309,29 @@
   font-style: italic;
 }
 
+.detail-cell {
+  text-align: center;
+}
+
+.detail-button {
+  padding: 0.3rem 0.6rem;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.detail-button:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #374151;
+}
+
 .action-cell {
   text-align: right;
 }
@@ -342,7 +365,96 @@
   box-shadow: none;
 }
 
-/* 空状态 */
+/* ===== 展开行 ===== */
+.expanded-row {
+  background: #f9fafb;
+}
+
+.expanded-content {
+  padding: 1rem;
+}
+
+.expanded-section {
+  margin-bottom: 0.8rem;
+}
+
+.expanded-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* 点数卡信息 */
+.pointcard-info {
+  display: flex;
+  gap: 1rem;
+  padding: 0.6rem 0.8rem;
+  background: #fef3c7;
+  border-radius: 4px;
+  border-left: 3px solid #f59e0b;
+}
+
+.pointcard-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.pointcard-label {
+  font-size: 0.7rem;
+  color: #92400e;
+  font-weight: 500;
+}
+
+.pointcard-value {
+  font-size: 0.75rem;
+  color: #92400e;
+  font-weight: 600;
+}
+
+/* 销售明细表格 */
+.sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  background: white;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.sales-table th,
+.sales-table td {
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.sales-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sales-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sales-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* ===== 空状态 ===== */
 .pool-empty {
   text-align: center;
   padding: 2.5rem 1rem;
