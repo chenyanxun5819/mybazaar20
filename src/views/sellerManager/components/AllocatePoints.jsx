@@ -37,9 +37,10 @@ const AllocatePoints = ({
   const [successMessage, setSuccessMessage] = useState('');
 
   const sellerData = seller.seller || {};  // ✅ 正确：从 seller 对象读取
-  const collectionAlert = seller.collectionAlert || {};
-  const sellerName = seller.displayName || seller.chineseName || seller.englishName || 'N/A';
-  const sellerManagerName = sellerManager.displayName || sellerManager.chineseName || sellerManager.englishName || 'Seller Manager';
+  const collectionAlert = seller.collectionAlert || seller.seller?.collectionAlert || {};
+  // ✅ 修正：从 basicInfo 读取姓名
+  const sellerName = seller.basicInfo?.chineseName || seller.basicInfo?.englishName || 'N/A';
+  const sellerManagerName = sellerManager?.basicInfo?.chineseName || sellerManager?.basicInfo?.englishName || 'Seller Manager';
 
   // ✅ 正确：从 seller 对象获取当前余额和统计数据
   const currentBalance = sellerData.availablePoints || 0;
@@ -257,7 +258,7 @@ const AllocatePoints = ({
                 {getIdentityIcon(seller.identityTag)} {getIdentityText(seller.identityTag)}
               </span>
               <span style={styles.department}>
-                🏫 {seller.department || '未分配部门'}
+                🏫 {seller.identityInfo?.department || '未分配部门'}
               </span>
             </div>
           </div>

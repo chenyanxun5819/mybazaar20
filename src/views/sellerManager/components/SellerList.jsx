@@ -372,6 +372,19 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
                       </td>
                       <td style={styles.td}>
                         <div style={styles.actionButtons}>
+                          {/* ✅ 新增：分配点数按钮 */}
+                          {onSelectSeller && (
+                            <button
+                              onClick={() => onSelectSeller(seller)}
+                              style={{
+                                ...styles.actionBtn,
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: 'white'
+                              }}
+                            >
+                              📦 分配
+                            </button>
+                          )}
                           {pending > 0 && (
                             <button
                               onClick={() => handleRecordCollection(seller)}

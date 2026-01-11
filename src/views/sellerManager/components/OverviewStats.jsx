@@ -1,35 +1,35 @@
 /**
- * Overview Stats Component (超级安全版 v3)
+ * OverviewStats Component (方案A 更新版)
+ * 
+ * ✅ 方案A 更新：
+ * - 显示现金来源明细（售点收入 vs 购点收入）
+ * - 从 sellerManager.cashStats.cashSources 读取数据
+ * 
+ * @version 3.1
+ * @date 2026-01-11
  */
 import { useSellerManagerStats, useManagedUsers } from '../../../hooks/sellerManager';
 
-
 const OverviewStats = ({
-  organizationId,      // ✅ 新增
-  eventId,             // ✅ 新增
-  sellerManagerId,     // ✅ 新增
-  managedDepartments,  // ✅ 新增
-  eventData            // ✅ 保留
+  organizationId,
+  eventId,
+  sellerManagerId,
+  managedDepartments,
+  eventData
 }) => {
-  // ===================================================================
-  // ✅ 使用Hook获取实时数据
-  // ===================================================================
-  // Hook 1: 你的分配统计
+  // 使用Hooks获取实时数据
   const { smStats, loading, error } = useSellerManagerStats(
     organizationId,
     eventId,
     sellerManagerId
   );
 
-  // ✅ 添加 Hook 2: Sellers实时数据（新增5行）
   const { users, loading: usersLoading, stats: usersStats } = useManagedUsers(
     organizationId,
     eventId,
     sellerManagerId
   );
 
-
-  // 修改调试日志（第24-32行）
   console.log('🔍 [OverviewStats] 收到的参数:', {
     organizationId,
     eventId,
@@ -38,17 +38,13 @@ const OverviewStats = ({
     hasSmStats: !!smStats,
     loading,
     error,
-    // ✅ 新增
     usersCount: users?.length || 0,
     usersLoading,
     totalPoints: users?.reduce((sum, u) => sum + (u.seller?.availablePoints || 0), 0) || 0
   });
 
-  // ===================================================================
-  // ✅ 处理加载状态
-  // ===================================================================
-  // 修改loading处理（第37-43行）
-  if (loading || usersLoading) {  // ✅ 添加 usersLoading
+  // 处理加载状态
+  if (loading || usersLoading) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>⏳</div>
@@ -57,10 +53,7 @@ const OverviewStats = ({
     );
   }
 
-
-
-
-  // ✅ 新代码 - 从users实时计算
+  // 从users实时计算
   const managedStats = {
     totalUsers: users.length,
     activeUsers: users.filter(u => u.status === 'active').length,
@@ -75,7 +68,7 @@ const OverviewStats = ({
     })()
   };
 
-  // allocationStats 仍然从 smStats 读取（只统计你自己的分配）
+  // allocationStats 从 smStats 读取
   const allocationStats = (smStats && smStats.allocationStats) ? smStats.allocationStats : {
     totalAllocations: 0,
     totalPointsAllocated: 0,
@@ -93,6 +86,23 @@ const OverviewStats = ({
     }).length,
     totalCashHolding: users.reduce((sum, u) => sum + (u.seller?.pendingCollection || 0), 0)
   };
+
+  // ✅ 方案A：读取现金来源（从 smStats 或 实时计算）
+  const cashSources = smStats?.cashSources || {
+    fromPointSales: smStats?.cashStats?.cashSources?.fromPointSales || 0,
+    fromPointPurchase: smStats?.cashStats?.cashSources?.fromPointPurchase || 0
+  };
+
+  // 计算总现金（向后兼容）
+  const totalCashOnHand = smStats?.cashStats?.cashOnHand || 
+                          (cashSources.fromPointSales + cashSources.fromPointPurchase);
+
+  console.log('💰 [OverviewStats] 现金来源统计', {
+    totalCashOnHand,
+    fromPointSales: cashSources.fromPointSales,
+    fromPointPurchase: cashSources.fromPointPurchase
+  });
+
   // 读取分配规则
   const getAllocationRules = () => {
     const defaults = { maxPerAllocation: 100, warningThreshold: 0.3 };
@@ -135,6 +145,7 @@ const OverviewStats = ({
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>📊 管理概览</h2>
 
+      {/* 我的分配统计 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>我的分配统计</h3>
         <div style={styles.statsGrid}>
@@ -166,6 +177,7 @@ const OverviewStats = ({
         </div>
       </div>
 
+      {/* 管理的 Sellers 统计 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>管理的 Sellers 统计</h3>
         <div style={styles.statsGrid}>
@@ -197,6 +209,7 @@ const OverviewStats = ({
         </div>
       </div>
 
+      {/* 💰 收款监控 */}
       <div style={styles.section}>
         <h3 style={styles.subsectionTitle}>💰 收款监控</h3>
         <div style={styles.collectionCard}>
@@ -225,7 +238,7 @@ const OverviewStats = ({
             <div style={styles.detailRow}>
               <span>待收款金额:</span>
               <span style={styles.detailValue}>
-                {(managedStats.pendingCollection || 0).toLocaleString()}
+                RM {(managedStats.pendingCollection || 0).toLocaleString()}
               </span>
             </div>
             <div style={styles.detailRow}>
@@ -262,11 +275,51 @@ const OverviewStats = ({
         </div>
       </div>
 
+      {/* ✅ 方案A：新增现金持有明细 */}
+      <div style={styles.section}>
+        <h3 style={styles.subsectionTitle}>💵 现金持有明细</h3>
+        <div style={styles.cashCard}>
+          <div style={styles.cashTotalRow}>
+            <div style={styles.cashTotalLabel}>手上现金总额</div>
+            <div style={styles.cashTotalValue}>
+              RM {totalCashOnHand.toLocaleString()}
+            </div>
+          </div>
 
+          <div style={styles.cashBreakdown}>
+            <div style={styles.cashSourceRow}>
+              <div style={styles.cashSourceIcon}>🛒</div>
+              <div style={styles.cashSourceInfo}>
+                <div style={styles.cashSourceLabel}>来自售点收入</div>
+                <div style={styles.cashSourceDesc}>Seller 售点后上交的现金</div>
+              </div>
+              <div style={styles.cashSourceAmount}>
+                RM {(cashSources.fromPointSales || 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div style={styles.cashSourceRow}>
+              <div style={styles.cashSourceIcon}>💰</div>
+              <div style={styles.cashSourceInfo}>
+                <div style={styles.cashSourceLabel}>来自购点收入</div>
+                <div style={styles.cashSourceDesc}>Seller 购买点数的现金</div>
+              </div>
+              <div style={styles.cashSourceAmount}>
+                RM {(cashSources.fromPointPurchase || 0).toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.cashNote}>
+            💡 上交现金给 Cashier 时，会扣除相应金额
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
 
+// StatCard 组件保持不变
 const StatCard = ({ icon, title, value, subtitle, color, description }) => {
   const safeIcon = String(icon || '📊');
   const safeTitle = String(title || '');
@@ -281,45 +334,6 @@ const StatCard = ({ icon, title, value, subtitle, color, description }) => {
         <div style={styles.statTitle}>{safeTitle}</div>
         {subtitle && <div style={styles.statSubtitle}>{String(subtitle)}</div>}
         {description && <div style={styles.statDescription}>{String(description)}</div>}
-      </div>
-    </div>
-  );
-};
-
-const DepartmentMiniCard = ({ dept }) => {
-  if (!dept || typeof dept !== 'object') return null;
-
-  const pointsStats = (dept.pointsStats && typeof dept.pointsStats === 'object') ? dept.pointsStats : {};
-  const membersStats = (dept.membersStats && typeof dept.membersStats === 'object') ? dept.membersStats : {};
-  const collectionRate = typeof pointsStats.collectionRate === 'number' ? pointsStats.collectionRate : 0;
-
-  const getRateColor = (rate) => {
-    if (rate >= 0.8) return '#10b981';
-    if (rate >= 0.5) return '#f59e0b';
-    return '#ef4444';
-  };
-
-  return (
-    <div style={styles.deptMiniCard}>
-      <div style={styles.deptHeader}>
-        <div style={styles.deptCode}>{dept.departmentCode || '未知'}</div>
-        <div style={styles.deptName}>{dept.departmentName || '未命名部门'}</div>
-      </div>
-      <div style={styles.deptStats}>
-        <div style={styles.deptStatRow}>
-          <span>成员:</span>
-          <strong>{membersStats.totalCount || 0}</strong>
-        </div>
-        <div style={styles.deptStatRow}>
-          <span>销售额:</span>
-          <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
-        </div>
-        <div style={styles.deptStatRow}>
-          <span>收款率:</span>
-          <strong style={{ color: getRateColor(collectionRate) }}>
-            {Math.round(collectionRate * 100)}%
-          </strong>
-        </div>
       </div>
     </div>
   );
@@ -433,43 +447,74 @@ const styles = {
     fontWeight: '500',
     textAlign: 'center'
   },
-  departmentGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-    gap: '1rem'
-  },
-  deptMiniCard: {
-    background: '#fafafa',
-    border: '2px solid #e5e7eb',
+  // ✅ 方案A：新增现金卡片样式
+  cashCard: {
+    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+    padding: '1.5rem',
     borderRadius: '12px',
-    padding: '1rem'
+    border: '2px solid #fbbf24'
   },
-  deptHeader: {
-    marginBottom: '0.75rem',
-    paddingBottom: '0.75rem',
-    borderBottom: '1px solid #e5e7eb'
-  },
-  deptCode: {
-    fontSize: '1.25rem',
-    fontWeight: 'bold',
-    color: '#f59e0b',
-    marginBottom: '0.25rem'
-  },
-  deptName: {
-    fontSize: '0.875rem',
-    color: '#6b7280'
-  },
-  deptStats: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem'
-  },
-  deptStatRow: {
+  cashTotalRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: '1.5rem',
+    paddingBottom: '1rem',
+    borderBottom: '2px solid #fbbf24'
+  },
+  cashTotalLabel: {
+    fontSize: '1.125rem',
+    fontWeight: '600',
+    color: '#92400e'
+  },
+  cashTotalValue: {
+    fontSize: '2rem',
+    fontWeight: 'bold',
+    color: '#92400e'
+  },
+  cashBreakdown: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    marginBottom: '1rem'
+  },
+  cashSourceRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    background: '#fffbeb',
+    padding: '1rem',
+    borderRadius: '8px',
+    border: '1px solid #fde68a'
+  },
+  cashSourceIcon: {
+    fontSize: '2rem',
+    flexShrink: 0
+  },
+  cashSourceInfo: {
+    flex: 1
+  },
+  cashSourceLabel: {
     fontSize: '0.875rem',
-    color: '#6b7280'
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: '0.25rem'
+  },
+  cashSourceDesc: {
+    fontSize: '0.75rem',
+    color: '#b45309'
+  },
+  cashSourceAmount: {
+    fontSize: '1.25rem',
+    fontWeight: 'bold',
+    color: '#92400e',
+    flexShrink: 0
+  },
+  cashNote: {
+    fontSize: '0.75rem',
+    color: '#b45309',
+    textAlign: 'center',
+    fontStyle: 'italic'
   },
   emptyState: {
     textAlign: 'center',

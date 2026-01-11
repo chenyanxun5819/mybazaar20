@@ -14,12 +14,16 @@ import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
 import { TransactionHistory } from './components/TransactionHistory';
 import SellerSubmitCash from './components/SellerSubmitCash'; // 🆕 新增
+import chartIcon from '../../assets/chart-svgrepo-com.svg';
+import cartLargeIcon from '../../assets/cart-large-2-svgrepo-com.svg';
+import clipboardIcon from '../../assets/clipboard-list-svgrepo-com.svg';
+import forwardIcon from '../../assets/multiple-forward-right-svgrepo-com.svg';
 import './SellerDashboard.css';
 
 function SellerDashboard() {
   const navigate = useNavigate();
   const { currentUser, logout, userProfile } = useAuth();
-  const { orgCode, eventCode } = useEvent(); // 🆕 从 EventContext 获取
+  const { orgCode, eventCode, event } = useEvent(); // 🆕 从 EventContext 获取完整 event
   const [activeTab, setActiveTab] = useState('overview');
 
   // 🔧 从seller对象获取手上现金（用于显示徽章）
@@ -43,10 +47,35 @@ function SellerDashboard() {
       {/* 顶部栏 */}
       <header className="dashboard-header">
         <div className="header-content">
-          <h1 className="dashboard-title">卖家中心</h1>
+          <div className="dashboard-brand">
+            {event?.logoUrl ? (
+              <>
+                <img src={event.logoUrl} alt={event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || 'logo'} className="dashboard-logo" />
+                <div className="brand-text">
+                  <div className="dashboard-eventName">
+                    {event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || eventCode}
+                  </div>
+                  <div className="dashboard-subtitle">点数销售介面</div>
+                        <div className="dashboard-userSmall">
+                          {userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || ''}
+                          {userProfile?.basicInfo?.phoneNumber ? ` · ${userProfile.basicInfo.phoneNumber}` : ''}
+                        </div>
+                </div>
+              </>
+            ) : (
+              <div className="brand-text">
+                <h1 className="dashboard-title">{event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || '卖家中心'}</h1>
+                <div className="dashboard-subtitle">点数销售介面</div>
+                <div className="dashboard-userSmall">
+                  {currentUser?.basicInfo?.chineseName || currentUser?.basicInfo?.englishName || ''}
+                  {currentUser?.basicInfo?.phoneNumber ? ` · ${currentUser.basicInfo.phoneNumber}` : ''}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="user-info">
             <span className="user-name">
-              {currentUser?.basicInfo?.chineseName || currentUser?.basicInfo?.englishName || '用户'}
+              {userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '用户'}
             </span>
             <button onClick={handleLogout} className="logout-button">
               登出
@@ -61,21 +90,21 @@ function SellerDashboard() {
           className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
-          <span className="tab-icon">📊</span>
+          <img src={chartIcon} alt="总览" className="tab-icon-img" />
           <span className="tab-label">总览</span>
         </button>
         <button
           className={`tab-button ${activeTab === 'sale' ? 'active' : ''}`}
           onClick={() => setActiveTab('sale')}
         >
-          <span className="tab-icon">🛒</span>
+          <img src={cartLargeIcon} alt="销售" className="tab-icon-img" />
           <span className="tab-label">销售</span>
         </button>
         <button
           className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
         >
-          <span className="tab-icon">📋</span>
+          <img src={clipboardIcon} alt="历史" className="tab-icon-img" />
           <span className="tab-label">历史</span>
         </button>
         {/* 🆕 新增Tab */}
@@ -83,7 +112,7 @@ function SellerDashboard() {
           className={`tab-button ${activeTab === 'submit' ? 'active' : ''}`}
           onClick={() => setActiveTab('submit')}
         >
-          <span className="tab-icon">📤</span>
+          <img src={forwardIcon} alt="上交现金" className="tab-icon-img" />
           <span className="tab-label">上交现金</span>
           {/* 🆕 显示待上交金额徽章 */}
           {cashOnHand > 0 && (

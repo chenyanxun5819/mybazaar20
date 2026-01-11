@@ -7,6 +7,7 @@
   background-color: #f5f5f5;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 /* ========================================
@@ -14,10 +15,10 @@
    ======================================== */
 
 .dashboard-header {
-  background-color: #2196F3;
-  color: white;
+  background-color: #ffffff;
+  color: #111827;
   padding: 1rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
 }
 
 .header-content {
@@ -34,6 +35,46 @@
   margin: 0;
 }
 
+/* header brand: logo + small event name */
+.dashboard-brand {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
+}
+
+.dashboard-logo {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.dashboard-eventName {
+  font-size: 0.8rem;
+  color: #374151;
+  line-height: 1;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-subtitle {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+
+.dashboard-userSmall {
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1;
+}
+
 .user-info {
   display: flex;
   align-items: center;
@@ -45,18 +86,19 @@
 }
 
 .logout-button {
-  background-color: rgba(255,255,255,0.2);
+  background-color: #2196F3;
   color: white;
-  border: 1px solid rgba(255,255,255,0.3);
+  border: none;
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9rem;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, transform 0.12s;
 }
 
 .logout-button:hover {
-  background-color: rgba(255,255,255,0.3);
+  background-color: #1976D2;
+  transform: translateY(-1px);
 }
 
 /* ========================================
@@ -97,6 +139,13 @@
   font-size: 1.5rem;
 }
 
+.tab-icon-img {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: block;
+  object-fit: contain;
+}
+
 .tab-label {
   font-size: 0.85rem;
   font-weight: 500;
@@ -112,6 +161,30 @@
   max-width: 600px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* 讓 header / tab / main 共用同一個容器寬度，避免下方區塊向右跑或超寬 */
+
+.seller-dashboard .header-content,
+.seller-dashboard .dashboard-content {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  box-sizing: border-box;
+}
+
+/* 保持 tab 區塊為滿版寬度（大於下方窄版內容） */
+.tab-navigation {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 內部卡片確保佔滿容器寬度且不會被額外 margin 推開 */
+.seller-dashboard .dashboard-content > * {
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 /* ========================================
@@ -425,6 +498,29 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* 使上交歷史區塊與上方紫色卡片寬度一致（左右邊緣對齊） */
+.transaction-history {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 1.5rem;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  width: 100%;
+  overflow: hidden; /* 完全防止任何溢位 */
+}
+
+.transactions-list,
+.transaction-summary {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.transaction-item {
+  box-sizing: border-box;
+  width: 100%;
+}
+
 .no-transactions {
   text-align: center;
   padding: 3rem 1rem;
@@ -461,11 +557,16 @@
   margin-bottom: 0.75rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid #e0e0e0;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .transaction-status {
   font-size: 0.85rem;
   font-weight: 500;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .transaction-status.completed {
@@ -475,18 +576,30 @@
 .transaction-time {
   font-size: 0.85rem;
   color: #757575;
+  flex-shrink: 0;
+  min-width: 0;
+  text-align: right;
 }
 
 .transaction-details {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .transaction-customer,
 .transaction-amount {
   font-size: 0.95rem;
   color: #333;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .amount-value {

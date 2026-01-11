@@ -215,46 +215,70 @@ service cloud.firestore {
           allow delete: if isEventManager(organizationId, eventId) && 
                            request.auth.token.userId != userId;
           
-          // ======================================================================
-          // Point Allocations (点数分配记录 - User 级别子集合)
-          // ======================================================================
+        // ======================================================================
+        // Point Allocations (点数分配记录 - users 子集合)
+        // ✅ 添加在 users/{userId} 规则内部，第217行后
+        // ======================================================================
+
+        match /pointAllocations/{allocationId} {
+          /**
+          * 读取规则：
+          * 1. Seller Manager 可以读取自己的分配记录
+          * 2. Event Manager 可以读取所有分配记录
+          * 3. Seller 可以读取分配给自己的记录
+          */
+          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
+                        isEventManager(organizationId, eventId) ||
+                        (isAuthenticated() && resource.data.recipientId == request.auth.token.userId);
           
-          match /pointAllocations/{allocationId} {
-            /**
-             * 读取规则：
-             * 1. 分配者可以读取自己的分配记录
-             * 2. 接收者可以读取自己收到的分配
-             * 3. Event Manager 可以读取所有分配记录
-             * 4. Cashier 可以读取所有分配记录
-             */
-             allow read: if isAuthenticated() && (
-                        resource.data.allocatedBy == request.auth.token.userId ||
-                           resource.data.recipientId == request.auth.token.userId ||
-                           isEventManager(organizationId, eventId) ||
-                           isCashier(organizationId, eventId)
-                        );
-            
-            /**
-             * 创建规则：
-             * 1. Seller Manager 可以创建点数分配（分配给管理范围内的用户）
-             * 2. Cashier 可以创建点数分配（分配给 Teacher/Staff）
-             * 3. 必须验证 recipientId 和 organizationId/eventId
-             */
-            allow create: if (isSellerManager(organizationId, eventId) &&
-                             request.resource.data.allocatedBy == request.auth.token.userId &&
-                             request.resource.data.organizationId == organizationId &&
-                             request.resource.data.eventId == eventId &&
-                             isManagedBy(organizationId, eventId, request.resource.data.recipientId, request.auth.token.userId)) ||
-                             (isCashier(organizationId, eventId) &&
-                             request.resource.data.allocatedBy == request.auth.token.userId &&
-                             request.resource.data.organizationId == organizationId &&
-                             request.resource.data.eventId == eventId);
-            
-            /**
-             * 更新和删除：只能通过 Cloud Functions
-             */
-            allow update, delete: if false;
-          }
+          /**
+          * 创建规则：
+          * 1. Seller Manager 可以创建分配记录（只能在自己的文档下）
+          * 2. Event Manager 可以创建
+          */
+          allow create: if (isSellerManager(organizationId, eventId) && 
+                          request.auth.token.userId == userId) ||
+                          isEventManager(organizationId, eventId);
+          
+          /**
+          * 更新和删除：只能通过 Cloud Functions
+          */
+          allow update, delete: if false;
+        }
+
+        // ======================================================================
+        // Cash Collections (现金收取记录 - users 子集合)
+        // ✅ 可选：如果需要收款功能
+        // ======================================================================
+
+        match /cashCollections/{collectionId} {
+          /**
+          * 读取规则：
+          * 1. Seller Manager 可以读取自己的收款记录
+          * 2. Event Manager 可以读取所有收款记录
+          * 3. Seller 可以读取自己被收款的记录
+          * 4. Cashier 可以读取所有收款记录
+          */
+          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
+                        isEventManager(organizationId, eventId) ||
+                        isCashier(organizationId, eventId) ||
+                        (isAuthenticated() && resource.data.sellerId == request.auth.token.userId);
+          
+          /**
+          * 创建规则：
+          * 1. Seller Manager 可以创建收款记录
+          * 2. Event Manager 可以创建
+          */
+          allow create: if (isSellerManager(organizationId, eventId) && 
+                          request.auth.token.userId == userId) ||
+                          isEventManager(organizationId, eventId);
+          
+          /**
+          * 更新和删除：只能通过 Cloud Functions
+          */
+          allow update, delete: if false;
+        }
+
         }
 
         // ========================================================================
@@ -549,91 +573,5 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
-    
-    
-    // cashSubmissions 集合规则
-    match /organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId} {
-      
-      // ===== 辅助函数 =====
-      
-      // 检查用户是否已认证
-      function isAuthenticated() {
-        return request.auth != null;
-      }
-      
-      // 获取当前用户数据
-      function getUserData() {
-        return get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(request.auth.uid)).data;
-      }
-      
-      // 检查用户是否有指定角色
-      function hasRole(role) {
-        return isAuthenticated() && 
-               getUserData().roles.hasAny([role]);
-      }
-      
-      // 检查是否是提交者本人
-      function isSubmitter() {
-        return isAuthenticated() && 
-               resource.data.submittedBy == request.auth.uid;
-      }
-      
-      // 检查是否是 Cashier
-      function isCashier() {
-        return hasRole('cashier');
-      }
-      
-      // 检查是否是 Event Manager
-      function isEventManager() {
-        return hasRole('eventManager');
-      }
-      
-      // 检查是否可以创建上交记录
-      function canCreate() {
-        return isAuthenticated() &&
-               (hasRole('seller') || hasRole('sellerManager') || hasRole('pointSeller')) &&
-               request.resource.data.submittedBy == request.auth.uid &&
-               request.resource.data.status == 'pending';
-      }
-      
-      // 检查 Cashier 是否只更新允许的字段
-      function isValidCashierUpdate() {
-        let allowedFields = ['status', 'confirmedAt', 'receivedBy', 'receiverName', 'confirmationNote', 'metadata'].toSet();
-        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
-        return modifiedFields.hasOnly(allowedFields);
-      }
-      
-      // ===== 访问规则 =====
-      
-      // CREATE: Seller/SellerManager/PointSeller 可以创建上交记录
-      allow create: if canCreate();
-      
-      // READ: 
-      // - 提交者可以读取自己的记录
-      // - Cashier 可以读取所有记录
-      // - Event Manager 可以读取所有记录
-      allow read: if isSubmitter() || 
-                     isCashier() || 
-                     isEventManager();
-      
-      // UPDATE: 
-      // - Cashier 可以更新状态（确认/拒绝）
-      // - 只能修改特定字段
-      allow update: if isCashier() && 
-                       isValidCashierUpdate();
-      
-      // DELETE: 不允许删除
-      allow delete: if false;
-    }
-    
-    // ===== 索引建议 =====
-    // 1. status (ASC)
-    // 2. receivedBy (ASC) + status (ASC) + submittedAt (DESC)
-    // 3. submittedBy (ASC) + submittedAt (DESC)
-    // 4. submittedAt (DESC)
-
-
-
-
   }
 }

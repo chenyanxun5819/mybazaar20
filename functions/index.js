@@ -40,6 +40,8 @@ const financeManagerFunctions = require('./src/cashier/cashierFunction');
 
 const sellerManagerFunctions = require('./src/sellerManager/sellerManagerFunctions');
 const sellerManagerHttpFunctions = require('./src/sellerManager/sellerManagerHttpFunctions');
+// 可被前端以 callable 呼叫的 Seller Manager 函式（onCall）
+const { allocatePointsBySellerManagerHttp: allocatePointsBySellerManagerOnCall } = require('./src/sellerManager/allocatePointsBySellerManager');
 
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
@@ -110,6 +112,8 @@ exports.onSellerManagerAllocation = onSellerManagerAllocation;
 exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
 exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 exports.getCustomerDashboardDataHttp = getCustomerDashboardDataHttp;
+// 导出 Seller Manager callable (onCall)
+exports.allocatePointsBySellerManagerOnCall = allocatePointsBySellerManagerOnCall;
 
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;

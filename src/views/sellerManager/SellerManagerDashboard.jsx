@@ -9,7 +9,7 @@ import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
 import SubmitCash from './components/SubmitCash';
 import CollectCash from './components/CollectCash';
-
+import AllocationHistory from './components/AllocationHistory'; // ✅ 新增
 /**
  * Seller Manager Dashboard (完整版 v2.0)
  * ✅ 更新：添加"上交现金" Tab
@@ -525,7 +525,31 @@ const SellerManagerDashboard = () => {
         >
           👥 Sellers
         </button>
+
+
+
+        {/* ✅ 新增：分配历史 Tab */}
+        <button
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'history' ? styles.activeTab : {})
+          }}
+          onClick={() => setActiveTab('history')}
+        >
+          📜 分配历史
+        </button>
       </div>
+
+      {/* ✅ 新增：分配历史 Tab */}
+      <button
+        style={{
+          ...styles.tab,
+          ...(activeTab === 'history' ? styles.activeTab : {})
+        }}
+        onClick={() => setActiveTab('history')}
+      >
+        📜 分配历史
+      </button>
 
       {/* Content */}
       <div style={styles.content}>
@@ -617,6 +641,18 @@ const SellerManagerDashboard = () => {
                 currentUser={safeCurrentUser}
               />
             )}
+          </div>
+        )}
+
+        {/* ✅ 新增：分配历史 Tab 内容 */}
+        {activeTab === 'history' && (
+          <div style={styles.section}>
+            <AllocationHistory
+              organizationId={safeCurrentUser.organizationId}
+              eventId={eventId}
+              sellerManagerId={safeCurrentUser.userId}
+              managedDepartments={safeCurrentUser.managedDepartments || []}
+            />
           </div>
         )}
       </div>
