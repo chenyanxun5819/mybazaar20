@@ -6,7 +6,7 @@
  * @date 2025-01-01
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext'; // 🆕 导入 EventContext
@@ -21,6 +21,26 @@ function SellerDashboard() {
   const { currentUser, logout, userProfile } = useAuth();
   const { orgCode, eventCode } = useEvent(); // 🆕 从 EventContext 获取
   const [activeTab, setActiveTab] = useState('overview');
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  // 🔧 检测设备类型：检查是否为移动设备
+  useEffect(() => {
+    const checkDeviceType = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/.test(userAgent);
+      const screenWidth = window.innerWidth;
+      
+      // 移动设备判断：User Agent 包含移动特征 或 屏幕宽度 <= 768px
+      const mobile = isMobile || screenWidth <= 768;
+      setIsMobileDevice(mobile);
+      setIsDesktop(!mobile);
+    };
+
+    checkDeviceType();
+    window.addEventListener('resize', checkDeviceType);
+    return () => window.removeEventListener('resize', checkDeviceType);
+  }, []);
 
   // 🔧 从seller对象获取手上现金（用于显示徽章）
   // 注意：这里可能需要使用useSellerStats来获取实时数据
@@ -40,6 +60,20 @@ function SellerDashboard() {
 
   return (
     <div className="seller-dashboard">
+      {/* 🔧 桌面版提示：仅支持移动设备 */}
+      {isDesktop && (
+        <div className="desktop-warning">
+          <div className="warning-content">
+            <span className="warning-icon">⚠️</span>
+            <p className="warning-text">卖家中心仅支持移动设备使用</p>
+            <p className="warning-hint">请使用手机或平板电脑访问此页面</p>
+          </div>
+        </div>
+      )}
+
+      {/* 🔧 仅在移动设备上显示内容 */}
+      {isMobileDevice ? (
+        <>
       {/* 顶部栏 */}
       <header className="dashboard-header">
         <div className="header-content">
@@ -102,6 +136,8 @@ function SellerDashboard() {
         {/* 🔧 修复：不再传递userInfo，组件自己用useSellerStats获取数据 */}
         {activeTab === 'submit' && <SellerSubmitCash />}
       </main>
+        </>
+      ) : null}
     </div>
   );
 }

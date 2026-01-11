@@ -4,6 +4,7 @@ import { auth } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEvent } from '../../contexts/EventContext';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
 
 /**
@@ -26,6 +27,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const UniversalLogin = () => {
   const navigate = useNavigate();
   const { login, getNavigationPath, isAuthenticated, userProfile } = useAuth();
+  const { event, organization } = useEvent();
   const { orgEventCode } = useParams();
 
   // 解析 orgEventCode
@@ -58,6 +60,17 @@ const UniversalLogin = () => {
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [otpSessionId, setOtpSessionId] = useState('');
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+  const eventNameText =
+    typeof event?.eventName === 'string'
+      ? event.eventName
+      : (event?.eventName && (event.eventName['zh-CN'] || event.eventName['en-US'])) || '';
+  const logoSrc = (() => {
+    const candidate =
+      (typeof event?.logoUrl === 'string' ? event.logoUrl : '') ||
+      (typeof event?.logoURL === 'string' ? event.logoURL : '');
+    return String(candidate || '').trim();
+  })();
 
 
   // 检测设备类型
@@ -75,6 +88,19 @@ const UniversalLogin = () => {
     return () => window.removeEventListener('resize', checkDeviceType);
   }, []);
 
+  useEffect(() => {
+    setLogoLoadFailed(false);
+    if (event) {
+      console.log('[UniversalLogin] EventContext event (for header):', {
+        id: event?.id,
+        eventCode: event?.eventCode,
+        eventName: event?.eventName,
+        logoUrl: event?.logoUrl,
+        logoURL: event?.logoURL
+      });
+    }
+  }, [event?.id, event?.eventCode]);
+
   // ⭐ 自动跳转已登录用户（带路径检查）
   useEffect(() => {
     let cancelled = false;
@@ -85,9 +111,9 @@ const UniversalLogin = () => {
       // ⭐ 新增：如果检测到需要设置密码，跳过自动跳转到 Dashboard
       // 优先检查 userData (来自当前登录会话)，其次检查 userProfile (来自 AuthContext/Firestore)
       // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要特殊处理 eventManager
-      const needsSetup = userData?.needsPasswordSetup || 
-                         userProfile?.basicInfo?.hasDefaultPassword || 
-                         userProfile?.basicInfo?.isFirstLogin;
+      const needsSetup = userData?.needsPasswordSetup ||
+        userProfile?.basicInfo?.hasDefaultPassword ||
+        userProfile?.basicInfo?.isFirstLogin;
 
       if (needsSetup) {
         console.log('[UniversalLogin] 🔐 检测到需要设置密码，跳过自动跳转');
@@ -102,7 +128,7 @@ const UniversalLogin = () => {
 
       // ✅ 修复：使用本地逻辑根据设备类型决定跳转路径
       const availableRoles = filterRolesByDevice(userProfile.roles);
-      
+
       // 🚨 手机端限制检查：如果用户在手机上，但没有移动端角色（只有经理角色）
       if (isMobile && availableRoles.length === 0) {
         console.warn('[UniversalLogin] 📱 手机端检测到仅有经理角色，阻止跳转');
@@ -111,36 +137,36 @@ const UniversalLogin = () => {
       }
 
       const selectedRole = getPriorityRole(availableRoles);
-      
+
       let navPath = '';
-      
+
       // 尝试构建目标 orgEventCode
       let targetCode = orgEventCode;
       if (!targetCode && userProfile.organizationCode && userProfile.eventCode) {
-         targetCode = `${userProfile.organizationCode}-${userProfile.eventCode}`;
+        targetCode = `${userProfile.organizationCode}-${userProfile.eventCode}`;
       }
       if (!targetCode && userProfile.orgEventCode) {
-         targetCode = userProfile.orgEventCode;
+        targetCode = userProfile.orgEventCode;
       }
 
       if (selectedRole && targetCode) {
-         // 临时构造一个 path
-         if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
-         else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
-         
-         // Mobile Roles
-         else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
-         else if (selectedRole === 'merchant') navPath = `/merchant/${targetCode}/dashboard`;
+        // 临时构造一个 path
+        if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
+        else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
+
+        // Mobile Roles
+        else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
+        else if (selectedRole === 'merchant') navPath = `/merchant/${targetCode}/dashboard`;
         // pointSeller 目前沿用 Seller Dashboard
         else if (selectedRole === 'pointSeller') navPath = `/seller/${targetCode}/dashboard`;
-         else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
-         
-         else navPath = getNavigationPath(userProfile);
+        else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
+
+        else navPath = getNavigationPath(userProfile);
       } else {
-         navPath = getNavigationPath(userProfile);
+        navPath = getNavigationPath(userProfile);
       }
 
       const currentPath = window.location.pathname;
@@ -183,8 +209,8 @@ const UniversalLogin = () => {
           console.log('[UniversalLogin] 💾 恢复 Event Manager Legacy Storage (Force)');
           localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
           localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
-        } 
-        
+        }
+
         if (roles.includes('sellerManager')) {
           console.log('[UniversalLogin] 💾 恢复 Seller Manager Legacy Storage (Force)');
           localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
@@ -640,11 +666,11 @@ const UniversalLogin = () => {
         roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
         // managedDepartments 可能直接在 data 中，或放在 roleSpecificData.sellerManager
         managedDepartments:
-          data?.managedDepartments 
-            || (roleSpecificFromVerify?.sellerManager && roleSpecificFromVerify.sellerManager.managedDepartments) 
-            || userData?.managedDepartments 
-            || (roleSpecificFromTemp?.sellerManager && roleSpecificFromTemp.sellerManager.managedDepartments)
-            || [],
+          data?.managedDepartments
+          || (roleSpecificFromVerify?.sellerManager && roleSpecificFromVerify.sellerManager.managedDepartments)
+          || userData?.managedDepartments
+          || (roleSpecificFromTemp?.sellerManager && roleSpecificFromTemp.sellerManager.managedDepartments)
+          || [],
         // 保留 roleSpecificData 以便后续 Dashboard 使用（避免被误判为空）
         roleSpecificData: roleSpecificFromVerify || roleSpecificFromTemp || {},
         orgCode,
@@ -863,9 +889,23 @@ const UniversalLogin = () => {
       <div style={styles.loginCard}>
         {/* Logo 和标题 */}
         <div style={styles.header}>
-          <div style={styles.logo}>🎪</div>
-          <h1 style={styles.title}>MyBazaar 登录</h1>
-          <p style={styles.subtitle}>义卖会管理系统</p>
+          <div style={styles.logo}>
+            {logoSrc && !logoLoadFailed ? (
+              <img
+                src={logoSrc}
+                alt={eventNameText || 'logo'}
+                style={{ width: '120px', height: '120px', objectFit: 'contain', borderRadius: '8px' }}
+                onError={() => {
+                  console.warn('[UniversalLogin] logo 載入失敗:', logoSrc);
+                  setLogoLoadFailed(true);
+                }}
+              />
+            ) : (
+              '🎪'
+            )}
+          </div>
+          <h1 style={styles.title}>{eventNameText || 'MyBazaar 登录'}</h1>
+          <p style={styles.subtitle}>登录页面</p>
           {isValidOrgEventCode && (
             <div style={styles.eventBadge}>
               <span style={styles.eventBadgeIcon}>🏷️</span>
@@ -907,7 +947,7 @@ const UniversalLogin = () => {
               required
               disabled={!isValidOrgEventCode}
             />
-            <small style={styles.hint}>马来西亚手机号（含国家代码60）</small>
+            <small style={styles.hint}>请输入您的手机号</small>
           </div>
 
           <div style={styles.formGroup}>
@@ -979,9 +1019,6 @@ const UniversalLogin = () => {
           <p style={styles.helpText}>
             忘记密码？请联系活动管理员
           </p>
-          <p style={styles.helpText}>
-            没有登录链接？请向活动负责人索取
-          </p>
         </div>
       </div>
     </div>
@@ -1014,7 +1051,7 @@ const styles = {
     marginBottom: '1rem'
   },
   title: {
-    fontSize: '2rem',
+    fontSize: '1rem',
     fontWeight: 'bold',
     color: '#1f2937',
     margin: '0 0 0.5rem 0'
