@@ -26,7 +26,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     'merchantManager': { label: 'Merchant Manager', icon: '🏪', color: '#8b5cf6' },
     'customerManager': { label: 'Customer Manager', icon: '🎫', color: '#10b981' },
     'seller': { label: 'Seller (销售员)', icon: '🛍️', color: '#06b6d4' },
-    'merchant': { label: 'Merchant (商家)', icon: '🏬', color: '#84cc16' },
+    'merchantOwner': { label: 'Merchant Owner (摊主)', icon: '🏬', color: '#84cc16' },
+    'merchantAsist': { label: 'Merchant Assistant (助理)', icon: '🏪', color: '#a3e635' },
     'customer': { label: 'Customer (顾客)', icon: '👤', color: '#ec4899' }
   };
 
@@ -38,7 +39,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     'merchantManager': `/merchant-manager/${orgEventCode}/dashboard`,
     'customerManager': `/customer-manager/${orgEventCode}/dashboard`,
     'seller': `/seller/${orgEventCode}/dashboard`,
-    'merchant': `/merchant/${orgEventCode}/dashboard`,
+    'merchantOwner': `/merchant/${orgEventCode}/dashboard`,
+    'merchantAsist': `/merchant/${orgEventCode}/dashboard`,
     'customer': `/customer/${orgEventCode}/dashboard`
   };
 
@@ -50,7 +52,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     'merchantManager': 'merchantManagerInfo',
     'customerManager': 'customerManagerInfo',
     'seller': 'sellerInfo',
-    'merchant': 'merchantInfo',
+    'merchantOwner': 'merchantOwnerInfo',
+    'merchantAsist': 'merchantAsistInfo',
     'customer': 'customerInfo'
   };
 
@@ -114,18 +117,18 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
       {isOpen && (
         <>
           {/* 遮罩层 */}
-          <div 
+          <div
             style={styles.overlay}
             onClick={() => setIsOpen(false)}
           />
-          
+
           {/* 角色列表 */}
           <div style={styles.dropdown}>
             <div style={styles.dropdownHeader}>切换身份</div>
             {availableRoles.map(role => {
               const config = roleConfig[role] || { label: role, icon: '👤', color: '#6b7280' };
               const isCurrentRole = role === currentRole;
-              
+
               return (
                 <button
                   key={role}
@@ -141,8 +144,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
                   <div style={styles.roleInfo}>
                     <div style={styles.roleName}>{config.label}</div>
                     {isCurrentRole && (
-                      <div style={{ 
-                        fontSize: '0.75rem', 
+                      <div style={{
+                        fontSize: '0.75rem',
                         color: config.color,
                         fontWeight: '600'
                       }}>

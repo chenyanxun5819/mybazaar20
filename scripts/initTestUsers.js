@@ -64,15 +64,6 @@ const testUsers = [
     identityTag: 'staff'
   },
   {
-    phoneNumber: '0123456787',
-    password: 'Test1234',
-    englishName: 'Charlie Merchant',
-    chineseName: '商家小查',
-    email: 'charlie@test.com',
-    roles: ['merchant'],
-    identityTag: 'teacher'
-  },
-  {
     phoneNumber: '0123456786',
     password: 'Test1234',
     englishName: 'Diana Manager',
@@ -147,12 +138,6 @@ async function createTestUser(userData, orgId, eventId) {
       }
     }
     
-    if (roles.includes('merchant')) {
-      userDoc.roleSpecificData.merchant = {
-        totalReceivedPoints: 0,
-        monthlyReceivedPoints: 0
-      };
-    }
     
     if (roles.includes('manager')) {
       userDoc.roleSpecificData.manager = {

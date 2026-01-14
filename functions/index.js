@@ -40,8 +40,6 @@ const financeManagerFunctions = require('./src/cashier/cashierFunction');
 
 const sellerManagerFunctions = require('./src/sellerManager/sellerManagerFunctions');
 const sellerManagerHttpFunctions = require('./src/sellerManager/sellerManagerHttpFunctions');
-// 可被前端以 callable 呼叫的 Seller Manager 函式（onCall）
-const { allocatePointsBySellerManagerHttp: allocatePointsBySellerManagerOnCall } = require('./src/sellerManager/allocatePointsBySellerManager');
 
 // ✅ 從正確的模組導入函數
 const { onSellerManagerAllocation } = sellerManagerFunctions;
@@ -67,12 +65,24 @@ const {
 const { createPointCard } = require('./src/pointseller/createPointCard');
 const { pointSellerDirectSale } = require('./src/pointseller/pointSellerDirectSale');
 const { submitCashAsPointSeller } = require('./src/pointseller/submitCashAsPointSeller');
-
+const { sellerManagerDirectSale } = require('./src/sellerManager/sellerManagerDirectSale');
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
 const { setupTransactionPin: setupTransactionPinFn } = require('./setupTransactionPin');
 const { verifyTransactionPin: verifyTransactionPinFn } = require('./verifyTransactionPin');
 const { resetTransactionPin: resetTransactionPinFn } = require('./resetTransactionPin');
+
+// 導入 Merchant 相關 callable 函式
+const { confirmMerchantPayment } = require('./src/merchant/confirmMerchantPayment');
+const { cancelMerchantPayment } = require('./src/merchant/cancelMerchantPayment');
+const { refundMerchantPayment } = require('./src/merchant/refundMerchantPayment');
+const { assignMerchantAsist } = require('./src/merchant/assignMerchantAsist');
+const { resetDailyMerchantRevenue } = require('./src/merchant/resetDailyMerchantRevenue');
+// 導入 Merchant HTTP 函式（CRUD 操作）
+const { createMerchantHttp } = require('./src/merchant/createMerchantHttp');
+const { updateMerchantHttp } = require('./src/merchant/updateMerchantHttp');
+const { deleteMerchantHttp } = require('./src/merchant/deleteMerchantHttp');
+const { toggleMerchantStatusHttp } = require('./src/merchant/toggleMerchantStatusHttp');
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -104,6 +114,7 @@ exports.createEventByPlatformAdminHttp = createEventByPlatformAdminHttp;
 exports.onCashCollection = onCashCollection;
 
 // 导出 Seller Manager Functions
+exports.sellerManagerDirectSale = sellerManagerDirectSale;
 exports.onSellerManagerAllocation = onSellerManagerAllocation;
 // exports.updateUserPointsStats = updateUserPointsStats;
 // exports.checkCollectionWarnings = checkCollectionWarnings;
@@ -112,8 +123,6 @@ exports.onSellerManagerAllocation = onSellerManagerAllocation;
 exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
 exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
 exports.getCustomerDashboardDataHttp = getCustomerDashboardDataHttp;
-// 导出 Seller Manager callable (onCall)
-exports.allocatePointsBySellerManagerOnCall = allocatePointsBySellerManagerOnCall;
 
 // 导出 Finance Manager 相关 HTTP Functions
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
@@ -156,6 +165,20 @@ exports.updateOrganizationLogoHttp = updateOrganizationLogoHttp;
 exports.updateEventLogoHttp = updateEventLogoHttp;
 exports.updateEventDetailsHttp = updateEventDetailsHttp;
 exports.resetEventUsersHttp = resetEventUsersHttp;
+
+// Merchant 相關 callable 函式
+exports.confirmMerchantPayment = confirmMerchantPayment;
+exports.cancelMerchantPayment = cancelMerchantPayment;
+exports.refundMerchantPayment = refundMerchantPayment;
+exports.assignMerchantAsist = assignMerchantAsist;
+exports.resetDailyMerchantRevenue = resetDailyMerchantRevenue;
+
+// Merchant HTTP 函式（CRUD 操作）
+exports.createMerchantHttp = createMerchantHttp;
+exports.updateMerchantHttp = updateMerchantHttp;
+exports.deleteMerchantHttp = deleteMerchantHttp;
+exports.toggleMerchantStatusHttp = toggleMerchantStatusHttp;
+
 // CORS 中间件配置
 const allowedOrigins = [
   'http://localhost:5173',
@@ -209,7 +232,9 @@ function getRedirectUrl(roles) {
     return "../admin/admin-dashboard.html";
   if (roles.includes("manager"))
     return "../manager/admin-manage-users.html";
-  if (roles.includes("merchant"))
+  if (roles.includes("merchantOwner"))
+    return "../merchant/merchant-dashboard.html";
+  if (roles.includes("merchantAsist"))
     return "../merchant/merchant-dashboard.html";
   if (roles.includes("seller"))
     return "../seller/seller-dashboard.html";

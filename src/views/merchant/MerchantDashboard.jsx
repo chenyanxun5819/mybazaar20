@@ -13,7 +13,9 @@ import './MerchantDashboard.css';
 
 /**
  * MerchantDashboard - 商家摊位界面 (Mobile)
- * 每个摊位的代表使用，显示 QR Code、交易记录、统计数据
+ * ⭐ 同时支持 merchantOwner 和 merchantAsist 角色
+ * merchantOwner: 可查看所有交易、退款、编辑资料
+ * merchantAsist: 只能查看自己的交易、不能退款、不能编辑资料
  */
 const MerchantDashboard = () => {
   const { orgEventCode } = useParams();
@@ -23,6 +25,13 @@ const MerchantDashboard = () => {
   const [organizationId, setOrganizationId] = useState(null);
   const [eventId, setEventId] = useState(null);
   const { userProfile } = useAuth();
+
+  // ⭐ 检测用户角色
+  const isMerchantOwner = userProfile?.roles?.includes('merchantOwner');
+  const isMerchantAsist = userProfile?.roles?.includes('merchantAsist');
+  
+  // 获取用户角色信息（用于传递给子组件）
+  const userRole = isMerchantOwner ? 'merchantOwner' : isMerchantAsist ? 'merchantAsist' : null;
 
   // 使用 AuthContext 的 userProfile 组织/活动 ID，避免路径不一致
   useEffect(() => {
@@ -68,11 +77,13 @@ const MerchantDashboard = () => {
     }
   };
 
-  // Tab 配置
+  // Tab 配置（根据角色调整）
+  // ⭐ merchantAsist 不能编辑摊位资料，所以不显示 profile tab
   const tabs = [
     { id: 'qrcode', label: 'QR Code', icon: QrCode },
     { id: 'transactions', label: '交易记录', icon: Receipt },
-    { id: 'profile', label: '摊位资料', icon: Store },
+    // ⭐ 只有 merchantOwner 可以查看和编辑摊位资料
+    ...(isMerchantOwner ? [{ id: 'profile', label: '摊位资料', icon: Store }] : [])
   ];
 
   if (loading) {
@@ -137,7 +148,11 @@ const MerchantDashboard = () => {
               </div>
               <div className="merchant-title-section">
                 <h1>{merchant.stallName || '商家管理'}</h1>
-                <p>Merchant Dashboard</p>
+                <p>
+                  {isMerchantOwner && '摊主 (Owner)'}
+                  {isMerchantAsist && '助理 (Assistant)'}
+                  {!isMerchantOwner && !isMerchantAsist && 'Merchant Dashboard'}
+                </p>
               </div>
             </div>
 
@@ -220,6 +235,7 @@ const MerchantDashboard = () => {
               merchant={merchant}
               organizationId={organizationId}
               eventId={eventId}
+              userRole={userRole}  // ⭐ 传递用户角色
             />
           )}
 
@@ -228,10 +244,12 @@ const MerchantDashboard = () => {
               merchant={merchant}
               organizationId={organizationId}
               eventId={eventId}
+              userRole={userRole}  // ⭐ 传递用户角色
+              currentUserId={currentUser?.uid}  // ⭐ 传递当前用户 ID（用于筛选 merchantAsist 的交易）
             />
           )}
 
-          {currentTab === 'profile' && (
+          {currentTab === 'profile' && isMerchantOwner && (
             <MerchantProfile
               merchant={merchant}
               onUpdate={updateProfile}

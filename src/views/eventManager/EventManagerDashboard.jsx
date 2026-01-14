@@ -11,17 +11,72 @@ import PointsManagement from '../../components/common/PointsManagement'; // 🔄
 import DepartmentManagement from '../../components/common/DepartmentManagement'; // 部门管理
 import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
 import { safeFetch } from '../../services/safeFetch'; // 🆕 用于调用 Cloud Functions
+import UsersIcon from '../../assets/users.svg?react';
+import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
+import SellerFiveIcon from '../../assets/seller (5).svg?react';
+import UsersGearIcon from '../../assets/users-gear.svg?react';
+import UserSalaryIcon from '../../assets/user-salary.svg?react';
+import EmployeeManIcon from '../../assets/employee-man.svg?react';
+import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
+import SellerFourIcon from '../../assets/seller (4).svg?react';
+import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
+import UserBagIcon from '../../assets/user-bag.svg?react';
+import leaveIcon from '../../assets/leave.svg';
+import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
+import UserAddIcon from '../../assets/user-add (1).svg?react';
+import DepartmentStructureIcon from '../../assets/department-structure.svg?react';
+import PointOfSaleMobileIcon from '../../assets/point-of-sale-mobile.svg?react';
+import FreeIcon from '../../assets/free.svg?react';
+import ObjectsColumnIcon from '../../assets/objects-column.svg?react';
+import UsersMedicalIcon from '../../assets/users-medical (3).svg?react';
 
 // 🆕 角色配置
 const ROLE_CONFIG = {
-  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
-  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
-  customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
-  cashier: { label: 'C', fullLabel: 'Cashier', color: '#3b82f6', icon: '💵', category: 'manager' },
-  seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
-  merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
-  customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' },
-  pointSeller: { label: 'PS', fullLabel: 'Point Seller', color: '#f97316', icon: '🎟️', category: 'user' }
+  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', chineseLabel: '班导师', color: '#f59e0b', icon: ChalkboardUserIcon, category: 'manager' },
+  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', chineseLabel: '商家管理员', color: '#8b5cf6', icon: SellerFiveIcon, category: 'manager' },
+  customerManager: { label: 'CM', fullLabel: 'Customer Manager', chineseLabel: '消费者管理员', color: '#10b981', icon: UsersGearIcon, category: 'manager' },
+  cashier: { label: 'C', fullLabel: 'Cashier', chineseLabel: '收银员', color: '#3b82f6', icon: UserSalaryIcon, category: 'manager' },
+  seller: { label: 'S', fullLabel: 'Seller', chineseLabel: '点数销售员', color: '#ec4899', icon: EmployeeManIcon, category: 'user' },
+  merchantOwner: { label: 'MO', fullLabel: 'Merchant Owner', chineseLabel: '摊主', color: '#84cc16', icon: StoreBuyerIcon, category: 'user' },
+  merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: SellerFourIcon, category: 'user' },
+  pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' }
+};
+
+const STAT_ICONS = {
+  totalUsers: UsersIcon,
+  totalSellerManagers: ChalkboardUserIcon,
+  totalCashiers: UserSalaryIcon,
+  totalSellers: EmployeeManIcon,
+  totalMerchants: StoreBuyerIcon,
+  totalCustomers: UserBagIcon,
+  totalAllocatedPoints: PosBillIcon
+};
+
+const renderIcon = (icon, { alt, size = 20, color, style } = {}) => {
+  if (!icon) return null;
+
+  if (typeof icon === 'string') {
+    return (
+      <img
+        src={icon}
+        alt={alt || ''}
+        style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, ...style }}
+      />
+    );
+  }
+
+  if (typeof icon === 'function') {
+    const IconComp = icon;
+    return (
+      <IconComp
+        aria-label={alt || ''}
+        role="img"
+        style={{ width: size, height: size, color, flexShrink: 0, ...style }}
+      />
+    );
+  }
+
+  return icon;
 };
 
 const EventManagerDashboard = () => {
@@ -64,7 +119,8 @@ const EventManagerDashboard = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' }); // 排序配置
   const [currentPage, setCurrentPage] = useState(1); // 当前页码
   const [pageSize, setPageSize] = useState(50); // 每页显示条数
-  const [roleFilter, setRoleFilter] = useState('all'); // 角色过滤
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [identityTagFilter, setIdentityTagFilter] = useState('all'); // 角色过滤
   const [showColumnSelector, setShowColumnSelector] = useState(false); // 列显示选择器
   const [searchTerm, setSearchTerm] = useState(''); // 🆕 搜索词
   const [showEditModal, setShowEditModal] = useState(false); // 🆕 编辑模态框
@@ -86,7 +142,8 @@ const EventManagerDashboard = () => {
     customerManager: false,
     cashier: false,
     seller: false,
-    merchant: false,
+    merchantOwner: false,
+    merchantAsist: false,
     customer: false,
     pointSeller: false
   });
@@ -158,7 +215,8 @@ const EventManagerDashboard = () => {
       customerManager: user.roles?.includes('customerManager') || false,
       cashier: user.roles?.includes('cashier') || false,
       seller: user.roles?.includes('seller') || false,
-      merchant: user.roles?.includes('merchant') || false,
+      merchantOwner: user.roles?.includes('merchantOwner') || false,
+      merchantAsist: user.roles?.includes('merchantAsist') || false,
       customer: user.roles?.includes('customer') || false,
       pointSeller: user.roles?.includes('pointSeller') || false
     });
@@ -506,11 +564,9 @@ const EventManagerDashboard = () => {
             if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
             if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
             if (userData.roles?.includes('seller')) stats.totalSellers++;
-            if (userData.roles?.includes('merchant')) stats.totalMerchants++;
             if (userData.roles?.includes('customer')) stats.totalCustomers++;
 
             if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
-            if (userData.merchant?.availablePoints) totalAllocated += userData.merchant.availablePoints;
             if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
             if (userData.seller?.totalPointsSold) totalAllocated += userData.seller.totalPointsSold;
             if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
@@ -577,6 +633,11 @@ const EventManagerDashboard = () => {
     // 角色过滤
     if (roleFilter !== 'all') {
       filtered = filtered.filter(user => user.roles?.includes(roleFilter));
+    }
+
+    // 身份标签过滤
+    if (identityTagFilter !== 'all') {
+      filtered = filtered.filter(user => user.identityTag === identityTagFilter);
     }
 
     // 搜索过滤
@@ -684,8 +745,25 @@ const EventManagerDashboard = () => {
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
           <RoleSwitcher currentRole="eventManager" orgEventCode={orgEventCode} />
-          <button onClick={handleLogout} style={styles.logoutButton}>
-            登出
+          <button 
+            onClick={handleLogout} 
+            style={{
+              ...styles.logoutButton,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="登出"
+          >
+            <img 
+              src={leaveIcon} 
+              alt="登出"
+              style={{ width: '24px', height: '24px', objectFit: 'contain' }}
+            />
           </button>
         </div>
       </div>
@@ -695,43 +773,43 @@ const EventManagerDashboard = () => {
         <StatCard
           title="总用户数"
           value={statistics.totalUsers}
-          icon="👥"
+          icon={STAT_ICONS.totalUsers}
           color="#667eea"
         />
         <StatCard
-          title="Seller Managers"
+          title="班导师"
           value={statistics.totalSellerManagers}
-          icon="🛍️"
+          icon={STAT_ICONS.totalSellerManagers}
           color="#f59e0b"
         />
         <StatCard
-          title="Cashiers"
+          title="收银员"
           value={statistics.totalCashiers}
-          icon="💵"
+          icon={STAT_ICONS.totalCashiers}
           color="#3b82f6"
         />
         <StatCard
-          title="Sellers"
+          title="点数销售员"
           value={statistics.totalSellers}
-          icon="🛒"
+          icon={STAT_ICONS.totalSellers}
           color="#ec4899"
         />
         <StatCard
-          title="Merchants"
+          title="商家"
           value={statistics.totalMerchants}
-          icon="🏬"
+          icon={STAT_ICONS.totalMerchants}
           color="#06b6d4"
         />
         <StatCard
-          title="Customers"
+          title="消费者"
           value={statistics.totalCustomers}
-          icon="👤"
+          icon={STAT_ICONS.totalCustomers}
           color="#84cc16"
         />
         <StatCard
           title="已分配点数"
           value={statistics.totalAllocatedPoints.toLocaleString()}
-          icon="💎"
+          icon={STAT_ICONS.totalAllocatedPoints}
           color="#10b981"
         />
       </div>
@@ -741,26 +819,34 @@ const EventManagerDashboard = () => {
         <button
           style={styles.primaryButton}
           onClick={() => setShowAddUser(true)}
+          title="创建单个用户"
         >
-          ➕ 单个创建用户
+          <UserAddIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          创建单个用户
         </button>
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#f59e0b' }}
+          style={{ ...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#667eea' }}
           onClick={() => setShowDepartmentManagement(true)}
+          title="部门管理"
         >
-          🏢 部门管理
+          <DepartmentStructureIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          部门管理
         </button>
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#10b981' }}
+          style={{ ...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#667eea' }}
           onClick={() => setShowUserManagement(true)}
+          title="点数管理"
         >
-          📊 点数管理
+          <PointOfSaleMobileIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          点数管理
         </button>
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#8b5cf6', color: 'white', borderColor: '#8b5cf6' }}
+          style={{ ...styles.secondaryButton, backgroundColor: '#8b5cf6', color: 'white', borderColor: '#667eea' }}
           onClick={handleOpenGrantPoints}
+          title="赠送点数"
         >
-          🎁 赠送点数
+          <FreeIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          赠送点数
         </button>
       </div>
 
@@ -773,6 +859,32 @@ const EventManagerDashboard = () => {
         marginBottom: '1.5rem'
       }}>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* 身份标签过滤 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: '600', color: '#374151' }}>
+              身份标签:
+            </label>
+            <select
+              value={identityTagFilter}
+              onChange={(e) => {
+                setIdentityTagFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: '0.5rem',
+                border: '2px solid #e5e7eb',
+                borderRadius: '6px',
+                fontSize: '0.875rem',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">全部标签</option>
+              <option value="staff">职员</option>
+              <option value="teacher">教师</option>
+              <option value="student">学生</option>
+            </select>
+          </div>
+
           {/* 角色过滤 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.875rem', fontWeight: '600', color: '#374151' }}>
@@ -794,13 +906,15 @@ const EventManagerDashboard = () => {
             >
               <option value="all">全部角色</option>
               <option value="eventManager">Event Manager</option>
-              <option value="sellerManager">Seller Manager</option>
-              <option value="merchantManager">Merchant Manager</option>
-              <option value="customerManager">Customer Manager</option>
-              <option value="cashier">Cashier</option>
-              <option value="seller">Seller</option>
-              <option value="merchant">Merchant</option>
-              <option value="customer">Customer</option>
+              <option value="sellerManager">班导师</option>
+              <option value="merchantManager">商家管理员</option>
+              <option value="customerManager">消费者管理员</option>
+              <option value="cashier">收银员</option>
+              <option value="seller">点数销售员</option>
+              <option value="merchantOwner">摊主</option>
+              <option value="merchantAsist">摊位助手</option>
+              <option value="pointSeller">点数直售员</option>
+              <option value="customer">消费者</option>
             </select>
           </div>
 
@@ -839,10 +953,14 @@ const EventManagerDashboard = () => {
                 borderRadius: '6px',
                 cursor: 'pointer',
                 fontSize: '0.875rem',
-                fontWeight: '600'
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
               }}
             >
-              📋 列显示
+              <ObjectsColumnIcon style={{ width: '18px', height: '18px', color: 'white' }} />
+              列显示
             </button>
             {showColumnSelector && (
               <div style={{
@@ -850,8 +968,8 @@ const EventManagerDashboard = () => {
                 right: 0,
                 top: '100%',
                 marginTop: '0.5rem',
-                backgroundColor: 'white',
-                border: '2px solid #e5e7eb',
+                backgroundColor: '#667eea',
+                border: 'none',
                 borderRadius: '8px',
                 padding: '1rem',
                 minWidth: '200px',
@@ -890,10 +1008,14 @@ const EventManagerDashboard = () => {
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '0.875rem',
-              fontWeight: '600'
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
             }}
           >
-            📥 批量导入
+            <UsersMedicalIcon style={{ width: '18px', height: '18px', color: 'white' }} />
+            批量导入
           </button>
         </div>
       </div>
@@ -1018,9 +1140,9 @@ const EventManagerDashboard = () => {
                                   ...styles.roleBadge,
                                   backgroundColor: config.color
                                 }}
-                                title={config.fullLabel}
+                                title={config.chineseLabel}
                               >
-                                {config.icon}
+                                {renderIcon(config.icon, { alt: role, size: 20, color: 'white' })}
                               </div>
                             );
                           })}
@@ -1404,7 +1526,24 @@ const EventManagerDashboard = () => {
                         borderColor: selectedRoles[roleId] ? config.color : '#e5e7eb',
                         backgroundColor: selectedRoles[roleId] ? `${config.color}10` : 'white'
                       }}
-                      onClick={() => setSelectedRoles({ ...selectedRoles, [roleId]: !selectedRoles[roleId] })}
+                      // ✅ 新代码（添加互斥逻辑）
+                      onClick={() => {
+                        const newRoles = {
+                          ...selectedRoles,
+                          [roleId]: !selectedRoles[roleId]
+                        };
+
+                        // merchantOwner 和 merchantAsist 互斥
+                        if (newRoles[roleId]) {
+                          if (roleId === 'merchantOwner') {
+                            newRoles.merchantAsist = false;
+                          } else if (roleId === 'merchantAsist') {
+                            newRoles.merchantOwner = false;
+                          }
+                        }
+
+                        setSelectedRoles(newRoles);
+                      }}
                     >
                       <input
                         type="checkbox"
@@ -1413,8 +1552,8 @@ const EventManagerDashboard = () => {
                         style={styles.checkbox}
                       />
                       <div style={styles.roleInfo}>
-                        <span style={styles.roleIcon}>{config.icon}</span>
-                        <span style={styles.roleLabel}>{config.fullLabel}</span>
+                        {renderIcon(config.icon, { alt: roleId, size: 24, color: config.color })}
+                        <span style={styles.roleLabel}>{config.chineseLabel}</span>
                       </div>
                     </div>
                   ))}
@@ -1517,15 +1656,19 @@ const EventManagerDashboard = () => {
 };
 
 // Statistics Card Component
-const StatCard = ({ title, value, icon, color }) => (
-  <div style={{ ...styles.statCard, borderLeftColor: color }}>
-    <div style={styles.statIcon}>{icon}</div>
-    <div>
-      <div style={styles.statValue}>{value}</div>
-      <div style={styles.statLabel}>{title}</div>
+const StatCard = ({ title, value, icon, color }) => {
+  return (
+    <div style={{ ...styles.statCard, borderLeftColor: color }}>
+      <div style={styles.statIcon}>
+        {renderIcon(icon, { alt: title, size: '100%', color })}
+      </div>
+      <div>
+        <div style={styles.statValue}>{value}</div>
+        <div style={styles.statLabel}>{title}</div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const styles = {
   container: {
@@ -1586,31 +1729,37 @@ const styles = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '1.5rem',
-    marginBottom: '2rem'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '1rem',
+    marginBottom: '1.5rem'
   },
   statCard: {
     background: 'white',
-    padding: '1.5rem',
+    padding: '1rem',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem',
+    gap: '0.75rem',
     borderLeft: '4px solid'
   },
   statIcon: {
-    fontSize: '2.5rem'
+    width: '36px',
+    height: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    fontSize: '1.8rem'
   },
   statValue: {
-    fontSize: '2rem',
+    fontSize: '1.5rem',
     fontWeight: 'bold',
     color: '#1f2937'
   },
   statLabel: {
     color: '#6b7280',
-    fontSize: '0.875rem',
+    fontSize: '0.75rem',
     marginTop: '0.25rem'
   },
   actionButtons: {
@@ -1629,18 +1778,24 @@ const styles = {
     fontWeight: '600',
     fontSize: '1rem',
     transition: 'all 0.2s',
-    boxShadow: '0 2px 4px rgba(102, 126, 234, 0.4)'
+    boxShadow: '0 2px 4px rgba(102, 126, 234, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
   },
   secondaryButton: {
     padding: '0.875rem 1.5rem',
-    backgroundColor: 'white',
+    backgroundColor: '#667eea',
     color: '#374151',
-    border: '2px solid #e5e7eb',
+    border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
     fontWeight: '600',
     fontSize: '1rem',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
   },
   tableContainer: {
     background: 'white',

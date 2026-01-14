@@ -16,7 +16,8 @@ const ProtectedRoute = ({ allowedRoles = [], children }) => {
 
   if (!isAuthenticated) {
     // 从当前路由提取 orgEventCode（格式: /seller/{orgEventCode}/dashboard）
-    const pathMatch = location.pathname.match(/\/(seller|merchant|customer|event-manager|seller-manager|cashier|customer-manager|merchant-manager)\/([^/]+)/);
+    // ⭐ merchant 路由同时支持 merchantOwner 和 merchantAsist
+    const pathMatch = location.pathname.match(/\/(seller|merchant|customer|event-manager|seller-manager|cashier|customer-manager|merchant-manager|point-seller)\/([^/]+)/);
     const orgEventCode = pathMatch ? pathMatch[2] : null;
 
     // 若未登入，导向相应的登入页（而不是 /platform/login）

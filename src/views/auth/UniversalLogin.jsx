@@ -430,7 +430,7 @@ const UniversalLogin = () => {
 
     if (isMobile) {
       // Mobile: 只支持手机角色（manager 一律不允许）
-      const phoneRoles = ['seller', 'merchant', 'pointSeller', 'customer'];
+      const phoneRoles = ['seller', 'pointSeller', 'customer'];
       const filtered = (roles || []).filter(role => phoneRoles.includes(role));
       console.log('[UniversalLogin] filterRolesByDevice - Mobile 过滤结果:', filtered);
       return filtered;

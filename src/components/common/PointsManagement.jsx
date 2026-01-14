@@ -23,7 +23,6 @@ const ROLE_CONFIG = {
   customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
   cashier: { label: 'C', fullLabel: 'Cashier', color: '#3b82f6', icon: '💵', category: 'manager' },
   seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
-  merchant: { label: 'M', fullLabel: 'Merchant', color: '#06b6d4', icon: '🏬', category: 'user' },
   customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }
 };
 
@@ -219,7 +218,6 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
-      else if (selectedUser.roles?.includes('merchant')) roleType = 'merchant';
       else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
@@ -281,7 +279,6 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
-      else if (selectedUser.roles?.includes('merchant')) roleType = 'merchant';
       else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
@@ -372,7 +369,6 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       targetUsers.forEach((user, index) => {
         let roleType = null;
         if (user.roles?.includes('seller')) roleType = 'seller';
-        else if (user.roles?.includes('merchant')) roleType = 'merchant';
         else if (user.roles?.includes('customer')) roleType = 'customer';
 
         if (roleType) {
@@ -439,13 +435,13 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const getUserCountByIdentityTag = (tagId) => {
     if (tagId === 'all') {
       return users.filter(user =>
-        user.roles?.some(role => ['seller', 'merchant', 'customer'].includes(role))
+        user.roles?.some(role => ['seller', 'customer'].includes(role))
       ).length;
     }
 
     return users.filter(user =>
       user.identityTag === tagId &&
-      user.roles?.some(role => ['seller', 'merchant', 'customer'].includes(role))
+      user.roles?.some(role => ['seller', 'customer'].includes(role))
     ).length;
   };
 

@@ -159,8 +159,31 @@ export const AuthProvider = ({ children }) => {
   // 从 localStorage 恢复用户数据
   const restoreUserFromLocalStorage = (role) => {
     try {
-      const storageKey = role === 'eventManager' ? 'eventManagerInfo' : `${role}Info`;
-      const stored = localStorage.getItem(storageKey);
+      let storageKey;
+      
+      // ⭐ 根据角色确定 localStorage 键名
+      if (role === 'eventManager') {
+        storageKey = 'eventManagerInfo';
+      } else if (role === 'merchantOwner') {
+        storageKey = 'merchantOwnerInfo';
+      } else if (role === 'merchantAsist') {
+        storageKey = 'merchantAsistInfo';
+      } else {
+        storageKey = `${role}Info`;
+      }
+      
+      let stored = localStorage.getItem(storageKey);
+      
+      // ⭐ 兼容性处理：如果没有找到新键名，尝试旧键名 merchantInfo
+      if (!stored && (role === 'merchantOwner' || role === 'merchantAsist')) {
+        stored = localStorage.getItem('merchantInfo');
+        if (stored) {
+          console.log('[AuthContext] 🔄 迁移旧的 merchantInfo 到', storageKey);
+          // 迁移到新键名
+          localStorage.setItem(storageKey, stored);
+          localStorage.removeItem('merchantInfo');
+        }
+      }
       
       if (stored) {
         const data = JSON.parse(stored);
@@ -189,6 +212,16 @@ export const AuthProvider = ({ children }) => {
           },
           sellerManager: data.managedDepartments ? {
             managedDepartments: data.managedDepartments
+          } : undefined,
+          // ⭐ 添加 merchantOwner 和 merchantAsist 特定数据
+          merchantOwner: (role === 'merchantOwner' && data.merchantId) ? {
+            merchantId: data.merchantId,
+            stallName: data.stallName
+          } : undefined,
+          merchantAsist: (role === 'merchantAsist' && data.merchantId) ? {
+            merchantId: data.merchantId,
+            merchantOwnerId: data.merchantOwnerId,
+            stallName: data.stallName
           } : undefined
         };
       }
@@ -308,7 +341,8 @@ export const AuthProvider = ({ children }) => {
       return `/seller/${orgEventCode}/dashboard`;
     }
     
-    if (roles.includes('merchant')) {
+    // ⭐ merchantOwner 和 merchantAsist 共用同一个 Dashboard
+    if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
       return `/merchant/${orgEventCode}/dashboard`;
     }
 
@@ -347,7 +381,7 @@ export const AuthProvider = ({ children }) => {
           
           // 🔧 关键修复：检查数据完整性
           const needsIdentityTag = userProfile?.roles?.some(role => 
-            ['seller', 'customer', 'merchant'].includes(role)
+            ['seller', 'customer', 'merchantOwner', 'merchantAsist'].includes(role)
           );
           const hasIdentityTag = !!userProfile?.identityTag;
           
@@ -499,8 +533,10 @@ export const AuthProvider = ({ children }) => {
       setClaims(null);
       
       // 清除 localStorage
-      ['sellerInfo', 'merchantInfo', 'customerInfo', 'eventManagerInfo', 
-       'sellerManagerInfo', 'cashierInfo'].forEach(key => {
+      ['sellerInfo', 'merchantOwnerInfo', 'merchantAsistInfo', 'customerInfo', 'eventManagerInfo', 
+       'sellerManagerInfo', 'cashierInfo', 
+       // ⭐ 兼容旧版：同时清除旧的 merchantInfo
+       'merchantInfo'].forEach(key => {
         localStorage.removeItem(key);
       });
       
@@ -531,7 +567,8 @@ export const AuthProvider = ({ children }) => {
       'sellerManager',
       'merchantManager',
       'customerManager',
-      'merchant',
+      'merchantOwner',  // ⭐ 修改：merchant → merchantOwner
+      'merchantAsist',  // ⭐ 新增：merchantAsist
       'seller',
       'customer'
     ];

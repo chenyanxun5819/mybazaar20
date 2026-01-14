@@ -143,11 +143,17 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         description: '销售员 - 销售固本给顾客',
         icon: '💳'
       },
-      merchant: {
-        value: 'merchant',
-        label: 'Merchant',
-        description: '商家 - 接收顾客消费',
+      merchantOwner: {
+        value: 'merchantOwner',
+        label: 'Merchant Owner',
+        description: '商家摊主 - 管理摊位和助理',
         icon: '🏬'
+      },
+      merchantAsist: {
+        value: 'merchantAsist',
+        label: 'Merchant Assistant',
+        description: '商家助理 - 协助摊主收款',
+        icon: '🏪'
       },
       customer: {
         value: 'customer',

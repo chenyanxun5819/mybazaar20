@@ -14,6 +14,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 import CashierDashboard from './views/cashier/CashierDashboard';
+import MerchantManagerDashboard from './views/merchantManager/MerchantManagerDashboard';
 import SellerDashboard from './views/SellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
@@ -178,10 +179,7 @@ function App() {
           <EventProvider>
             <AuthProvider>
               <ProtectedRoute allowedRoles={["merchantManager"]}>
-                <div style={{ padding: '2rem', textAlign: 'center' }}>
-                  <h2>Merchant Manager Dashboard</h2>
-                  <p>功能开发中...</p>
-                </div>
+                <MerchantManagerDashboard />
               </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
@@ -240,7 +238,7 @@ function App() {
         <MobileGuard>
           <EventProvider>
             <AuthProvider>
-              <ProtectedRoute allowedRoles={["merchant"]}>
+              <ProtectedRoute allowedRoles={["merchantOwner", "merchantAsist"]}>
                 <MerchantDashboard />
               </ProtectedRoute>
             </AuthProvider>

@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import chalkboardUserIcon from '../../assets/chalkboard-user.svg';
+import sellerFiveIcon from '../../assets/seller (5).svg';
+import usersGearIcon from '../../assets/users-gear.svg';
+import userSalaryIcon from '../../assets/user-salary.svg';
+import employeeManIcon from '../../assets/employee-man.svg';
+import storeBuyerIcon from '../../assets/store-buyer.svg';
+import sellerFourIcon from '../../assets/seller (4).svg';
+import moneyCheckEditIcon from '../../assets/money-check-edit (1).svg';
+import userBagIcon from '../../assets/user-bag.svg';
 
 const UserList = ({ organizationId, eventId, onClose }) => {
   // 状态管理
@@ -21,7 +30,8 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     { id: 'merchantManager', label: 'Merchant Manager' },
     { id: 'customerManager', label: 'Customer Manager' },
     { id: 'seller', label: 'Seller' },
-    { id: 'merchant', label: 'Merchant' },
+    { id: 'merchantOwner', label: 'Merchant Owner' },
+    { id: 'merchantAsist', label: 'Merchant Assistant' },
     { id: 'customer', label: 'Customer' }
   ];
 
@@ -31,8 +41,20 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     merchantManager: 'Merchant Manager',
     customerManager: 'Customer Manager',
     seller: 'Seller',
-    merchant: 'Merchant',
+    merchantOwner: 'Merchant Owner',
+    merchantAsist: 'Merchant Assistant',
     customer: 'Customer'
+  };
+
+  // 角色中文标签映射（鼠标滑过显示）
+  const roleChineseLabels = {
+    sellerManager: '班导师',
+    merchantManager: '商家管理员',
+    customerManager: '消费者管理员',
+    seller: '点数销售员',
+    merchantOwner: '摊主',
+    merchantAsist: '摊位助手',
+    customer: '消费者'
   };
 
   // 角色颜色映射
@@ -41,8 +63,18 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     merchantManager: '#8b5cf6',
     customerManager: '#10b981',
     seller: '#3b82f6',
-    merchant: '#ec4899',
     customer: '#6366f1'
+  };
+
+  // 角色icon映射
+  const roleIcons = {
+    sellerManager: chalkboardUserIcon,
+    merchantManager: sellerFiveIcon,
+    customerManager: usersGearIcon,
+    seller: employeeManIcon,
+    merchantOwner: storeBuyerIcon,
+    merchantAsist: sellerFourIcon,
+    customer: userBagIcon
   };
 
   // 身份标签映射
@@ -111,11 +143,11 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   const maskPhone = (phone) => {
     if (!phone) return '-';
     if (phone.length < 6) return phone; // 号码太短，直接显示
-    
+
     const first3 = phone.substring(0, 3);
     const last3 = phone.substring(phone.length - 3);
     const middle = '*'.repeat(phone.length - 6);
-    
+
     return `${first3}${middle}${last3}`;
   };
 
@@ -132,29 +164,34 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     let availablePoints = 0;
     let totalPointsSold = 0;
     let totalCashCollected = 0;
-    
+
     // 累加所有角色的点数
     if (user.seller) {
       availablePoints += user.seller.availablePoints || 0;
       totalPointsSold += user.seller.totalPointsSold || 0;
       totalCashCollected += user.seller.totalCashCollected || 0;
     }
-    if (user.merchant) {
-      availablePoints += user.merchant.availablePoints || 0;
-      totalPointsSold += user.merchant.totalPointsSold || 0;
-      totalCashCollected += user.merchant.totalCashCollected || 0;
+    if (user.merchantOwner) {
+      availablePoints += user.merchantOwner.availablePoints || 0;
+      totalPointsSold += user.merchantOwner.totalPointsSold || 0;
+      totalCashCollected += user.merchantOwner.totalCashCollected || 0;
+    }
+    if (user.merchantAsist) {
+      availablePoints += user.merchantAsist.availablePoints || 0;
+      totalPointsSold += user.merchantAsist.totalPointsSold || 0;
+      totalCashCollected += user.merchantAsist.totalCashCollected || 0;
     }
     if (user.customer) {
       availablePoints += user.customer.availablePoints || 0;
       totalPointsSold += user.customer.totalPointsSold || 0;
       totalCashCollected += user.customer.totalCashCollected || 0;
     }
-    
+
     const outstandingCash = totalPointsSold - totalCashCollected;
-    const collectionRate = totalPointsSold > 0 
-      ? Math.round((totalCashCollected / totalPointsSold) * 100) 
+    const collectionRate = totalPointsSold > 0
+      ? Math.round((totalCashCollected / totalPointsSold) * 100)
       : 0;
-    
+
     return {
       availablePoints,
       totalPointsSold,
@@ -249,7 +286,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   // 格式化时间
   const formatDate = (timestamp) => {
     if (!timestamp) return '未知';
-    
+
     try {
       const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
       return date.toLocaleDateString('zh-CN', {
@@ -275,14 +312,31 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   };
 
   // 📱 角色徽章组件
-  const RoleBadge = ({ role }) => (
-    <span style={{
-      ...styles.roleBadge,
-      backgroundColor: roleColors[role] || '#6b7280'
-    }}>
-      {roleLabels[role] || role}
-    </span>
-  );
+  const RoleBadge = ({ role }) => {
+    const icon = roleIcons[role];
+    const isImageSrc = typeof icon === 'string' && 
+      (icon.startsWith('data:image') || icon.endsWith('.svg') || icon.endsWith('.png'));
+    
+    return (
+      <span style={{
+        ...styles.roleBadge,
+        backgroundColor: roleColors[role] || '#6b7280',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px'
+      }}
+      title={roleChineseLabels[role] || roleLabels[role] || role}>
+        {isImageSrc && (
+          <img 
+            src={icon} 
+            alt={role}
+            style={{ width: '16px', height: '16px', objectFit: 'contain' }}
+          />
+        )}
+        {roleLabels[role] || role}
+      </span>
+    );
+  };
 
   // 🏷️ 身份标签组件
   const IdentityBadge = ({ identityTag }) => {
@@ -308,8 +362,8 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   // 排序图标
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <span style={styles.sortIcon}>⇅</span>;
-    return sortOrder === 'asc' ? 
-      <span style={styles.sortIconActive}>▲</span> : 
+    return sortOrder === 'asc' ?
+      <span style={styles.sortIconActive}>▲</span> :
       <span style={styles.sortIconActive}>▼</span>;
   };
 
@@ -433,7 +487,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                 <tbody style={styles.tbody}>
                   {filteredUsers.map(user => {
                     const pointsInfo = getUserPointsInfo(user);
-                    
+
                     return (
                       <tr key={user.id} style={styles.tr}>
                         {/* 姓名 */}
@@ -513,7 +567,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                               width: `${pointsInfo.collectionRate}%`,
                               backgroundColor:
                                 pointsInfo.collectionRate === 100 ? '#10b981' :
-                                pointsInfo.collectionRate >= 50 ? '#f59e0b' : '#ef4444'
+                                  pointsInfo.collectionRate >= 50 ? '#f59e0b' : '#ef4444'
                             }}>
                               <span style={styles.rateText}>
                                 {pointsInfo.collectionRate}%

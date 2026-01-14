@@ -252,10 +252,10 @@ const InitialPasswordSetup = () => {
     let dashboardPath = '/';
 
     if (isMobile) {
-      // Mobile 优先级: seller > merchant > customer
+      // Mobile 优先级: seller > merchantOwner/merchantAsist > customer
       if (roles.includes('seller')) {
         dashboardPath = `/seller/${orgEventCode}/dashboard`;
-      } else if (roles.includes('merchant')) {
+      } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
         dashboardPath = `/merchant/${orgEventCode}/dashboard`;
       } else if (roles.includes('customer')) {
         dashboardPath = `/customer/${orgEventCode}/dashboard`;
@@ -274,7 +274,7 @@ const InitialPasswordSetup = () => {
         dashboardPath = `/customer-manager/${orgEventCode}/dashboard`;
       } else if (roles.includes('seller')) {
         dashboardPath = `/seller/${orgEventCode}/dashboard`;
-      } else if (roles.includes('merchant')) {
+      } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
         dashboardPath = `/merchant/${orgEventCode}/dashboard`;
       } else if (roles.includes('customer')) {
         dashboardPath = `/customer/${orgEventCode}/dashboard`;

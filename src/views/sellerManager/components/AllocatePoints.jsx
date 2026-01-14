@@ -1,26 +1,19 @@
 import { useState } from 'react';
-import { auth } from '../../../config/firebase';  // 确保导入 auth
+import { auth } from '../../../config/firebase';
 import { safeFetch } from '../../../services/safeFetch';
 /**
- * Allocate Points Modal (重构版 - Cloud Functions API)
+ * Allocate Points Modal (简化版 - 只销售点数)
  * 
  * @description
- * Seller Manager 分配点数给 Seller 的弹窗组件
+ * Seller Manager 销售点数给 Seller（收现金）
+ * - Seller 付现金购买点数
+ * - 更新 customer.pointsAccount.availablePoints
+ * - 记录现金收入
  * 
- * ✅ 使用 Cloud Functions API：
- * - 调用 allocatePointsHttp 进行点数分配
- * - 自动更新统计数据
- * - 支持额度限制和收款警示
- * 
- * @param {Object} seller - 要分配点数的 Seller
- * @param {Object} sellerManager - Seller Manager 用户信息
- * @param {string} organizationId - 组织 ID ✅ 新增
- * @param {string} eventId - 活动 ID
- * @param {number} maxPerAllocation - 每次分配上限
- * @param {Function} onClose - 关闭回调
- * @param {Function} onSuccess - 成功回调
+ * @version 3.1
+ * @date 2026-01-12
  */
-// ✅ 修改后
+
 const AllocatePoints = ({
   seller,
   sellerManager,
@@ -36,37 +29,31 @@ const AllocatePoints = ({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const sellerData = seller.seller || {};  // ✅ 正确：从 seller 对象读取
-  const collectionAlert = seller.collectionAlert || seller.seller?.collectionAlert || {};
-  // ✅ 修正：从 basicInfo 读取姓名
+  const sellerData = seller.seller || {};
+  const collectionAlert = seller.collectionAlert || {};
   const sellerName = seller.basicInfo?.chineseName || seller.basicInfo?.englishName || 'N/A';
-  const sellerManagerName = sellerManager?.basicInfo?.chineseName || sellerManager?.basicInfo?.englishName || 'Seller Manager';
 
-  // ✅ 正确：从 seller 对象获取当前余额和统计数据
-  const currentBalance = sellerData.availablePoints || 0;
-
-  // ✅ 定义 pointsStats（从 sellerData 获取）
+  // 统计数据
   const pointsStats = {
-    currentBalance: sellerData.availablePoints || 0,
-    totalRevenue: sellerData.totalRevenue || sellerData.totalPointsSold || 0,
-    totalCollected: sellerData.totalCollected || sellerData.totalCashCollected || 0,
-    pendingCollection: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) - (sellerData.totalCollected || sellerData.totalCashCollected || 0),
-    collectionRate: (sellerData.totalRevenue || sellerData.totalPointsSold || 0) > 0
-      ? (sellerData.totalCollected || sellerData.totalCashCollected || 0) / (sellerData.totalRevenue || sellerData.totalPointsSold || 0)
+    personalBalance: seller.customer?.pointsAccount?.availablePoints || 0, // 消费余额
+    totalRevenue: sellerData.totalRevenue || 0,
+    totalCollected: sellerData.totalCashCollected || 0,
+    pendingCollection: (sellerData.totalRevenue || 0) - (sellerData.totalCashCollected || 0),
+    collectionRate: (sellerData.totalRevenue || 0) > 0
+      ? (sellerData.totalCashCollected || 0) / (sellerData.totalRevenue || 0)
       : 0
   };
 
-  // 快速金额选项 - 根据 maxPerAllocation 动态生成
+  // 快速金额选项
   const quickAmounts = [10, 20, 50, 100, 200, 500].filter(amt => amt <= maxPerAllocation);
 
   /**
    * 处理金额输入
    */
   const handleAmountChange = (value) => {
-    // 只允许数字和小数点
     const sanitized = value.replace(/[^\d.]/g, '');
     setAmount(sanitized);
-    setError(''); // 清除错误提示
+    setError('');
   };
 
   /**
@@ -78,12 +65,101 @@ const AllocatePoints = ({
   };
 
   /**
+   * 处理直接销售（通过 Cloud Function）
+   */
+  const handleDirectSale = async () => {
+    // 验证输入
+    if (!amount || parseFloat(amount) <= 0) {
+      setError('请输入有效的点数');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      // 获取 Auth Token
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('未登录，请重新登录');
+      }
+
+      const token = await user.getIdToken();
+
+      // 准备请求数据
+      const requestBody = {
+        organizationId: organizationId,
+        eventId: eventId,
+        recipientId: seller.id,
+        points: parseFloat(amount),
+        allocationType: 'personal',
+        notes: notes || ''
+      };
+
+      console.log('[AllocatePoints] 开始直接销售', requestBody);
+
+      // 调用 Cloud Function
+      const response = await safeFetch('/api/allocatePointsBySellerManager', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      // 处理响应
+      const result = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = result.error?.message || '销售失败';
+        throw new Error(errorMessage);
+      }
+
+      // 成功处理
+      console.log('[AllocatePoints] ✅ 直接销售成功', result);
+
+      setSuccessMessage(
+        `成功销售 ${parseFloat(amount)} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！（收现金 RM ${parseFloat(amount)}）`
+      );
+
+      // 重置表单
+      setAmount('');
+      setNotes('');
+
+      // 2秒后关闭弹窗
+      setTimeout(() => {
+        setSuccessMessage(null);
+        onSuccess?.();
+        onClose?.();
+      }, 2000);
+
+    } catch (err) {
+      console.error('[AllocatePoints] 直接销售失败:', err);
+      let errorMessage = '销售失败';
+
+      if (err.message.includes('未登录')) {
+        errorMessage = '登录已过期，请重新登录';
+      } else if (err.message.includes('权限')) {
+        errorMessage = '您没有权限执行此操作';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
    * 验证并提交分配
    */
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
-    
-    // ========== 第1步: 验证输入 ==========
+
+    // 验证输入
     if (!seller || !seller.id) {
       setError('无效的 Seller 对象');
       return;
@@ -110,34 +186,33 @@ const AllocatePoints = ({
     setSuccessMessage(null);
 
     try {
-      console.log('[AllocatePoints] 开始分配点数', {
+      console.log('[AllocatePoints] 开始销售点数', {
         recipientId: seller.id,
         recipientName: seller.basicInfo?.chineseName,
         points: pointsNumber
       });
 
-      // ========== 第2步: 获取 Firebase Auth Token ==========
+      // 获取 Firebase Auth Token
       const user = auth.currentUser;
       if (!user) {
         throw new Error('未登录，请重新登录');
       }
 
       const token = await user.getIdToken();
-      console.log('[AllocatePoints] Token 获取成功');
 
-      // ========== 第3步: 准备请求数据 ==========
+      // 准备请求数据（固定使用 personal 类型）
       const requestBody = {
         organizationId: organizationId,
         eventId: eventId,
         recipientId: seller.id,
         points: pointsNumber,
+        allocationType: 'personal', // 固定为 personal（收现金）
         notes: notes || ''
       };
 
       console.log('[AllocatePoints] 请求数据:', requestBody);
 
-      // ========== 第4步: 调用 Cloud Function ==========
-      // 使用相对路径，会自动转向 Firebase Hosting 的 /api 端点
+      // 调用 Cloud Function
       const response = await safeFetch('/api/allocatePointsBySellerManager', {
         method: 'POST',
         headers: {
@@ -147,31 +222,26 @@ const AllocatePoints = ({
         body: JSON.stringify(requestBody)
       });
 
-      console.log('[AllocatePoints] Response status:', response.status);
-
-      // ========== 第5步: 处理响应 ==========
+      // 处理响应
       const result = await response.json();
-      console.log('[AllocatePoints] Response data:', result);
 
       if (!response.ok) {
-        const errorMessage = result.error?.message || '分配失败';
+        const errorMessage = result.error?.message || '销售失败';
         throw new Error(errorMessage);
       }
 
-      // ========== 第6步: 成功处理 ==========
-      console.log('[AllocatePoints] ✅ 分配成功', {
-        allocationId: result.allocationId || 'N/A'
-      });
+      // 成功处理
+      console.log('[AllocatePoints] ✅ 销售成功', result);
 
       setSuccessMessage(
-        `成功分配 ${pointsNumber} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！`
+        `成功销售 ${pointsNumber} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！（收现金 RM ${pointsNumber}）`
       );
 
       // 重置表单
       setAmount('');
       setNotes('');
 
-      // 3秒后关闭弹窗
+      // 2秒后关闭弹窗
       setTimeout(() => {
         setSuccessMessage(null);
         onSuccess?.();
@@ -179,9 +249,9 @@ const AllocatePoints = ({
       }, 2000);
 
     } catch (err) {
-      console.error('[AllocatePoints] ❌ 分配失败:', err);
+      console.error('[AllocatePoints] ❌ 销售失败:', err);
 
-      let errorMessage = '分配失败';
+      let errorMessage = '销售失败';
 
       if (err.message.includes('未登录')) {
         errorMessage = '登录已过期，请重新登录';
@@ -201,14 +271,13 @@ const AllocatePoints = ({
     }
   };
 
-
   /**
    * 计算预期余额
    */
   const getExpectedBalance = () => {
     const allocateAmount = parseFloat(amount);
-    if (isNaN(allocateAmount)) return pointsStats.currentBalance || 0;
-    return (pointsStats.currentBalance || 0) + allocateAmount;
+    if (isNaN(allocateAmount)) return pointsStats.personalBalance;
+    return pointsStats.personalBalance + allocateAmount;
   };
 
   /**
@@ -240,7 +309,7 @@ const AllocatePoints = ({
       <div style={styles.modal}>
         {/* 标题 */}
         <div style={styles.header}>
-          <h2 style={styles.title}>💰 分配点数</h2>
+          <h2 style={styles.title}>💰 销售点数</h2>
           <button style={styles.closeButton} onClick={onClose} disabled={loading}>
             ✕
           </button>
@@ -274,7 +343,7 @@ const AllocatePoints = ({
             <div style={styles.warningContent}>
               <div style={styles.warningTitle}>收款警示</div>
               <div style={styles.warningText}>
-                待收款: {(collectionAlert.pendingAmount || 0).toLocaleString()}
+                待收款: RM {(collectionAlert.pendingAmount || 0).toLocaleString()}
                 <span style={{
                   marginLeft: '0.5rem',
                   color: getWarningLevelColor(collectionAlert.warningLevel)
@@ -288,22 +357,27 @@ const AllocatePoints = ({
 
         {/* 当前统计 */}
         <div style={styles.statsBox}>
+          <div style={styles.statsTitle}>当前余额</div>
           <div style={styles.statRow}>
-            <span>当前余额:</span>
-            <strong>{(pointsStats.currentBalance || 0).toLocaleString()}</strong>
+            <span>💳 可用余额:</span>
+            <strong style={{ fontSize: '1.125rem', color: '#1f2937' }}>
+              {pointsStats.personalBalance.toLocaleString()} 点
+            </strong>
           </div>
+          <div style={styles.statDivider}></div>
           <div style={styles.statRow}>
             <span>累计销售:</span>
-            <strong>{(pointsStats.totalRevenue || 0).toLocaleString()}</strong>
+            <span>{pointsStats.totalRevenue.toLocaleString()}</span>
           </div>
           <div style={styles.statRow}>
             <span>收款率:</span>
-            <strong style={{
-              color: (pointsStats.collectionRate || 0) >= 0.8 ? '#10b981' :
-                (pointsStats.collectionRate || 0) >= 0.5 ? '#f59e0b' : '#ef4444'
+            <span style={{
+              color: pointsStats.collectionRate >= 0.8 ? '#10b981' :
+                pointsStats.collectionRate >= 0.5 ? '#f59e0b' : '#ef4444',
+              fontWeight: '600'
             }}>
-              {Math.round((pointsStats.collectionRate || 0) * 100)}%
-            </strong>
+              {Math.round(pointsStats.collectionRate * 100)}%
+            </span>
           </div>
         </div>
 
@@ -311,70 +385,97 @@ const AllocatePoints = ({
         <form onSubmit={handleSubmit} style={styles.form}>
           {/* 点数输入 */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>分配点数 *</label>
+            <label style={styles.label}>
+              销售点数 <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <input
               type="text"
+              value={amount}
+              onChange={(e) => handleAmountChange(e.target.value)}
+              placeholder="输入点数"
               style={{
                 ...styles.input,
                 ...(error ? styles.inputError : {})
               }}
-              value={amount}
-              onChange={(e) => handleAmountChange(e.target.value)}
-              placeholder="请输入点数"
               disabled={loading}
-              autoFocus
             />
             <div style={styles.hint}>
-              单次分配上限: {maxPerAllocation.toLocaleString()}
+              单次最多 {maxPerAllocation} 点
+              <span style={{ marginLeft: '0.5rem', color: '#f59e0b', fontWeight: '600' }}>
+                · 需收现金 RM {amount || 0}
+              </span>
             </div>
           </div>
 
           {/* 快速金额 */}
-          <div style={styles.quickAmounts}>
-            {quickAmounts.map(amt => (
-              <button
-                key={amt}
-                type="button"
-                style={{
-                  ...styles.quickButton,
-                  ...(parseInt(amount) === amt ? styles.quickButtonActive : {})
-                }}
-                onClick={() => handleQuickAmount(amt)}
-                disabled={loading}
-              >
-                {amt}
-              </button>
-            ))}
-          </div>
+          {quickAmounts.length > 0 && (
+            <div style={styles.formGroup}>
+              <label style={styles.label}>快速选择</label>
+              <div style={styles.quickAmounts}>
+                {quickAmounts.map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => handleQuickAmount(amt)}
+                    style={{
+                      ...styles.quickButton,
+                      ...(amount === amt.toString() ? styles.quickButtonActive : {})
+                    }}
+                    disabled={loading}
+                  >
+                    {amt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 备注 */}
           <div style={styles.formGroup}>
             <label style={styles.label}>备注（可选）</label>
             <textarea
-              style={styles.textarea}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="添加分配备注..."
+              placeholder="添加备注信息..."
               rows={3}
+              style={styles.textarea}
               disabled={loading}
             />
           </div>
 
-          {/* 分配预览 */}
-          {amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (
+          {/* 预览 */}
+          {amount && parseFloat(amount) > 0 && (
             <div style={styles.preview}>
-              <div style={styles.previewTitle}>📊 分配预览</div>
+              <div style={styles.previewTitle}>📋 交易预览</div>
               <div style={styles.previewRow}>
-                <span>分配点数:</span>
-                <strong style={{ color: '#3b82f6' }}>
-                  {parseFloat(amount).toLocaleString()}
-                </strong>
+                <span>接收者:</span>
+                <span>{sellerName}</span>
+              </div>
+              <div style={styles.previewRow}>
+                <span>销售点数:</span>
+                <strong>{parseFloat(amount).toLocaleString()}</strong>
+              </div>
+              <div style={styles.previewRow}>
+                <span>当前余额:</span>
+                <span>{pointsStats.personalBalance.toLocaleString()}</span>
               </div>
               <div style={styles.previewDivider}></div>
               <div style={styles.previewRow}>
-                <span>预计新余额:</span>
-                <strong style={{ color: '#10b981' }}>
+                <span>销售后余额:</span>
+                <strong style={{ color: '#10b981', fontSize: '1.125rem' }}>
                   {getExpectedBalance().toLocaleString()}
+                </strong>
+              </div>
+              <div style={{
+                ...styles.previewRow,
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                background: '#fef3c7',
+                borderRadius: '8px'
+              }}>
+                <span style={{ fontWeight: '600', color: '#92400e' }}>💵 收取现金:</span>
+                <strong style={{ color: '#92400e', fontSize: '1.25rem' }}>
+                  RM {parseFloat(amount).toLocaleString()}
                 </strong>
               </div>
             </div>
@@ -383,7 +484,14 @@ const AllocatePoints = ({
           {/* 错误提示 */}
           {error && (
             <div style={styles.errorBox}>
-              ⚠️ {error}
+              {error}
+            </div>
+          )}
+
+          {/* 成功提示 */}
+          {successMessage && (
+            <div style={styles.successBox}>
+              {successMessage}
             </div>
           )}
 
@@ -398,15 +506,16 @@ const AllocatePoints = ({
               取消
             </button>
             <button
-              type="submit"
+              type="button"
               style={{
                 ...styles.submitButton,
                 opacity: loading ? 0.6 : 1,
                 cursor: loading ? 'not-allowed' : 'pointer'
               }}
+              onClick={handleDirectSale}
               disabled={loading}
             >
-              {loading ? '分配中...' : '确认分配'}
+              {loading ? '处理中...' : '💰 直接销售（收现金）'}
             </button>
           </div>
         </form>
@@ -459,7 +568,7 @@ const styles = {
     background: 'white',
     borderRadius: '16px',
     padding: '2rem',
-    maxWidth: '500px',
+    maxWidth: '550px',
     width: '100%',
     maxHeight: '90vh',
     overflow: 'auto',
@@ -563,6 +672,12 @@ const styles = {
     borderRadius: '12px',
     marginBottom: '1.5rem'
   },
+  statsTitle: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: '0.75rem'
+  },
   statRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -570,6 +685,11 @@ const styles = {
     fontSize: '0.875rem',
     color: '#6b7280',
     marginBottom: '0.5rem'
+  },
+  statDivider: {
+    height: '1px',
+    background: '#e5e7eb',
+    margin: '0.5rem 0'
   },
   form: {
     display: 'flex',
@@ -662,8 +782,15 @@ const styles = {
     padding: '0.75rem',
     borderRadius: '8px',
     fontSize: '0.875rem',
-    border: '1px solid #fecaca',
-    whiteSpace: 'pre-line'
+    border: '1px solid #fecaca'
+  },
+  successBox: {
+    background: '#d1fae5',
+    color: '#065f46',
+    padding: '0.75rem',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    border: '1px solid #6ee7b7'
   },
   buttonGroup: {
     display: 'flex',

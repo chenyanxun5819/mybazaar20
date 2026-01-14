@@ -20,13 +20,14 @@
     "date-fns": "^4.1.0",
     "firebase": "^12.7.0",
     "html5-qrcode": "^2.3.8",
-    "lucide-react": "^0.545.0",
+    "lucide-react": "^0.562.0",
     "output": "^0.0.0",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-router-dom": "^7.9.4",
+    "vite-plugin-svgr": "^4.5.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

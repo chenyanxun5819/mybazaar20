@@ -243,8 +243,6 @@ const InitialSetup = () => {
       navigate('/customer-dashboard');
     } else if (roles.includes('seller')) {
       navigate('/seller-dashboard');
-    } else if (roles.includes('merchant')) {
-      navigate('/merchant-dashboard');
     } else if (roles.includes('sellerManager')) {
       navigate('/seller-manager-dashboard');
     } else if (roles.includes('cashier')) {

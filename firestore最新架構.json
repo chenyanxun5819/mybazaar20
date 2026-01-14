@@ -246,7 +246,22 @@
                 "merchants": {
                   "count": "number (Merchant 总数)",
                   "activeCount": "number (有交易记录的 Merchant 数)",
-                  "totalRevenue": "number (累计销售额)"
+                  "totalRevenue": "number (累计销售额)",
+                  "withAsistsCount": "number (配有助理的商家数)",
+                  "totalAsistsCount": "number (所有助理总数)",
+                  "averageAsistsPerMerchant": "number (平均每个商家的助理数)"
+                },
+                "merchantManagers": {
+                  "count": "number (MerchantManager 数量，通常为1)",
+                  "totalMerchantsManaged": "number (管理的商家总数)",
+                  "totalAsistsAssigned": "number (已分派的助理总数)",
+                  "lastAssignmentAt": "timestamp (最后分派时间)"
+                },
+                "merchantAsists": {
+                  "count": "number (MerchantAsist 总数)",
+                  "activeCount": "number (有交易记录的助理数)",
+                  "totalCollected": "number (累计收取点数)",
+                  "averageCollectedPerAsist": "number (平均每位助理收取点数)"
                 },
                 "customers": {
                   "count": "number (Customer总数)",
@@ -297,7 +312,7 @@
                 "totalUsers": "number (总用户数)",
                 "totalManagers": "number (管理员总数)",
                 "totalSellers": "number (Seller 总数)",
-                "totalMerchants": "number (Merchant 总数)",
+                "totalMerchantOwners": "number (Merchant Owner 总数)",
                 "totalCustomers": "number (Customer 总数)",
                 "lastUpdated": "timestamp"
               },
@@ -399,7 +414,7 @@
                   "userId": "string (Firebase Auth UID，文档ID)",
                   "authUid": "string (认证UID，与userId相同)",
                   "roles": [
-                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'cashier' | 'pointSeller' | 'seller' | 'merchant' | 'customer')"
+                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'cashier' | 'pointSeller' | 'seller' | 'merchantOwner' | 'merchantAsist' | 'customer')"
                   ],
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
@@ -458,18 +473,49 @@
                       "pendingRatio": "number (待收款比例 0-1)"
                     }
                   },
-                  "merchant": {
+                  "merchantOwner": {
                     "merchantId": "string (关联的 merchant 文档 ID)",
                     "stallName": "string (摊位名称，冗余字段)",
                     "permissions": {
                       "canViewAllTransactions": "boolean (可查看所有交易)",
                       "canEditProfile": "boolean (可编辑摊位资料)",
-                      "canToggleStatus": "boolean (可切换营业状态)"
+                      "canToggleStatus": "boolean (可切换营业状态)",
+                      "canRefundTransactions": "boolean (可退款已完成的交易)",
+                      "canCancelPending": "boolean (可取消待收的交易)",
+                      "canManageAsists": "boolean (可管理助理，查看助理的交易记录)"
                     },
                     "statistics": {
                       "totalRevenue": "number (总收入，与 merchants 同步)",
                       "transactionCount": "number (交易笔数)",
+                      "totalCollected": "number (本人收取的点数)",
+                      "asistsCollected": "number (助理收取的点数总和)",
                       "lastSyncAt": "timestamp (最后同步时间)"
+                    }
+                  },
+                  "merchantAsist": {
+                    "description": "商家助理，协助 merchantOwner 收取点数",
+                    "merchantId": "string (关联的 merchant 文档 ID)",
+                    "merchantOwnerId": "string (所属的 merchantOwner userId)",
+                    "stallName": "string (摊位名称，冗余字段)",
+                    "permissions": {
+                      "canCollectPayments": "boolean (可收取点数，确认 pending 交易)",
+                      "canViewOwnTransactions": "boolean (仅可查看自己收取的交易)",
+                      "canCancelPending": "boolean (可取消待收的交易)",
+                      "cannotViewAllTransactions": "boolean (不能查看其他人的交易)",
+                      "cannotEditProfile": "boolean (不能编辑摊位资料)",
+                      "cannotRefund": "boolean (不能退款)"
+                    },
+                    "statistics": {
+                      "totalCollected": "number (个人累计收取点数)",
+                      "transactionCount": "number (个人交易笔数)",
+                      "lastCollectionAt": "timestamp (最后收款时间)",
+                      "todayCollected": "number (今日收取点数)",
+                      "todayTransactionCount": "number (今日交易笔数)"
+                    },
+                    "assignmentInfo": {
+                      "assignedAt": "timestamp (被分派时间)",
+                      "assignedBy": "string (分派人 userId，通常是 merchantManager)",
+                      "isActive": "boolean (是否激活状态)"
                     }
                   },
                   "customer": {
@@ -563,6 +609,37 @@
                       ]
                     },
                     "lastAllocationAt": "timestamp"
+                  },
+                  "merchantManager": {
+                    "description": "商家管理员，负责管理所有 merchant 和人员分派",
+                    "managedMerchantsCount": "number (管理的商家总数)",
+                    "permissions": {
+                      "canAssignAsists": "boolean (可分派 merchantAsist 给 merchantOwner)",
+                      "canViewAllMerchants": "boolean (可查看所有商家数据)",
+                      "canViewAllTransactions": "boolean (可查看所有商家的交易记录)",
+                      "canGenerateQRCodes": "boolean (可为所有 merchantOwner 生成/下载 QR Code)",
+                      "canManageMerchantProfiles": "boolean (可创建、编辑商家基本资料)"
+                    },
+                    "statistics": {
+                      "totalMerchantsManaged": "number (管理的商家总数)",
+                      "totalAsistsAssigned": "number (累计分派的助理人数)",
+                      "activeMerchantsCount": "number (营业中的商家数)",
+                      "totalMerchantRevenue": "number (所有商家总收入)",
+                      "lastAssignmentAt": "timestamp (最后分派助理时间)",
+                      "lastQRCodeGenerated": "timestamp (最后生成QR Code时间)"
+                    },
+                    "managementScope": {
+                      "canViewRevenue": "boolean (可查看所有商家销售额)",
+                      "canViewTransactionCount": "boolean (可查看交易笔数)",
+                      "canViewAsistStats": "boolean (可查看助理统计)"
+                    },
+                    "notes": [
+                      "每个 Event 只有一个 merchantManager",
+                      "负责为 merchantOwner 分派 merchantAsist（必须为已注册的 user）",
+                      "分派条件：用户必须已注册且被 eventManager 指派为 merchantAsist 角色资格",
+                      "为 merchantOwner 提供 QR Code 下载列表",
+                      "可检视所有 merchant 的销售数据和助理配置情况"
+                    ]
                   },
                   "cashier": {
                     "// === 基本信息 ===": "",
@@ -843,7 +920,11 @@
                     "level": "Event",
                     "documentStructure": {
                       "merchantId": "string (自動生成的文檔ID)",
-                      "userId": "string (關聯的用戶 ID，來自 users 集合)",
+                      "merchantOwnerId": "string (商家拥有者 userId，唯一，来自 users 集合中 role=merchantOwner 的用户)",
+                      "merchantAsists": [
+                        "string (助理 userId 数组，最多5人，来自 users 集合中 role=merchantAsist 的用户)"
+                      ],
+                      "merchantAsistsCount": "number (当前助理人数，0-5)",
                       "stallName": "string (攤位名稱，如 '美食天地')",
                       "description": "string (攤位描述/簡介)",
                       "contactInfo": {
@@ -860,12 +941,20 @@
                         "generatedAt": "timestamp (生成時間)"
                       },
                       "revenueStats": {
-                        "totalRevenue": "number (總收入，points)",
-                        "todayRevenue": "number (今日收入)",
-                        "transactionCount": "number (總交易筆數)",
-                        "todayTransactionCount": "number (今日交易筆數)",
+                        "totalRevenue": "number (總收入，points，义卖会期间累计)",
+                        "transactionCount": "number (總交易筆數，义卖会期间累计)",
                         "lastTransactionAt": "timestamp (最後交易時間)",
-                        "averageTransactionAmount": "number (平均交易金額)"
+                        "averageTransactionAmount": "number (平均交易金額)",
+                        "ownerCollectedRevenue": "number (merchantOwner 收取的总收入)",
+                        "asistsCollectedRevenue": "number (所有 merchantAsists 收取的总收入)"
+                      },
+                      "dailyRevenue": {
+                        "today": "number (今日销售额，points)",
+                        "todayTransactionCount": "number (今日交易笔数)",
+                        "todayOwnerCollected": "number (今日 merchantOwner 收取金额)",
+                        "todayAsistsCollected": "number (今日 merchantAsists 收取金额)",
+                        "lastResetAt": "timestamp (最后重置时间，每日0点自动重置)",
+                        "resetSchedule": "string (重置计划：'daily at 00:00 MYT')"
                       },
                       "operationStatus": {
                         "isActive": "boolean (營業狀態，true=營業中)",
@@ -875,26 +964,32 @@
                       "metadata": {
                         "createdAt": "timestamp (創建時間)",
                         "updatedAt": "timestamp (最後更新時間)",
-                        "createdBy": "string (創建者 UID)",
+                        "createdBy": "string (創建者 UID，通常是 merchantManager)",
                         "lastUpdatedBy": "string (最後更新者 UID)"
                       }
                     },
                     "indexes": [
-                      "userId",
+                      "merchantOwnerId",
+                      "merchantAsists",
                       "operationStatus.isActive",
                       "revenueStats.totalRevenue (desc)",
+                      "dailyRevenue.today (desc)",
                       "metadata.createdAt (desc)"
                     ],
                     "securityRules": {
                       "read": [
-                        "Merchant Manager 可以讀取自己的商家資料 (userId == request.auth.uid)",
-                        "Event Manager 可以讀取所有商家資料",
-                        "Customer 可以讀取營業中的商家基本資訊（用於掃碼付款）"
+                        "merchantOwner 可以读取自己的商家资料 (merchantOwnerId == request.auth.uid)",
+                        "merchantAsist 可以读取自己被分派的商家资料 (request.auth.uid in merchantAsists)",
+                        "merchantManager 可以读取所有商家资料",
+                        "Event Manager 可以读取所有商家资料",
+                        "Customer 可以读取营业中的商家基本资讯（用于扫码付款）"
                       ],
                       "write": [
-                        "Merchant Manager 可以更新特定欄位（stallName, description, contactInfo, isActive）",
-                        "Event Manager 可以創建和修改商家資料",
-                        "totalRevenue 等統計欄位只能由 Cloud Functions 更新"
+                        "merchantOwner 可以更新特定欄位（stallName, description, contactInfo, operationStatus.isActive）",
+                        "merchantManager 可以创建商家、分派 merchantAsist、更新 merchantAsists 数组",
+                        "Event Manager 可以创建和修改商家资料",
+                        "merchantAsist 不能修改商家资料（只读权限）",
+                        "revenueStats、dailyRevenue 等統計欄位只能由 Cloud Functions 更新"
                       ]
                     }
                   }
@@ -910,9 +1005,39 @@
                   "// 交易雙方": "根據類型不同而異",
                   "sellerId": "string (POINTS_SALE 時使用)",
                   "customerId": "string (兩種類型都有)",
-                  "amount": "number (交易金額，points)",
-                  "status": "string ('completed' | 'failed' | 'pending' | 'refunded')",
-                  "timestamp": "timestamp (交易時間)",
+                  "amount": "number (交易金额，points)",
+                  "status": {
+                    "type": "string",
+                    "values": [
+                      "pending",
+                      "completed",
+                      "failed",
+                      "cancelled",
+                      "refunded"
+                    ],
+                    "description": "pending: 待确认（Customer已扫码提交，等待merchantOwner/Asist确认）; completed: 已完成; failed: 失败; cancelled: 已取消（在pending状态下由merchantOwner/Asist取消）; refunded: 已退款（completed后由merchantOwner退款）"
+                  },
+                  "// === customer_to_merchant 特有字段（收点数人信息）===": "",
+                  "collectedBy": "string (收点数人 userId，仅 customer_to_merchant 类型且 status=completed 时有值)",
+                  "collectorRole": "string ('merchantOwner' | 'merchantAsist'，仅 customer_to_merchant 类型且 status=completed 时有值)",
+                  "// === 状态追踪字段 ===": "",
+                  "statusHistory": [
+                    {
+                      "status": "string (状态值)",
+                      "timestamp": "timestamp (状态变更时间)",
+                      "updatedBy": "string (操作人 userId)",
+                      "updaterRole": "string (操作人角色，如 customer, merchantOwner, merchantAsist)",
+                      "note": "string (备注，可选)"
+                    }
+                  ],
+                  "cancelledAt": "timestamp (取消时间，status=cancelled 时有值)",
+                  "cancelledBy": "string (取消操作人 userId，必须是 merchantOwner 或 merchantAsist)",
+                  "cancelReason": "string (取消原因，可选)",
+                  "refundedAt": "timestamp (退款时间，status=refunded 时有值)",
+                  "refundedBy": "string (退款操作人 userId，必须是 merchantOwner)",
+                  "refundReason": "string (退款原因)",
+                  "timestamp": "timestamp (交易创建时间)",
+                  "completedAt": "timestamp (交易完成时间，status=completed 时有值)",
                   "metadata": {
                     "deviceInfo": "string (設備資訊，可選)",
                     "ipAddress": "string (IP地址，可選)",
@@ -926,9 +1051,10 @@
                       "customer_transfer",
                       "point_card_payment",
                       "point_card_topup",
-                      "free_grant"
+                      "free_grant",
+                      "sellerManager_to_customer"
                     ],
-                    "description": "POINTS_SALE: Seller卖点给Customer; Mcustomer_to_merchant: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
+                    "description": "POINTS_SALE: sellermanager_to_customer；Seller卖点给Customer; Mcustomer_to_merchant: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
                   },
                   "merchantId": {
                     "type": "string",
@@ -989,7 +1115,9 @@
                   "merchantId + timestamp (desc)",
                   "customerId + timestamp (desc)",
                   "sellerId + timestamp (desc)",
-                  "status"
+                  "status",
+                  "collectedBy + timestamp (desc)",
+                  "status + merchantId + timestamp (desc)"
                 ]
               },
               "cashCollections": {
@@ -1701,30 +1829,26 @@
             "   e. 验证PIN正确性",
             "   f. 验证失败：增加pinFailedAttempts，5次后锁定1小时",
             "   g. 验证成功：重置pinFailedAttempts和pinLockedUntil",
-            "6. 使用Firestore Transaction执行付款：",
-            "   a. 重新读取Customer文档（确保数据最新）",
-            "   b. 检查余额（customer.pointsAccount.availablePoints >= amount）",
-            "   c. 读取Merchant文档",
-            "   d. 检查商家营业状态（operationStatus.isActive）",
-            "   e. 扣除Customer点数：",
-            "      - availablePoints -= amount",
-            "      - totalSpent += amount",
-            "      - transactionCount += 1",
-            "   f. 增加Merchant收入：",
-            "      - totalRevenue += amount",
-            "      - transactionCount += 1",
-            "   g. 更新Customer访问商家列表（stats.merchantsVisited）",
-            "   h. 创建transaction记录（type='customer_to_merchant'）：",
-            "      - 包含customerId, customerName, customerPhone",
-            "      - 包含merchantId, merchantName",
-            "      - pinVerified=true, verificationMethod='transaction_pin'",
-            "7. 返回结果：{ success, transactionId, remainingBalance }"
+            "6. 检查余额（customer.pointsAccount.availablePoints >= amount）",
+            "7. 读取Merchant文档",
+            "8. 检查商家营业状态（operationStatus.isActive）",
+            "9. 创建 status='pending' 的 transaction 记录：",
+            "   a. transactionType = 'customer_to_merchant'",
+            "   b. status = 'pending'",
+            "   c. customerId, customerName, customerPhone (脱敏)",
+            "   d. merchantId, merchantName",
+            "   e. amount",
+            "   f. pinVerified = true, verificationMethod = 'transaction_pin'",
+            "   g. timestamp = now",
+            "   h. statusHistory = [{ status: 'pending', timestamp: now, updatedBy: customerId, updaterRole: 'customer' }]",
+            "10. 返回结果：{ success, transactionId, status: 'pending', message: '等待商家确认收款' }",
+            "注意：此时不扣除 customer 点数，不增加 merchant 收入，等待 merchantOwner/Asist 调用 confirmMerchantPayment 确认后才执行"
           ],
           "returns": {
             "success": "boolean",
             "transactionId": "string",
-            "remainingBalance": "number",
-            "message": "string"
+            "status": "string ('pending')",
+            "message": "string ('等待商家确认收款')"
           },
           "errors": [
             "invalid-argument: 参数无效或格式错误",
@@ -1930,6 +2054,230 @@
           },
           "permissions": "仅 Event Manager 可调用",
           "notes": "批量操作，使用 Firestore batch write"
+        },
+        "assignMerchantAsist": {
+          "name": "assignMerchantAsist",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "merchantManager 为 merchantOwner 分派 merchantAsist",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "merchantId": "string (商家ID)",
+            "asistUserId": "string (助理用户ID)"
+          },
+          "validation": [
+            "1. 验证调用者是 merchantManager 角色",
+            "2. 检查用户是否已注册且存在于 users 集合",
+            "3. 检查用户是否已被 eventManager 指派为 merchantAsist 角色资格（roles 包含 'merchantAsist'）",
+            "4. 检查 merchant 是否已满 5 人（merchantAsistsCount < 5）",
+            "5. 检查用户是否已被分派给其他 merchant（通过查询 users 的 merchantAsist.merchantId）"
+          ],
+          "logic": [
+            "1. 读取 merchant 文档",
+            "2. 读取 asist user 文档",
+            "3. 使用 Firestore Transaction:",
+            "   a. 更新 merchant.merchantAsists 数组（添加 asistUserId）",
+            "   b. 更新 merchant.merchantAsistsCount += 1",
+            "   c. 更新 user 的 merchantAsist 对象：",
+            "      - merchantId: merchantId",
+            "      - merchantOwnerId: merchant.merchantOwnerId",
+            "      - stallName: merchant.stallName",
+            "      - assignedAt: now",
+            "      - assignedBy: merchantManagerId",
+            "   d. 更新 merchantManager.statistics.totalAsistsAssigned += 1",
+            "   e. 更新 Event.roleStats.merchantAsists.count += 1"
+          ],
+          "returns": {
+            "success": "boolean",
+            "message": "string",
+            "merchantId": "string",
+            "asistUserId": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效",
+            "permission-denied: 调用者不是 merchantManager",
+            "not-found: merchant 或 user 不存在",
+            "failed-precondition: merchant 已满员、用户已被分派、用户无 merchantAsist 角色资格"
+          ],
+          "permissions": "仅 merchantManager 可调用"
+        },
+        "confirmMerchantPayment": {
+          "name": "confirmMerchantPayment",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "merchantOwner/merchantAsist 确认收取 Customer 付款（将 pending 交易改为 completed）",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "transactionId": "string (交易ID)"
+          },
+          "validation": [
+            "1. 验证调用者是 merchantOwner 或 merchantAsist 角色",
+            "2. 验证交易存在且 status='pending'",
+            "3. 验证交易类型为 'customer_to_merchant'",
+            "4. 验证调用者有权限操作此 merchant（merchantOwner 或在 merchantAsists 数组中）"
+          ],
+          "logic": [
+            "1. 读取 transaction 文档",
+            "2. 读取 merchant 文档",
+            "3. 读取 customer 文档",
+            "4. 使用 Firestore Transaction:",
+            "   a. 验证 customer 余额足够（customer.pointsAccount.availablePoints >= amount）",
+            "   b. 扣除 customer 点数：",
+            "      - availablePoints -= amount",
+            "      - totalSpent += amount",
+            "      - stats.merchantPaymentCount += 1",
+            "   c. 增加 merchant 收入：",
+            "      - revenueStats.totalRevenue += amount",
+            "      - revenueStats.transactionCount += 1",
+            "      - dailyRevenue.today += amount",
+            "      - dailyRevenue.todayTransactionCount += 1",
+            "   d. 更新 transaction：",
+            "      - status = 'completed'",
+            "      - completedAt = now",
+            "      - collectedBy = currentUserId",
+            "      - collectorRole = currentUserRole (merchantOwner | merchantAsist)",
+            "      - statusHistory 添加新记录",
+            "   e. 更新收款人统计（merchantOwner 或 merchantAsist）：",
+            "      - statistics.totalCollected += amount",
+            "      - statistics.transactionCount += 1",
+            "      - statistics.todayCollected += amount (if merchantAsist)",
+            "   f. 如果是 merchantOwner，更新 merchant.revenueStats.ownerCollectedRevenue",
+            "   g. 如果是 merchantAsist，更新 merchant.revenueStats.asistsCollectedRevenue"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string",
+            "amount": "number",
+            "collectedBy": "string (userId)",
+            "collectorRole": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效",
+            "permission-denied: 无权限操作此 merchant",
+            "not-found: transaction 或 merchant 不存在",
+            "failed-precondition: 交易状态不是 pending、customer 余额不足"
+          ],
+          "permissions": "merchantOwner 和 merchantAsist 可调用"
+        },
+        "cancelMerchantPayment": {
+          "name": "cancelMerchantPayment",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "merchantOwner/merchantAsist 取消待收的交易（将 pending 交易改为 cancelled）",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "transactionId": "string (交易ID)",
+            "cancelReason": "string (取消原因，可选)"
+          },
+          "validation": [
+            "1. 验证调用者是 merchantOwner 或 merchantAsist 角色",
+            "2. 验证交易存在且 status='pending'",
+            "3. 验证交易类型为 'customer_to_merchant'",
+            "4. 验证调用者有权限操作此 merchant"
+          ],
+          "logic": [
+            "1. 读取 transaction 文档",
+            "2. 使用 Firestore Transaction:",
+            "   a. 更新 transaction：",
+            "      - status = 'cancelled'",
+            "      - cancelledAt = now",
+            "      - cancelledBy = currentUserId",
+            "      - cancelReason = reason",
+            "      - statusHistory 添加新记录"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string",
+            "message": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效",
+            "permission-denied: 无权限操作",
+            "not-found: transaction 不存在",
+            "failed-precondition: 交易状态不是 pending"
+          ],
+          "permissions": "merchantOwner 和 merchantAsist 可调用",
+          "notes": "Customer 不能自己取消，必须由 merchant 方操作，防止拿商品后恶意取消"
+        },
+        "refundMerchantPayment": {
+          "name": "refundMerchantPayment",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "merchantOwner 退回已完成的交易（将 completed 交易改为 refunded）",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "transactionId": "string (交易ID)",
+            "refundReason": "string (退款原因，必填)"
+          },
+          "validation": [
+            "1. 验证调用者是 merchantOwner 角色（只有 merchantOwner 可以退款）",
+            "2. 验证交易存在且 status='completed'",
+            "3. 验证交易类型为 'customer_to_merchant'",
+            "4. 验证是本 merchant 的交易"
+          ],
+          "logic": [
+            "1. 读取 transaction 文档",
+            "2. 读取 merchant 文档",
+            "3. 读取 customer 文档",
+            "4. 使用 Firestore Transaction:",
+            "   a. 退回 customer 点数：",
+            "      - availablePoints += amount",
+            "      - totalSpent -= amount",
+            "      - stats.merchantPaymentCount -= 1",
+            "   b. 扣减 merchant 收入：",
+            "      - revenueStats.totalRevenue -= amount",
+            "      - revenueStats.transactionCount -= 1",
+            "      - dailyRevenue.today -= amount",
+            "      - dailyRevenue.todayTransactionCount -= 1",
+            "   c. 更新 transaction：",
+            "      - status = 'refunded'",
+            "      - refundedAt = now",
+            "      - refundedBy = merchantOwnerId",
+            "      - refundReason = reason",
+            "      - statusHistory 添加新记录",
+            "   d. 扣减收款人统计（根据 collectorRole）：",
+            "      - statistics.totalCollected -= amount",
+            "      - statistics.transactionCount -= 1",
+            "   e. 扣减对应的 ownerCollectedRevenue 或 asistsCollectedRevenue"
+          ],
+          "returns": {
+            "success": "boolean",
+            "transactionId": "string",
+            "refundedAmount": "number",
+            "message": "string"
+          },
+          "errors": [
+            "invalid-argument: 参数无效或缺少退款原因",
+            "permission-denied: 只有 merchantOwner 可以退款",
+            "not-found: transaction 或 merchant 不存在",
+            "failed-precondition: 交易状态不是 completed"
+          ],
+          "permissions": "仅 merchantOwner 可调用",
+          "notes": "merchantAsist 不能退款，只有 merchantOwner 有权限"
+        },
+        "resetDailyMerchantRevenue": {
+          "name": "resetDailyMerchantRevenue",
+          "trigger": "Scheduled (每日 00:00 MYT)",
+          "region": "asia-southeast1",
+          "description": "每日自动重置所有 merchant 的今日销售额",
+          "logic": [
+            "1. 查询所有 organizations/{orgId}/events/{eventId}/merchants 集合",
+            "2. 使用 batch write 批量更新：",
+            "   a. dailyRevenue.today = 0",
+            "   b. dailyRevenue.todayTransactionCount = 0",
+            "   c. dailyRevenue.todayOwnerCollected = 0",
+            "   d. dailyRevenue.todayAsistsCollected = 0",
+            "   e. dailyRevenue.lastResetAt = now",
+            "3. 同时重置 merchantAsist 的今日统计：",
+            "   a. statistics.todayCollected = 0",
+            "   b. statistics.todayTransactionCount = 0"
+          ],
+          "schedule": "0 0 * * * (cron: 每天 00:00 MYT)",
+          "notes": "使用 Cloud Scheduler 触发，确保每日准时重置"
         }
       },
       "securityRules": {

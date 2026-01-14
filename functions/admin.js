@@ -1091,14 +1091,6 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
         };
       }
 
-      if (roles.includes('merchant')) {
-        userDoc.merchant = {
-          merchantId: `MR${Date.now()}`,
-          monthlyReceivedPoints: 0,
-          totalReceivedPoints: 0
-        };
-      }
-
       if (roles.includes('customer')) {
         userDoc.customer = {
           customerId: `CS${Date.now()}`,
@@ -1176,9 +1168,6 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
       if (roles.includes('seller')) {
         updateData['statistics.totalSellers'] = admin.firestore.FieldValue.increment(1);
-      }
-      if (roles.includes('merchant')) {
-        updateData['statistics.totalMerchants'] = admin.firestore.FieldValue.increment(1);
       }
       if (roles.includes('customer')) {
         updateData['statistics.totalCustomers'] = admin.firestore.FieldValue.increment(1);
@@ -2651,13 +2640,6 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
             transactions: {}
           };
         }
-        if (roles.includes('merchant')) {
-          userDoc.merchant = {
-            merchantId: `MR${Date.now()}`,
-            monthlyReceivedPoints: 0,
-            totalReceivedPoints: 0
-          };
-        }
         if (roles.includes('customer')) {
           userDoc.customer = {
             customerId: `CS${Date.now()}`,
@@ -2710,7 +2692,6 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         if (roles.includes('merchantManager')) statIncrements.totalMerchantManagers++;
         if (roles.includes('customerManager')) statIncrements.totalCustomerManagers++;
         if (roles.includes('seller')) statIncrements.totalSellers++;
-        if (roles.includes('merchant')) statIncrements.totalMerchants++;
         if (roles.includes('customer')) statIncrements.totalCustomers++;
 
         // 批次切換
@@ -2864,7 +2845,8 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       if (roles.customerManager) { newRoles.push('customerManager'); managerRoles.push('customerManager'); }
       if (roles.cashier) { newRoles.push('cashier'); managerRoles.push('cashier'); }
       if (roles.seller) { newRoles.push('seller'); participantRoles.push('seller'); }
-      if (roles.merchant) { newRoles.push('merchant'); participantRoles.push('merchant'); }
+      if (roles.merchantOwner) { newRoles.push('merchantOwner'); participantRoles.push('merchantOwner'); }
+      if (roles.merchantAsist) { newRoles.push('merchantAsist'); participantRoles.push('merchantAsist'); }
       if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
       if (roles.pointSeller) { newRoles.push('pointSeller'); participantRoles.push('pointSeller'); }
 
@@ -2920,80 +2902,6 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
         additionalUpdateData['seller.transactions'] = {};
       }
 
-      // ⭐⭐⭐ 修改：merchant 角色 - 创建 merchants 集合文档 ⭐⭐⭐
-      // ✅ 优化：只要新角色包含 merchant 就检查文档是否存在，增加自愈能力
-      if (newRoles.includes('merchant')) {
-        console.log('[updateUserRoles] 检测到 merchant 角色，准备检查/创建 merchants 文档');
-
-        // 生成 merchantId
-        const merchantId = `merchant_${userId}`;
-
-        // 创建 merchants 集合文档
-        const merchantRef = eventRef.collection('merchants').doc(merchantId);
-
-        // 检查是否已存在
-        const merchantSnap = await merchantRef.get();
-
-        if (!merchantSnap.exists) {
-          console.log('[updateUserRoles] 创建新的 merchants 文档:', merchantId);
-
-          // 创建 merchants 文档
-          await merchantRef.set({
-            merchantId: merchantId,
-            userId: userId,
-            stallName: userData.basicInfo?.englishName || userData.basicInfo?.chineseName || '未命名摊位',
-            description: '',
-
-            contactInfo: {
-              phone: userData.basicInfo?.phoneNumber || '',
-              email: '',
-              note: ''
-            },
-
-            qrCodeData: {
-              type: 'MERCHANT_PAYMENT',
-              version: '1.0',
-              merchantId: merchantId,
-              eventId: eventId,
-              organizationId: organizationId,
-              generatedAt: new Date()
-            },
-
-            revenueStats: {
-              totalRevenue: 0,
-              todayRevenue: 0,
-              transactionCount: 0,
-              todayTransactionCount: 0,
-              lastTransactionAt: null,
-              averageTransactionAmount: 0
-            },
-
-            operationStatus: {
-              isActive: true,
-              lastStatusChange: new Date(),
-              pauseReason: ''
-            },
-
-            metadata: {
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              createdBy: 'updateUserRoles',
-              lastUpdatedBy: 'updateUserRoles'
-            }
-          });
-
-          console.log('[updateUserRoles] ✅ Merchants 文档创建成功');
-        } else {
-          console.log('[updateUserRoles] Merchants 文档已存在，跳过创建');
-        }
-
-        // ⭐ 在 users 文档中设置 merchant.id
-        additionalUpdateData['merchant.id'] = merchantId;
-        additionalUpdateData['merchant.availablePoints'] = 0;
-        additionalUpdateData['merchant.totalPointsSold'] = 0;
-        additionalUpdateData['merchant.transactions'] = {};
-      }
-
       if (roles.customer && !previousRoles?.includes('customer')) {
         additionalUpdateData['customer.availablePoints'] = 0;
         additionalUpdateData['customer.totalPointsSpent'] = 0;
@@ -3043,7 +2951,7 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
 
 // ========== 分配 / 回收 點數 ==========
 // POST /api/allocatePointsHttp
-// Body: { organizationId, eventId, userId, roleType: 'seller'|'merchant'|'customer', amount, note, idToken }
+// Body: { organizationId, eventId, userId, roleType: 'seller'|'customer', amount, note, idToken }
 exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST' });
@@ -3058,7 +2966,7 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
       if (!organizationId || !eventId || !userId || !roleType || !amount) {
         return res.status(400).json({ error: '缺少必要參數' });
       }
-      if (!['seller', 'merchant', 'customer'].includes(roleType)) {
+      if (!['seller', 'customer'].includes(roleType)) {
         return res.status(400).json({ error: 'roleType 不正確' });
       }
       const points = Number(amount);
@@ -3145,7 +3053,7 @@ exports.recallPointsHttp = onRequest({ region: 'asia-southeast1' }, async (req, 
       if (!organizationId || !eventId || !userId || !roleType || !amount) {
         return res.status(400).json({ error: '缺少必要參數' });
       }
-      if (!['seller', 'merchant', 'customer'].includes(roleType)) {
+      if (!['seller', 'customer'].includes(roleType)) {
         return res.status(400).json({ error: 'roleType 不正確' });
       }
       const points = Number(amount);
