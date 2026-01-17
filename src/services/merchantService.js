@@ -64,19 +64,27 @@ export const getMerchantByUserId = async (orgId, eventId, userId) => {
       'merchants'
     );
 
-    const q = query(merchantsRef, where('userId', '==', userId));
-    const querySnapshot = await getDocs(q);
+    // 優先：以新架構欄位查找（merchantOwnerId / merchantAsists）
+    // 後備：相容舊欄位 userId
+    const queries = [
+      query(merchantsRef, where('merchantOwnerId', '==', userId)),
+      query(merchantsRef, where('merchantAsists', 'array-contains', userId)),
+      query(merchantsRef, where('userId', '==', userId))
+    ];
 
-    if (querySnapshot.empty) {
-      return null;
+    for (const q of queries) {
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        // 理論上一個 user 只能對應一個 merchant
+        const merchantDoc = querySnapshot.docs[0];
+        return {
+          id: merchantDoc.id,
+          ...merchantDoc.data()
+        };
+      }
     }
 
-    // 理論上一個 user 只能對應一個 merchant
-    const merchantDoc = querySnapshot.docs[0];
-    return {
-      id: merchantDoc.id,
-      ...merchantDoc.data()
-    };
+    return null;
   } catch (error) {
     console.error('Error getting merchant by userId:', error);
     throw error;

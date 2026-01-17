@@ -1,20 +1,178 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { auth, db, functions as fbFunctions, FUNCTIONS_REGION } from '../../config/firebase';
+import { auth, db, functions as fbFunctions, FUNCTIONS_REGION, FIREBASE_PROJECT_ID } from '../../config/firebase';
 import { collection, getDocs, query, orderBy, where, doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEvent } from '../../contexts/EventContext';
 import { fetchDoc, fetchCollectionWithOrder, fetchCollectionDocs } from '../../utils/firestoreHelpers';
 import CreateMerchantModal from './components/CreateMerchantModal.jsx';
 import EditMerchantModal from './components/EditMerchantModal.jsx';
 import MerchantDetailsModal from './components/MerchantDetailsModal.jsx';
 
+// 將可能的本地化物件/數字轉為字串（優先 zh-TW/zh-CN，其次 en-US）
+const getLocalizedText = (val) => {
+  if (val == null) return '';
+  if (typeof val === 'string' || typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    return val['zh-TW'] || val['zh-CN'] || val['en-US'] || val['en'] || val['zh'] || '';
+  }
+  return '';
+};
+
+// 將 Firestore Timestamp / Date / number / string 轉為可顯示日期字串
+const formatDateText = (val) => {
+  if (val == null) return '';
+  try {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return new Date(val).toLocaleDateString('zh-TW');
+    if (val instanceof Date) return val.toLocaleDateString('zh-TW');
+    // Firestore Timestamp (has toDate)
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate().toLocaleDateString('zh-TW');
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+};
+
 const MerchantManagerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { userProfile, isAuthenticated: authReady, loading: authLoading } = useAuth();
+  const { organizationId: ctxOrganizationId, eventId: ctxEventId, event: ctxEvent, loading: eventLoading } = useEvent();
   const functions = fbFunctions;
+
+  const redirectToLogin = (reason = '') => {
+    if (reason) console.warn('[MerchantManager] redirectToLogin:', reason);
+    if (orgEventCode) {
+      navigate(`/login/${orgEventCode}`, { replace: true });
+    } else {
+      navigate('/platform/login', { replace: true });
+    }
+  };
+
+  const isUnauthOrPermError = (err) => {
+    const code = String(err?.code || '').toLowerCase();
+    const msg = String(err?.message || '').toLowerCase();
+    return (
+      code.includes('unauth') ||
+      code.includes('permission') ||
+      msg.includes('用户未登录') ||
+      msg.includes('未登录') ||
+      msg.includes('missing or insufficient permissions')
+    );
+  };
+
+  const decodeJwtPayload = (jwt) => {
+    try {
+      const parts = String(jwt || '').split('.');
+      if (parts.length < 2) return null;
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+      const jsonStr = decodeURIComponent(
+        Array.prototype.map
+          .call(atob(padded), (c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonStr);
+    } catch {
+      return null;
+    }
+  };
+
+  const ensureAuthToken = async (forceRefresh = false) => {
+    if (!auth.currentUser) {
+      throw new Error('用户未登录');
+    }
+    // 取得（或強制刷新）ID token，確保 callable 帶上 Authorization
+    return await auth.currentUser.getIdToken(!!forceRefresh);
+  };
+
+  const callCallableViaFetch = async (name, payload, idToken) => {
+    // Callable protocol: POST { data: ... } with Bearer token
+    const url = `https://${FUNCTIONS_REGION}-${FIREBASE_PROJECT_ID}.cloudfunctions.net/${name}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`
+      },
+      body: JSON.stringify({ data: payload })
+    });
+
+    let json;
+    try {
+      json = await resp.json();
+    } catch {
+      json = null;
+    }
+
+    if (!resp.ok) {
+      const msg =
+        json?.error?.message ||
+        json?.error?.status ||
+        `HTTP ${resp.status}`;
+      const err = new Error(msg);
+      err.httpStatus = resp.status;
+      err.details = json;
+      throw err;
+    }
+
+    // Most callable responses are { result: ... } (legacy) or { data: ... } depending on runtime.
+    const data = json?.result ?? json?.data ?? json;
+    return { data };
+  };
+
+  const callFunction = async (name, payload) => {
+    if (authLoading) {
+      throw new Error('登录状态初始化中，请稍后再试');
+    }
+    if (!authReady) {
+      throw new Error('用户未登录');
+    }
+
+    // 在部分瀏覽器/重導後，token 可能尚未 ready，先強制刷新一次
+    let idToken = await ensureAuthToken(true);
+    const payloadWithToken = { ...(payload || {}), idToken };
+
+    // Lightweight diagnostics (helps confirm project/audience mismatch)
+    try {
+      const jwtPayload = decodeJwtPayload(idToken);
+      console.groupCollapsed(`[MerchantManager] callFunction ${name} auth debug`);
+      console.log('project/region', { FIREBASE_PROJECT_ID, FUNCTIONS_REGION });
+      console.log('currentUser', { uid: auth.currentUser?.uid, email: auth.currentUser?.email || null });
+      console.log('token.aud/token.iss', { aud: jwtPayload?.aud, iss: jwtPayload?.iss });
+      console.groupEnd();
+    } catch {
+      // ignore
+    }
+
+    const fn = httpsCallable(functions, name);
+    try {
+      return await fn(payloadWithToken);
+    } catch (err) {
+      // 若仍回 unauthenticated，等待一個 tick 再刷新重試一次
+      if (isUnauthOrPermError(err)) {
+        try {
+          await new Promise(r => setTimeout(r, 250));
+          idToken = await ensureAuthToken(true);
+          return await fn({ ...(payload || {}), idToken });
+        } catch (retryErr) {
+          // Final fallback: send Authorization header explicitly (some environments fail to attach it)
+          try {
+            idToken = await ensureAuthToken(true);
+            return await callCallableViaFetch(name, { ...(payload || {}), idToken }, idToken);
+          } catch (fetchErr) {
+            throw fetchErr;
+          }
+        }
+      }
+      throw err;
+    }
+  };
 
   // 状态管理
   const [loading, setLoading] = useState(true);
@@ -49,19 +207,16 @@ const MerchantManagerDashboard = () => {
   const [availableOwners, setAvailableOwners] = useState([]);
   const [availableAsists, setAvailableAsists] = useState([]);
 
-  // 加载数据
+  // 加载数据（使用 EventContext 已解析出的 Firestore 文档 ID）
   useEffect(() => {
-    if (orgEventCode) {
-      loadEventData();
+    if (ctxOrganizationId && ctxEventId) {
+      setOrganizationId(ctxOrganizationId);
+      setEventId(ctxEventId);
+      setEventData(ctxEvent || null);
+      loadMerchants(ctxOrganizationId, ctxEventId);
+      loadAvailableUsers(ctxOrganizationId, ctxEventId);
     }
-  }, [orgEventCode]);
-
-  useEffect(() => {
-    if (organizationId && eventId) {
-      loadMerchants();
-      loadAvailableUsers();
-    }
-  }, [organizationId, eventId]);
+  }, [ctxOrganizationId, ctxEventId, ctxEvent]);
 
   // 筛选摊位
   useEffect(() => {
@@ -69,46 +224,13 @@ const MerchantManagerDashboard = () => {
   }, [merchants, searchTerm, statusFilter, ownerFilter]);
 
   // ============================================
-  // 加载活动数据
-  // ============================================
-  const loadEventData = async () => {
-    try {
-      setLoading(true);
-      
-      if (!orgEventCode) {
-        throw new Error('缺少 orgEventCode');
-      }
-      
-      const [orgId, evtId] = orgEventCode.split('-');
-      if (!orgId || !evtId) {
-        throw new Error('無效的 orgEventCode 格式');
-      }
-      
-      setOrganizationId(orgId);
-      setEventId(evtId);
-      
-      // 使用安全助手加载活动信息
-      const eventData = await fetchDoc('organizations', orgId, 'events', evtId);
-      
-      if (eventData) {
-        setEventData(eventData);
-      }
-    } catch (error) {
-      console.error('加载活动数据失败:', error);
-      alert('加载活动数据失败: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================
   // 加载摊位列表
   // ============================================
-  const loadMerchants = async () => {
+  const loadMerchants = async (orgId = organizationId, evtId = eventId) => {
     try {
       // 防禦性檢查
-      if (!organizationId || !eventId) {
-        console.warn('缺少必要参数:', { organizationId, eventId });
+      if (!orgId || !evtId) {
+        console.warn('缺少必要参数:', { organizationId: orgId, eventId: evtId });
         return;
       }
       
@@ -116,9 +238,9 @@ const MerchantManagerDashboard = () => {
       const merchantsList = await fetchCollectionWithOrder(
         { field: 'metadata.createdAt', direction: 'desc' },
         'organizations',
-        organizationId,
+        orgId,
         'events',
-        eventId,
+        evtId,
         'merchants'
       );
       
@@ -126,7 +248,12 @@ const MerchantManagerDashboard = () => {
       calculateStatistics(merchantsList);
     } catch (error) {
       console.error('加载摊位列表失败:', error);
-      alert('加载摊位列表失败: ' + error.message);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('loadMerchants unauth/perm');
+        return;
+      }
+      alert('加载摊位列表失败: ' + (error?.message || String(error)));
     } finally {
       setLoading(false);
     }
@@ -135,28 +262,58 @@ const MerchantManagerDashboard = () => {
   // ============================================
   // 加载可用的 owners 和 asists
   // ============================================
-  const loadAvailableUsers = async () => {
+  const loadAvailableUsers = async (orgId = organizationId, evtId = eventId) => {
     try {
       // 防禦性檢查
-      if (!organizationId || !eventId) {
-        console.warn('缺少必要参数:', { organizationId, eventId });
+      if (!orgId || !evtId) {
+        console.warn('缺少必要参数:', { organizationId: orgId, eventId: evtId });
         return;
       }
       
       // 使用安全助手加载用户列表
       const users = await fetchCollectionDocs(
         'organizations',
-        organizationId,
+        orgId,
         'events',
-        eventId,
+        evtId,
         'users'
       );
+
+      // Debug：協助排查為何 select 沒出現 merchantOwner
+      console.groupCollapsed('[MerchantManager] loadAvailableUsers debug');
+      console.log('path', { organizationId: orgId, eventId: evtId, collection: 'users' });
+      console.log('total users fetched', users.length);
+      const merchantOwnerRoleUsers = users
+        .filter(u => Array.isArray(u.roles) && u.roles.includes('merchantOwner'))
+        .map(u => ({
+          id: u.id,
+          roles: u.roles,
+          merchantOwnerMerchantId: u.merchantOwner?.merchantId ?? null
+        }));
+      console.log('users with roles includes "merchantOwner"', merchantOwnerRoleUsers.length);
+      if (merchantOwnerRoleUsers.length > 0) {
+        console.table(merchantOwnerRoleUsers.slice(0, 50));
+        if (merchantOwnerRoleUsers.length > 50) {
+          console.log(`(truncated) showing first 50 of ${merchantOwnerRoleUsers.length}`);
+        }
+      }
       
       // 筛选 merchantOwner（未被分配的）
       const owners = users.filter(user => 
         user.roles?.includes('merchantOwner') &&
         !user.merchantOwner?.merchantId
       );
+
+      const excludedMerchantOwners = users
+        .filter(u => Array.isArray(u.roles) && u.roles.includes('merchantOwner'))
+        .filter(u => !!u.merchantOwner?.merchantId)
+        .map(u => ({ id: u.id, merchantOwnerMerchantId: u.merchantOwner?.merchantId ?? null }));
+      console.log('availableOwners count (after unassigned filter)', owners.length);
+      if (excludedMerchantOwners.length > 0) {
+        console.log('excluded merchantOwner users because merchantOwner.merchantId is set', excludedMerchantOwners.length);
+        console.table(excludedMerchantOwners.slice(0, 50));
+      }
+      console.groupEnd();
       
       // 筛选 merchantAsist（所有）
       const asists = users.filter(user => 
@@ -167,6 +324,11 @@ const MerchantManagerDashboard = () => {
       setAvailableAsists(asists);
     } catch (error) {
       console.error('加载用户列表失败:', error);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('loadAvailableUsers unauth/perm');
+        return;
+      }
     }
   };
 
@@ -224,9 +386,13 @@ const MerchantManagerDashboard = () => {
   // ============================================
   const handleCreateMerchant = async (merchantData) => {
     try {
-      const createMerchant = httpsCallable(functions, 'createMerchantHttp');
+      if (authLoading || !authReady) {
+        alert('登录状态尚未就绪，请稍后再试');
+        redirectToLogin('createMerchant auth not ready');
+        return;
+      }
       
-      const result = await createMerchant({
+      const result = await callFunction('createMerchantHttp', {
         organizationId,
         eventId,
         ...merchantData
@@ -239,7 +405,12 @@ const MerchantManagerDashboard = () => {
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('创建摊位失败:', error);
-      alert('创建摊位失败: ' + error.message);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('createMerchant unauth/perm');
+        return;
+      }
+      alert('创建摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -248,9 +419,13 @@ const MerchantManagerDashboard = () => {
   // ============================================
   const handleUpdateMerchant = async (merchantId, updates) => {
     try {
-      const updateMerchant = httpsCallable(functions, 'updateMerchantHttp');
+      if (authLoading || !authReady) {
+        alert('登录状态尚未就绪，请稍后再试');
+        redirectToLogin('updateMerchant auth not ready');
+        return;
+      }
       
-      const result = await updateMerchant({
+      const result = await callFunction('updateMerchantHttp', {
         organizationId,
         eventId,
         merchantId,
@@ -264,7 +439,12 @@ const MerchantManagerDashboard = () => {
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('更新摊位失败:', error);
-      alert('更新摊位失败: ' + error.message);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('updateMerchant unauth/perm');
+        return;
+      }
+      alert('更新摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -273,9 +453,13 @@ const MerchantManagerDashboard = () => {
   // ============================================
   const handleToggleStatus = async (merchantId, isActive, pauseReason = '') => {
     try {
-      const toggleStatus = httpsCallable(functions, 'toggleMerchantStatusHttp');
+      if (authLoading || !authReady) {
+        alert('登录状态尚未就绪，请稍后再试');
+        redirectToLogin('toggleStatus auth not ready');
+        return;
+      }
       
-      const result = await toggleStatus({
+      const result = await callFunction('toggleMerchantStatusHttp', {
         organizationId,
         eventId,
         merchantId,
@@ -288,7 +472,12 @@ const MerchantManagerDashboard = () => {
       loadMerchants(); // 刷新列表
     } catch (error) {
       console.error('状态切换失败:', error);
-      alert('状态切换失败: ' + error.message);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('toggleStatus unauth/perm');
+        return;
+      }
+      alert('状态切换失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -301,9 +490,13 @@ const MerchantManagerDashboard = () => {
     }
     
     try {
-      const deleteMerchant = httpsCallable(functions, 'deleteMerchantHttp');
+      if (authLoading || !authReady) {
+        alert('登录状态尚未就绪，请稍后再试');
+        redirectToLogin('deleteMerchant auth not ready');
+        return;
+      }
       
-      const result = await deleteMerchant({
+      const result = await callFunction('deleteMerchantHttp', {
         organizationId,
         eventId,
         merchantId,
@@ -317,7 +510,12 @@ const MerchantManagerDashboard = () => {
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('删除摊位失败:', error);
-      alert('删除摊位失败: ' + error.message);
+      if (isUnauthOrPermError(error)) {
+        alert('登录状态已失效，请重新登录');
+        redirectToLogin('deleteMerchant unauth/perm');
+        return;
+      }
+      alert('删除摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -352,7 +550,7 @@ const MerchantManagerDashboard = () => {
   // ============================================
   // 渲染
   // ============================================
-  if (loading) {
+  if (loading || eventLoading) {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.spinner}></div>
@@ -368,7 +566,14 @@ const MerchantManagerDashboard = () => {
         <div>
           <h1 style={styles.title}>摊位管理</h1>
           <p style={styles.subtitle}>
-            {eventData?.eventName} - {eventData?.eventDate}
+            {getLocalizedText(eventData?.eventName || eventData?.basicInfo?.eventName) || '活动'}
+            {(() => {
+              const dateText =
+                formatDateText(eventData?.eventInfo?.fairDate) ||
+                formatDateText(eventData?.eventDate) ||
+                formatDateText(eventData?.eventInfo?.eventDate);
+              return dateText ? ` - ${dateText}` : '';
+            })()}
           </p>
         </div>
         <button

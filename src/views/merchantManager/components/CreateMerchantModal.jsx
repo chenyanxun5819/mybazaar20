@@ -1,14 +1,17 @@
 import { useState } from 'react';
 
+/**
+ * CreateMerchantModal - 创建摊位模态框
+ * 
+ * 📝 修改说明（2026-01-14）：
+ * 1. ❌ 移除手动输入的联系方式（电话、邮箱、备注）
+ * 2. ✅ 从选定的 merchantOwner 自动获取联系信息
+ * 3. ✅ 确保一个 merchantOwner 只能对应一个 merchant
+ */
 const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsists }) => {
   const [formData, setFormData] = useState({
     stallName: '',
     description: '',
-    contactInfo: {
-      phone: '',
-      email: '',
-      note: ''
-    },
     merchantOwnerId: '',
     merchantAsists: [],
     isActive: false
@@ -17,18 +20,15 @@ const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsis
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ⭐ 获取选定摊主的信息（用于预览）
+  const selectedOwner = availableOwners.find(owner => owner.id === formData.merchantOwnerId);
+
   // 验证表单
   const validateForm = () => {
     const newErrors = {};
     
     if (!formData.stallName.trim()) {
       newErrors.stallName = '请输入摊位名称';
-    }
-    
-    if (!formData.contactInfo.phone.trim()) {
-      newErrors.phone = '请输入联系电话';
-    } else if (!/^\+?[0-9\s\-()]+$/.test(formData.contactInfo.phone)) {
-      newErrors.phone = '请输入有效的电话号码';
     }
     
     if (formData.merchantAsists.length > 5) {
@@ -54,19 +54,25 @@ const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsis
       const submitData = {
         stallName: formData.stallName.trim(),
         description: formData.description.trim(),
-        contactInfo: {
-          phone: formData.contactInfo.phone.trim(),
-          email: formData.contactInfo.email.trim(),
-          note: formData.contactInfo.note.trim()
-        },
         isActive: formData.isActive
       };
       
-      // 只在有值时添加 owner 和 asists
+      // ⭐ 如果选择了摊主，添加摊主 ID 和自动获取联系信息
       if (formData.merchantOwnerId) {
         submitData.merchantOwnerId = formData.merchantOwnerId;
+        
+        // ⭐ 从选定的 merchantOwner 获取联系信息
+        const owner = availableOwners.find(o => o.id === formData.merchantOwnerId);
+        if (owner) {
+          submitData.contactInfo = {
+            phone: owner.basicInfo?.phoneNumber || '',
+            email: owner.basicInfo?.email || '',
+            note: '' // 备注留空
+          };
+        }
       }
       
+      // 如果选择了助理，添加助理列表
       if (formData.merchantAsists.length > 0) {
         submitData.merchantAsists = formData.merchantAsists;
       }
@@ -137,60 +143,7 @@ const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsis
               </div>
             </div>
 
-            {/* 联系方式 */}
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>联系方式</h3>
-              
-              {/* 联系电话 */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>
-                  联系电话 <span style={styles.required}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.contactInfo.phone}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, phone: e.target.value }
-                  })}
-                  placeholder="+60123456789"
-                  style={{...styles.input, ...(errors.phone && styles.inputError)}}
-                />
-                {errors.phone && <div style={styles.errorText}>{errors.phone}</div>}
-              </div>
-
-              {/* 联系邮箱 */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>联系邮箱（可选）</label>
-                <input
-                  type="email"
-                  value={formData.contactInfo.email}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, email: e.target.value }
-                  })}
-                  placeholder="email@example.com"
-                  style={styles.input}
-                />
-              </div>
-
-              {/* 备注 */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>备注（可选）</label>
-                <textarea
-                  value={formData.contactInfo.note}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, note: e.target.value }
-                  })}
-                  placeholder="营业时间、特殊说明等..."
-                  rows="2"
-                  style={styles.textarea}
-                />
-              </div>
-            </div>
-
-            {/* 人员分配 */}
+            {/* ⭐ 人员分配（修改后） */}
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>人员分配（可选）</h3>
               
@@ -205,14 +158,46 @@ const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsis
                   <option value="">-- 暂不指定 --</option>
                   {availableOwners.map(owner => (
                     <option key={owner.id} value={owner.id}>
-                      {owner.basicInfo?.chineseName || owner.id} - {owner.basicInfo?.phoneNumber}
+                      {owner.basicInfo?.chineseName || owner.id} ({owner.basicInfo?.phoneNumber || '无电话'})
                     </option>
                   ))}
                 </select>
                 <div style={styles.hint}>
-                  可用摊主: {availableOwners.length} 人
+                  可用摊主: {availableOwners.length} 人（仅显示未分配的摊主）
                 </div>
               </div>
+
+              {/* ⭐ 选定摊主的联系信息预览 */}
+              {selectedOwner && (
+                <div style={styles.infoPreview}>
+                  <div style={styles.previewTitle}>📞 联系信息（自动获取）</div>
+                  <div style={styles.previewContent}>
+                    <div style={styles.previewRow}>
+                      <span style={styles.previewLabel}>姓名：</span>
+                      <span style={styles.previewValue}>
+                        {selectedOwner.basicInfo?.chineseName || '-'}
+                      </span>
+                    </div>
+                    <div style={styles.previewRow}>
+                      <span style={styles.previewLabel}>电话：</span>
+                      <span style={styles.previewValue}>
+                        {selectedOwner.basicInfo?.phoneNumber || '-'}
+                      </span>
+                    </div>
+                    {selectedOwner.basicInfo?.email && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>邮箱：</span>
+                        <span style={styles.previewValue}>
+                          {selectedOwner.basicInfo.email}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={styles.previewHint}>
+                    💡 联系信息将自动从摊主资料中获取
+                  </div>
+                </div>
+              )}
 
               {/* 添加助理 */}
               <div style={styles.formGroup}>
@@ -414,6 +399,46 @@ const styles = {
     backgroundColor: 'white',
     cursor: 'pointer',
     boxSizing: 'border-box'
+  },
+  // ⭐ 新增：联系信息预览样式
+  infoPreview: {
+    backgroundColor: '#f0fdf4',
+    border: '2px solid #86efac',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '1.25rem'
+  },
+  previewTitle: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#166534',
+    marginBottom: '0.75rem'
+  },
+  previewContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  previewRow: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '0.875rem'
+  },
+  previewLabel: {
+    color: '#15803d',
+    fontWeight: '500',
+    minWidth: '60px'
+  },
+  previewValue: {
+    color: '#166534',
+    fontWeight: '600'
+  },
+  previewHint: {
+    fontSize: '0.75rem',
+    color: '#15803d',
+    marginTop: '0.75rem',
+    paddingTop: '0.75rem',
+    borderTop: '1px solid #bbf7d0'
   },
   checkboxGrid: {
     display: 'grid',

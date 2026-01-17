@@ -79,6 +79,26 @@ const renderIcon = (icon, { alt, size = 20, color, style } = {}) => {
   return icon;
 };
 
+// 列表角色图标排序：customer → seller → manager → 其他
+const sortRolesForDisplay = (roles, roleConfig = ROLE_CONFIG) => {
+  const safeRoles = Array.isArray(roles) ? roles.filter(Boolean) : [];
+
+  const roleKey = (role) => {
+    if (role === 'customer') return 0;
+    if (role === 'seller') return 1;
+    const cfg = roleConfig?.[role];
+    if (cfg?.category === 'manager') return 2;
+    return 3;
+  };
+
+  return [...safeRoles].sort((a, b) => {
+    const ka = roleKey(a);
+    const kb = roleKey(b);
+    if (ka !== kb) return ka - kb;
+    return String(a).localeCompare(String(b));
+  });
+};
+
 const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
@@ -723,30 +743,29 @@ const EventManagerDashboard = () => {
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-            {(orgData?.logoUrl || eventData?.logoUrl) && (
-              <img
-                src={orgData?.logoUrl || eventData?.logoUrl}
-                alt="Organization Logo"
-                style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }}
-              />
-            )}
-            <h1 style={{ ...styles.title, marginBottom: 0 }}>
-              {eventData?.eventName?.['zh-CN'] || 'Event Manager Dashboard'}管理后台
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {(eventData?.logoUrl || orgData?.logoUrl) && (
+            <img
+              src={eventData?.logoUrl || orgData?.logoUrl}
+              alt="event Logo"
+              style={{ width: '100px', height: '100px', borderRadius: '8px', objectFit: 'cover' }}
+            />
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <h1 style={{ ...styles.title, margin: 0 }}>
+              {eventData?.eventName?.['zh-CN'] || eventData?.eventName?.['zh-TW'] || eventData?.eventName?.['en-US'] || 'Event Manager Dashboard'} 管理后台
             </h1>
+            <div style={{ marginTop: '0.25rem', ...styles.userGreeting, marginBottom: 0 }}>
+              欢迎管理员  {userInfo?.chineseName || userInfo?.englishName}
+            </div>
           </div>
-          <p style={styles.subtitle}>
-            {orgData?.basicInfo?.organizationName} - {eventData?.basicInfo?.eventName}
-          </p>
-          <p style={styles.userGreeting}>
-            欢迎, {userInfo?.chineseName || userInfo?.englishName}
-          </p>
         </div>
+
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
           <RoleSwitcher currentRole="eventManager" orgEventCode={orgEventCode} />
-          <button 
-            onClick={handleLogout} 
+          <button
+            onClick={handleLogout}
             style={{
               ...styles.logoutButton,
               background: 'none',
@@ -759,8 +778,8 @@ const EventManagerDashboard = () => {
             }}
             title="登出"
           >
-            <img 
-              src={leaveIcon} 
+            <img
+              src={leaveIcon}
               alt="登出"
               style={{ width: '24px', height: '24px', objectFit: 'contain' }}
             />
@@ -821,33 +840,43 @@ const EventManagerDashboard = () => {
           onClick={() => setShowAddUser(true)}
           title="创建单个用户"
         >
-          <UserAddIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          <UserAddIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
           创建单个用户
         </button>
+        {/* 批量导入按钮 */}
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#f59e0b', color: 'white', borderColor: '#667eea' }}
+          style={styles.primaryButton}
+          onClick={() => setShowBatchImport(true)}
+          title="批量导入"
+        >
+          <UsersMedicalIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
+          批量导入用户
+        </button>
+        <button
+          style={styles.primaryButton}
           onClick={() => setShowDepartmentManagement(true)}
           title="部门管理"
         >
-          <DepartmentStructureIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          <DepartmentStructureIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
           部门管理
         </button>
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#10b981', color: 'white', borderColor: '#667eea' }}
+          style={styles.primaryButton}
           onClick={() => setShowUserManagement(true)}
           title="点数管理"
         >
-          <PointOfSaleMobileIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          <PointOfSaleMobileIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
           点数管理
         </button>
         <button
-          style={{ ...styles.secondaryButton, backgroundColor: '#8b5cf6', color: 'white', borderColor: '#667eea' }}
+          style={styles.primaryButton}
           onClick={handleOpenGrantPoints}
           title="赠送点数"
         >
-          <FreeIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem', color: 'white' }} />
+          <FreeIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
           赠送点数
         </button>
+
       </div>
 
       {/* 过滤和列显示控制栏 */}
@@ -997,26 +1026,7 @@ const EventManagerDashboard = () => {
             )}
           </div>
 
-          {/* 批量导入按钮 */}
-          <button
-            onClick={() => setShowBatchImport(true)}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#8b5cf6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <UsersMedicalIcon style={{ width: '18px', height: '18px', color: 'white' }} />
-            批量导入
-          </button>
+
         </div>
       </div>
 
@@ -1130,7 +1140,7 @@ const EventManagerDashboard = () => {
                     {visibleColumns.角色 && (
                       <td style={styles.tableCell}>
                         <div style={styles.rolesCell}>
-                          {user.roles?.map(role => {
+                          {sortRolesForDisplay(user.roles).map(role => {
                             const config = ROLE_CONFIG[role];
                             if (!config) return null;
                             return (
@@ -1696,14 +1706,14 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '2rem',
+    marginBottom: '1rem',
     background: 'white',
-    padding: '2rem',
+    padding: '1rem',
     borderRadius: '12px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   title: {
-    fontSize: '2rem',
+    fontSize: '1.5rem',
     fontWeight: 'bold',
     color: '#1f2937',
     marginBottom: '0.5rem'
@@ -1714,7 +1724,7 @@ const styles = {
   },
   userGreeting: {
     color: '#667eea',
-    fontSize: '0.875rem',
+    fontSize: '1rem',
     marginTop: '0.5rem'
   },
   logoutButton: {
@@ -1729,7 +1739,7 @@ const styles = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(60px, 0.5fr))',
     gap: '1rem',
     marginBottom: '1.5rem'
   },
@@ -1769,13 +1779,13 @@ const styles = {
     flexWrap: 'wrap'
   },
   primaryButton: {
-    padding: '0.875rem 1.5rem',
+    padding: '0.8rem 1rem',
     backgroundColor: '#667eea',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontWeight: '600',
+    fontWeight: '400',
     fontSize: '1rem',
     transition: 'all 0.2s',
     boxShadow: '0 2px 4px rgba(102, 126, 234, 0.4)',

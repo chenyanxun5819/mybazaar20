@@ -387,3 +387,145 @@
 .merchant-not-found-btn:hover {
   background-color: #374151;
 }
+
+/* ============================================
+   ⭐ 全局通知横幅样式
+   添加到 MerchantDashboard.css 文件末尾
+   ============================================ */
+
+.merchant-notification-banner {
+  position: fixed;
+  top: 64px; /* header 高度 */
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  z-index: 999;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.merchant-notification-banner:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a3f8f 100%);
+}
+
+.notification-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  animation: ring 1s ease-in-out infinite;
+}
+
+@keyframes ring {
+  0%, 100% { 
+    transform: rotate(0deg); 
+  }
+  10%, 30% { 
+    transform: rotate(-15deg); 
+  }
+  20%, 40% { 
+    transform: rotate(15deg); 
+  }
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0; /* 防止文字溢出 */
+}
+
+.notification-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-text {
+  font-size: 13px;
+  opacity: 0.95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-close {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.2s;
+}
+
+.notification-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.notification-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ⭐ 响应式设计 */
+@media (max-width: 768px) {
+  .merchant-notification-banner {
+    top: 56px; /* 移动端 header 可能更小 */
+    padding: 14px 16px;
+  }
+
+  .notification-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .notification-title {
+    font-size: 13px;
+  }
+
+  .notification-text {
+    font-size: 12px;
+  }
+
+  .notification-close {
+    width: 24px;
+    height: 24px;
+  }
+
+  .notification-close svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* ⭐ 当通知显示时，给 main 内容留出空间 */
+.merchant-dashboard:has(.merchant-notification-banner) .merchant-main {
+  padding-top: 72px; /* 通知横幅高度 + 间距 */
+}
+
+@media (max-width: 768px) {
+  .merchant-dashboard:has(.merchant-notification-banner) .merchant-main {
+    padding-top: 64px;
+  }
+}

@@ -86,19 +86,50 @@
 }
 
 .logout-button {
-  background-color: #2196F3;
-  color: white;
+  background: transparent;
+  color: #222c6e;
   border: none;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9rem;
   transition: background-color 0.2s, transform 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
 
 .logout-button:hover {
-  background-color: #1976D2;
+  background-color: rgba(0,0,0,0.06);
   transform: translateY(-1px);
+}
+
+.logout-button svg {
+  color: inherit;
+}
+
+.role-switcher-button {
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  transition: transform 0.2s;
+  border-radius: 4px;
+  color: #222c6e;
+}
+
+.role-switcher-button:hover {
+  background-color: rgba(0,0,0,0.06);
+  transform: scale(1.1);
+}
+
+.role-switcher-button svg {
+  color: inherit;
 }
 
 /* ========================================
@@ -107,12 +138,21 @@
 
 .tab-navigation {
   display: flex;
-  background-color: white;
   border-bottom: 1px solid #e0e0e0;
   position: sticky;
   top: 0;
   z-index: 10;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* 避免點擊 tab 後留下瀏覽器預設 focus 外框（常被看成底部黑線） */
+.tab-navigation button:focus,
+.tab-navigation button:focus-visible {
+  outline: none;
+}
+
+.tab-navigation button {
+  -webkit-tap-highlight-color: transparent;
 }
 
 .tab-button {
@@ -122,12 +162,16 @@
   align-items: center;
   gap: 0.25rem;
   padding: 1rem 0.5rem;
-  background: none;
+  background: transparent;
   border: none;
   cursor: pointer;
   color: #757575;
   transition: all 0.2s;
   border-bottom: 3px solid transparent;
+}
+
+.tab-button svg {
+  color: inherit;
 }
 
 .tab-button.active {

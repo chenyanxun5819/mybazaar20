@@ -16,14 +16,54 @@ import {
 
 import { safeFetch } from '../../services/safeFetch';
 
+// SVG Icons（对齐 EventManagerDashboard 的导入方式）
+import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
+import SellerFiveIcon from '../../assets/seller (5).svg?react';
+import UsersGearIcon from '../../assets/users-gear.svg?react';
+import UserSalaryIcon from '../../assets/user-salary.svg?react';
+import EmployeeManIcon from '../../assets/employee-man.svg?react';
+import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
+import SellerFourIcon from '../../assets/seller (4).svg?react';
+import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
+import UserBagIcon from '../../assets/user-bag.svg?react';
+import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
+
+import PointsManagementIcon from '../../assets/pointsManagement.svg?react';
+import PlusPointsIcon from '../../assets/plusPoints.svg?react';
+import PointsRecycleIcon from '../../assets/pointsRecycle.svg?react';
+
 // 统一的角色配置
 const ROLE_CONFIG = {
-  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', color: '#f59e0b', icon: '🛍️', category: 'manager' },
-  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', color: '#8b5cf6', icon: '🏪', category: 'manager' },
-  customerManager: { label: 'CM', fullLabel: 'Customer Manager', color: '#10b981', icon: '🎫', category: 'manager' },
-  cashier: { label: 'C', fullLabel: 'Cashier', color: '#3b82f6', icon: '💵', category: 'manager' },
-  seller: { label: 'S', fullLabel: 'Seller', color: '#ec4899', icon: '🛒', category: 'user' },
-  customer: { label: 'C', fullLabel: 'Customer', color: '#84cc16', icon: '👤', category: 'user' }
+  // 参照 EventManagerDashboard.jsx ROLE_CONFIG（并补齐本页会用到的 customer）
+  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', chineseLabel: '班导师', color: '#f59e0b', icon: ChalkboardUserIcon, category: 'manager' },
+  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', chineseLabel: '商家管理员', color: '#8b5cf6', icon: SellerFiveIcon, category: 'manager' },
+  customerManager: { label: 'CM', fullLabel: 'Customer Manager', chineseLabel: '消费者管理员', color: '#10b981', icon: UsersGearIcon, category: 'manager' },
+  cashier: { label: 'C', fullLabel: 'Cashier', chineseLabel: '收银员', color: '#3b82f6', icon: UserSalaryIcon, category: 'manager' },
+  seller: { label: 'S', fullLabel: 'Seller', chineseLabel: '点数销售员', color: '#ec4899', icon: EmployeeManIcon, category: 'user' },
+  merchantOwner: { label: 'MO', fullLabel: 'Merchant Owner', chineseLabel: '摊主', color: '#84cc16', icon: StoreBuyerIcon, category: 'user' },
+  merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: SellerFourIcon, category: 'user' },
+  pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' },
+  customer: { label: 'CU', fullLabel: 'Customer', chineseLabel: '顾客', color: '#ec4899', icon: UserBagIcon, category: 'user' }
+};
+
+// 列表角色图标排序：customer → seller → manager → 其他
+const sortRolesForDisplay = (roles, roleConfig = ROLE_CONFIG) => {
+  const safeRoles = Array.isArray(roles) ? roles.filter(Boolean) : [];
+
+  const roleKey = (role) => {
+    if (role === 'customer') return 0;
+    if (role === 'seller') return 1;
+    const cfg = roleConfig?.[role];
+    if (cfg?.category === 'manager') return 2;
+    return 3;
+  };
+
+  return [...safeRoles].sort((a, b) => {
+    const ka = roleKey(a);
+    const kb = roleKey(b);
+    if (ka !== kb) return ka - kb;
+    return String(a).localeCompare(String(b));
+  });
 };
 
 const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
@@ -482,7 +522,10 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       <div style={styles.modalContent}>
         {/* 标题栏 */}
         <div style={styles.header}>
-          <h2 style={styles.title}>📊 点数管理</h2>
+          <h2 style={styles.title}>
+            <PointsManagementIcon style={{ width: '24px', height: '24px', marginRight: '0.5rem' }} />
+            点数管理
+          </h2>
           <button onClick={onClose} style={styles.closeButton}>✕</button>
         </div>
 
@@ -496,7 +539,8 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
             style={styles.searchInput}
           />
           <button onClick={openBatchModal} style={styles.batchButton}>
-            💰 批量分配点数
+            <PosBillIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
+            批量分配点数
           </button>
         </div>
 
@@ -553,9 +597,10 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                       </td>
                       <td style={styles.tableCell}>
                         <div style={styles.rolesCell}>
-                          {user.roles?.map(role => {
+                          {sortRolesForDisplay(user.roles).map(role => {
                             const config = ROLE_CONFIG[role];
                             if (!config) return null;
+                            const RoleIcon = config.icon;
                             return (
                               <div
                                 key={role}
@@ -565,7 +610,9 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                                 }}
                                 title={config.fullLabel}
                               >
-                                {config.label}
+                                {RoleIcon ? (
+                                  <RoleIcon style={{ width: '16px', height: '16px', color: 'white' }} />
+                                ) : null}
                               </div>
                             );
                           })}
@@ -588,14 +635,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                             style={styles.actionButton}
                             title="分配点数"
                           >
-                            ➕
+                            <PlusPointsIcon style={{ width: '18px', height: '18px' }} />
                           </button>
                           <button
                             onClick={() => openRecallModal(user)}
                             style={styles.actionButton}
                             title="回收点数"
                           >
-                            ↩️
+                            <PointsRecycleIcon style={{ width: '18px', height: '18px' }} />
                           </button>
                         </div>
                       </td>
@@ -871,7 +918,9 @@ const styles = {
     fontSize: '1.5rem',
     fontWeight: '600',
     color: '#1f2937',
-    margin: 0
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center'
   },
   closeButton: {
     width: '32px',
@@ -902,14 +951,20 @@ const styles = {
     outline: 'none'
   },
   batchButton: {
-    padding: '0.75rem 1.5rem',
-    fontSize: '0.875rem',
-    fontWeight: '600',
+    // 对齐 EventManagerDashboard.jsx styles.primaryButton
+    padding: '0.8rem 1rem',
+    backgroundColor: '#667eea',
     color: 'white',
-    backgroundColor: '#10b981',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
+    fontWeight: '400',
+    fontSize: '1rem',
+    transition: 'all 0.2s',
+    boxShadow: '0 2px 4px rgba(102, 126, 234, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
     whiteSpace: 'nowrap'
   },
   tableWrapper: {
@@ -990,7 +1045,10 @@ const styles = {
     borderRadius: '6px',
     backgroundColor: 'white',
     cursor: 'pointer',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   emptyState: {
     textAlign: 'center',

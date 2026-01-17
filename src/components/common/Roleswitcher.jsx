@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import UsersIcon from '../../assets/users.svg?react';
+import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
+import SellerFiveIcon from '../../assets/seller (5).svg?react';
+import UsersGearIcon from '../../assets/users-gear.svg?react';
+import UserSalaryIcon from '../../assets/user-salary.svg?react';
+import EmployeeManIcon from '../../assets/employee-man.svg?react';
+import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
+import SellerFourIcon from '../../assets/seller (4).svg?react';
+import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
+import UserBagIcon from '../../assets/user-bag.svg?react';
+
 /**
  * 角色切换组件
  * 
@@ -18,30 +29,43 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
 
-  // 角色配置
+  const isMobile = (() => {
+    if (typeof window === 'undefined') return false;
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+    const uaMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+    const touchCapable = 'ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0);
+    return uaMobile || touchCapable;
+  })();
+
+  // 角色配置（图标参考 EventManagerDashboard ROLE_CONFIG）
   const roleConfig = {
-    'platformAdmin': { label: 'Platform Admin', icon: '🔧', color: '#ef4444' },
-    'eventManager': { label: 'Event Manager', icon: '🎯', color: '#667eea' },
-    'sellerManager': { label: 'Seller Manager', icon: '💰', color: '#f59e0b' },
-    'merchantManager': { label: 'Merchant Manager', icon: '🏪', color: '#8b5cf6' },
-    'customerManager': { label: 'Customer Manager', icon: '🎫', color: '#10b981' },
-    'seller': { label: 'Seller (销售员)', icon: '🛍️', color: '#06b6d4' },
-    'merchantOwner': { label: 'Merchant Owner (摊主)', icon: '🏬', color: '#84cc16' },
-    'merchantAsist': { label: 'Merchant Assistant (助理)', icon: '🏪', color: '#a3e635' },
-    'customer': { label: 'Customer (顾客)', icon: '👤', color: '#ec4899' }
+    platformAdmin: { label: 'Platform Admin', buttonLabel: 'Platform\nAdmin', icon: UsersGearIcon, color: '#ef4444', category: 'manager' },
+    eventManager: { label: 'Event Manager', buttonLabel: 'Event\nManager', icon: UsersIcon, color: '#667eea', category: 'manager' },
+    sellerManager: { label: 'Seller Manager', buttonLabel: 'Seller\nManager', icon: ChalkboardUserIcon, color: '#f59e0b', category: 'manager' },
+    merchantManager: { label: 'Merchant Manager', buttonLabel: 'Merchant\nManager', icon: SellerFiveIcon, color: '#8b5cf6', category: 'manager' },
+    customerManager: { label: 'Customer Manager', buttonLabel: 'Customer\nManager', icon: UsersGearIcon, color: '#10b981', category: 'manager' },
+    cashier: { label: 'Cashier (收银员)', buttonLabel: 'Cashier\n(收银员)', icon: UserSalaryIcon, color: '#3b82f6', category: 'manager' },
+
+    seller: { label: 'Seller (销售员)', buttonLabel: 'Seller\n(销售员)', icon: EmployeeManIcon, color: '#ec4899', category: 'user' },
+    merchantOwner: { label: 'Merchant Owner (摊主)', buttonLabel: 'Merchant\nOwner', icon: StoreBuyerIcon, color: '#84cc16', category: 'user' },
+    merchantAsist: { label: 'Merchant Assistant (助理)', buttonLabel: 'Merchant\nAsist', icon: SellerFourIcon, color: '#a3e635', category: 'user' },
+    pointSeller: { label: 'Point Seller (点数直售员)', buttonLabel: 'Point\nSeller', icon: MoneyCheckEditIcon, color: '#f97316', category: 'user' },
+    customer: { label: 'Customer (顾客)', buttonLabel: 'Customer\n(顾客)', icon: UserBagIcon, color: '#ec4899', category: 'user' }
   };
 
-  // 角色到路由的映射
-  const roleRoutes = {
-    'platformAdmin': '/platform-admin/dashboard',
-    'eventManager': `/event-manager/${orgEventCode}/dashboard`,
-    'sellerManager': `/seller-manager/${orgEventCode}/dashboard`,
-    'merchantManager': `/merchant-manager/${orgEventCode}/dashboard`,
-    'customerManager': `/customer-manager/${orgEventCode}/dashboard`,
-    'seller': `/seller/${orgEventCode}/dashboard`,
-    'merchantOwner': `/merchant/${orgEventCode}/dashboard`,
-    'merchantAsist': `/merchant/${orgEventCode}/dashboard`,
-    'customer': `/customer/${orgEventCode}/dashboard`
+  // 角色到路由的映射（用 resolvedOrgEventCode 动态组装，避免 orgEventCode 缺省）
+  const roleRouteBuilders = {
+    platformAdmin: () => '/platform-admin/dashboard',
+    eventManager: (code) => `/event-manager/${code}/dashboard`,
+    sellerManager: (code) => `/seller-manager/${code}/dashboard`,
+    merchantManager: (code) => `/merchant-manager/${code}/dashboard`,
+    customerManager: (code) => `/customer-manager/${code}/dashboard`,
+    cashier: (code) => `/cashier/${code}/dashboard`,
+    seller: (code) => `/seller/${code}/dashboard`,
+    pointSeller: (code) => `/pointseller/${code}/dashboard`,
+    merchantOwner: (code) => `/merchant/${code}/dashboard`,
+    merchantAsist: (code) => `/merchant/${code}/dashboard`,
+    customer: (code) => `/customer/${code}/dashboard`
   };
 
   // localStorage key 映射
@@ -51,10 +75,67 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     'sellerManager': 'sellerManagerInfo',
     'merchantManager': 'merchantManagerInfo',
     'customerManager': 'customerManagerInfo',
+    'cashier': 'cashierInfo',
     'seller': 'sellerInfo',
+    'pointSeller': 'pointSellerInfo',
     'merchantOwner': 'merchantOwnerInfo',
     'merchantAsist': 'merchantAsistInfo',
     'customer': 'customerInfo'
+  };
+
+  const safeJsonParse = (value) => {
+    if (!value) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const fallbackStorageKey = currentRole ? storageKeys[currentRole] : null;
+  const storedInfo = !userInfo && fallbackStorageKey
+    ? safeJsonParse(localStorage.getItem(fallbackStorageKey))
+    : null;
+
+  const resolvedUserInfo = userInfo || storedInfo || {};
+  const resolvedOrgEventCode = orgEventCode || resolvedUserInfo.orgEventCode || (
+    resolvedUserInfo.organizationCode && resolvedUserInfo.eventCode
+      ? `${resolvedUserInfo.organizationCode}-${resolvedUserInfo.eventCode}`
+      : ''
+  );
+
+  const resolvedAvailableRolesRaw =
+    (Array.isArray(availableRoles) && availableRoles.length > 0)
+      ? availableRoles
+      : (Array.isArray(resolvedUserInfo.availableRoles) && resolvedUserInfo.availableRoles.length > 0)
+        ? resolvedUserInfo.availableRoles
+        : (Array.isArray(resolvedUserInfo.roles) ? resolvedUserInfo.roles : []);
+
+  const resolvedAvailableRoles = Array.from(new Set(
+    (currentRole ? [currentRole, ...resolvedAvailableRolesRaw] : [...resolvedAvailableRolesRaw])
+      .filter(Boolean)
+  ));
+
+  // 设备过滤规则（按你的要求）
+  // - Desktop: 只显示 manager + cashier
+  // - Mobile: 只显示非 manager（手机角色），并包含 pointSeller
+  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier'];
+  const mobileOnlyRoles = ['seller', 'customer', 'merchantOwner', 'merchantAsist', 'pointSeller'];
+
+  const deviceFilteredRoles = (resolvedAvailableRoles || []).filter((role) =>
+    isMobile ? mobileOnlyRoles.includes(role) : desktopOnlyRoles.includes(role)
+  );
+
+  const renderRoleIcon = (icon, { size = 18, color } = {}) => {
+    if (!icon) return null;
+    if (typeof icon === 'string') {
+      return <span style={{ fontSize: size, lineHeight: 1 }}>{icon}</span>;
+    }
+    if (typeof icon === 'function') {
+      const IconComp = icon;
+      return <IconComp aria-hidden="true" style={{ width: size, height: size, color, flexShrink: 0 }} />;
+    }
+    return null;
   };
 
   /**
@@ -70,16 +151,20 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     const newStorageKey = storageKeys[newRole];
     if (newStorageKey) {
       const updatedInfo = {
-        ...userInfo,
+        ...resolvedUserInfo,
         currentRole: newRole,
-        availableRoles: availableRoles
+        availableRoles: resolvedAvailableRoles
       };
       localStorage.setItem(newStorageKey, JSON.stringify(updatedInfo));
     }
 
     // 跳转到新角色的 Dashboard
-    const route = roleRoutes[newRole];
-    if (route) {
+    const routeBuilder = roleRouteBuilders[newRole];
+    const route = typeof routeBuilder === 'function'
+      ? routeBuilder(resolvedOrgEventCode)
+      : '';
+
+    if (route && (!route.includes('/undefined/') && !route.includes('/null/') && !route.endsWith('//dashboard'))) {
       console.log('[RoleSwitcher] 切换角色:', currentRole, '->', newRole);
       navigate(route);
       setIsOpen(false);
@@ -87,28 +172,36 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   };
 
   // 如果只有一个角色，不显示切换器
-  if (!availableRoles || availableRoles.length <= 1) {
+  if (!deviceFilteredRoles || deviceFilteredRoles.length <= 1) {
     return null;
   }
 
-  const currentConfig = roleConfig[currentRole] || { label: currentRole, icon: '👤', color: '#6b7280' };
+  const currentConfig = roleConfig[currentRole] || { label: currentRole, icon: UsersIcon, color: '#6b7280' };
 
   return (
     <div style={styles.container}>
       {/* 当前角色按钮 */}
       <button
-        style={{
-          ...styles.currentRoleButton,
-          borderColor: currentConfig.color
-        }}
+        type="button"
+        style={styles.currentRoleButton}
         onClick={() => setIsOpen(!isOpen)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        title="切换身份"
       >
-        <span style={{ fontSize: '1.25rem' }}>{currentConfig.icon}</span>
-        <span style={styles.roleLabel}>{currentConfig.label}</span>
-        <span style={{
-          ...styles.arrow,
-          transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'
-        }}>
+        {renderRoleIcon(currentConfig.icon, { size: 24, color: currentConfig.color })}
+        {isOpen && (
+          <span style={styles.currentRoleLabel}>
+            {currentConfig.buttonLabel || currentConfig.label}
+          </span>
+        )}
+        <span
+          aria-hidden="true"
+          style={{
+            ...styles.currentRoleCaret,
+            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+          }}
+        >
           ▼
         </span>
       </button>
@@ -125,8 +218,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
           {/* 角色列表 */}
           <div style={styles.dropdown}>
             <div style={styles.dropdownHeader}>切换身份</div>
-            {availableRoles.map(role => {
-              const config = roleConfig[role] || { label: role, icon: '👤', color: '#6b7280' };
+            {deviceFilteredRoles.map(role => {
+              const config = roleConfig[role] || { label: role, icon: UsersIcon, color: '#6b7280' };
               const isCurrentRole = role === currentRole;
 
               return (
@@ -140,7 +233,7 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
                   onClick={() => handleRoleSwitch(role)}
                   disabled={isCurrentRole}
                 >
-                  <span style={{ fontSize: '1.5rem' }}>{config.icon}</span>
+                  {renderRoleIcon(config.icon, { size: 24, color: config.color })}
                   <div style={styles.roleInfo}>
                     <div style={styles.roleName}>{config.label}</div>
                     {isCurrentRole && (
@@ -169,27 +262,35 @@ const styles = {
     display: 'inline-block'
   },
   currentRoleButton: {
+    position: 'relative',
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: '0.75rem',
-    padding: '0.75rem 1.25rem',
-    background: 'white',
-    border: '2px solid',
-    borderRadius: '12px',
+    justifyContent: 'center',
+    gap: '0.25rem',
+    padding: '0.5rem 0.75rem',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '10px',
     cursor: 'pointer',
-    fontSize: '1rem',
-    fontWeight: '600',
-    transition: 'all 0.2s',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    transition: 'background-color 0.2s, transform 0.12s',
+    lineHeight: 1,
+    minWidth: '88px'
   },
-  roleLabel: {
-    color: '#1f2937'
-  },
-  arrow: {
+  currentRoleLabel: {
+    color: '#111827',
     fontSize: '0.75rem',
+    fontWeight: '700',
+    textAlign: 'center',
+    whiteSpace: 'pre-line'
+  },
+  currentRoleCaret: {
+    position: 'absolute',
+    top: '0.35rem',
+    right: '0.35rem',
+    fontSize: '0.7rem',
     color: '#6b7280',
-    transition: 'transform 0.2s',
-    marginLeft: '0.5rem'
+    transition: 'transform 0.2s'
   },
   overlay: {
     position: 'fixed',

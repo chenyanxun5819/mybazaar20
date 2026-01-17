@@ -2,13 +2,18 @@
  * assignMerchantAsist.js
  * 分派商家助理 - merchantManager 为 merchantOwner 分派 merchantAsist
  * 
+ * ⭐ 修复内容（2026-01-17）:
+ * 1. 统一使用 merchantAsist.merchantId 单一字段（不再使用 assignedMerchants 数组）
+ * 2. 一个 merchantAsist 只能服务一个 merchant
+ * 3. 添加完整的 merchantAsist 对象初始化
+ * 
  * 功能：
  * 1. 验证调用者是 merchantManager
  * 2. 验证目标用户有 merchantAsist 角色
  * 3. 验证商家未满 5 个助理
  * 4. 验证用户未被分派到其他商家
  * 5. 更新 merchant.merchantAsists 数组
- * 6. 更新用户的 merchantAsist 对象
+ * 6. ⭐ 更新用户的 merchantAsist.merchantId（单一字段）
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -89,13 +94,13 @@ exports.assignMerchantAsist = onCall({ region: 'asia-southeast1' }, async (reque
       );
     }
 
-    // ========== 8. 验证用户未被分派到其他商家 ==========
+    // ========== 8. ⭐ 验证用户未被分派到其他商家（使用 merchantId 单一字段）==========
     const currentMerchantId = asistData.merchantAsist?.merchantId;
 
     if (currentMerchantId && currentMerchantId !== merchantId) {
       throw new HttpsError(
         'failed-precondition',
-        '该用户已被分派到其他商家，请先解除现有分派'
+        `该用户已被分派到商家 ${currentMerchantId}，一个助理只能服务一个摊位`
       );
     }
 
@@ -145,25 +150,34 @@ exports.assignMerchantAsist = onCall({ region: 'asia-southeast1' }, async (reque
         'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // 11.2 更新用户的 merchantAsist 对象
+      // 11.2 ⭐ 更新用户的 merchantAsist 对象（使用 merchantId 单一字段）
       transaction.update(asistRef, {
+        // ⭐ 核心修复：使用 merchantId 而不是 assignedMerchants 数组
         'merchantAsist.merchantId': merchantId,
         'merchantAsist.merchantOwnerId': merchantData.merchantOwnerId,
         'merchantAsist.stallName': merchantData.stallName,
+        
+        // 分派信息
         'merchantAsist.assignmentInfo.assignedAt': admin.firestore.FieldValue.serverTimestamp(),
         'merchantAsist.assignmentInfo.assignedBy': auth.uid,
         'merchantAsist.assignmentInfo.isActive': true,
+        
+        // 权限设置
         'merchantAsist.permissions.canCollectPayments': true,
         'merchantAsist.permissions.canViewOwnTransactions': true,
         'merchantAsist.permissions.canCancelPending': true,
         'merchantAsist.permissions.cannotViewAllTransactions': true,
         'merchantAsist.permissions.cannotEditProfile': true,
         'merchantAsist.permissions.cannotRefund': true,
+        
+        // 统计初始化
         'merchantAsist.statistics.totalCollected': 0,
         'merchantAsist.statistics.transactionCount': 0,
         'merchantAsist.statistics.lastCollectionAt': null,
         'merchantAsist.statistics.todayCollected': 0,
         'merchantAsist.statistics.todayTransactionCount': 0,
+        
+        // 更新时间
         'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
       });
 

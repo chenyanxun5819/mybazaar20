@@ -2,6 +2,11 @@
  * deleteMerchantHttp
  * 删除摊位
  * 
+ * ⭐ 修复内容（2026-01-17）:
+ * 1. 清除 merchantAsist 时使用 merchantId 单一字段（不再使用 assignedMerchants 数组）
+ * 2. 完整清空 merchantAsist 对象的所有字段
+ * 3. 记录删除信息到 assignmentInfo
+ * 
  * 功能：
  * 1. 验证权限（仅 merchantManager 或 eventManager）
  * 2. 检查是否有未完成的交易
@@ -20,26 +25,26 @@
  * @returns {object} 删除结果
  */
 
-const functions = require('firebase-functions');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
-exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
+exports.deleteMerchantHttp = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const { data, auth } = request;
+  
   // ============================================
   // 1. 权限验证
   // ============================================
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      '用户未登录'
-    );
+  if (!auth) {
+    throw new HttpsError('unauthenticated', '用户未认证');
   }
+  
+  const callerId = auth.uid;
 
-  const callerId = context.auth.uid;
   const { organizationId, eventId, merchantId, hardDelete, deleteReason } = data;
 
   // 验证必填参数
   if (!organizationId || !eventId || !merchantId) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       '缺少必填参数：organizationId, eventId, merchantId'
     );
@@ -54,7 +59,7 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
   
   const merchantDoc = await merchantRef.get();
   if (!merchantDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'not-found',
       `摊位 ${merchantId} 不存在`
     );
@@ -69,7 +74,7 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
   
   const callerDoc = await callerRef.get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '用户不属于此活动'
     );
@@ -82,7 +87,7 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
   const isEventManager = callerData.roles?.includes('eventManager');
   
   if (!isMerchantManager && !isEventManager) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '只有 merchantManager 或 eventManager 可以删除摊位'
     );
@@ -102,7 +107,7 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
     .get();
 
   if (!pendingTransactions.empty) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'failed-precondition',
       '该摊位还有未完成的交易，无法删除。请先处理所有待处理的交易。'
     );
@@ -159,15 +164,22 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
       }
 
       // ============================================
-      // 清除 merchantAsists 关联
+      // ⭐ 清除 merchantAsists 关联（使用 merchantId 单一字段）
       // ============================================
       for (const asistId of asistIds) {
         const asistRef = db.collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
           .collection('users').doc(asistId);
         
+        // ⭐ 核心修复：清空 merchantId 和相关字段，不再使用 assignedMerchants 数组
         transaction.update(asistRef, {
-          'merchantAsist.assignedMerchants': admin.firestore.FieldValue.arrayRemove(merchantId),
+          'merchantAsist.merchantId': null,
+          'merchantAsist.stallName': null,
+          'merchantAsist.merchantOwnerId': null,
+          'merchantAsist.assignmentInfo.isActive': false,
+          'merchantAsist.assignmentInfo.removedAt': now,
+          'merchantAsist.assignmentInfo.removedBy': callerId,
+          'merchantAsist.assignmentInfo.removedReason': deleteReason || '摊位已删除',
           'updatedAt': now
         });
       }
@@ -212,7 +224,7 @@ exports.deleteMerchantHttp = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('❌ 删除摊位失败:', error);
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'internal',
       `删除摊位失败: ${error.message}`
     );

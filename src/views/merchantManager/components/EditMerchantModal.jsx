@@ -210,53 +210,6 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
               </div>
             </div>
 
-            {/* 联系方式 */}
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>联系方式</h3>
-              
-              <div style={styles.formGroup}>
-                <label style={styles.label}>
-                  联系电话 <span style={styles.required}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.contactInfo.phone}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, phone: e.target.value }
-                  })}
-                  style={{...styles.input, ...(errors.phone && styles.inputError)}}
-                />
-                {errors.phone && <div style={styles.errorText}>{errors.phone}</div>}
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>联系邮箱</label>
-                <input
-                  type="email"
-                  value={formData.contactInfo.email}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, email: e.target.value }
-                  })}
-                  style={styles.input}
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>备注</label>
-                <textarea
-                  value={formData.contactInfo.note}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contactInfo: { ...formData.contactInfo, note: e.target.value }
-                  })}
-                  rows="2"
-                  style={styles.textarea}
-                />
-              </div>
-            </div>
-
             {/* 摊主管理 */}
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>摊主管理</h3>

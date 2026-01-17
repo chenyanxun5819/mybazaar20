@@ -14,10 +14,13 @@ import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
 import { TransactionHistory } from './components/TransactionHistory';
 import SellerSubmitCash from './components/SellerSubmitCash'; // 🆕 新增
-import chartIcon from '../../assets/chart-svgrepo-com.svg';
-import cartLargeIcon from '../../assets/cart-large-2-svgrepo-com.svg';
-import clipboardIcon from '../../assets/clipboard-list-svgrepo-com.svg';
-import forwardIcon from '../../assets/multiple-forward-right-svgrepo-com.svg';
+import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 导入角色切换器
+import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
+import SellIcon from '../../assets/sell.svg?react';
+import MemoCircleCheckIcon from '../../assets/memo-circle-check.svg?react';
+import PersonalFinanceIcon from '../../assets/personal-finance.svg?react';
+import LeaveIcon from '../../assets/leave.svg?react';
+import TogetherPeopleIcon from '../../assets/together-people.svg?react';
 import './SellerDashboard.css';
 
 function SellerDashboard() {
@@ -29,6 +32,66 @@ function SellerDashboard() {
   // 🔧 从seller对象获取手上现金（用于显示徽章）
   // 注意：这里可能需要使用useSellerStats来获取实时数据
   const cashOnHand = userProfile?.seller?.pendingCollection || 0;
+
+  // 🆕 inline styles（参考 EventManagerDashboard）
+  const styles = {
+    tabButton: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '0.25rem',
+      padding: '1rem 0.5rem',
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      cursor: 'pointer',
+      color: '#757575',
+      transition: 'all 0.2s',
+      borderBottom: '3px solid transparent'
+    },
+    tabButtonActive: {
+      color: '#2196F3',
+      borderBottomColor: '#2196F3'
+    },
+    tabLabel: {
+      fontSize: '0.85rem',
+      fontWeight: 500
+    },
+    logoutButton: {
+      background: 'transparent',
+      border: 'none',
+      padding: '0.5rem',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '0.9rem',
+      transition: 'background-color 0.2s, transform 0.12s',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      lineHeight: 0,
+      color: '#222c6e'
+    },
+    logoutButtonHover: {
+      backgroundColor: 'rgba(0,0,0,0.06)',
+      transform: 'translateY(-1px)'
+    },
+    roleSwitcherButton: {
+      background: 'transparent',
+      border: 'none',
+      padding: '0.5rem',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      lineHeight: 0,
+      transition: 'transform 0.2s',
+      borderRadius: '4px',
+      color: '#222c6e'
+    }
+  };
+
+  const [logoutHover, setLogoutHover] = React.useState(false);
 
   const handleLogout = async () => {
     try {
@@ -77,9 +140,26 @@ function SellerDashboard() {
             <span className="user-name">
               {userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '用户'}
             </span>
-            <button onClick={handleLogout} className="logout-button">
-              登出
+                        {/* 🆕 角色切换器 */}
+            <RoleSwitcher 
+              currentRole="seller" 
+              orgEventCode={`${orgCode}-${eventCode}`}
+              availableRoles={userProfile?.roles || []}
+              userInfo={userProfile}
+            />
+            <button 
+              onClick={handleLogout} 
+              style={{
+                ...styles.logoutButton,
+                ...(logoutHover ? styles.logoutButtonHover : {})
+              }}
+              onMouseEnter={() => setLogoutHover(true)}
+              onMouseLeave={() => setLogoutHover(false)}
+              title="登出"
+            >
+              <LeaveIcon style={{ width: '20px', height: '20px' }} />
             </button>
+
           </div>
         </div>
       </header>
@@ -87,33 +167,45 @@ function SellerDashboard() {
       {/* Tab 导航 */}
       <nav className="tab-navigation">
         <button
-          className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'overview' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('overview')}
         >
-          <img src={chartIcon} alt="总览" className="tab-icon-img" />
-          <span className="tab-label">总览</span>
+          <ChartHistogramIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>总览</span>
         </button>
         <button
-          className={`tab-button ${activeTab === 'sale' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'sale' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('sale')}
         >
-          <img src={cartLargeIcon} alt="销售" className="tab-icon-img" />
-          <span className="tab-label">销售</span>
+          <SellIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>销售</span>
         </button>
         <button
-          className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'history' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('history')}
         >
-          <img src={clipboardIcon} alt="历史" className="tab-icon-img" />
-          <span className="tab-label">历史</span>
+          <MemoCircleCheckIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>历史</span>
         </button>
         {/* 🆕 新增Tab */}
         <button
-          className={`tab-button ${activeTab === 'submit' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'submit' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('submit')}
         >
-          <img src={forwardIcon} alt="上交现金" className="tab-icon-img" />
-          <span className="tab-label">上交现金</span>
+          <PersonalFinanceIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>上交现金</span>
           {/* 🆕 显示待上交金额徽章 */}
           {cashOnHand > 0 && (
             <span className="badge">

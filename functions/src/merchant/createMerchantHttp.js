@@ -29,26 +29,25 @@
  * @returns {object} 新创建的摊位信息
  */
 
-const functions = require('firebase-functions');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
-exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
+exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const { data, auth } = request;
+  
   // ============================================
   // 1. 权限验证
   // ============================================
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      '用户未登录'
-    );
+  if (!auth) {
+    throw new HttpsError('unauthenticated', '用户未认证');
   }
-
-  const callerId = context.auth.uid;
+  
+  const callerId = auth.uid;
   const { organizationId, eventId, stallName, description, contactInfo, merchantOwnerId, merchantAsists, isActive } = data;
 
   // 验证必填参数
   if (!organizationId || !eventId || !stallName || !contactInfo?.phone) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       '缺少必填参数：organizationId, eventId, stallName, contactInfo.phone'
     );
@@ -63,7 +62,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
   
   const callerDoc = await callerRef.get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '用户不属于此活动'
     );
@@ -74,7 +73,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
                        callerData.roles?.includes('eventManager');
   
   if (!hasPermission) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '只有 merchantManager 或 eventManager 可以创建摊位'
     );
@@ -90,7 +89,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
     
     const ownerDoc = await ownerRef.get();
     if (!ownerDoc.exists) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'not-found',
         `merchantOwner ${merchantOwnerId} 不存在`
       );
@@ -100,7 +99,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
     
     // 验证是否有 merchantOwner 角色
     if (!ownerData.roles?.includes('merchantOwner')) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'invalid-argument',
         `用户 ${merchantOwnerId} 不是 merchantOwner`
       );
@@ -108,7 +107,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
 
     // 验证是否已被分配
     if (ownerData.merchantOwner?.merchantId) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'already-exists',
         `merchantOwner ${merchantOwnerId} 已被分配给摊位 ${ownerData.merchantOwner.merchantId}`
       );
@@ -122,7 +121,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
   if (merchantAsists && merchantAsists.length > 0) {
     // 检查数量
     if (merchantAsists.length > 5) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'invalid-argument',
         `助理数量不能超过 5 人，当前：${merchantAsists.length}`
       );
@@ -136,7 +135,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
       
       const asistDoc = await asistRef.get();
       if (!asistDoc.exists) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'not-found',
           `merchantAsist ${asistId} 不存在`
         );
@@ -146,7 +145,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
       
       // 验证是否有 merchantAsist 角色
       if (!asistData.roles?.includes('merchantAsist')) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'invalid-argument',
           `用户 ${asistId} 不是 merchantAsist`
         );
@@ -306,7 +305,7 @@ exports.createMerchantHttp = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('❌ 创建摊位失败:', error);
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'internal',
       `创建摊位失败: ${error.message}`
     );

@@ -29,26 +29,26 @@
  * @returns {object} 更新结果
  */
 
-const functions = require('firebase-functions');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
-exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
+exports.updateMerchantHttp = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const { data, auth } = request;
+  
   // ============================================
   // 1. 权限验证
   // ============================================
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      '用户未登录'
-    );
+  if (!auth) {
+    throw new HttpsError('unauthenticated', '用户未认证');
   }
+  
+  const callerId = auth.uid;
 
-  const callerId = context.auth.uid;
   const { organizationId, eventId, merchantId, updates } = data;
 
   // 验证必填参数
   if (!organizationId || !eventId || !merchantId || !updates) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       '缺少必填参数：organizationId, eventId, merchantId, updates'
     );
@@ -63,7 +63,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
   
   const merchantDoc = await merchantRef.get();
   if (!merchantDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'not-found',
       `摊位 ${merchantId} 不存在`
     );
@@ -78,7 +78,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
   
   const callerDoc = await callerRef.get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '用户不属于此活动'
     );
@@ -92,7 +92,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
   const isMerchantOwner = merchantData.merchantOwnerId === callerId;
   
   if (!isMerchantManager && !isEventManager && !isMerchantOwner) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '没有权限修改此摊位'
     );
@@ -105,7 +105,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
     const hasUnauthorizedField = updatingFields.some(field => !ownerAllowedFields.includes(field));
     
     if (hasUnauthorizedField) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'permission-denied',
         'merchantOwner 只能修改 stallName, description, contactInfo, isActive'
       );
@@ -160,7 +160,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
       
       const newOwnerDoc = await newOwnerRef.get();
       if (!newOwnerDoc.exists) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'not-found',
           `merchantOwner ${newOwnerId} 不存在`
         );
@@ -169,7 +169,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
       const newOwnerData = newOwnerDoc.data();
       
       if (!newOwnerData.roles?.includes('merchantOwner')) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'invalid-argument',
           `用户 ${newOwnerId} 不是 merchantOwner`
         );
@@ -177,7 +177,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
 
       // 验证新 owner 是否已被分配
       if (newOwnerData.merchantOwner?.merchantId && newOwnerData.merchantOwner.merchantId !== merchantId) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'already-exists',
           `merchantOwner ${newOwnerId} 已被分配给摊位 ${newOwnerData.merchantOwner.merchantId}`
         );
@@ -202,7 +202,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
       const newTotalCount = currentAsistsCount + asistsToAdd.length - (updates.merchantAsists.remove?.length || 0);
       
       if (newTotalCount > 5) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'invalid-argument',
           `助理总数不能超过 5 人，当前：${currentAsistsCount}，尝试添加：${asistsToAdd.length}`
         );
@@ -216,7 +216,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
         
         const asistDoc = await asistRef.get();
         if (!asistDoc.exists) {
-          throw new functions.https.HttpsError(
+          throw new HttpsError(
             'not-found',
             `merchantAsist ${asistId} 不存在`
           );
@@ -225,7 +225,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
         const asistData = asistDoc.data();
         
         if (!asistData.roles?.includes('merchantAsist')) {
-          throw new functions.https.HttpsError(
+          throw new HttpsError(
             'invalid-argument',
             `用户 ${asistId} 不是 merchantAsist`
           );
@@ -384,7 +384,7 @@ exports.updateMerchantHttp = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('❌ 更新摊位失败:', error);
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'internal',
       `更新摊位失败: ${error.message}`
     );

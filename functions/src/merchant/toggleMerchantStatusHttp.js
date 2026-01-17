@@ -18,26 +18,25 @@
  * @returns {object} 更新结果
  */
 
-const functions = require('firebase-functions');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
-exports.toggleMerchantStatusHttp = functions.https.onCall(async (data, context) => {
+exports.toggleMerchantStatusHttp = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const { data, auth } = request;
+  
   // ============================================
   // 1. 权限验证
   // ============================================
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      '用户未登录'
-    );
+  if (!auth) {
+    throw new HttpsError('unauthenticated', '用户未认证');
   }
-
-  const callerId = context.auth.uid;
+  
+  const callerId = auth.uid;
   const { organizationId, eventId, merchantId, isActive, pauseReason } = data;
 
   // 验证必填参数
   if (!organizationId || !eventId || !merchantId || isActive === undefined) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       '缺少必填参数：organizationId, eventId, merchantId, isActive'
     );
@@ -52,7 +51,7 @@ exports.toggleMerchantStatusHttp = functions.https.onCall(async (data, context) 
   
   const merchantDoc = await merchantRef.get();
   if (!merchantDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'not-found',
       `摊位 ${merchantId} 不存在`
     );
@@ -67,7 +66,7 @@ exports.toggleMerchantStatusHttp = functions.https.onCall(async (data, context) 
   
   const callerDoc = await callerRef.get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '用户不属于此活动'
     );
@@ -81,7 +80,7 @@ exports.toggleMerchantStatusHttp = functions.https.onCall(async (data, context) 
   const isMerchantOwner = merchantData.merchantOwnerId === callerId;
   
   if (!isMerchantManager && !isEventManager && !isMerchantOwner) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       '没有权限修改此摊位状态'
     );
@@ -133,7 +132,7 @@ exports.toggleMerchantStatusHttp = functions.https.onCall(async (data, context) 
 
   } catch (error) {
     console.error('❌ 切换摊位状态失败:', error);
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'internal',
       `切换摊位状态失败: ${error.message}`
     );

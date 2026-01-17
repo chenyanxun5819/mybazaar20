@@ -1,443 +1,642 @@
-/* MerchantTransactions.css */
+/* ============================================
+   MerchantTransactions.css
+   商家交易记录页面样式
+   ============================================ */
 
-/* 主容器 */
+/* Container */
 .merchant-transactions-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* ============================================
+   Tabs Navigation
+   ============================================ */
+
+.transactions-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  gap: 8px;
+  padding: 16px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-/* Header 統計區域 */
-.merchant-transactions-header {
-  background: linear-gradient(to right, #f3e8ff, #dbeafe);
-  border-radius: 0.5rem;
-  padding: 1rem;
-}
-
-.merchant-transactions-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-
-.merchant-transactions-filter-info div {
-  margin-bottom: 0.25rem;
-}
-
-.merchant-transactions-filter-info p {
-  margin: 0;
-}
-
-.merchant-transactions-filter-info p:first-child {
-  font-size: 0.875rem;
-  color: #4b5563;
-}
-
-.merchant-transactions-filter-info p:last-child {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #111827;
-}
-
-.merchant-transactions-total div {
-  text-align: right;
-  margin-bottom: 0.25rem;
-}
-
-.merchant-transactions-total p {
-  margin: 0;
-}
-
-.merchant-transactions-total p:first-child {
-  font-size: 0.875rem;
-  color: #4b5563;
-}
-
-.merchant-transactions-total p:last-child {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #9333ea;
-}
-
-.merchant-transactions-count {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: #4b5563;
-}
-
-.merchant-transactions-count svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-/* 搜索和篩選 */
-.merchant-transactions-controls {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.merchant-search-wrapper {
+.transactions-tab {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
   position: relative;
 }
 
-.merchant-search-icon {
+.transactions-tab svg {
+  width: 18px;
+  height: 18px;
+}
+
+.transactions-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+}
+
+.transactions-tab:hover:not(.active) {
+  background: #f5f5f5;
+  border-color: #667eea;
+}
+
+.tab-label {
+  font-size: 14px;
+}
+
+.tab-badge {
   position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1.25rem;
-  height: 1.25rem;
-  color: #9ca3af;
-  pointer-events: none;
+  top: -6px;
+  right: -6px;
+  background: #f44336;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-.merchant-search-input {
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* ============================================
+   Content Area
+   ============================================ */
+
+.transactions-content {
+  padding: 16px;
+  background: #f5f5f5;
+  min-height: 400px;
+}
+
+.transactions-list {
   width: 100%;
-  padding: 0.5rem 1rem 0.5rem 2.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.5rem;
-  box-sizing: border-box;
 }
 
-.merchant-search-input:focus {
-  outline: none;
-  border-color: transparent;
-  box-shadow: 0 0 0 2px #9333ea;
-}
+/* ============================================
+   Pending Payments Grid (待收点数)
+   ============================================ */
 
-.merchant-filter-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.merchant-filter-btn.inactive {
-  background-color: white;
-  color: #374151;
-}
-
-.merchant-filter-btn.inactive:hover {
-  background-color: #f9fafb;
-}
-
-.merchant-filter-btn.active {
-  background-color: #9333ea;
-  color: white;
-  border-color: #9333ea;
-}
-
-.merchant-filter-btn svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.merchant-filter-chevron {
-  width: 1rem;
-  height: 1rem;
-  transition: transform 0.2s;
-}
-
-.merchant-filter-chevron.rotated {
-  transform: rotate(180deg);
-}
-
-.merchant-refresh-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  background-color: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.merchant-refresh-btn:hover {
-  background-color: #f9fafb;
-}
-
-.merchant-refresh-btn svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-/* 篩選選項面板 */
-.merchant-filter-panel {
-  background-color: white;
-  border-radius: 0.5rem;
-  border: 1px solid #e5e7eb;
-  padding: 0.75rem;
-}
-
-.merchant-filter-panel > p {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #374151;
-  margin: 0 0 0.75rem 0;
-}
-
-.merchant-filter-options {
+.pending-payments-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
-.merchant-filter-option {
+.pending-payment-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+  border: 2px solid #ffd54f;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pending-payment-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.pending-payment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.pending-payment-customer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.customer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.merchant-filter-option.inactive {
-  background-color: white;
-  color: #374151;
-}
-
-.merchant-filter-option.inactive:hover {
-  background-color: #f9fafb;
-}
-
-.merchant-filter-option.active {
-  background-color: #9333ea;
   color: white;
-  border-color: #9333ea;
 }
 
-.merchant-filter-option svg {
-  width: 1rem;
-  height: 1rem;
+.customer-avatar svg {
+  width: 20px;
+  height: 20px;
 }
 
-/* 交易列表 */
-.merchant-transactions-list {
+.customer-info {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
 }
 
-/* 單個交易卡片 */
+.customer-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #333;
+  margin: 0;
+}
+
+.customer-phone {
+  font-size: 12px;
+  color: #999;
+  margin: 0;
+  margin-top: 2px;
+}
+
+.pending-payment-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.amount-value {
+  font-size: 24px;
+  color: #f57c00;
+}
+
+.amount-unit {
+  font-size: 14px;
+  color: #999;
+}
+
+.pending-payment-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 6px;
+}
+
+.time-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pending-payment-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.confirm-btn,
+.cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.confirm-btn {
+  background: #4caf50;
+  color: white;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  background: #45a049;
+  transform: scale(1.02);
+}
+
+.confirm-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cancel-btn {
+  background: white;
+  color: #f44336;
+  border: 1px solid #f44336;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.confirm-btn svg,
+.cancel-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ============================================
+   Transactions Grid (历史交易)
+   ============================================ */
+
+.transactions-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
 .transaction-card {
-  background-color: white;
-  border-radius: 0.5rem;
-  border: 1px solid #e5e7eb;
-  padding: 1rem;
-  transition: box-shadow 0.2s;
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
 }
 
 .transaction-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
-.transaction-card-content {
+.transaction-header {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 12px;
 }
 
-.transaction-card-info {
+.transaction-customer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.transaction-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.transaction-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.transaction-amount .amount-value {
+  font-size: 28px;
+  color: #333;
+}
+
+.transaction-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 13px;
+}
+
+.detail-label {
+  color: #999;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.detail-value {
+  color: #333;
+  text-align: right;
   flex: 1;
 }
 
-.transaction-card-time {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
+.refund-reason,
+.cancel-reason {
+  font-style: italic;
+  color: #666;
 }
 
-.transaction-card-time svg {
-  width: 1rem;
-  height: 1rem;
-  color: #9ca3af;
+.transaction-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
 }
 
-.transaction-card-time span {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.transaction-card-customer {
-  font-size: 0.875rem;
-  color: #4b5563;
-  margin: 0;
-}
-
-.transaction-card-amount {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
-}
-
-.transaction-card-amount span:first-child {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #111827;
-}
-
-.transaction-card-amount span:last-child {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.transaction-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.transaction-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.transaction-status-badge svg {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-.transaction-card-id {
-  font-size: 0.75rem;
-  color: #9ca3af;
-}
-
-/* 空狀態 */
-.merchant-transactions-empty {
-  background-color: white;
-  border-radius: 0.5rem;
-  border: 1px solid #e5e7eb;
-  padding: 2rem;
-  text-align: center;
-}
-
-.merchant-transactions-empty svg {
-  width: 3rem;
-  height: 3rem;
-  color: #d1d5db;
-  margin: 0 auto 0.75rem;
-}
-
-.merchant-transactions-empty p:first-of-type {
-  color: #6b7280;
-  margin: 0 0 0.25rem 0;
-}
-
-.merchant-transactions-empty p:last-of-type {
-  font-size: 0.875rem;
-  color: #9ca3af;
-  margin: 0;
-}
-
-/* Loading 狀態 */
-.merchant-transactions-loading {
+.refund-btn {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 3rem;
+  gap: 6px;
+  padding: 10px 16px;
+  background: white;
+  color: #f57c00;
+  border: 1px solid #f57c00;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.merchant-transactions-loading-content {
+.refund-btn:hover {
+  background: #fff3e0;
+}
+
+.refund-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ============================================
+   Refund Dialog
+   ============================================ */
+
+.refund-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.refund-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.refund-dialog-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #333;
+}
+
+.refund-dialog-info {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.refund-dialog-info strong {
+  color: #f57c00;
+}
+
+.refund-reason-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  resize: vertical;
+  margin-bottom: 16px;
+  font-family: inherit;
+}
+
+.refund-reason-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.refund-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.refund-confirm-btn,
+.refund-cancel-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.refund-confirm-btn {
+  background: #f57c00;
+  color: white;
+}
+
+.refund-confirm-btn:hover:not(:disabled) {
+  background: #ef6c00;
+}
+
+.refund-confirm-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.refund-cancel-btn {
+  background: white;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+
+.refund-cancel-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+/* ============================================
+   Empty States
+   ============================================ */
+
+.transactions-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
   text-align: center;
 }
 
-.merchant-transactions-loading-spinner {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 2px solid transparent;
-  border-bottom-color: #9333ea;
-  border-radius: 50%;
-  margin: 0 auto 0.75rem;
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  color: #ccc;
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: #999;
+}
+
+/* ============================================
+   Loading & Error States
+   ============================================ */
+
+.transactions-loading,
+.transactions-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  color: #667eea;
+  margin-bottom: 16px;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
   to {
     transform: rotate(360deg);
   }
 }
 
-.merchant-transactions-loading-text {
-  color: #4b5563;
-  margin: 0;
+.error-icon {
+  width: 48px;
+  height: 48px;
+  color: #f44336;
+  margin-bottom: 16px;
 }
 
-/* Error 狀態 */
-.merchant-transactions-error {
-  background-color: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 0.5rem;
-  padding: 1rem;
+.transactions-loading p,
+.transactions-error p {
+  font-size: 14px;
+  color: #666;
 }
 
-.merchant-transactions-error p {
-  color: #991b1b;
-  text-align: center;
-  margin: 0 0 0.75rem 0;
-}
+/* ============================================
+   Role Notice
+   ============================================ */
 
-.merchant-transactions-error button {
+.transactions-role-notice {
+  position: sticky;
+  bottom: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0 auto;
-  padding: 0.5rem 1rem;
-  background-color: #dc2626;
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fff3e0;
+  border-top: 1px solid #ffb74d;
+  font-size: 13px;
+  color: #f57c00;
 }
 
-.merchant-transactions-error button:hover {
-  background-color: #b91c1c;
+.notice-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
-.merchant-transactions-error button svg {
-  width: 1rem;
-  height: 1rem;
-}
+/* ============================================
+   Responsive Design
+   ============================================ */
 
-/* 加載更多 */
-.merchant-transactions-load-more {
-  text-align: center;
-  padding: 1rem 0;
-}
+@media (max-width: 768px) {
+  .transactions-tabs {
+    gap: 6px;
+    padding: 12px;
+  }
 
-.merchant-transactions-load-more button {
-  padding: 0.5rem 1.5rem;
-  color: #9333ea;
-  background-color: transparent;
-  border: none;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.2s;
-}
+  .transactions-tab {
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 8px;
+    font-size: 12px;
+  }
 
-.merchant-transactions-load-more button:hover {
-  color: #7e22ce;
+  .transactions-tab svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .tab-label {
+    font-size: 11px;
+  }
+
+  .pending-payments-grid,
+  .transactions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .refund-dialog {
+    max-width: 100%;
+  }
 }

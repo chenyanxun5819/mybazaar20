@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QrCode, Receipt, Store, LogOut, Menu, X } from 'lucide-react';
-import { auth } from '../../config/firebase';
+import { QrCode, Receipt, Store, LogOut, Menu, X, Bell } from 'lucide-react';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMerchantData } from '../../hooks/useMerchantData';
+import { formatAmount } from '../../services/transactionService';
 import MerchantQRCode from '../../components/merchant/MerchantQRCode';
 import MerchantStats from '../../components/merchant/MerchantStats';
 import MerchantTransactions from '../../components/merchant/MerchantTransactions';
@@ -13,6 +15,7 @@ import './MerchantDashboard.css';
 
 /**
  * MerchantDashboard - 商家摊位界面 (Mobile)
+ * ⭐ 新版本：添加全局通知系统
  * ⭐ 同时支持 merchantOwner 和 merchantAsist 角色
  * merchantOwner: 可查看所有交易、退款、编辑资料
  * merchantAsist: 只能查看自己的交易、不能退款、不能编辑资料
@@ -24,6 +27,10 @@ const MerchantDashboard = () => {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [organizationId, setOrganizationId] = useState(null);
   const [eventId, setEventId] = useState(null);
+  
+  // ⭐ 新增：通知系统状态
+  const [notification, setNotification] = useState(null);
+  
   const { userProfile } = useAuth();
 
   // ⭐ 检测用户角色
@@ -33,7 +40,7 @@ const MerchantDashboard = () => {
   // 获取用户角色信息（用于传递给子组件）
   const userRole = isMerchantOwner ? 'merchantOwner' : isMerchantAsist ? 'merchantAsist' : null;
 
-  // 使用 AuthContext 的 userProfile 组织/活动 ID，避免路径不一致
+  // 使用 AuthContext 的 userProfile 组织/活动 ID
   useEffect(() => {
     if (userProfile?.organizationId && userProfile?.eventId) {
       setOrganizationId(userProfile.organizationId);
@@ -41,7 +48,7 @@ const MerchantDashboard = () => {
       return;
     }
 
-    // 后备方案：解析 orgEventCode（仅在缺少 userProfile 时使用）
+    // 后备方案：解析 orgEventCode
     if (orgEventCode) {
       const [orgCode, eventCode] = orgEventCode.split('-');
       setOrganizationId(orgCode);
@@ -49,7 +56,7 @@ const MerchantDashboard = () => {
     }
   }, [userProfile?.organizationId, userProfile?.eventId, orgEventCode]);
 
-  // 取得当前用户与应用内 userId（Custom Claims / userProfile）
+  // 取得当前用户
   const currentUser = auth.currentUser;
   const {
     merchant,
@@ -60,10 +67,82 @@ const MerchantDashboard = () => {
     updateProfile,
     toggleStatus
   } = useMerchantData(
-    currentUser?.uid,  // ✅ 统一格式后直接使用 user.uid
+    currentUser?.uid,
     organizationId,
     eventId
   );
+
+  // ============================================
+  // ⭐ 全局通知系统：监听新的 pending 交易
+  // ============================================
+  useEffect(() => {
+    if (!merchant?.id || !organizationId || !eventId) return;
+
+    console.log('🔔 Setting up notification listener for merchant:', merchant.id);
+
+    const transactionsRef = collection(
+      db, 
+      'organizations', organizationId, 
+      'events', eventId, 
+      'transactions'
+    );
+
+    const q = query(
+      transactionsRef,
+      where('merchantId', '==', merchant.id),
+      where('status', '==', 'pending'),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            
+            // ⭐ 新的 pending 交易 - 显示通知
+            console.log('🔔 New pending payment detected:', {
+              id: change.doc.id,
+              customerName: data.customerName,
+              amount: data.amount
+            });
+
+            showNotification({
+              id: change.doc.id,
+              customerName: data.customerName || '顾客',
+              amount: data.amount
+            });
+          }
+        });
+      },
+      (error) => {
+        console.error('❌ Error listening to pending payments:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔔 Cleaning up notification listener');
+      unsubscribe();
+    };
+  }, [merchant?.id, organizationId, eventId]);
+
+  // ⭐ 显示通知（5秒后自动消失）
+  const showNotification = (data) => {
+    console.log('🔔 Showing notification:', data);
+    setNotification(data);
+    
+    // 5秒后自动消失
+    setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
+  // ⭐ 点击通知跳转到交易记录
+  const handleNotificationClick = () => {
+    setCurrentTab('transactions');
+    setNotification(null);
+  };
 
   const handleLogout = async () => {
     if (confirm('确定要登出吗？')) {
@@ -78,11 +157,9 @@ const MerchantDashboard = () => {
   };
 
   // Tab 配置（根据角色调整）
-  // ⭐ merchantAsist 不能编辑摊位资料，所以不显示 profile tab
   const tabs = [
     { id: 'qrcode', label: 'QR Code', icon: QrCode },
     { id: 'transactions', label: '交易记录', icon: Receipt },
-    // ⭐ 只有 merchantOwner 可以查看和编辑摊位资料
     ...(isMerchantOwner ? [{ id: 'profile', label: '摊位资料', icon: Store }] : [])
   ];
 
@@ -202,11 +279,33 @@ const MerchantDashboard = () => {
         </div>
       </header>
 
+      {/* ⭐ 全局通知横幅 */}
+      {notification && (
+        <div 
+          className="merchant-notification-banner"
+          onClick={handleNotificationClick}
+        >
+          <Bell className="notification-icon" />
+          <div className="notification-content">
+            <p className="notification-title">新的付款请求</p>
+            <p className="notification-text">
+              {notification.customerName} 请求付款 {formatAmount(notification.amount)} 点
+            </p>
+          </div>
+          <div className="notification-close" onClick={(e) => {
+            e.stopPropagation();
+            setNotification(null);
+          }}>
+            <X />
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="merchant-main">
         {/* Stats Cards */}
         <div className="merchant-stats-section">
-          <MerchantStats stats={stats} />
+          <MerchantStats stats={stats} userRole={userRole} />
         </div>
 
         {/* Tabs Navigation */}
@@ -235,7 +334,7 @@ const MerchantDashboard = () => {
               merchant={merchant}
               organizationId={organizationId}
               eventId={eventId}
-              userRole={userRole}  // ⭐ 传递用户角色
+              userRole={userRole}
             />
           )}
 
@@ -244,8 +343,8 @@ const MerchantDashboard = () => {
               merchant={merchant}
               organizationId={organizationId}
               eventId={eventId}
-              userRole={userRole}  // ⭐ 传递用户角色
-              currentUserId={currentUser?.uid}  // ⭐ 传递当前用户 ID（用于筛选 merchantAsist 的交易）
+              userRole={userRole}
+              currentUserId={currentUser?.uid}
             />
           )}
 

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { auth } from '../../config/firebase';
+import { auth, db } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
 
 /**
@@ -58,6 +59,7 @@ const UniversalLogin = () => {
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [otpSessionId, setOtpSessionId] = useState('');
+  const [eventMeta, setEventMeta] = useState(null);
 
 
   // 检测设备类型
@@ -74,6 +76,36 @@ const UniversalLogin = () => {
 
     return () => window.removeEventListener('resize', checkDeviceType);
   }, []);
+
+  // 加载活动元数据（logo, eventName）用于登录页显示
+  useEffect(() => {
+    let cancelled = false;
+    const loadEventMeta = async () => {
+      if (!orgCode || !eventCode) return;
+      try {
+        // 先根据 orgCode 找到 organization 文档 id
+        const orgQ = query(collection(db, 'organizations'), where('orgCode', '==', orgCode));
+        const orgSnap = await getDocs(orgQ);
+        if (orgSnap.empty) return;
+        const orgDoc = orgSnap.docs[0];
+        const orgId = orgDoc.id;
+
+        // 在子集合 events 中根据 eventCode 查找
+        const eventsRef = collection(db, 'organizations', orgId, 'events');
+        const evQ = query(eventsRef, where('eventCode', '==', eventCode));
+        const evSnap = await getDocs(evQ);
+        if (evSnap.empty) return;
+        const ev = evSnap.docs[0].data();
+        if (cancelled) return;
+        setEventMeta(ev);
+      } catch (e) {
+        console.warn('[UniversalLogin] 加载 eventMeta 失败:', e);
+      }
+    };
+
+    loadEventMeta();
+    return () => { cancelled = true; };
+  }, [orgCode, eventCode]);
 
   // ⭐ 自动跳转已登录用户（带路径检查）
   useEffect(() => {
@@ -863,8 +895,12 @@ const UniversalLogin = () => {
       <div style={styles.loginCard}>
         {/* Logo 和标题 */}
         <div style={styles.header}>
-          <div style={styles.logo}>🎪</div>
-          <h1 style={styles.title}>MyBazaar 登录</h1>
+          {eventMeta?.logoUrl ? (
+            <img src={eventMeta.logoUrl} alt="Event Logo" style={styles.logo} />
+          ) : (
+            <div style={styles.logo}>🎪</div>
+          )}
+          <h1 style={styles.title}>{eventMeta?.eventName?.['zh-CN'] || eventMeta?.eventName?.['en-US'] || 'MyBazaar 登录'}</h1>
           <p style={styles.subtitle}>义卖会管理系统</p>
           {isValidOrgEventCode && (
             <div style={styles.eventBadge}>
@@ -907,7 +943,7 @@ const UniversalLogin = () => {
               required
               disabled={!isValidOrgEventCode}
             />
-            <small style={styles.hint}>马来西亚手机号（含国家代码60）</small>
+            <small style={styles.hint}>请您注册的马来西亚手机号</small>
           </div>
 
           <div style={styles.formGroup}>
@@ -979,9 +1015,6 @@ const UniversalLogin = () => {
           <p style={styles.helpText}>
             忘记密码？请联系活动管理员
           </p>
-          <p style={styles.helpText}>
-            没有登录链接？请向活动负责人索取
-          </p>
         </div>
       </div>
     </div>
@@ -1010,18 +1043,20 @@ const styles = {
     marginBottom: '2rem'
   },
   logo: {
-    fontSize: '4rem',
-    marginBottom: '1rem'
+    width: '120px',
+    height: '120px',
+    marginBottom: '0.5rem'
   },
   title: {
-    fontSize: '2rem',
+    fontSize: '1rem',
     fontWeight: 'bold',
     color: '#1f2937',
     margin: '0 0 0.5rem 0'
   },
   subtitle: {
+    fontSize: '0.8rem',
     color: '#6b7280',
-    margin: '0 0 1rem 0'
+    margin: '0 0 0.5rem 0'
   },
   eventBadge: {
     display: 'inline-flex',
