@@ -12,82 +12,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-
-// 验证交易密码的辅助函数
-async function verifyTransactionPin(userId, orgId, eventId, inputPin) {
-  const userRef = admin.firestore()
-    .collection('organizations').doc(orgId)
-    .collection('events').doc(eventId)
-    .collection('users').doc(userId);
-  
-  const userDoc = await userRef.get();
-  if (!userDoc.exists) {
-    throw new HttpsError('not-found', '用户不存在');
-  }
-  
-  const userData = userDoc.data();
-  const basicInfo = userData.basicInfo || {};
-  const storedHash = basicInfo.transactionPinHash;
-  
-  if (!storedHash) {
-    throw new HttpsError('failed-precondition', '未设置交易密码');
-  }
-  
-  // 检查是否被锁定
-  const pinLockedUntil = basicInfo.pinLockedUntil;
-  const now = admin.firestore.Timestamp.now();
-  
-  if (pinLockedUntil && pinLockedUntil.toMillis() > now.toMillis()) {
-    const remainingMinutes = Math.ceil((pinLockedUntil.toMillis() - now.toMillis()) / 60000);
-    throw new HttpsError(
-      'failed-precondition',
-      `交易密码已被锁定，请在 ${remainingMinutes} 分钟后重试`
-    );
-  }
-  
-  // 使用 bcrypt 验证密码
-  const bcrypt = require('bcryptjs');
-  const isPinCorrect = await bcrypt.compare(inputPin, storedHash);
-  
-  const pinFailedAttempts = basicInfo.pinFailedAttempts || 0;
-  const MAX_FAILED_ATTEMPTS = 5;
-  const LOCK_DURATION_MS = 60 * 60 * 1000; // 1小时
-  
-  if (isPinCorrect) {
-    // 验证成功：重置错误次数
-    await userRef.update({
-      'basicInfo.pinFailedAttempts': 0,
-      'basicInfo.pinLockedUntil': null
-    });
-    return true;
-  } else {
-    // 验证失败：增加错误次数
-    const newFailedAttempts = pinFailedAttempts + 1;
-    const updateData = {
-      'basicInfo.pinFailedAttempts': newFailedAttempts
-    };
-    
-    // 如果达到最大错误次数，锁定账户
-    if (newFailedAttempts >= MAX_FAILED_ATTEMPTS) {
-      const lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
-      updateData['basicInfo.pinLockedUntil'] = admin.firestore.Timestamp.fromDate(lockUntil);
-      await userRef.update(updateData);
-      
-      throw new HttpsError(
-        'failed-precondition',
-        '交易密码错误次数过多，账户已被锁定1小时'
-      );
-    }
-    
-    await userRef.update(updateData);
-    const remainingAttempts = MAX_FAILED_ATTEMPTS - newFailedAttempts;
-    
-    throw new HttpsError(
-      'permission-denied',
-      `交易密码错误，剩余尝试次数：${remainingAttempts}`
-    );
-  }
-}
+const { verifyTransactionPin } = require('../../utils/verifyTransactionPin');
 
 // 生成卡号：CARD-YYYYMMDD-XXXXX
 function generateCardNumber() {
@@ -137,11 +62,7 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
     }
     
     // 4. 验证交易密码
-    try {
-      await verifyTransactionPin(pointSellerId, orgId, eventId, transactionPin);
-    } catch (error) {
-      throw error;
-    }
+    await verifyTransactionPin(pointSellerId, transactionPin, orgId, eventId);
     
     const db = admin.firestore();
     

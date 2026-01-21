@@ -263,3 +263,4 @@ export const generateMerchantQRData = (orgId, eventId, merchantId) => {
     timestamp: new Date().toISOString()
   };
 };
+

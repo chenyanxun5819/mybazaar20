@@ -177,7 +177,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
 
   const handleOpenSubmitModal = useCallback(() => {
     if (selectedCollections.length === 0) {
-      alert('请先选择要上交的收款记录');
+      window.mybazaarShowToast('请先选择要上交的收款记录');
       return;
     }
     setShowSubmitModal(true);
@@ -192,7 +192,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
   // 🆕 提交到待认领池子
   const handleSubmit = async () => {
     if (selectedCollections.length === 0) {
-      alert('请选择要上交的收款记录');
+      window.mybazaarShowToast('请选择要上交的收款记录');
       return;
     }
 
@@ -236,7 +236,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
       });
 
       if (result.data.success) {
-        alert('✅ 上交成功！现金已提交到待认领池子，等待Cashier确认。');
+        window.mybazaarShowToast('✅ 上交成功！现金已提交到待认领池子，等待Cashier确认。');
         setShowSubmitModal(false);
         setSelectedCollections([]);
         setSubmitNote('');
@@ -246,7 +246,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
 
     } catch (error) {
       console.error('上交现金失败:', error);
-      alert('❌ 上交失败: ' + error.message);
+      window.mybazaarShowToast('❌ 上交失败: ' + error.message);
     } finally {
       setSubmitting(false);
     }

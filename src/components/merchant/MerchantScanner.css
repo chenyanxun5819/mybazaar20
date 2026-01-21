@@ -1,0 +1,585 @@
+/* MerchantScanner.css */
+
+.merchant-scanner {
+  padding: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* ========================================
+   扫码器头部
+   ======================================== */
+.scanner-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.scanner-header .scanner-icon {
+  width: 3rem;
+  height: 3rem;
+  color: #2196F3;
+  margin: 0 auto 1rem;
+}
+
+.scanner-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 0.5rem;
+}
+
+.scanner-header p {
+  color: #757575;
+  font-size: 0.95rem;
+}
+
+/* ========================================
+   错误提示
+   ======================================== */
+.scanner-error {
+  background: #ffebee;
+  border: 1px solid #ef5350;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.scanner-error svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #d32f2f;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.scanner-error p {
+  flex: 1;
+  color: #c62828;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.scanner-error .error-dismiss {
+  background: #d32f2f;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.scanner-error .error-dismiss:hover {
+  background: #b71c1c;
+}
+
+/* ========================================
+   开始扫描界面
+   ======================================== */
+.scanner-start {
+  text-align: center;
+}
+
+.start-scan-btn {
+  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 1.25rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+  transition: all 0.3s;
+}
+
+.start-scan-btn:hover {
+  background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4);
+  transform: translateY(-2px);
+}
+
+.start-scan-btn svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* ========================================
+   使用说明
+   ======================================== */
+.scanner-instructions {
+  margin-top: 2.5rem;
+  background: #f5f5f5;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+}
+
+.scanner-instructions h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #424242;
+  margin-bottom: 1rem;
+}
+
+.scanner-instructions ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.scanner-instructions li {
+  padding: 0.75rem 0;
+  padding-left: 2rem;
+  position: relative;
+  color: #616161;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.scanner-instructions li:before {
+  content: '✓';
+  position: absolute;
+  left: 0.5rem;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+/* ========================================
+   扫描相机界面
+   ======================================== */
+.scanner-camera {
+  background: white;
+  border-radius: 12px;
+  padding: 0.5rem;  /* ⬇️ 减少 padding，从 1.5rem 降到 0.5rem */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ⬆️ 扫码提示框 */
+.scanner-tips {
+  background: rgba(33, 150, 243, 0.1);
+  border-left: 3px solid #2196F3;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.scanner-tips p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #1976D2;
+  font-weight: 500;
+}
+
+#merchant-qr-reader {
+  width: 100%;
+  min-height: 70vh;  /* ⬆️ 提高到 70vh，让扫码区域更大 */
+  max-height: 75vh;  /* ⬆️ 最大 75vh */
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;  /* ⬇️ 减少底部间距 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ⬆️ 让相机画面内的 video 元素填满容器 */
+#merchant-qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.stop-scan-btn {
+  width: 100%;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.stop-scan-btn:hover {
+  background: #d32f2f;
+}
+
+/* ========================================
+   点数卡信息界面
+   ======================================== */
+.card-info-container {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card-info-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.card-info-header .card-icon {
+  width: 2rem;
+  height: 2rem;
+  color: #FF9800;
+}
+
+.card-info-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #212121;
+  margin: 0;
+}
+
+/* ========================================
+   点数卡详情
+   ======================================== */
+.card-details {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.card-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.card-detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-size: 0.95rem;
+  color: #757575;
+}
+
+.detail-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #424242;
+}
+
+.detail-value.balance {
+  color: #4CAF50;
+  font-size: 1.25rem;
+}
+
+.card-status-error {
+  background: #ffebee;
+  border: 1px solid #ef5350;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-status-error svg {
+  width: 1rem;
+  height: 1rem;
+  color: #d32f2f;
+}
+
+.card-status-error p {
+  margin: 0;
+  color: #c62828;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* ========================================
+   金额输入
+   ======================================== */
+.amount-input-section {
+  margin-bottom: 1.5rem;
+}
+
+.amount-input-section label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #424242;
+  margin-bottom: 0.5rem;
+}
+
+.amount-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  transition: border-color 0.2s;
+}
+
+.amount-input-wrapper:focus-within {
+  border-color: #2196F3;
+}
+
+.amount-input-wrapper input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #212121;
+}
+
+.amount-input-wrapper input::placeholder {
+  color: #bdbdbd;
+  font-weight: 400;
+}
+
+.amount-input-wrapper .input-suffix {
+  font-size: 1rem;
+  color: #757575;
+  font-weight: 500;
+}
+
+.amount-error {
+  color: #d32f2f;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0 0;
+}
+
+.amount-hint {
+  color: #757575;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0 0;
+}
+
+/* ========================================
+   操作按钮
+   ======================================== */
+.card-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.card-actions button {
+  flex: 1;
+  padding: 0.875rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.card-actions .cancel-btn {
+  background: #f5f5f5;
+  color: #616161;
+}
+
+.card-actions .cancel-btn:hover {
+  background: #e0e0e0;
+}
+
+.card-actions .confirm-btn {
+  background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.card-actions .confirm-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #388E3C 0%, #2E7D32 100%);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+  transform: translateY(-1px);
+}
+
+.card-actions .confirm-btn:disabled {
+  background: #bdbdbd;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ========================================
+   成功界面
+   ======================================== */
+.success-container {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.success-icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1.5rem;
+  background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.success-icon svg {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: white;
+}
+
+.success-container h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 1.5rem;
+}
+
+.success-details {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.success-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.success-row:last-child {
+  border-bottom: none;
+}
+
+.success-label {
+  font-size: 0.95rem;
+  color: #757575;
+}
+
+.success-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #4CAF50;
+}
+
+.success-value.transaction-id {
+  color: #757575;
+  font-size: 0.9rem;
+  font-family: monospace;
+}
+
+.success-actions {
+  margin-top: 1.5rem;
+}
+
+.scan-again-btn {
+  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+  transition: all 0.2s;
+}
+
+.scan-again-btn:hover {
+  background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ========================================
+   加载状态
+   ======================================== */
+.scanner-loading {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.loading-spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 3px solid #e0e0e0;
+  border-top-color: #2196F3;
+  border-radius: 50%;
+  margin: 0 auto 1rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.scanner-loading p {
+  color: #757575;
+  font-size: 1rem;
+}
+
+/* ========================================
+   响应式设计
+   ======================================== */
+@media (max-width: 480px) {
+  .merchant-scanner {
+    padding: 0.5rem;  /* ⬇️ 手机端减少外层 padding */
+  }
+
+  .scanner-camera {
+    padding: 0.25rem;  /* ⬇️ 手机端进一步减少 padding */
+    border-radius: 8px;
+  }
+
+  #merchant-qr-reader {
+    min-height: 75vh;  /* ⬆️ 手机端扫码区域更大 */
+    max-height: 80vh;
+    border-radius: 4px;
+  }
+
+  .scanner-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .start-scan-btn {
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+  }
+
+  .card-info-container {
+    padding: 1rem;
+  }
+
+  .amount-input-wrapper input {
+    font-size: 1.1rem;
+  }
+
+  .card-actions {
+    flex-direction: column;
+  }
+
+  .success-container {
+    padding: 1.5rem;
+  }
+}

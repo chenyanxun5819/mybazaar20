@@ -1180,3 +1180,4 @@ const styles = {
 };
 
 export default UniversalLogin;
+

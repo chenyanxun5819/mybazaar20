@@ -705,125 +705,145 @@ exports.processCustomerPayment = onCall({ region: 'asia-southeast1' }, async (re
       );
     }
 
-    // === 使用Transaction执行付款 ===
-    const result = await db.runTransaction(async (transaction) => {
-      // 重新读取Customer文档（确保数据最新）
-      const customerDocLatest = await transaction.get(customerRef);
-      const customerDataLatest = customerDocLatest.data();
-      const availablePoints = customerDataLatest.customer?.pointsAccount?.availablePoints || 0;
+// ============================================
+// 🔧 修复说明：processCustomerPayment
+// ============================================
+// 
+// 修改位置：customerFunctions.js 第 708-817 行
+// 
+// ⚠️ 重要：只需要修改这个部分，其他代码保持不变
+//
+// ============================================
 
-      // 检查余额
-      if (availablePoints < amount) {
-        throw new HttpsError(
-          'failed-precondition',
-          `余额不足。当前余额：${availablePoints}点，需要：${amount}点`
-        );
-      }
+// === 第 708 行开始：使用Transaction执行付款 ===
+const result = await db.runTransaction(async (transaction) => {
+  // 重新读取Customer文档（确保数据最新）
+  const customerDocLatest = await transaction.get(customerRef);
+  const customerDataLatest = customerDocLatest.data();
+  const availablePoints = customerDataLatest.customer?.pointsAccount?.availablePoints || 0;
 
-      // 读取Merchant文档
-      const merchantRef = db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('merchants').doc(merchantId);
+  // ⭐ 修改：检查余额（但不立即扣除）
+  if (availablePoints < amount) {
+    throw new HttpsError(
+      'failed-precondition',
+      `余额不足。当前余额：${availablePoints}点，需要：${amount}点`
+    );
+  }
 
-      const merchantDoc = await transaction.get(merchantRef);
+  // 读取Merchant文档
+  const merchantRef = db
+    .collection('organizations').doc(organizationId)
+    .collection('events').doc(eventId)
+    .collection('merchants').doc(merchantId);
 
-      if (!merchantDoc.exists) {
-        throw new HttpsError('not-found', '商家不存在');
-      }
+  const merchantDoc = await transaction.get(merchantRef);
 
-      const merchantData = merchantDoc.data();
+  if (!merchantDoc.exists) {
+    throw new HttpsError('not-found', '商家不存在');
+  }
 
-      // 检查商家是否营业
-      if (!merchantData.operationStatus?.isActive) {
-        throw new HttpsError('failed-precondition', '商家暂停营业');
-      }
+  const merchantData = merchantDoc.data();
 
-      // 扣除Customer点数
-      transaction.update(customerRef, {
-        'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
-        'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
-        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
-        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
-        'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
-      });
+  // 检查商家是否营业
+  if (!merchantData.operationStatus?.isActive) {
+    throw new HttpsError('failed-precondition', '商家暂停营业');
+  }
 
-      // 添加到访问过的商家列表（如果还没有）
-      const merchantsVisited = customerDataLatest.customer?.stats?.merchantsVisited || [];
-      if (!merchantsVisited.includes(merchantId)) {
-        transaction.update(customerRef, {
-          'customer.stats.merchantsVisited': admin.firestore.FieldValue.arrayUnion(merchantId)
-        });
-      }
+  // ⭐ 修改：不立即扣除Customer点数
+  // ⭐ 等待 Merchant 确认后才扣除
+  // transaction.update(customerRef, {
+  //   'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
+  //   'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
+  //   'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
+  //   'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
+  //   'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
+  // });
 
-      // 增加Merchant收入
-      transaction.update(merchantRef, {
-        'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
-        'revenueStats.todayRevenue': admin.firestore.FieldValue.increment(amount),
-        'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
-        'revenueStats.todayTransactionCount': admin.firestore.FieldValue.increment(1),
-        'revenueStats.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp()
-      });
+  // ⭐ 只更新活动时间
+  transaction.update(customerRef, {
+    'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
+  });
 
-      // 创建交易记录
-      const transactionId = db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('transactions').doc().id;
+  // ⭐ 修改：不立即增加Merchant收入
+  // ⭐ 等待 Merchant 确认后才增加
+  // transaction.update(merchantRef, {
+  //   'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
+  //   'revenueStats.todayRevenue': admin.firestore.FieldValue.increment(amount),
+  //   'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
+  //   'revenueStats.todayTransactionCount': admin.firestore.FieldValue.increment(1),
+  //   'revenueStats.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp()
+  // });
 
-      const transactionData = {
-        transactionId,
-        eventId,
-        organizationId,
-        transactionType: 'customer_to_merchant',
+  // 创建交易记录
+  const transactionId = db
+    .collection('organizations').doc(organizationId)
+    .collection('events').doc(eventId)
+    .collection('transactions').doc().id;
 
-        // 交易双方
-        customerId,
-        customerPhone: customerDataLatest.basicInfo?.phoneNumber || '',
-        customerName: customerDataLatest.basicInfo?.chineseName || customerDataLatest.basicInfo?.englishName || '',
-        merchantId,
-        merchantName: merchantData.stallName || '',
+  const transactionData = {
+    transactionId,
+    eventId,
+    organizationId,
+    transactionType: 'customer_to_merchant',
 
-        // 金额和状态
-        amount,
-        status: 'completed',
-        paymentMethod: 'POINTS',
+    // 交易双方
+    customerId,
+    customerPhone: customerDataLatest.basicInfo?.phoneNumber || '',
+    customerName: customerDataLatest.basicInfo?.chineseName || customerDataLatest.basicInfo?.englishName || '',
+    merchantId,
+    merchantName: merchantData.stallName || '',
 
-        // ✨ 验证方式标记
-        verificationMethod: 'TRANSACTION_PIN',
-        pinVerified: true,
+    // 金额和状态
+    amount,
+    status: 'pending',  // ⭐ 修改：改为 pending 状态
+    paymentMethod: 'POINTS',
 
-        // 时间戳
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    // ✨ 验证方式标记
+    verificationMethod: 'TRANSACTION_PIN',
+    pinVerified: true,
 
-        // 元数据
-        metadata: {
-          deviceInfo: context.rawRequest?.headers?.['user-agent'] || '',
-          ipAddress: context.rawRequest?.ip || ''
-        }
-      };
+    // 时间戳
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
 
-      const transactionRef = db
-        .collection('organizations').doc(organizationId)
-        .collection('events').doc(eventId)
-        .collection('transactions').doc(transactionId);
+    // 元数据
+    metadata: {
+      deviceInfo: context.rawRequest?.headers?.['user-agent'] || '',
+      ipAddress: context.rawRequest?.ip || ''
+    }
+  };
 
-      transaction.set(transactionRef, transactionData);
+  const transactionRef = db
+    .collection('organizations').doc(organizationId)
+    .collection('events').doc(eventId)
+    .collection('transactions').doc(transactionId);
 
-      return {
-        transactionId,
-        remainingBalance: availablePoints - amount
-      };
-    });
+  transaction.set(transactionRef, transactionData);
 
-    console.log('[processCustomerPayment] ✅ 付款成功:', result);
+  return {
+    transactionId,
+    remainingBalance: availablePoints  // ⭐ 修改：余额暂时不变
+  };
+});
 
-    return {
-      success: true,
-      transactionId: result.transactionId,
-      remainingBalance: result.remainingBalance,
-      message: '付款成功'
-    };
+console.log('[processCustomerPayment] ✅ 付款请求已创建（待商家确认）:', result);
+
+return {
+  success: true,
+  transactionId: result.transactionId,
+  remainingBalance: result.remainingBalance,
+  message: '付款请求已发送，等待商家确认'  // ⭐ 修改消息
+};
+
+// ============================================
+// 📝 修改总结
+// ============================================
+//
+// 1. 第 789 行：status: 'completed' → status: 'pending'
+// 2. 注释掉第 743-749 行：不立即扣除 Customer 点数
+// 3. 注释掉第 760-766 行：不立即增加 Merchant 收入
+// 4. 修改返回消息：'付款成功' → '付款请求已发送，等待商家确认'
+//
+// ============================================
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

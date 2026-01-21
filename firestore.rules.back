@@ -1,0 +1,577 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================================
+    // 辅助函数 (Helper Functions)
+    // ============================================================================
+    
+    /**
+     * 检查用户是否已认证
+     */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    /**
+     * 检查用户是否是文档所有者
+     */
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    /**
+     * ✨ 检查用户是否有特定角色（从 Custom Claims 读取）
+     * ✅ 修复 2024-12-14: 支持 roles 数组格式
+     */
+    function hasRole(role) {
+      return isAuthenticated() && 
+             request.auth.token.roles != null &&
+             request.auth.token.roles.hasAny([role]);
+    }
+
+
+    
+    /**
+     * ✨ 检查 Custom Claims 中的 organizationId 和 eventId 是否匹配
+     * 🔥 临时宽松版本：只检查是否已认证
+     */
+    function isInContext(orgId, eventId) {
+      // 嚴格版：claims 必須與路徑參數一致
+      return isAuthenticated() &&
+             request.auth.token.organizationId == orgId &&
+             request.auth.token.eventId == eventId;
+    }
+    
+    /**
+     * ✅ 检查用户是否是 Event Manager（从 Custom Claims 读取）
+     * 新架构：Event Manager 存储在 users 集合中，通过 roles=['eventManager'] 识别
+     */
+    function isEventManager(orgId, eventId) {
+      return isInContext(orgId, eventId) && hasRole('eventManager');
+    }
+    
+    /**
+     * ✨ 检查用户是否是 Seller Manager（从 Custom Claims 读取）
+     */
+    function isSellerManager(orgId, eventId) {
+      return isInContext(orgId, eventId) && hasRole('sellerManager');
+    }
+    
+    /**
+     * ✨ 检查用户是否是 Cashier（从 Custom Claims 读取）
+     */
+    function isCashier(orgId, eventId) {
+      return isInContext(orgId, eventId) && hasRole('cashier');
+    }
+    
+    /**
+     * ✨ 检查用户是否管理特定部门（从 Custom Claims 读取）
+     */
+    function managesDepartment(orgId, eventId, departmentCode) {
+      return isAuthenticated() && 
+             isInContext(orgId, eventId) &&
+             hasRole('sellerManager') &&
+             request.auth.token.managedDepartments != null &&
+             departmentCode in request.auth.token.managedDepartments;
+    }
+    
+    /**
+     * 检查用户是否被特定 Seller Manager 管理
+     */
+    function isManagedBy(orgId, eventId, sellerId, managerId) {
+      let seller = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(sellerId)).data;
+      return seller.managedBy.hasAny([managerId]);
+    }
+    
+    /**
+     * 检查是否只更新状态字段
+     */
+    function onlyStatusChange() {
+      let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return affectedKeys.hasOnly(['status', 'updatedAt', 'verifiedAt', 'verifiedBy']);
+    }
+    
+    /**
+     * 检查是否只更新允许的字段
+     */
+    function onlyAllowedFields(allowedFields) {
+      let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return affectedKeys.hasOnly(allowedFields);
+    }
+    
+    // ============================================================================
+    // Platform Admin (平台管理员)
+    // ============================================================================
+    function isPlatformAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/admin_uids/$(request.auth.uid));
+    }
+
+    match /admin_uids/{adminUid} {
+      // Platform Admin 可以读取自己的信息
+      allow read: if isOwner(adminUid);
+      
+      // 创建和修改需要超级管理员权限（通过 Cloud Functions）
+      allow write: if false;
+    }
+    
+    // ============================================================================
+    // Organizations (组织/学校)
+    // ============================================================================
+    
+    match /organizations/{organizationId} {
+      // ✅ 允许所有人读取组织基本信息（用于登录页面显示）
+      // 注意：organizations 只包含 orgCode, name 等非敏感信息
+      allow read: if true;
+      
+      // ✅ Platform Admin 可以创建和修改组织
+      allow create: if isPlatformAdmin();
+      allow update: if isPlatformAdmin();
+      allow delete: if isPlatformAdmin();
+      
+      // ============================================================================
+      // Events (活动)
+      // ============================================================================
+      
+      match /events/{eventId} {
+        // ✅ 允许所有人读取活动基本信息（用于登录页面显示）
+        // 注意：events 只包含 eventCode, name, dates 等非敏感信息
+        allow read: if true;
+        
+        // ✅ Event Manager 可以更新活动信息（排除敏感字段）
+        // 注意：不再检查 eventManager 对象，因为已迁移到 users 集合
+        allow update: if isEventManager(organizationId, eventId) &&
+                         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                           'organizationId', 'orgCode', 'eventCode', 'createdBy', 'createdAt'
+                         ]);
+        
+        // 创建只能通过 Cloud Functions
+        allow create, delete: if false;
+        
+        // ========================================================================
+        // Users (活动参与者，包括 Event Manager)
+        // ========================================================================
+        
+        match /users/{userId} {
+          /**
+           * ✨ 读取规则（使用 Custom Claims）：
+           * 1. 用户可以读取自己的数据
+           * 2. Event Manager 可以读取所有用户
+           * 3. 其他已认证用户可以读取（暂时放宽以支持销售流程）
+           */
+          allow read: if isAuthenticated() && (
+                         request.auth.token.userId == userId ||
+                         isEventManager(organizationId, eventId)
+                       ) ||
+                       isAuthenticated(); // 暂时放宽以支持销售流程
+          
+          /**
+           * 创建规则：
+           * 1. Event Manager 可以创建任何用户
+           * 2. 通过 Cloud Functions 创建（注册流程）
+           */
+          allow create: if isEventManager(organizationId, eventId) ||
+                           (isAuthenticated() && request.auth.token.userId == userId);
+          
+          /**
+           * ✅ 更新规则：
+           * 1. 用户可以更新自己的数据，但不能修改密码/PIN相关字段
+           * 2. Event Manager 可以更新任何用户（但不能修改自己的 roles）
+           * 3. Seller Manager 可以更新管理范围内用户的特定字段
+           * 4. 禁止直接修改密码相关字段（passwordHash, passwordSalt, transactionPinHash, transactionPinSalt）
+           */
+          allow update: if (isAuthenticated() && request.auth.token.userId == userId && 
+                           onlyAllowedFields(['basicInfo', 'updatedAt']) &&
+                           !request.resource.data.basicInfo.diff(resource.data.basicInfo)
+                             .affectedKeys().hasAny(['passwordHash', 'passwordSalt', 'transactionPinHash', 'transactionPinSalt', 'pinHash', 'pinSalt'])) ||
+                           // 允許 Seller Manager 更新自己的現金統計（收款/上交等），僅限 pointsStats 與時間戳
+                           (isSellerManager(organizationId, eventId) &&
+                            request.auth.token.userId == userId &&
+                            onlyAllowedFields(['pointsStats', 'updatedAt'])) ||
+                           (isEventManager(organizationId, eventId) &&
+                            // Event Manager 不能修改自己的 roles
+                            !(request.auth.token.userId == userId && 
+                              request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles']))) ||
+                           (isSellerManager(organizationId, eventId) && 
+                            isManagedBy(organizationId, eventId, userId, request.auth.token.userId) &&
+                            onlyAllowedFields(['seller', 'pointsStats', 'updatedAt'])) ||
+                           (isAuthenticated() && 
+                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seller', 'updatedAt'])) ||
+                           (isAuthenticated() && 
+                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['merchant', 'updatedAt'])) ||
+                           (isAuthenticated() && 
+                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customer', 'updatedAt'])) ||
+                           // 🔥 暫時放寬：允許寫入 roleSpecificData（僅為了現有資料結構兼容）
+                           (isAuthenticated() && 
+                            onlyAllowedFields(['roleSpecificData', 'updatedAt']));
+          
+          /**
+           * ✅ 删除规则：
+           * 1. Event Manager 可以删除用户（但不能删除自己）
+           * 2. 通过 Cloud Functions 删除
+           */
+          allow delete: if isEventManager(organizationId, eventId) && 
+                           request.auth.token.userId != userId;
+          
+        // ======================================================================
+        // Point Allocations (点数分配记录 - users 子集合)
+        // ✅ 添加在 users/{userId} 规则内部，第217行后
+        // ======================================================================
+
+        match /pointAllocations/{allocationId} {
+          /**
+          * 读取规则：
+          * 1. Seller Manager 可以读取自己的分配记录
+          * 2. Event Manager 可以读取所有分配记录
+          * 3. Seller 可以读取分配给自己的记录
+          */
+          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
+                        isEventManager(organizationId, eventId) ||
+                        (isAuthenticated() && resource.data.recipientId == request.auth.token.userId);
+          
+          /**
+          * 创建规则：
+          * 1. Seller Manager 可以创建分配记录（只能在自己的文档下）
+          * 2. Event Manager 可以创建
+          */
+          allow create: if (isSellerManager(organizationId, eventId) && 
+                          request.auth.token.userId == userId) ||
+                          isEventManager(organizationId, eventId);
+          
+          /**
+          * 更新和删除：只能通过 Cloud Functions
+          */
+          allow update, delete: if false;
+        }
+
+        // ======================================================================
+        // Cash Collections (现金收取记录 - users 子集合)
+        // ✅ 可选：如果需要收款功能
+        // ======================================================================
+
+        match /cashCollections/{collectionId} {
+          /**
+          * 读取规则：
+          * 1. Seller Manager 可以读取自己的收款记录
+          * 2. Event Manager 可以读取所有收款记录
+          * 3. Seller 可以读取自己被收款的记录
+          * 4. Cashier 可以读取所有收款记录
+          */
+          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
+                        isEventManager(organizationId, eventId) ||
+                        isCashier(organizationId, eventId) ||
+                        (isAuthenticated() && resource.data.sellerId == request.auth.token.userId);
+          
+          /**
+          * 创建规则：
+          * 1. Seller Manager 可以创建收款记录
+          * 2. Event Manager 可以创建
+          */
+          allow create: if (isSellerManager(organizationId, eventId) && 
+                          request.auth.token.userId == userId) ||
+                          isEventManager(organizationId, eventId);
+          
+          /**
+          * 更新和删除：只能通过 Cloud Functions
+          */
+          allow update, delete: if false;
+        }
+
+        }
+
+        // ========================================================================
+        // Merchants (商家攤位 - Event 級別集合)
+        // ========================================================================
+        match /merchants/{merchantId} {
+          /**
+           * 讀取規則：暫時放寬，所有已認證使用者可讀取
+           * 便於商家端載入自己的資料與測試
+           */
+          allow read: if isAuthenticated();
+
+          /**
+           * 更新規則：僅允許商家本人更新有限欄位
+           * 核對條件：文件中的 userId 必須等於 Custom Claims 的 userId 或 request.auth.uid
+           * 可更新欄位：stallName, description, contactInfo, isActive, updatedAt
+           */
+          allow update: if isAuthenticated() &&
+                         (resource.data.userId == request.auth.token.userId ||
+                          resource.data.userId == request.auth.uid) &&
+                         onlyAllowedFields(['stallName', 'description', 'contactInfo', 'isActive', 'updatedAt']);
+
+          /**
+           * 建立與刪除：僅允許經由 Cloud Functions
+           */
+          allow create, delete: if false;
+        }
+        
+        // ========================================================================
+        // Cash Collections (现金收款记录 - Event 级别集合)
+        // ========================================================================
+        
+        match /cashCollections/{collectionId} {
+          /**
+           * ✅ 读取规则（修复 2024-12-14）
+           * 使用 request.auth.token.userId 匹配 collectedBy
+           */
+          allow read: if isAuthenticated();
+          
+          /**
+           * ✅ 创建规则（修复 2024-12-14）
+           * 关键修改：使用 request.auth.token.userId 而不是 request.auth.uid
+           * 原因：collectedBy 存储的是应用内部 userId，不是 Firebase Auth UID
+           */
+          allow create: if isAuthenticated() &&
+                           // 必须包含必填字段
+                           request.resource.data.keys().hasAll([
+                             'collectedBy', 'submittedBy', 'amount',
+                             'status', 'eventId', 'organizationId'
+                           ]) &&
+                           // ✅ 使用 Custom Claims 中的 userId
+                           (request.resource.data.collectedBy == request.auth.token.userId ||
+                            request.resource.data.collectedBy == request.auth.uid) &&
+                           // 金额必须 > 0
+                           request.resource.data.amount > 0 &&
+                           // 状态必须是 collected
+                           request.resource.data.status == 'collected' &&
+                           // organizationId 和 eventId 必须匹配
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId;
+          
+          /**
+           * ✅ 更新规则（修复 2024-12-14）
+           * 使用 request.auth.token.userId 匹配 collectedBy
+           */
+          allow update: if (isSellerManager(organizationId, eventId) &&
+                           resource.data.collectedBy == request.auth.token.userId &&
+                           onlyAllowedFields(['note', 'discrepancyReason', 'updatedAt'])) ||
+                           (isCashier(organizationId, eventId) &&
+                           onlyStatusChange());
+          
+          /**
+           * 删除规则：只能通过 Cloud Functions 或 Event Manager
+           */
+          allow delete: if isEventManager(organizationId, eventId);
+        }
+        
+        // ========================================================================
+        // Cash Submissions (现金上交记录 - Event 级别集合)
+        // ========================================================================
+        
+        match /cashSubmissions/{submissionId} {
+          /**
+           * ✅ 读取规则（修复版）
+           * 1. Seller 可以读取自己提交的记录
+           * 2. Seller Manager 可以读取自己提交的和收到的记录
+           * 3. Cashier 可以读取所有记录
+           * 4. Event Manager 可以读取所有记录
+           */
+          allow read: if isEventManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
+                         (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId) ||
+                         (isSellerManager(organizationId, eventId) && 
+                          resource.data.receivedBy == request.auth.token.userId);
+          
+          /**
+           * ✅ 创建规则（修复版）
+           * 1. Seller 可以创建上交记录（给 Seller Manager 或待认领池子）
+           * 2. Seller Manager 可以创建上交记录（给 Finance Manager）
+           * 3. Point Seller 可以创建上交记录（给 Finance Manager）
+           * 4. 必须包含必填字段
+           * 5. 状态必须是 pending
+           * 6. organizationId 和 eventId 必须匹配
+           */
+          allow create: if isAuthenticated() &&
+                           request.resource.data.keys().hasAll([
+                             'submittedBy', 'submitterRole', 'amount',
+                             'status', 'eventId', 'organizationId'
+                           ]) &&
+                           request.resource.data.submittedBy == request.auth.token.userId &&
+                           request.resource.data.amount > 0 &&
+                           request.resource.data.status == 'pending' &&
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId &&
+                           (hasRole('seller') || hasRole('sellerManager') || hasRole('pointSeller'));
+          
+          /**
+           * ✅ 更新规则（修复版）
+           * 1. Seller Manager 可以取消自己提交的待审核记录
+           * 2. Cashier 可以更新状态（确认/拒绝/争议）
+           * 3. 只能修改特定字段
+           */
+          allow update: if (isSellerManager(organizationId, eventId) &&
+                           resource.data.submittedBy == request.auth.token.userId &&
+                           resource.data.status == 'pending' &&
+                           request.resource.data.status == 'cancelled' &&
+                           onlyAllowedFields(['status', 'updatedAt'])) ||
+                           (isCashier(organizationId, eventId) &&
+                           onlyAllowedFields(['status', 'verifiedAt', 'verifiedBy', 'verifiedAmount', 'discrepancy', 'discrepancyReason', 'notes', 'updatedAt', 'confirmationNote', 'receivedBy', 'receiverName']));
+          
+          /**
+           * ✅ 删除规则：只能通过 Cloud Functions 或 Event Manager
+           */
+          allow delete: if isEventManager(organizationId, eventId);
+        }
+        
+        // ========================================================================
+        // Department Stats (部门统计 - Event 级别集合)
+        // ========================================================================
+        
+        match /departmentStats/{departmentCode} {
+          /**
+           * 读取规则：
+           * 1. Event Manager 可以读取所有部门统计
+           * 2. Seller Manager 可以读取管理的部门统计
+           * 3. Cashier 可以读取所有部门统计
+           */
+          allow read: if isEventManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
+                         (isSellerManager(organizationId, eventId) &&
+                          managesDepartment(organizationId, eventId, departmentCode));
+          
+          /**
+           * 写入规则：只能通过 Cloud Functions（自动维护统计）
+           */
+          allow write: if false;
+        }
+        
+        // ========================================================================
+        // Seller Manager Stats (SM 统计 - Event 级别集合)
+        // ========================================================================
+        
+        match /sellerManagerStats/{sellerManagerId} {
+          /**
+           * 读取规则：
+           * 1. Seller Manager 可以读取自己的统计
+           * 2. Event Manager 可以读取所有 SM 统计
+           * 3. Cashier 可以读取所有 SM 统计
+           */
+          allow read: if (isAuthenticated() && request.auth.token.userId == sellerManagerId) ||
+                         isEventManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId);
+          
+          /**
+           * 写入规则：只能通过 Cloud Functions（自动维护统计）
+           */
+          allow write: if false;
+        }
+        
+        // ========================================================================
+        // Cashier Stats (Cashier 统计 - Event 级别集合)
+        // ========================================================================
+        
+        match /cashierStats/{cashierId} {
+          /**
+           * 读取规则：
+           * 1. Cashier 可以读取自己的统计
+           * 2. Event Manager 可以读取所有 Cashier 统计
+           */
+          allow read: if (isAuthenticated() && request.auth.token.userId == cashierId) ||
+                         isEventManager(organizationId, eventId);
+          
+          /**
+           * 写入规则：只能通过 Cloud Functions（自动维护统计）
+           */
+          allow write: if false;
+        }
+        
+        // ========================================================================
+        // Transactions (交易记录 - Event 级别集合)
+        // ========================================================================
+        
+        match /transactions/{transactionId} {
+          /**
+           * 🔥 临时宽松读取规则：允许所有已认证用户读取
+           * 用于测试和调试
+           */
+          allow read: if isAuthenticated();
+          
+          /**
+           * 创建规则：
+           * 🔥 临时宽松版本：允许所有已认证用户创建
+           */
+          // 收緊：需已認證、且交易文件的 org/event 與路徑一致
+          allow create: if isAuthenticated() &&
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId;
+          
+          /**
+           * 更新和删除：只能通过 Cloud Functions
+           */
+          allow update, delete: if false;
+        }
+        
+        // ========================================================================
+        // Point Cards (点数卡 - Event 级别集合)
+        // ========================================================================
+        
+        match /pointCards/{cardId} {
+          /**
+           * 辅助函数：检查是否为 PointSeller
+           */
+          function isPointSeller() {
+            return isAuthenticated() && 
+                   hasRole('pointSeller') &&
+                   isInContext(organizationId, eventId);
+          }
+          
+          /**
+           * 辅助函数：检查是否为 Merchant
+           */
+          function isMerchant() {
+            return isAuthenticated() && 
+                   hasRole('merchant') &&
+                   isInContext(organizationId, eventId);
+          }
+          
+          /**
+           * 创建规则：
+           * PointSeller 可以创建点数卡（必须设置自己为 issuer）
+           */
+          allow create: if isPointSeller() && 
+                           request.resource.data.issuer.pointSellerId == request.auth.uid &&
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId;
+          
+          /**
+           * 读取规则：
+           * 1. PointSeller 可以读取自己发行的点数卡
+           * 2. Merchant 可以读取所有点数卡（用于扫码收款验证余额）
+           * 3. Cashier 可以读取所有点数卡（用于财务管理）
+           * 4. Event Manager 可以读取所有点数卡（用于系统管理）
+           */
+          allow read: if (isPointSeller() && 
+                         resource.data.issuer.pointSellerId == request.auth.uid) ||
+                         isMerchant() ||
+                         isCashier(organizationId, eventId) ||
+                         isEventManager(organizationId, eventId);
+          
+          /**
+           * 更新规则：
+           * 1. Merchant 可以更新点数卡余额（扫码收款时）
+           * 2. 只能修改余额相关字段
+           */
+          allow update: if isMerchant() &&
+                           onlyAllowedFields(['balance', 'transactions', 'updatedAt', 'metadata']);
+          
+          /**
+           * 删除规则：
+           * 只能通过 Cloud Functions 或 Event Manager
+           */
+          allow delete: if isEventManager(organizationId, eventId);
+        }
+      }
+    }
+    
+    // ============================================================================
+    // 默认规则：拒绝所有其他访问
+    // ============================================================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

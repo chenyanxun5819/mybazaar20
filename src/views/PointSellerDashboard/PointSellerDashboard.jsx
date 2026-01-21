@@ -19,11 +19,17 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { auth, db, functions } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import './PointSellerDashboard.css';
+import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
+import PointsCardIcon from '../../assets/pointsCard.svg?react';
+import PointsToPhoneIcon from '../../assets/pointsToPhone.svg?react';
+import PersonalFinanceIcon from '../../assets/personal-finance.svg?react';
 
 // 导入子组件
 import IssuePointCard from './components/IssuePointCard';
@@ -35,9 +41,7 @@ const PointSellerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
   const { currentUser, userProfile, loading: authLoading, logout } = useAuth();
-  const { organizationId, eventId, loading: eventLoading, error: eventError } = useEvent();
-
-  // 状态管理
+  const { orgCode, eventCode, event, loading: eventLoading, error: eventError } = useEvent(); // 🆕 从 EventContext 获取完整 event + loading + error
   const [activeTab, setActiveTab] = useState('issue-card'); // issue-card | direct-sale | history | cash-submission
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -61,8 +65,32 @@ const PointSellerDashboard = () => {
   });
   const [issuanceRecords, setIssuanceRecords] = useState([]);
 
-  // 解析 orgEventCode
-  const [orgCode, eventCode] = orgEventCode?.split('-') || [];
+  // 🆕 inline styles（参考 SellerDashboard）
+  const styles = {
+    tabButton: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '0.25rem',
+      padding: '1rem 0.5rem',
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      cursor: 'pointer',
+      color: '#757575',
+      transition: 'all 0.2s',
+      borderBottom: '3px solid transparent'
+    },
+    tabButtonActive: {
+      color: '#2196F3',
+      borderBottomColor: '#2196F3'
+    },
+    tabLabel: {
+      fontSize: '0.85rem',
+      fontWeight: 500
+    }
+  };
 
   // ===== 工具函数 =====
   const withTimeout = (promise, ms, label) => {
@@ -163,7 +191,7 @@ const PointSellerDashboard = () => {
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('退出登录失败:', error);
-      alert('退出登录失败: ' + (error?.message || '請重試'));
+      window.mybazaarShowToast('退出登录失败: ' + (error?.message || '請重試'));
     }
   };
 
@@ -203,8 +231,8 @@ const PointSellerDashboard = () => {
     try {
       setLoading(true);
 
-      const orgId = userProfile?.organizationId || organizationId;
-      const evtId = userProfile?.eventId || eventId;
+      const orgId = userProfile?.organizationId || orgCode;
+      const evtId = userProfile?.eventId || eventCode;
 
       if (!orgId || !evtId) {
         setError('无法获取活动信息，请重新登录');
@@ -235,8 +263,8 @@ const PointSellerDashboard = () => {
 
   // ===== 3. 实时监听发行记录 =====
   useEffect(() => {
-    const orgId = userProfile?.organizationId || organizationId;
-    const evtId = userProfile?.eventId || eventId;
+    const orgId = userProfile?.organizationId || orgCode;
+    const evtId = userProfile?.eventId || eventCode;
     const userId = userProfile?.userId;
 
     if (!orgId || !evtId || !userId) return;
@@ -302,7 +330,7 @@ const PointSellerDashboard = () => {
       unsubscribeCards();
       unsubscribeTransactions();
     };
-  }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
+  }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, orgCode, eventCode]);
 
   // ===== 4. 刷新数据 =====
   const handleRefresh = () => {
@@ -332,65 +360,69 @@ const PointSellerDashboard = () => {
 
   return (
     <div className="ps-container">
-      {/* 头部 */}
-      <header className="ps-header">
-        <div className="ps-header-left">
-          <h1 className="ps-title">💳 点数卡销售</h1>
-          <p className="ps-welcome-text">
-            欢迎，{pointSellerData?.basicInfo?.chineseName || pointSellerData?.basicInfo?.englishName || '点数卡销售员'}
-          </p>
-        </div>
-        <div className="ps-header-right">
-          <span className="ps-date">{new Date().toLocaleDateString('zh-CN')}</span>
-          {/* 时效性提示 */}
-          {/* ⚠️ 测试阶段：时间限制已禁用，此徽章不会显示 */}
-          {!isActiveHours && (
-            <span className="ps-inactive-badge">⏰ 非营业时间</span>
-          )}
-          <button className="ps-logout-button" onClick={handleLogout}>
-            🚪 退出登录
-          </button>
-        </div>
-      </header>
+      {/* 🆕 共用 Header 组件（包含角色切换器和登出按钮） */}
+      <DashboardHeader
+        title="点数卡销售"
+        subtitle="Point Card Sales"
+        logoUrl={event?.logoUrl}
+        userName={pointSellerData?.basicInfo?.chineseName || pointSellerData?.basicInfo?.englishName}
+        userPhone={pointSellerData?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.includes('pointSeller') ? 'pointSeller' : userProfile?.roles?.[0]}
+        orgEventCode={orgCode && eventCode ? `${orgCode}-${eventCode}` : orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
-      {/* ⚠️ 测试阶段：时间限制已禁用，此警告不会显示 */}
-      {/* 时效性警告 */}
-      {!isActiveHours && (
-        <div className="ps-warning-banner">
-          ⚠️ 点数卡销售仅在义卖会当日 <strong>6:00 AM - 6:00 PM</strong> 开放。当前时间不在营业时间内。
-        </div>
-      )}
-
-      {/* Tab导航 */}
-      <nav className="ps-tabs">
+      {/* Tab 导航 */}
+      <nav className="tab-navigation">
         <button
-          className={`ps-tab ${activeTab === 'issue-card' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'issue-card' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('issue-card')}
         >
-          🎫 发行点数卡
+          <PointsCardIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>发行点数卡</span>
         </button>
         <button
-          className={`ps-tab ${activeTab === 'direct-sale' ? 'active' : ''}`}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'direct-sale' ? styles.tabButtonActive : {})
+          }}
           onClick={() => setActiveTab('direct-sale')}
         >
-          🛒 销售点数
+          <PointsToPhoneIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>销售点数</span>
         </button>
         <button
-          className={`ps-tab ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('history'); setTimeout(() => handleRefresh(), 1000); }}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'history' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('history')}
         >
-          📊 发行记录
+          <ChartHistogramIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>发行记录</span>
         </button>
         <button
-          className={`ps-tab ${activeTab === 'cash-submission' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('cash-submission'); setTimeout(() => handleRefresh(), 1000); }}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'cash-submission' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('cash-submission')}
         >
-          💰 现金上交
+          <PersonalFinanceIcon style={{ width: '1.5rem', height: '1.5rem' }} />
+          <span style={styles.tabLabel}>现金上交</span>
         </button>
       </nav>
 
-      {/* Tab内容 */}
-      <main className="ps-content">
+      {/* Tab 内容 */}
+      <main className="dashboard-content">
         {activeTab === 'issue-card' && (
           <IssuePointCard
             isActiveHours={isActiveHours}
@@ -398,8 +430,8 @@ const PointSellerDashboard = () => {
             onRefresh={handleRefresh}
             currentUser={currentUser}
             userProfile={userProfile}
-            organizationId={organizationId}
-            eventId={eventId}
+            organizationId={orgCode}
+            eventId={eventCode}
             callFunction={callOnCallWithAuthFallback}
           />
         )}
@@ -411,8 +443,8 @@ const PointSellerDashboard = () => {
             onRefresh={handleRefresh}
             currentUser={currentUser}
             userProfile={userProfile}
-            organizationId={organizationId}
-            eventId={eventId}
+            organizationId={orgCode}
+            eventId={eventCode}
             callFunction={callOnCallWithAuthFallback}
           />
         )}
@@ -432,12 +464,19 @@ const PointSellerDashboard = () => {
             onRefresh={handleRefresh}
             currentUser={currentUser}
             userProfile={userProfile}
-            organizationId={organizationId}
-            eventId={eventId}
+            organizationId={orgCode}
+            eventId={eventCode}
             callFunction={callOnCallWithAuthFallback}
           />
         )}
       </main>
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={event}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };

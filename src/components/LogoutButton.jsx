@@ -16,7 +16,7 @@ const LogoutButton = () => {
       navigate('/platform/login');
     } catch (error) {
       console.error('[LogoutButton] 登出失败:', error);
-      alert('登出失败：' + error.message);
+      window.mybazaarShowToast('登出失败：' + error.message);
     }
   };
 
@@ -49,3 +49,4 @@ const styles = {
 };
 
 export default LogoutButton;
+

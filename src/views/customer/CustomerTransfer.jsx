@@ -4,6 +4,7 @@ import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
+import { useEvent } from '../../contexts/EventContext';
 
 /**
  * Customer点数转让页面
@@ -17,6 +18,12 @@ import { functions } from '../../config/firebase';
  */
 const CustomerTransfer = () => {
   const navigate = useNavigate();
+  const {
+    orgCode,
+    eventCode,
+    organizationId: ctxOrganizationId,
+    eventId: ctxEventId
+  } = useEvent();
 
   // 页面状态
   const [step, setStep] = useState('input'); // input | confirm | pin | processing | success
@@ -56,7 +63,9 @@ const CustomerTransfer = () => {
       }
 
       const tokenResult = await user.getIdTokenResult();
-      const { organizationId, eventId } = tokenResult.claims;
+      const { organizationId: claimOrgId, eventId: claimEventId } = tokenResult.claims;
+      const organizationId = ctxOrganizationId || claimOrgId;
+      const eventId = ctxEventId || claimEventId;
 
       const customerRef = doc(
         db,
@@ -74,10 +83,10 @@ const CustomerTransfer = () => {
           userId: user.uid
         });
         
-        // ✅ 构建orgEventCode用于导航
-        const orgId = organizationId?.replace('organization_', '') || '';
-        const evtId = eventId?.replace('event_', '') || '';
-        const code = `${orgId}-${evtId}`;
+        // ✅ 构建 orgEventCode 用于导航（优先使用 EventContext 的 orgCode-eventCode，避免把 Firestore ID 放进 URL）
+        const fallbackOrg = organizationId?.replace('organization_', '') || '';
+        const fallbackEvt = eventId?.replace('event_', '') || '';
+        const code = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
         setOrgEventCode(code);
         console.log('[CustomerTransfer] orgEventCode设置为:', code);
       }
@@ -944,3 +953,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default CustomerTransfer;
+

@@ -2,6 +2,11 @@
  * cancelMerchantPayment.js
  * 取消交易 - merchantOwner 或 merchantAsist 取消待收的交易
  * 
+ * ⭐ 修复版本（2026-01-17）
+ * 修复内容：
+ * 1. 修正交易字段名称：transactionType（不是 type）
+ * 2. 修正 statusHistory 时间戳：使用 Date 对象
+ * 
  * 功能：
  * 1. 验证交易状态为 pending
  * 2. 验证调用者权限（merchantOwner 或 merchantAsist）
@@ -64,7 +69,8 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     }
 
     // ========== 6. 验证交易类型 ==========
-    if (transactionData.type !== 'customer_to_merchant') {
+    // ⭐ 修复：改为 transactionType（匹配 processCustomerPayment）
+    if (transactionData.transactionType !== 'customer_to_merchant') {
       throw new HttpsError('invalid-argument', '交易类型错误');
     }
 
@@ -113,6 +119,9 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     }
 
     // ========== 9. 更新交易状态 ==========
+    // ⭐ 修复：statusHistory 中不能使用 FieldValue.serverTimestamp()
+    const now = new Date();
+    
     await transactionRef.update({
       status: 'cancelled',
       cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -121,7 +130,7 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
       cancelReason: cancelReason || '商家取消',
       statusHistory: admin.firestore.FieldValue.arrayUnion({
         status: 'cancelled',
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: now,  // ✅ 使用 Date 对象
         updatedBy: auth.uid,
         updaterRole: cancellerRole,
         note: cancelReason || '商家取消'

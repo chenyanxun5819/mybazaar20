@@ -64,3 +64,4 @@ console.log('🌎 [Firebase] Functions Region:', FUNCTIONS_REGION);
 console.log('✅ [Firebase] 初始化完成');
 
 export default app;
+

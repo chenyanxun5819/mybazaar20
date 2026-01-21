@@ -80,3 +80,4 @@ const styles = {
 */
 
 export default PlatformAuthGuard;
+

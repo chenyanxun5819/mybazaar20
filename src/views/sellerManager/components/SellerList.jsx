@@ -139,7 +139,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
     const pendingAmount = seller.seller?.pendingCollection || 0;
 
     if (pendingAmount <= 0) {
-      alert('該 Seller 沒有待收款金額');
+      window.mybazaarShowToast('該 Seller 沒有待收款金額');
       return;
     }
 
@@ -155,7 +155,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
     // ✅ 步驟 3: 獲取當前 Seller Manager 信息
     // ✨ 修正：從 userInfo prop 獲取，而非從 seller.managedBy
     if (!currentUserId) {
-      alert('❌ 錯誤：無法獲取當前用戶信息');
+      window.mybazaarShowToast('❌ 錯誤：無法獲取當前用戶信息');
       console.error('currentUserId is undefined, userInfo:', userInfo);
       return;
     }
@@ -237,7 +237,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
       await batch.commit();
 
       console.log('✅ 收款成功');
-      alert(`✅ 成功收取 RM ${pendingAmount} 從 ${seller.basicInfo?.chineseName || '未知'}`);
+      window.mybazaarShowToast(`✅ 成功收取 RM ${pendingAmount} 從 ${seller.basicInfo?.chineseName || '未知'}`);
 
       // 可選：調用父組件的回調
       if (onRecordCollection) {
@@ -246,7 +246,7 @@ const SellerList = ({ sellers = [], selectedDepartment, onSelectSeller, onRecord
 
     } catch (error) {
       console.error('❌ 收款失敗:', error);
-      alert('收款失敗，請重試。錯誤: ' + error.message);
+      window.mybazaarShowToast('收款失敗，請重試。錯誤: ' + error.message);
     } finally {
       setRecordingCollection(null);
     }

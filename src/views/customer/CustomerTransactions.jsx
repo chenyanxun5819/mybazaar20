@@ -407,6 +407,16 @@ const CustomerTransactions = () => {
                                 (tx.transactionType === 'customer_transfer' && 
                                  tx.fromUser?.userId === customerData.userId);
 
+              // 🎨 根据状态获取颜色和标签
+              const getStatusBadge = (status) => {
+                if (status === 'completed') return { label: '✅', bg: '#4CAF5020', color: '#4CAF50' };
+                if (status === 'refunded') return { label: '💰 已退款', bg: '#FF980020', color: '#FF9800' };
+                if (status === 'cancelled') return { label: '❌ 已取消', bg: '#f4433620', color: '#f44336' };
+                if (status === 'pending') return { label: '⏳', bg: '#2196F320', color: '#2196F3' };
+                return { label: '？', bg: '#99999920', color: '#999' };
+              };
+              const statusBadge = getStatusBadge(tx.status);
+
               return (
                 <div
                   key={tx.id}
@@ -446,6 +456,16 @@ const CustomerTransactions = () => {
                   </div>
 
                   <div style={styles.transactionRight}>
+                    {/* 🎨 状态徽章 */}
+                    {tx.status !== 'completed' && (
+                      <div style={{
+                        ...styles.statusBadge,
+                        backgroundColor: statusBadge.bg,
+                        color: statusBadge.color
+                      }}>
+                        {statusBadge.label}
+                      </div>
+                    )}
                     <div style={{
                       ...styles.transactionAmount,
                       color: isNegative ? '#f44336' : '#4CAF50'
@@ -519,9 +539,16 @@ const CustomerTransactions = () => {
                   <span style={styles.detailItemLabel}>状态：</span>
                   <span style={{
                     ...styles.detailItemValue,
-                    color: selectedTransaction.status === 'completed' ? '#4CAF50' : '#FF9800'
+                    color: selectedTransaction.status === 'completed' ? '#4CAF50' 
+                           : selectedTransaction.status === 'refunded' ? '#FF9800'
+                           : selectedTransaction.status === 'cancelled' ? '#f44336'
+                           : '#2196F3'
                   }}>
-                    {selectedTransaction.status === 'completed' ? '✅ 已完成' : '⏳ 处理中'}
+                    {selectedTransaction.status === 'completed' ? '✅ 已完成' 
+                     : selectedTransaction.status === 'refunded' ? '💰 已退款'
+                     : selectedTransaction.status === 'cancelled' ? '❌ 已取消'
+                     : selectedTransaction.status === 'pending' ? '⏳ 待处理'
+                     : '？ 未知'}
                   </span>
                 </div>
 
@@ -804,6 +831,13 @@ const styles = {
     fontWeight: '700',
     textAlign: 'right'
   },
+  statusBadge: {
+    fontSize: '0.75rem',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '12px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap'
+  },
   transactionArrow: {
     fontSize: '1.5rem',
     color: '#ccc'
@@ -937,3 +971,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default CustomerTransactions;
+

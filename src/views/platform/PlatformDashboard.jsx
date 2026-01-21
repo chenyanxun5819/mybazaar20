@@ -53,7 +53,7 @@ const PlatformDashboard = () => {
       setOrganizations(orgsData);
     } catch (error) {
       console.error('加载组织失败:', error);
-      alert('加载组织失败: ' + error.message);
+      window.mybazaarShowToast('加载组织失败: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,7 @@ const PlatformDashboard = () => {
       navigate('/platform/login');
     } catch (error) {
       console.error('[PlatformDashboard] 登出失败:', error);
-      alert('登出失败：' + error.message);
+      window.mybazaarShowToast('登出失败：' + error.message);
     }
   };
 
@@ -512,7 +512,7 @@ const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
       }
 
       await updateEventDetails(organization.id, event.id, updates, idToken);
-      alert('活动详情更新成功');
+      window.mybazaarShowToast('活动详情更新成功');
       setSubmitting(false);
       onSuccess();
     } catch (err) {
@@ -533,7 +533,7 @@ const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
       const idToken = await auth.currentUser.getIdToken();
       await resetEventUsers(organization.id, event.id, resetManagerData, idToken);
       
-      alert('活动 users 已重置，新 Event Manager 已创建');
+      window.mybazaarShowToast('活动 users 已重置，新 Event Manager 已创建');
       setSubmitting(false);
       onSuccess();
     } catch (err) {
@@ -716,11 +716,11 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
       const idToken = await auth.currentUser.getIdToken();
       await updateOrganizationLogo(organization.id, downloadUrl, idToken);
       
-      alert('组织 logo 更新成功');
+      window.mybazaarShowToast('组织 logo 更新成功');
       onReload();
       setUploadingLogo(false);
     } catch (error) {
-      alert('上传失败：' + error.message);
+      window.mybazaarShowToast('上传失败：' + error.message);
       setUploadingLogo(false);
     }
   };
@@ -955,7 +955,7 @@ const EventCard = ({ event, organization, onReload }) => {
           console.warn('[EventCard] onReload 调用失败:', e);
         }
       }
-      alert('活动删除成功！');
+      window.mybazaarShowToast('活动删除成功！');
 
     } finally {
       setDeleting(false);
@@ -977,7 +977,7 @@ const EventCard = ({ event, organization, onReload }) => {
       setCopySuccess('✓ 已复制');
       setTimeout(() => setCopySuccess(''), 2000);
     } catch (err) {
-      alert('复制失败，请手动复制');
+      window.mybazaarShowToast('复制失败，请手动复制');
     }
   };
 
@@ -1283,7 +1283,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
         updatedAt: serverTimestamp()
       });
 
-      alert('身份标签更新成功！');
+      window.mybazaarShowToast('身份标签更新成功！');
       onSuccess();
     } catch (err) {
       console.error('更新身份标签失败:', err);
@@ -1554,7 +1554,7 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         updatedAt: serverTimestamp()
       });
 
-      alert('组织创建成功！');
+      window.mybazaarShowToast('组织创建成功！');
       onSuccess();
 
     } catch (err) {
@@ -1872,7 +1872,7 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
       }
 
       const result = await response.json();
-      alert('活动和 Event Manager 创建成功！');
+      window.mybazaarShowToast('活动和 Event Manager 创建成功！');
       onSuccess();
       onClose();
 
@@ -2966,3 +2966,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default PlatformDashboard;
+

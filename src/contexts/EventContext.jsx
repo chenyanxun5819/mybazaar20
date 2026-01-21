@@ -2,7 +2,7 @@
 // ✅ 已更新：添加对 Manager 路由和 Login 路由的支持
 import { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../config/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../services/safeFetch';
 
 const EventContext = createContext();
@@ -189,7 +189,7 @@ export const EventProvider = ({ children }) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              orgCode: String(orgCode || '').trim().toLowerCase(),
+              orgCode: String(orgCode || '').trim(),
               eventCode: String(eventCode || '').trim()
             })
           }),
@@ -224,6 +224,60 @@ export const EventProvider = ({ children }) => {
 
         console.log('[EventContext] ✅ 透过 HTTP 解析成功:', { orgId, evtId });
       };
+
+      // 0. 向后兼容：允许 URL 使用 Firestore 文档 ID（orgId-eventId）
+      // 例如：/customer/<orgId>-<eventId>/dashboard
+      // 若可直接读取到对应文档，则直接使用其作为 organizationId/eventId。
+      try {
+        const orgIdFromUrl = String(orgCode || '').trim();
+        const eventIdFromUrl = String(eventCode || '').trim();
+
+        if (orgIdFromUrl && eventIdFromUrl) {
+          const orgSnap = await withTimeout(
+            getDoc(doc(db, 'organizations', orgIdFromUrl)),
+            FIRESTORE_TIMEOUT_MS,
+            '读取 organizations/{orgId}（ID 兼容）'
+          );
+
+          if (orgSnap.exists()) {
+            const evtSnap = await withTimeout(
+              getDoc(doc(db, 'organizations', orgIdFromUrl, 'events', eventIdFromUrl)),
+              FIRESTORE_TIMEOUT_MS,
+              '读取 events/{eventId}（ID 兼容）'
+            );
+
+            if (evtSnap.exists()) {
+              const orgData = orgSnap.data();
+              const evtData = evtSnap.data();
+
+              setOrganizationId(orgIdFromUrl);
+              setEventId(eventIdFromUrl);
+              setOrganization({ id: orgIdFromUrl, ...orgData });
+              setEvent({ id: eventIdFromUrl, ...evtData });
+
+              const resolvedOrgCodeDirect =
+                orgData?.orgCode || orgData?.organizationCode || String(orgCode || '').trim().toLowerCase();
+              const resolvedEventCodeDirect = evtData?.eventCode || String(eventCode || '').trim();
+
+              setOrgCode(resolvedOrgCodeDirect);
+              setEventCode(resolvedEventCodeDirect);
+
+              console.log('[EventContext] ✅ 识别为 ID 路由并载入成功:', {
+                orgId: orgIdFromUrl,
+                eventId: eventIdFromUrl,
+                orgCode: resolvedOrgCodeDirect,
+                eventCode: resolvedEventCodeDirect
+              });
+
+              setLoading(false);
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        // 若被 rules 拒绝或网路逾时，让后续既有逻辑处理（可能会走 HTTP fallback）
+        console.warn('[EventContext] ID 兼容读取失败（将继续用 code 解析）:', e?.message || e);
+      }
 
       // 1. 查找组织（优先走 Firestore；若 rules 拒绝则 fallback HTTP）
       let orgId = null;
@@ -456,3 +510,4 @@ if (typeof document !== 'undefined') {
   `;
   document.head.appendChild(style);
 }
+

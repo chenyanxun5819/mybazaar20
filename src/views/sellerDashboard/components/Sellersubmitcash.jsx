@@ -246,12 +246,12 @@ const SellerSubmitCash = () => {
     console.log('[SellerSubmitCash] 🔓 打开上交模态框');
     
     if (cashOnHand <= 0) {
-      alert('您目前没有可上交的现金');
+      window.mybazaarShowToast('您目前没有可上交的现金');
       return;
     }
     
     if (isStudent && !sellerManager) {
-      alert('未找到您的班级管理者（Seller Manager）。\n\n请联系管理员为您的班级（' + department + '）分配管理者。');
+      window.mybazaarShowToast('未找到您的班级管理者（Seller Manager）。\n\n请联系管理员为您的班级（' + department + '）分配管理者。');
       return;
     }
     
@@ -267,17 +267,17 @@ const SellerSubmitCash = () => {
     console.log('  sellerManager:', sellerManager);
 
     if (!amount || amount <= 0) {
-      alert('请输入有效金额');
+      window.mybazaarShowToast('请输入有效金额');
       return;
     }
 
     if (amount > cashOnHand) {
-      alert(`上交金额不能超过手上现金（RM ${cashOnHand}）`);
+      window.mybazaarShowToast(`上交金额不能超过手上现金（RM ${cashOnHand}）`);
       return;
     }
 
     if (isStudent && !sellerManager) {
-      alert('未找到您的班级管理者（Seller Manager）。请联系管理员设置。');
+      window.mybazaarShowToast('未找到您的班级管理者（Seller Manager）。请联系管理员设置。');
       return;
     }
 
@@ -300,7 +300,7 @@ const SellerSubmitCash = () => {
         });
 
         console.log('[SellerSubmitCash] ✅ 上交到SellerManager成功:', result.data);
-        alert(`✅ 成功上交 RM ${amount} 给 ${sellerManager.name}`);
+        window.mybazaarShowToast(`✅ 成功上交 RM ${amount} 给 ${sellerManager.name}`);
       } else {
         console.log('[SellerSubmitCash] 📤 职员/老师上交到Cashier待认领池子');
         
@@ -313,7 +313,7 @@ const SellerSubmitCash = () => {
         });
 
         console.log('[SellerSubmitCash] ✅ 上交到Cashier成功:', result.data);
-        alert(`✅ 成功上交 RM ${amount} 到待认领池子`);
+        window.mybazaarShowToast(`✅ 成功上交 RM ${amount} 到待认领池子`);
       }
 
       setSubmitAmount('');
@@ -321,7 +321,7 @@ const SellerSubmitCash = () => {
       setShowSubmitModal(false);
     } catch (error) {
       console.error('[SellerSubmitCash] ❌ 上交失败:', error);
-      alert('上交失败: ' + (error.message || '未知错误'));
+      window.mybazaarShowToast('上交失败: ' + (error.message || '未知错误'));
     } finally {
       setSubmitting(false);
     }

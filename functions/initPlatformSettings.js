@@ -28,7 +28,7 @@ const fs = require('fs');
 
 // 获取命令行参数
 const args = process.argv.slice(2);
-const useEmulator = args.includes('--use-emulator');
+const _useEmulator = args.includes('--use-emulator');
 
 console.log('');
 console.log('========================================');

@@ -558,3 +558,4 @@ const styles = {
 };
 
 export default MerchantDetailsModal;
+

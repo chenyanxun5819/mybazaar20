@@ -81,12 +81,12 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
 
       await onClaim(selectedSubmission.id, pin, confirmationNote);
 
-      alert('✅ 收款确认成功！');
+      window.mybazaarShowToast('✅ 收款确认成功！');
       setSelectedSubmission(null);
       onRefresh();
     } catch (error) {
       console.error('接单确认失败:', error);
-      alert('❌ 确认失败: ' + error.message);
+      window.mybazaarShowToast('❌ 确认失败: ' + error.message);
     } finally {
       setClaimingId(null);
     }

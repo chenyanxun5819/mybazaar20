@@ -76,7 +76,7 @@ const QRCodeDisplay = ({ qrData, userName, subtitle, size = 'medium' }) => {
       console.log('[QRCodeDisplay] QR Code下载成功:', fileName);
     } catch (error) {
       console.error('[QRCodeDisplay] QR Code下载失败:', error);
-      alert('下载失败，请重试');
+      window.mybazaarShowToast('下载失败，请重试');
     } finally {
       setDownloading(false);
     }
@@ -112,7 +112,7 @@ const QRCodeDisplay = ({ qrData, userName, subtitle, size = 'medium' }) => {
       }, 'image/png');
     } catch (error) {
       console.error('[QRCodeDisplay] QR Code分享失败:', error);
-      alert('分享失败，请尝试下载');
+      window.mybazaarShowToast('分享失败，请尝试下载');
     }
   };
 
@@ -431,3 +431,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default QRCodeDisplay;
+

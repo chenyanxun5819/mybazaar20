@@ -208,7 +208,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     }
 
     const eventId = foundEventId;
-    const eventData = foundEventData;
+    const _eventData = foundEventData; // prefixed to avoid unused-var lint
 
     if (isEventManagerLogin) {
       // 生成 Custom Token（使用 eventManager.authUid，确保后端权限检查通过）

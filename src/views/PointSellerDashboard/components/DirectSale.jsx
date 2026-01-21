@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import TransactionPinDialog from '../common/TransactionPinDialog';
+import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
 import './DirectSale.css';
 
 const DirectSale = ({ 
@@ -36,6 +37,22 @@ const DirectSale = ({
     return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // 清理电话号码（与 Firestore 存储格式一致：本地格式，不带 +60）
+  const cleanPhoneNumber = (phone) => {
+    if (!phone) return '';
+    // 移除所有非数字字符
+    let cleaned = phone.replace(/\D/g, '');
+    // 如果以 60 开头，移除国家代码
+    if (cleaned.startsWith('60')) {
+      cleaned = '0' + cleaned.substring(2);
+    }
+    // 确保以 0 开头
+    if (!cleaned.startsWith('0')) {
+      cleaned = '0' + cleaned;
+    }
+    return cleaned;
+  };
+
   // 单笔限额（PointSeller没有库存限制，但有单笔限额）
   const MAX_PER_TRANSACTION = 100;
 
@@ -46,7 +63,11 @@ const DirectSale = ({
       return;
     }
 
-    if (!organizationId || !eventId) {
+    // ✅ 使用 userProfile 中的真实文档 ID，而不是 orgCode/eventCode
+    const orgId = userProfile?.organizationId || organizationId;
+    const evtId = userProfile?.eventId || eventId;
+
+    if (!orgId || !evtId) {
       setError('无法获取组织或活动信息，请刷新页面');
       return;
     }
@@ -56,21 +77,26 @@ const DirectSale = ({
     setSuccessMessage(null);
 
     try {
+      // 清理电话号码（与 Firestore 存储格式一致）
+      const cleanedPhone = cleanPhoneNumber(customerPhone.trim());
+      
       console.log('[DirectSale] 查找客户:', {
-        phone: customerPhone.trim(),
-        organizationId,
-        eventId
+        originalPhone: customerPhone.trim(),
+        cleanedPhone,
+        organizationId: orgId,
+        eventId: evtId,
+        queryPath: `organizations/${orgId}/events/${evtId}/users`
       });
 
       // 查询客户
       const usersRef = collection(
         db,
-        `organizations/${organizationId}/events/${eventId}/users`
+        `organizations/${orgId}/events/${evtId}/users`
       );
 
       const q = query(
         usersRef,
-        where('basicInfo.phoneNumber', '==', customerPhone.trim())
+        where('basicInfo.phoneNumber', '==', cleanedPhone)
       );
 
       const snapshot = await getDocs(q);
@@ -235,7 +261,10 @@ const DirectSale = ({
 
   return (
     <div className="direct-sale">
-      <h2 className="section-title">🛒 销售点数</h2>
+      <h2 className="section-title">
+        <img src={paymentQrcodeIcon} alt="销售点数" style={{ width: '1.5rem', height: '1.5rem' }} />
+        销售点数
+      </h2>
 
       {/* 显示单笔限额 */}
       <div className="seller-inventory">

@@ -14,12 +14,12 @@ import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
 import { TransactionHistory } from './components/TransactionHistory';
 import SellerSubmitCash from './components/SellerSubmitCash'; // 🆕 新增
-import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 导入角色切换器
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
 import SellIcon from '../../assets/sell.svg?react';
 import MemoCircleCheckIcon from '../../assets/memo-circle-check.svg?react';
 import PersonalFinanceIcon from '../../assets/personal-finance.svg?react';
-import LeaveIcon from '../../assets/leave.svg?react';
 import TogetherPeopleIcon from '../../assets/together-people.svg?react';
 import './SellerDashboard.css';
 
@@ -75,23 +75,8 @@ function SellerDashboard() {
     logoutButtonHover: {
       backgroundColor: 'rgba(0,0,0,0.06)',
       transform: 'translateY(-1px)'
-    },
-    roleSwitcherButton: {
-      background: 'transparent',
-      border: 'none',
-      padding: '0.5rem',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      lineHeight: 0,
-      transition: 'transform 0.2s',
-      borderRadius: '4px',
-      color: '#222c6e'
     }
   };
-
-  const [logoutHover, setLogoutHover] = React.useState(false);
 
   const handleLogout = async () => {
     try {
@@ -101,68 +86,33 @@ function SellerDashboard() {
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('登出失败:', error);
-      alert('登出失败，请重试');
+      window.mybazaarShowToast('登出失败，请重试');
     }
+  };
+
+  const handleRefresh = () => {
+    // 刷新页面或重新加载数据
+    window.location.reload();
   };
 
   return (
     <div className="seller-dashboard">
-      {/* 顶部栏 */}
-      <header className="dashboard-header">
-        <div className="header-content">
-          <div className="dashboard-brand">
-            {event?.logoUrl ? (
-              <>
-                <img src={event.logoUrl} alt={event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || 'logo'} className="dashboard-logo" />
-                <div className="brand-text">
-                  <div className="dashboard-eventName">
-                    {event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || eventCode}
-                  </div>
-                  <div className="dashboard-subtitle">点数销售介面</div>
-                        <div className="dashboard-userSmall">
-                          {userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || ''}
-                          {userProfile?.basicInfo?.phoneNumber ? ` · ${userProfile.basicInfo.phoneNumber}` : ''}
-                        </div>
-                </div>
-              </>
-            ) : (
-              <div className="brand-text">
-                <h1 className="dashboard-title">{event?.eventName?.['zh-CN'] || event?.eventName?.['en-US'] || '卖家中心'}</h1>
-                <div className="dashboard-subtitle">点数销售介面</div>
-                <div className="dashboard-userSmall">
-                  {currentUser?.basicInfo?.chineseName || currentUser?.basicInfo?.englishName || ''}
-                  {currentUser?.basicInfo?.phoneNumber ? ` · ${currentUser.basicInfo.phoneNumber}` : ''}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="user-info">
-            <span className="user-name">
-              {userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '用户'}
-            </span>
-                        {/* 🆕 角色切换器 */}
-            <RoleSwitcher 
-              currentRole="seller" 
-              orgEventCode={`${orgCode}-${eventCode}`}
-              availableRoles={userProfile?.roles || []}
-              userInfo={userProfile}
-            />
-            <button 
-              onClick={handleLogout} 
-              style={{
-                ...styles.logoutButton,
-                ...(logoutHover ? styles.logoutButtonHover : {})
-              }}
-              onMouseEnter={() => setLogoutHover(true)}
-              onMouseLeave={() => setLogoutHover(false)}
-              title="登出"
-            >
-              <LeaveIcon style={{ width: '20px', height: '20px' }} />
-            </button>
-
-          </div>
-        </div>
-      </header>
+      {/* 🆕 共用 Header 组件（包含角色切换器和登出按钮） */}
+      <DashboardHeader
+        title="点数销售"
+        subtitle="Points Sales"
+        logoUrl={event?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || currentUser?.basicInfo?.chineseName}
+        userPhone={userProfile?.basicInfo?.phoneNumber || currentUser?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.includes('seller') ? 'seller' : userProfile?.roles?.[0]}
+        orgEventCode={`${orgCode}-${eventCode}`}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
       {/* Tab 导航 */}
       <nav className="tab-navigation">
@@ -223,6 +173,13 @@ function SellerDashboard() {
         {/* 🔧 修复：不再传递userInfo，组件自己用useSellerStats获取数据 */}
         {activeTab === 'submit' && <SellerSubmitCash />}
       </main>
+      
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={event}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 }

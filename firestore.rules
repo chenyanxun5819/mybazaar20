@@ -60,6 +60,13 @@ service cloud.firestore {
     }
     
     /**
+     * ✨ 检查用户是否是 Merchant Manager（从 Custom Claims 读取）
+     */
+    function isMerchantManager(orgId, eventId) {
+      return isInContext(orgId, eventId) && hasRole('merchantManager');
+    }
+    
+    /**
      * ✨ 检查用户是否是 Cashier（从 Custom Claims 读取）
      */
     function isCashier(orgId, eventId) {
@@ -202,175 +209,31 @@ service cloud.firestore {
                            (isAuthenticated() && 
                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['merchant', 'updatedAt'])) ||
                            (isAuthenticated() && 
-                            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customer', 'updatedAt'])) ||
-                           // 🔥 暫時放寬：允許寫入 roleSpecificData（僅為了現有資料結構兼容）
-                           (isAuthenticated() && 
-                            onlyAllowedFields(['roleSpecificData', 'updatedAt']));
+                            request.auth.token.userId == userId &&
+                            onlyAllowedFields(['customer', 'seller', 'pointsStats', 'updatedAt', 'activityData', 'merchantAsist', 'merchantOwner']));
           
           /**
-           * ✅ 删除规则：
-           * 1. Event Manager 可以删除用户（但不能删除自己）
-           * 2. 通过 Cloud Functions 删除
-           */
-          allow delete: if isEventManager(organizationId, eventId) && 
-                           request.auth.token.userId != userId;
-          
-        // ======================================================================
-        // Point Allocations (点数分配记录 - users 子集合)
-        // ✅ 添加在 users/{userId} 规则内部，第217行后
-        // ======================================================================
-
-        match /pointAllocations/{allocationId} {
-          /**
-          * 读取规则：
-          * 1. Seller Manager 可以读取自己的分配记录
-          * 2. Event Manager 可以读取所有分配记录
-          * 3. Seller 可以读取分配给自己的记录
-          */
-          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
-                        isEventManager(organizationId, eventId) ||
-                        (isAuthenticated() && resource.data.recipientId == request.auth.token.userId);
-          
-          /**
-          * 创建规则：
-          * 1. Seller Manager 可以创建分配记录（只能在自己的文档下）
-          * 2. Event Manager 可以创建
-          */
-          allow create: if (isSellerManager(organizationId, eventId) && 
-                          request.auth.token.userId == userId) ||
-                          isEventManager(organizationId, eventId);
-          
-          /**
-          * 更新和删除：只能通过 Cloud Functions
-          */
-          allow update, delete: if false;
-        }
-
-        // ======================================================================
-        // Cash Collections (现金收取记录 - users 子集合)
-        // ✅ 可选：如果需要收款功能
-        // ======================================================================
-
-        match /cashCollections/{collectionId} {
-          /**
-          * 读取规则：
-          * 1. Seller Manager 可以读取自己的收款记录
-          * 2. Event Manager 可以读取所有收款记录
-          * 3. Seller 可以读取自己被收款的记录
-          * 4. Cashier 可以读取所有收款记录
-          */
-          allow read: if (isAuthenticated() && request.auth.token.userId == userId) ||
-                        isEventManager(organizationId, eventId) ||
-                        isCashier(organizationId, eventId) ||
-                        (isAuthenticated() && resource.data.sellerId == request.auth.token.userId);
-          
-          /**
-          * 创建规则：
-          * 1. Seller Manager 可以创建收款记录
-          * 2. Event Manager 可以创建
-          */
-          allow create: if (isSellerManager(organizationId, eventId) && 
-                          request.auth.token.userId == userId) ||
-                          isEventManager(organizationId, eventId);
-          
-          /**
-          * 更新和删除：只能通过 Cloud Functions
-          */
-          allow update, delete: if false;
-        }
-
-        }
-
-        // ========================================================================
-        // Merchants (商家攤位 - Event 級別集合)
-        // ========================================================================
-        match /merchants/{merchantId} {
-          /**
-           * 讀取規則：暫時放寬，所有已認證使用者可讀取
-           * 便於商家端載入自己的資料與測試
-           */
-          allow read: if isAuthenticated();
-
-          /**
-           * 更新規則：僅允許商家本人更新有限欄位
-           * 核對條件：文件中的 userId 必須等於 Custom Claims 的 userId 或 request.auth.uid
-           * 可更新欄位：stallName, description, contactInfo, isActive, updatedAt
-           */
-          allow update: if isAuthenticated() &&
-                         (resource.data.userId == request.auth.token.userId ||
-                          resource.data.userId == request.auth.uid) &&
-                         onlyAllowedFields(['stallName', 'description', 'contactInfo', 'isActive', 'updatedAt']);
-
-          /**
-           * 建立與刪除：僅允許經由 Cloud Functions
-           */
-          allow create, delete: if false;
-        }
-        
-        // ========================================================================
-        // Cash Collections (现金收款记录 - Event 级别集合)
-        // ========================================================================
-        
-        match /cashCollections/{collectionId} {
-          /**
-           * ✅ 读取规则（修复 2024-12-14）
-           * 使用 request.auth.token.userId 匹配 collectedBy
-           */
-          allow read: if isAuthenticated();
-          
-          /**
-           * ✅ 创建规则（修复 2024-12-14）
-           * 关键修改：使用 request.auth.token.userId 而不是 request.auth.uid
-           * 原因：collectedBy 存储的是应用内部 userId，不是 Firebase Auth UID
-           */
-          allow create: if isAuthenticated() &&
-                           // 必须包含必填字段
-                           request.resource.data.keys().hasAll([
-                             'collectedBy', 'submittedBy', 'amount',
-                             'status', 'eventId', 'organizationId'
-                           ]) &&
-                           // ✅ 使用 Custom Claims 中的 userId
-                           (request.resource.data.collectedBy == request.auth.token.userId ||
-                            request.resource.data.collectedBy == request.auth.uid) &&
-                           // 金额必须 > 0
-                           request.resource.data.amount > 0 &&
-                           // 状态必须是 collected
-                           request.resource.data.status == 'collected' &&
-                           // organizationId 和 eventId 必须匹配
-                           request.resource.data.organizationId == organizationId &&
-                           request.resource.data.eventId == eventId;
-          
-          /**
-           * ✅ 更新规则（修复 2024-12-14）
-           * 使用 request.auth.token.userId 匹配 collectedBy
-           */
-          allow update: if (isSellerManager(organizationId, eventId) &&
-                           resource.data.collectedBy == request.auth.token.userId &&
-                           onlyAllowedFields(['note', 'discrepancyReason', 'updatedAt'])) ||
-                           (isCashier(organizationId, eventId) &&
-                           onlyStatusChange());
-          
-          /**
-           * 删除规则：只能通过 Cloud Functions 或 Event Manager
+           * ✅ 删除规则：只能通过 Cloud Functions 或 Event Manager
            */
           allow delete: if isEventManager(organizationId, eventId);
         }
         
         // ========================================================================
-        // Cash Submissions (现金上交记录 - Event 级别集合)
+        // Cash Handover Records (现金上交记录 - Event 级别集合)
         // ========================================================================
         
-        match /cashSubmissions/{submissionId} {
+        match /cashHandovers/{handoverId} {
           /**
            * ✅ 读取规则（修复版）
-           * 1. Seller 可以读取自己提交的记录
-           * 2. Seller Manager 可以读取自己提交的和收到的记录
-           * 3. Cashier 可以读取所有记录
-           * 4. Event Manager 可以读取所有记录
+           * 1. 提交者可以读取自己的记录
+           * 2. Cashier 可以读取所有记录
+           * 3. Event Manager 可以读取所有记录
+           * 4. 接收者（receivedBy）可以读取相关记录（用于确认收到现金的SM/Cashier/FinanceManager）
            */
-          allow read: if isEventManager(organizationId, eventId) ||
-                         isCashier(organizationId, eventId) ||
-                         isCashier(organizationId, eventId) ||
+          allow read: if isAuthenticated() &&
+                         (resource.data.submittedBy == request.auth.token.userId ||
+                          isCashier(organizationId, eventId) ||
+                          isEventManager(organizationId, eventId)) ||
                          (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId) ||
                          (isSellerManager(organizationId, eventId) && 
                           resource.data.receivedBy == request.auth.token.userId);
@@ -502,6 +365,34 @@ service cloud.firestore {
            * 更新和删除：只能通过 Cloud Functions
            */
           allow update, delete: if false;
+        }
+        
+        // ========================================================================
+        // ⭐ Merchants (商家摊位 - Event 级别集合)
+        // ⭐ 新增：2026-01-17 修复 merchantOwner 无法查询摊位的问题
+        // ========================================================================
+        
+        match /merchants/{merchantId} {
+          /**
+           * 读取规则：
+           * 1. merchantOwner 可以查询和读取（用于 getMerchantByUserId）
+           * 2. merchantAsist 可以查询和读取
+           * 3. merchantManager 可以读取所有摊位
+           * 4. eventManager 可以读取所有摊位
+           * 5. customer 可以读取营业中的摊位
+           */
+          allow read: if isAuthenticated() && (
+            hasRole('merchantOwner') ||
+            hasRole('merchantAsist') ||
+            isMerchantManager(organizationId, eventId) ||
+            isEventManager(organizationId, eventId) ||
+            (hasRole('customer') && resource.data.operationStatus.isActive == true)
+          );
+          
+          /**
+           * 写入规则：只能通过 Cloud Functions
+           */
+          allow write: if false;
         }
         
         // ========================================================================

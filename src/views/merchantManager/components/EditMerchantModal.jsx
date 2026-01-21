@@ -115,7 +115,7 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
       
       // 如果没有任何更新，提示用户
       if (Object.keys(updates).length === 0) {
-        alert('没有任何修改');
+        window.mybazaarShowToast('没有任何修改');
         return;
       }
       
@@ -302,9 +302,9 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
                         <div key={asist.id} style={styles.asistItem}>
                           <span>
                             {asist.basicInfo?.chineseName || asist.id}
-                            {asist.merchantAsist?.assignedMerchants?.length > 0 && (
+                            {asist.merchantAsist?.merchantId && (
                               <span style={styles.asistCount}>
-                                ({asist.merchantAsist.assignedMerchants.length} 个摊位)
+                                (已关联商家)
                               </span>
                             )}
                           </span>
@@ -632,3 +632,4 @@ const styles = {
 };
 
 export default EditMerchantModal;
+

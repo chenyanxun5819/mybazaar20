@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useEvent } from '../../contexts/EventContext';
+import { useAuth } from '../../contexts/AuthContext'; // 🆕 导入 useAuth
 import QRCodeDisplay from '../../components/QRCodeDisplay';
 import { generateCustomerReceivePointsQR } from '../../utils/qrCodeGenerator';
 import { safeFetch } from '../../services/safeFetch';
-
+import { Bell, CheckCircle, XCircle } from 'lucide-react';
 /**
  * Customer Dashboard 主页
  * 
@@ -15,20 +17,44 @@ import { safeFetch } from '../../services/safeFetch';
  * - 显示个人收款QR Code
  * - 功能导航（付款、转账、充值、记录）
  */
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
+
+
 const CustomerDashboard = () => {
   const navigate = useNavigate();
+  const { userProfile } = useAuth(); // 🆕 获取 userProfile
+  const { orgCode, eventCode, event, organizationId: eventOrgId, eventId: eventEventId } = useEvent(); // 🆕 获取 event 对象
   const [loading, setLoading] = useState(true);
   const [customerData, setCustomerData] = useState(null);
   const [showQRCode, setShowQRCode] = useState(false);
+  // ⭐ 新增：交易通知状态
+  const [notification, setNotification] = useState(null);
+  const [organizationId, setOrganizationId] = useState(eventOrgId);
+  const [eventId, setEventId] = useState(eventEventId);
+  const processedTransactionsRef = useRef(new Set());
+  const notificationTimeoutRef = useRef(null);
+
+  // EventContext 初始化完成后，同步 organizationId/eventId
+  useEffect(() => {
+    if (eventOrgId && eventOrgId !== organizationId) setOrganizationId(eventOrgId);
+    if (eventEventId && eventEventId !== eventId) setEventId(eventEventId);
+  }, [eventOrgId, eventEventId]);
 
   useEffect(() => {
     loadCustomerData();
-  }, []);
+  }, [organizationId, eventId]);
 
   // 加载Customer数据
   const loadCustomerData = async () => {
     try {
       setLoading(true);
+
+      // ✅ 使用 EventContext 提供的 organizationId 和 eventId
+      if (!organizationId || !eventId) {
+        console.warn('[CustomerDashboard] 等待 EventContext 加载完成...');
+        return;
+      }
 
       const user = auth.currentUser;
       if (!user) {
@@ -37,16 +63,9 @@ const CustomerDashboard = () => {
         return;
       }
 
-      // 从custom claims获取组织和活动ID
+      // 从custom claims获取userId（fallback）
       const tokenResult = await user.getIdTokenResult();
-      const { organizationId, eventId, userId } = tokenResult.claims;
-
-      if (!organizationId || !eventId) {
-        console.error('[CustomerDashboard] 缺少组织或活动信息');
-        alert('账户信息不完整，请重新登录');
-        navigate('/universal-login');
-        return;
-      }
+      const { userId } = tokenResult.claims;
 
       // ✅ 优先使用 claims 中的 userId，回退到 user.uid
       const targetUserId = userId || user.uid;
@@ -103,11 +122,111 @@ const CustomerDashboard = () => {
 
     } catch (error) {
       console.error('[CustomerDashboard] 加载失败:', error);
-      alert('加载失败：' + error.message);
+      window.mybazaarShowToast('加载失败：' + error.message);
     } finally {
       setLoading(false);
     }
   };
+
+  // ============================================
+  // ⭐ 监听交易状态变化，显示通知
+  // ============================================
+  useEffect(() => {
+    if (!auth.currentUser || !organizationId || !eventId) return;
+
+    const userId = auth.currentUser.uid;
+
+    console.log('🔔 [CustomerDashboard] Setting up transaction listener');
+
+    const transactionsRef = collection(
+      db,
+      'organizations', organizationId,
+      'events', eventId,
+      'transactions'
+    );
+
+    const q = query(
+      transactionsRef,
+      where('customerId', '==', userId),
+      where('transactionType', '==', 'customer_to_merchant')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const docId = change.doc.id;
+          const data = change.doc.data();
+
+          // 跳过已处理的交易
+          if (processedTransactionsRef.current.has(docId)) {
+            return;
+          }
+
+          // 只处理状态变更为 completed 或 cancelled 的交易
+          if (change.type === 'modified') {
+            if (data.status === 'completed' || data.status === 'cancelled') {
+              processedTransactionsRef.current.add(docId);
+
+              console.log('🔔 [CustomerDashboard] Transaction status changed:', {
+                id: docId,
+                status: data.status,
+                amount: data.amount,
+                merchantName: data.merchantName
+              });
+
+              showNotification({
+                id: docId,
+                status: data.status,
+                amount: data.amount,
+                merchantName: data.merchantName || '商家',
+                title: data.merchantName || '商家'
+              });
+            }
+          } else if (change.type === 'added') {
+            // 标记已存在的交易，避免初始加载时弹通知
+            processedTransactionsRef.current.add(docId);
+          }
+        });
+      },
+      (error) => {
+        if (error?.name === 'AbortError' || error?.code === 'cancelled') {
+          console.log('🔔 [CustomerDashboard] Listener aborted (expected)');
+          return;
+        }
+        console.error('❌ [CustomerDashboard] Error listening to transactions:', error);
+      }
+    );
+
+    return () => {
+      console.log('🔔 [CustomerDashboard] Cleaning up transaction listener');
+      unsubscribe();
+    };
+  }, [organizationId, eventId]);
+
+  // ⭐ 显示通知函数
+  const showNotification = (data) => {
+    setNotification(data);
+
+    // 5秒后自动消失
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
+  // ⭐ 点击通知跳转到交易记录
+  const handleNotificationClick = () => {
+    setNotification(null);
+    const fallbackOrg =
+      customerData?.organizationCode || customerData?.organizationId?.replace('organization_', '') || '';
+    const fallbackEvt = customerData?.eventCode || customerData?.eventId?.replace('event_', '') || '';
+    const combined = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
+    navigate(`/customer/${combined}/transactions`);
+  };
+
 
   // 登出
   const handleLogout = async () => {
@@ -115,14 +234,14 @@ const CustomerDashboard = () => {
 
     try {
       await signOut(auth);
-      // 🔧 修复：获取正确的 orgEventCode（从 customerData 中提取）
-      const orgCode = customerData?.organizationCode || customerData?.organizationId?.replace('organization_', '') || '';
-      const evtCode = customerData?.eventCode || customerData?.eventId?.replace('event_', '') || '';
-      const orgEventCode = `${orgCode}-${evtCode}`;
-      navigate(`/login/${orgEventCode}`);
+      const fallbackOrg =
+        customerData?.organizationCode || customerData?.organizationId?.replace('organization_', '') || '';
+      const fallbackEvt = customerData?.eventCode || customerData?.eventId?.replace('event_', '') || '';
+      const combined = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
+      navigate(`/login/${combined}`);
     } catch (error) {
       console.error('[CustomerDashboard] 登出失败:', error);
-      alert('登出失败：' + error.message);
+      window.mybazaarShowToast('登出失败：' + error.message);
     }
   };
 
@@ -134,10 +253,11 @@ const CustomerDashboard = () => {
   // 讓 iOS 在「點擊扫码付款」當下就跳出系統相機授權（避免進入付款頁後再按一次）
   const handleScanPayClick = async () => {
     // 先準備目標路由
-    const orgId = customerData?.organizationId?.replace('organization_', '') || '';
-    const evtId = customerData?.eventId?.replace('event_', '') || '';
-    const orgEventCode = `${orgId}-${evtId}`;
-    const target = `/customer/${orgEventCode}/payment`;
+    const fallbackOrg =
+      customerData?.organizationCode || customerData?.organizationId?.replace('organization_', '') || '';
+    const fallbackEvt = customerData?.eventCode || customerData?.eventId?.replace('event_', '') || '';
+    const combined = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
+    const target = `/customer/${combined}/payment`;
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -186,30 +306,72 @@ const CustomerDashboard = () => {
   const displayName = customerData.basicInfo?.chineseName || customerData.basicInfo?.englishName || '未命名';
   const phoneNumber = customerData.basicInfo?.phoneNumber || '';
   // 获取orgEventCode用于导航
-  const orgId = customerData.organizationId?.replace('organization_', '') || '';
-  const evtId = customerData.eventId?.replace('event_', '') || '';
-  const orgEventCode = `${orgId}-${evtId}`;
+  const fallbackOrg = customerData.organizationCode || customerData.organizationId?.replace('organization_', '') || '';
+  const fallbackEvt = customerData.eventCode || customerData.eventId?.replace('event_', '') || '';
+  const orgEventCode = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
 
   return (
+    
     <div style={styles.container}>
-      {/* 顶部导航栏 */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div style={styles.logo}>🎪</div>
-          <div>
-            <h1 style={styles.appName}>MyBazaar</h1>
-            <p style={styles.role}>Customer</p>
+      {/* 🆕 共用 Header 组件（包含角色切换器和登出按钮） */}
+      <DashboardHeader
+        title="消费者"
+        subtitle="Customer Dashboard"
+        logoUrl={event?.logoUrl}
+        userName={displayName}
+        userPhone={phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.[0] || 'customer'}
+        orgEventCode={orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
+
+      {/* ⭐ 交易通知横幅 */}
+      {notification && (
+        <div
+          className="customer-notification-banner"
+          onClick={handleNotificationClick}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: notification.status === 'completed' ? '#10b981' : '#ef4444',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '12px',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            cursor: 'pointer',
+            zIndex: 1000,
+            minWidth: '320px',
+            maxWidth: '90%'
+          }}
+        >
+          {notification.status === 'completed' ? (
+            <CheckCircle size={24} />
+          ) : (
+            <XCircle size={24} />
+          )}
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '16px' }}>
+              {notification.title || (notification.status === 'completed' ? '收款成功' : '交易已取消')}
+            </p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+              {notification.merchantName} • {notification.amount} 点
+            </p>
           </div>
+          <Bell size={20} style={{ opacity: 0.7 }} />
         </div>
-        <div style={styles.headerRight}>
-          <button onClick={handleRefresh} style={styles.iconButton} title="刷新">
-            🔄
-          </button>
-          <button onClick={handleLogout} style={styles.iconButton} title="登出">
-            🚪
-          </button>
-        </div>
-      </div>
+      )}
+
+
 
       {/* 用户信息卡片 */}
       <div style={styles.userCard}>
@@ -372,6 +534,13 @@ const CustomerDashboard = () => {
           💡 提示：使用"显示收点数QR码"让其他会员扫描向您转账
         </p>
       </div>
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={event}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };
@@ -656,20 +825,5 @@ const styles = {
   }
 };
 
-// 添加动画
-if (typeof document !== 'undefined') {
-  const styleSheet = document.styleSheets[0];
-  const keyframes = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  `;
-  try {
-    styleSheet.insertRule(keyframes, styleSheet.cssRules.length);
-  } catch (e) {
-    // 动画可能已存在
-  }
-}
-
 export default CustomerDashboard;
+

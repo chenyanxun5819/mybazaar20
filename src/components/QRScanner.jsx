@@ -281,7 +281,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
     const constraints = { facingMode: 'environment' }; // 避免 exact，增加兼容性
     const config = {
       fps: 10,
-      qrbox: 250,
       disableFlip: true,
       formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
     };
@@ -601,3 +600,4 @@ const styles = {
 };
 
 export default QRScanner;
+

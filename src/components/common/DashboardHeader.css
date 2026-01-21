@@ -1,0 +1,174 @@
+/* DashboardHeader.css - 共用 Header 樣式 */
+
+.dashboard-header-shared {
+  background-color: #ffffff;
+  color: #111827;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 40;
+}
+
+.dashboard-header-content {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  box-sizing: border-box;
+}
+
+/* 左側：Logo + Title + Text */
+.dashboard-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0; /* 允許 flex shrink */
+}
+
+.dashboard-header-logo {
+  height: 60px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+}
+
+.dashboard-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-header-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+  margin: 0;
+  word-break: break-word;
+}
+
+.dashboard-header-subtitle {
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1;
+  margin: 0;
+}
+
+.dashboard-header-user {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1;
+  margin: 0;
+}
+
+/* 右側：操作按鈕 */
+.dashboard-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.dashboard-header-action-btn {
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: background-color 0.2s, transform 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: #222c6e;
+}
+
+.dashboard-header-action-btn:hover {
+  background-color: rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+.dashboard-header-logout-btn {
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: #222c6e;
+}
+
+.dashboard-header-logout-btn:hover {
+  background-color: rgba(0,0,0,0.06);
+}
+
+/* 響應式設計 */
+@media (max-width: 480px) {
+  .dashboard-header-content {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-header-title {
+    font-size: 0.9rem;
+  }
+
+  .dashboard-header-user {
+    display: none; /* 在小螢幕上隱藏用戶電話 */
+  }
+}
+
+/* 桌機版本（>= 1024px） */
+@media (min-width: 1024px) {
+  .dashboard-header-shared {
+    padding: 1.5rem 2rem;
+  }
+
+  .dashboard-header-content {
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .dashboard-header-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  .dashboard-header-subtitle {
+    font-size: 0.9rem;
+  }
+
+  .dashboard-header-user {
+    font-size: 0.85rem;
+    display: block;
+  }
+
+  .dashboard-header-right {
+    gap: 1rem;
+  }
+
+  /* 桌机放大 Logo */
+  .dashboard-header-logo {
+    height: 80px; /* 放大桌机 logo */
+    width: auto;
+  }
+
+  .dashboard-header-action-btn,
+  .dashboard-header-logout-btn {
+    padding: 0.75rem;
+    font-size: 1.4rem;
+  }
+}

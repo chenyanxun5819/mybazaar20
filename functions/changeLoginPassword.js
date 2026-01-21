@@ -10,7 +10,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const { hashPassword, verifyPassword } = require('./utils/bcryptHelper');
+const { verifyPassword } = require('./utils/bcryptHelper');
 const { validateLoginPassword } = require('./utils/validators');
 
 /**

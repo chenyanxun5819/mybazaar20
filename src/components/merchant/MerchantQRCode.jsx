@@ -55,7 +55,7 @@ const MerchantQRCode = ({ merchant, organizationId, eventId, userRole }) => {
       downloadQRCode(canvas, filename);
     } catch (error) {
       console.error('Download failed:', error);
-      alert('下载失败，请稍后再试');
+      window.mybazaarShowToast('下载失败，请稍后再试');
     }
   };
 
@@ -77,7 +77,7 @@ const MerchantQRCode = ({ merchant, organizationId, eventId, userRole }) => {
       if (error.message.includes('不支持分享功能')) {
         setShowShareError(true);
       } else {
-        alert('分享失败，请稍后再试');
+        window.mybazaarShowToast('分享失败，请稍后再试');
       }
     }
   };

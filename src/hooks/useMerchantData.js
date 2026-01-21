@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';;
-import { 
-  getMerchantData, 
+import {
+  getMerchantData,
   getMerchantByUserId,
   getMerchantStats,
   updateMerchantProfile,
@@ -46,7 +46,9 @@ export const useMerchantData = (userId, orgId, eventId) => {
         const merchantData = await getMerchantByUserId(orgId, eventId, userId);
 
         if (!merchantData) {
-          setError('找不到商家資料');
+          // ⭐ 区分"未分配摊位"和"真正的错误"
+          setMerchant(null);
+          setError(null);  // 不设置错误，这是正常状态
           setLoading(false);
           return;
         }
@@ -191,3 +193,4 @@ export const useTransactionUpdates = (orgId, eventId, merchantId) => {
 };
 
 export default useMerchantData;
+

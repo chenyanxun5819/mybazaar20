@@ -143,7 +143,7 @@ exports.grantPointsByEventManagerHttp = onRequest(
         const batch = db.batch();
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         const grantedUserIds = [];
-        let transactionCount = 0;
+        let _transactionCount = 0; // prefixed to avoid unused-var lint
 
         for (const userDoc of usersSnapshot.docs) {
           const userId = userDoc.id;
@@ -181,7 +181,7 @@ exports.grantPointsByEventManagerHttp = onRequest(
           });
 
           grantedUserIds.push(userId);
-          transactionCount++;
+          _transactionCount++;
         }
 
         // 8. 提交批量操作

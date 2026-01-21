@@ -9,7 +9,7 @@
  * 4. 创建 merchant 文档
  * 5. 生成 QR Code 数据
  * 6. 更新 users.merchantOwner.merchantId
- * 7. 更新 users.merchantAsist.assignedMerchants
+ * 7. 更新 users.merchantAsist.merchantId（新的单一字段）
  * 8. 更新 events.roleStats.merchants
  * 9. 返回新摊位信息
  * 
@@ -34,14 +34,14 @@ const admin = require('firebase-admin');
 
 exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
-  
+
   // ============================================
   // 1. 权限验证
   // ============================================
   if (!auth) {
     throw new HttpsError('unauthenticated', '用户未认证');
   }
-  
+
   const callerId = auth.uid;
   const { organizationId, eventId, stallName, description, contactInfo, merchantOwnerId, merchantAsists, isActive } = data;
 
@@ -54,12 +54,12 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
   }
 
   const db = admin.firestore();
-  
+
   // 验证调用者权限
   const callerRef = db.collection('organizations').doc(organizationId)
     .collection('events').doc(eventId)
     .collection('users').doc(callerId);
-  
+
   const callerDoc = await callerRef.get();
   if (!callerDoc.exists) {
     throw new HttpsError(
@@ -69,9 +69,9 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
   }
 
   const callerData = callerDoc.data();
-  const hasPermission = callerData.roles?.includes('merchantManager') || 
-                       callerData.roles?.includes('eventManager');
-  
+  const hasPermission = callerData.roles?.includes('merchantManager') ||
+    callerData.roles?.includes('eventManager');
+
   if (!hasPermission) {
     throw new HttpsError(
       'permission-denied',
@@ -86,7 +86,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
     const ownerRef = db.collection('organizations').doc(organizationId)
       .collection('events').doc(eventId)
       .collection('users').doc(merchantOwnerId);
-    
+
     const ownerDoc = await ownerRef.get();
     if (!ownerDoc.exists) {
       throw new HttpsError(
@@ -96,7 +96,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
     }
 
     const ownerData = ownerDoc.data();
-    
+
     // 验证是否有 merchantOwner 角色
     if (!ownerData.roles?.includes('merchantOwner')) {
       throw new HttpsError(
@@ -132,7 +132,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
       const asistRef = db.collection('organizations').doc(organizationId)
         .collection('events').doc(eventId)
         .collection('users').doc(asistId);
-      
+
       const asistDoc = await asistRef.get();
       if (!asistDoc.exists) {
         throw new HttpsError(
@@ -142,12 +142,20 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
       }
 
       const asistData = asistDoc.data();
-      
+
       // 验证是否有 merchantAsist 角色
       if (!asistData.roles?.includes('merchantAsist')) {
         throw new HttpsError(
           'invalid-argument',
           `用户 ${asistId} 不是 merchantAsist`
+        );
+      }
+
+      // ⭐ 验证是否已被分配（新增检查）
+      if (asistData.merchantAsist?.merchantId) {
+        throw new HttpsError(
+          'already-exists',
+          `merchantAsist ${asistId} 已被分配给摊位 ${asistData.merchantAsist.merchantId}`
         );
       }
 
@@ -161,7 +169,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
   const merchantsRef = db.collection('organizations').doc(organizationId)
     .collection('events').doc(eventId)
     .collection('merchants');
-  
+
   const newMerchantRef = merchantsRef.doc(); // 自动生成 ID
   const merchantId = newMerchantRef.id;
   const now = admin.firestore.FieldValue.serverTimestamp();
@@ -234,7 +242,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
         const ownerRef = db.collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
           .collection('users').doc(merchantOwnerId);
-        
+
         transaction.update(ownerRef, {
           'merchantOwner.merchantId': merchantId,
           'merchantOwner.stallName': stallName,
@@ -249,9 +257,12 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
         const asistRef = db.collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
           .collection('users').doc(asistId);
-        
+
         transaction.update(asistRef, {
-          'merchantAsist.assignedMerchants': admin.firestore.FieldValue.arrayUnion(merchantId),
+          'merchantAsist.merchantId': merchantId,
+          'merchantAsist.stallName': stallName,
+          'merchantAsist.assignedAt': now,
+          'merchantAsist.assignedBy': callerId,
           'updatedAt': now
         });
       }
@@ -259,11 +270,11 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
       // 5.4 更新 events.roleStats.merchants（增量更新）
       const eventRef = db.collection('organizations').doc(organizationId)
         .collection('events').doc(eventId);
-      
+
       transaction.update(eventRef, {
         'roleStats.merchants.count': admin.firestore.FieldValue.increment(1),
         'roleStats.merchants.totalAsistsCount': admin.firestore.FieldValue.increment(validatedAsists.length),
-        'roleStats.merchants.withAsistsCount': validatedAsists.length > 0 ? 
+        'roleStats.merchants.withAsistsCount': validatedAsists.length > 0 ?
           admin.firestore.FieldValue.increment(1) : admin.firestore.FieldValue.increment(0),
         'roleStats.merchantManagers.totalMerchantsManaged': admin.firestore.FieldValue.increment(1),
         'roleStats.merchantManagers.lastAssignmentAt': now,
@@ -275,7 +286,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
     // 6. 返回成功结果
     // ============================================
     console.log(`✅ 摊位创建成功: ${merchantId} by ${callerId}`);
-    
+
     return {
       success: true,
       merchantId: merchantId,

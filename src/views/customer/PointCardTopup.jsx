@@ -5,6 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import QRScanner from '../../components/QRScanner';
+import { useEvent } from '../../contexts/EventContext';
 
 /**
  * 点数卡充值页面
@@ -18,6 +19,7 @@ import QRScanner from '../../components/QRScanner';
  */
 const PointCardTopup = () => {
   const navigate = useNavigate();
+  const { orgCode, eventCode, organizationId: ctxOrganizationId, eventId: ctxEventId } = useEvent();
 
   // 页面状态
   const [step, setStep] = useState('scan'); // scan | confirm | processing | success
@@ -46,7 +48,9 @@ const PointCardTopup = () => {
       }
 
       const tokenResult = await user.getIdTokenResult();
-      const { organizationId, eventId } = tokenResult.claims;
+      const { organizationId: claimOrgId, eventId: claimEventId } = tokenResult.claims;
+      const organizationId = ctxOrganizationId || claimOrgId;
+      const eventId = ctxEventId || claimEventId;
 
       const customerRef = doc(
         db,
@@ -64,9 +68,9 @@ const PointCardTopup = () => {
           userId: user.uid
         });
         // ✅ 构建orgEventCode用于导航
-        const orgId = organizationId?.replace('organization_', '') || '';
-        const evtId = eventId?.replace('event_', '') || '';
-        const code = `${orgId}-${evtId}`;
+        const fallbackOrg = organizationId?.replace('organization_', '') || '';
+        const fallbackEvt = eventId?.replace('event_', '') || '';
+        const code = orgCode && eventCode ? `${orgCode}-${eventCode}` : `${fallbackOrg}-${fallbackEvt}`;
         setOrgEventCode(code);
         console.log('[PointCardTopup] orgEventCode设置为:', code);
       }
@@ -776,3 +780,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default PointCardTopup;
+

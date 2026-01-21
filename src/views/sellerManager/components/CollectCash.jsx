@@ -165,7 +165,7 @@ const CollectCash = ({ userInfo, eventData }) => {
 
       console.log('[CollectCash] 确认成功:', result.data);
       
-      alert(`✅ ${result.data.message}`);
+      window.mybazaarShowToast(`✅ ${result.data.message}`);
       
       // 关闭对话框
       setShowConfirmModal(false);
@@ -174,7 +174,7 @@ const CollectCash = ({ userInfo, eventData }) => {
 
     } catch (error) {
       console.error('[CollectCash] 确认失败:', error);
-      alert(`❌ 确认失败: ${error.message}`);
+      window.mybazaarShowToast(`❌ 确认失败: ${error.message}`);
     } finally {
       setConfirming(false);
     }

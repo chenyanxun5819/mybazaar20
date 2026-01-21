@@ -1,5 +1,5 @@
 const functions = require('firebase-functions');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+// removed unused onDocumentCreated import (not used in this file)
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
@@ -128,7 +128,9 @@ exports.getCustomerDashboardDataHttp = getCustomerDashboardDataHttp;
 exports.submitCashToFinanceHttp = submitCashToFinanceHttp;
 
 // 导出 Finance Manager callable functions
-exports.getFinanceStats = financeManagerFunctions.getFinanceStats;
+// 前端 /api/getFinanceStats 期望有名為 getFinanceStats 的 function。
+// cashierFunction 模組實際上導出的是 getCashierStats，因此在此建立別名以相容舊的 rewrites。
+exports.getFinanceStats = financeManagerFunctions.getFinanceStats || financeManagerFunctions.getCashierStats;
 exports.confirmCashSubmission = financeManagerFunctions.confirmCashSubmission;
 
 // Cashier callable functions
@@ -150,6 +152,12 @@ exports.topupFromPointCard = topupFromPointCard;
 exports.createPointCard = createPointCard;
 exports.pointSellerDirectSale = pointSellerDirectSale;
 exports.submitCashAsPointSeller = submitCashAsPointSeller;
+
+// Point Card functions (query & payment)
+const { queryPointCardBalance } = require('./src/pointCards/queryPointCardBalance');
+const { processPointCardPayment } = require('./src/pointCards/processPointCardPayment');
+exports.queryPointCardBalance = queryPointCardBalance;
+exports.processPointCardPayment = processPointCardPayment;
 
 // 導出密碼與交易密碼相關函式
 exports.changeLoginPassword = changeLoginPasswordFn;
@@ -303,7 +311,7 @@ exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
       console.log(`[${requestId}] 🔍 Trying phone variants:`, phoneVariants);
 
       let userDoc = null;
-      let usedVariant = null;
+      let _usedVariant = null;
 
       for (const variant of phoneVariants) {
         console.log(`[${requestId}] 🔎 Querying with variant: ${variant}`);
@@ -319,6 +327,7 @@ exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
 
           if (!usersSnap.empty) {
             userDoc = usersSnap.docs[0];
+            _usedVariant = variant;
             console.log(`[${requestId}] ✅ Found user with variant: ${variant}, Doc ID: ${userDoc.id}`);
             break;
           }

@@ -2,6 +2,13 @@
  * confirmMerchantPayment.js
  * 确认收款 - merchantOwner 或 merchantAsist 确认待收的交易
  * 
+ * ⭐ 修复版本（2026-01-17）
+ * 修复内容：
+ * 1. 修正 Customer 数据结构路径：customer.pointsAccount.availablePoints
+ * 2. 修正交易字段名称：transactionType（不是 type）
+ * 3. 添加 Customer 统计更新
+ * 4. 添加访问过的商家列表
+ * 
  * 功能：
  * 1. 验证交易状态为 pending
  * 2. 验证调用者权限（merchantOwner 或 merchantAsist）
@@ -63,7 +70,8 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
     }
 
     // ========== 6. 验证交易类型 ==========
-    if (transactionData.type !== 'customer_to_merchant') {
+    // ⭐ 修复：改为 transactionType（匹配 processCustomerPayment）
+    if (transactionData.transactionType !== 'customer_to_merchant') {
       throw new HttpsError('invalid-argument', '交易类型错误');
     }
 
@@ -90,24 +98,37 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
       throw new HttpsError('permission-denied', '只有商家摊主或助理可以确认收款');
     }
 
-    // 获取调用者的 merchantId
-    let callerMerchantId;
+    // 以 merchants 文档为准验证商家归属（避免 users.merchantOwner/merchantAsist.merchantId 缺失导致无法确认）
+    const merchantRefForAuth = db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('merchants').doc(transactionData.merchantId);
+
+    const merchantDocForAuth = await merchantRefForAuth.get();
+    if (!merchantDocForAuth.exists) {
+      throw new HttpsError('not-found', '商家不存在');
+    }
+
+    const merchantDataForAuth = merchantDocForAuth.data() || {};
+    const isOwnerOfMerchant = merchantDataForAuth.merchantOwnerId === auth.uid;
+    const isAsistOfMerchant = Array.isArray(merchantDataForAuth.merchantAsists)
+      && merchantDataForAuth.merchantAsists.includes(auth.uid);
+
+    console.log('[confirmMerchantPayment] 商家归属验证:', {
+      merchantId: transactionData.merchantId,
+      isOwnerOfMerchant,
+      isAsistOfMerchant,
+      callerRoles
+    });
+
     let collectorRole;
-
-    if (isMerchantOwner) {
-      callerMerchantId = callerData.merchantOwner?.merchantId;
+    if (isOwnerOfMerchant && isMerchantOwner) {
       collectorRole = 'merchantOwner';
-    } else if (isMerchantAsist) {
-      callerMerchantId = callerData.merchantAsist?.merchantId;
+    } else if (isAsistOfMerchant && isMerchantAsist) {
       collectorRole = 'merchantAsist';
-    }
-
-    if (!callerMerchantId) {
-      throw new HttpsError('failed-precondition', '用户未关联到商家');
-    }
-
-    // 验证交易是否属于该商家
-    if (transactionData.merchantId !== callerMerchantId) {
+    } else if (isOwnerOfMerchant || isAsistOfMerchant) {
+      throw new HttpsError('failed-precondition', '账号角色与商家分配不一致，请管理员检查角色/商家分配');
+    } else {
       throw new HttpsError('permission-denied', '此交易不属于您的商家');
     }
 
@@ -117,10 +138,7 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
       .collection('events').doc(eventId)
       .collection('users').doc(transactionData.customerId);
 
-    const merchantRef = db
-      .collection('organizations').doc(organizationId)
-      .collection('events').doc(eventId)
-      .collection('merchants').doc(transactionData.merchantId);
+    const merchantRef = merchantRefForAuth;
 
     const [customerDoc, merchantDoc] = await Promise.all([
       customerRef.get(),
@@ -139,7 +157,8 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
     const merchantData = merchantDoc.data();
 
     // ========== 10. 验证 Customer 余额 ==========
-    const customerBalance = customerData.customer?.availablePoints || 0;
+    // ⭐ 修复：改为 customer.pointsAccount.availablePoints
+    const customerBalance = customerData.customer?.pointsAccount?.availablePoints || 0;
     const amount = transactionData.amount;
 
     if (customerBalance < amount) {
@@ -153,13 +172,25 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
     await db.runTransaction(async (transaction) => {
       // 11.1 扣除 Customer 点数
       const newCustomerBalance = customerBalance - amount;
-      const newCustomerTotalSpent = (customerData.customer?.totalPointsSpent || 0) + amount;
+      // ⭐ 修复：改为 customer.pointsAccount.totalSpent
+      const newCustomerTotalSpent = (customerData.customer?.pointsAccount?.totalSpent || 0) + amount;
 
+      // ⭐ 修复：更新正确的字段路径，并添加统计
       transaction.update(customerRef, {
-        'customer.availablePoints': newCustomerBalance,
-        'customer.totalPointsSpent': newCustomerTotalSpent,
-        'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+        'customer.pointsAccount.availablePoints': newCustomerBalance,
+        'customer.pointsAccount.totalSpent': newCustomerTotalSpent,
+        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
+        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
+        'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
       });
+
+      // ⭐ 新增：添加到访问过的商家列表
+      const merchantsVisited = customerData.customer?.stats?.merchantsVisited || [];
+      if (!merchantsVisited.includes(transactionData.merchantId)) {
+        transaction.update(customerRef, {
+          'customer.stats.merchantsVisited': admin.firestore.FieldValue.arrayUnion(transactionData.merchantId)
+        });
+      }
 
       // 11.2 增加 Merchant 收入
       const newTotalRevenue = (merchantData.revenueStats?.totalRevenue || 0) + amount;
@@ -198,6 +229,9 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
       });
 
       // 11.4 更新交易状态
+      // 先生成当前时间
+      const now = new Date();
+
       transaction.update(transactionRef, {
         status: 'completed',
         collectedBy: auth.uid,
@@ -205,7 +239,7 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         statusHistory: admin.firestore.FieldValue.arrayUnion({
           status: 'completed',
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          timestamp: now,  // ✅ 使用普通 Date 对象
           updatedBy: auth.uid,
           updaterRole: collectorRole,
           note: '收款确认'

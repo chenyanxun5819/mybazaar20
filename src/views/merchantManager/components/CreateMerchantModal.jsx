@@ -222,9 +222,9 @@ const CreateMerchantModal = ({ onClose, onSubmit, availableOwners, availableAsis
                         />
                         <span>
                           {asist.basicInfo?.chineseName || asist.id}
-                          {asist.merchantAsist?.assignedMerchants?.length > 0 && (
+                          {asist.merchantAsist?.merchantId && (
                             <span style={styles.asistCount}>
-                              ({asist.merchantAsist.assignedMerchants.length} 个摊位)
+                              (已关联商家)
                             </span>
                           )}
                         </span>

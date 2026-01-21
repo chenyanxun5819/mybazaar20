@@ -44,7 +44,7 @@
 }
 
 .dashboard-logo {
-  height: 34px;
+  height: 60px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -67,6 +67,54 @@
   font-weight: 700;
   color: #111827;
   line-height: 1;
+}
+
+.subtitle-en {
+  display: none; /* 目前預設顯示中文，切換時再顯示英文 */
+}
+
+.dashboard-eventFooter {
+  text-align: center;
+  padding: 0.75rem 1rem;
+  color: #374151;
+  font-size: 0.95rem;
+  background: transparent;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 1.5rem;
+}
+
+/* Footer: 將 logo 與 event name 垂直排列並置中 */
+.dashboard-eventFooter .dashboard-eventName {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-eventFooter .dashboard-logo {
+  width: 96px;
+  max-width: 30%;
+  height: auto;
+  display: block;
+}
+
+.dashboard-eventFooter .dashboard-eventName span,
+.dashboard-eventFooter .dashboard-eventName {
+  font-size: 0.95rem;
+  color: #374151;
+  font-weight: 600;
+}
+
+.dashboard-copyright {
+  font-size: 0.7rem;
+  color: #a8a8a8;
+  text-align: center;
+  margin-top: 0.5rem;
+  opacity: 0.7;
 }
 
 .dashboard-userSmall {

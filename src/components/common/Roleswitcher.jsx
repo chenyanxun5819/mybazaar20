@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import UsersIcon from '../../assets/users.svg?react';
@@ -28,6 +28,8 @@ import UserBagIcon from '../../assets/user-bag.svg?react';
 const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const [alignRight, setAlignRight] = useState(false);
 
   const isMobile = (() => {
     if (typeof window === 'undefined') return false;
@@ -178,28 +180,52 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
 
   const currentConfig = roleConfig[currentRole] || { label: currentRole, icon: UsersIcon, color: '#6b7280' };
 
+  const computeAlign = () => {
+    if (typeof window === 'undefined' || !containerRef.current) return;
+    try {
+      const rect = containerRef.current.getBoundingClientRect();
+      const dropdownMin = 280; // matches styles.dropdown.minWidth
+      const margin = 16; // keep some space from viewport edge
+      const availableRight = window.innerWidth - rect.left;
+      // 如果從左側開始放不下，則改為靠右對齊
+      if (availableRight < dropdownMin + margin) {
+        setAlignRight(true);
+      } else {
+        setAlignRight(false);
+      }
+    } catch (e) {
+      // noop
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onResize = () => computeAlign();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isOpen]);
+
   return (
-    <div style={styles.container}>
-      {/* 当前角色按钮 */}
+    <div style={styles.container} ref={containerRef}>
+      {/* 当前角色按钮：只顯示圖示與箭頭，按鈕上不顯示角色名稱 */}
       <button
         type="button"
         style={styles.currentRoleButton}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          const willOpen = !isOpen;
+          if (willOpen) computeAlign();
+          setIsOpen(willOpen);
+        }}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         title="切换身份"
       >
         {renderRoleIcon(currentConfig.icon, { size: 24, color: currentConfig.color })}
-        {isOpen && (
-          <span style={styles.currentRoleLabel}>
-            {currentConfig.buttonLabel || currentConfig.label}
-          </span>
-        )}
         <span
           aria-hidden="true"
           style={{
             ...styles.currentRoleCaret,
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+            transform: isOpen ? 'translateY(-50%) rotate(180deg)' : 'translateY(-50%) rotate(0deg)'
           }}
         >
           ▼
@@ -216,7 +242,11 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
           />
 
           {/* 角色列表 */}
-          <div style={styles.dropdown}>
+          <div style={{
+            ...styles.dropdown,
+            left: alignRight ? 'auto' : 0,
+            right: alignRight ? 0 : 'auto'
+          }}>
             <div style={styles.dropdownHeader}>切换身份</div>
             {deviceFilteredRoles.map(role => {
               const config = roleConfig[role] || { label: role, icon: UsersIcon, color: '#6b7280' };
@@ -264,18 +294,18 @@ const styles = {
   currentRoleButton: {
     position: 'relative',
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '0.25rem',
-    padding: '0.5rem 0.75rem',
+    gap: '0.5rem',
+    padding: '0.25rem 0.5rem',
     background: 'transparent',
     border: 'none',
     borderRadius: '10px',
     cursor: 'pointer',
     transition: 'background-color 0.2s, transform 0.12s',
     lineHeight: 1,
-    minWidth: '88px'
+    minWidth: '44px'
   },
   currentRoleLabel: {
     color: '#111827',
@@ -286,11 +316,12 @@ const styles = {
   },
   currentRoleCaret: {
     position: 'absolute',
-    top: '0.35rem',
-    right: '0.35rem',
+    top: '50%',
+    right: '0.25rem',
     fontSize: '0.7rem',
     color: '#6b7280',
-    transition: 'transform 0.2s'
+    transition: 'transform 0.2s',
+    transformOrigin: 'center'
   },
   overlay: {
     position: 'fixed',
@@ -349,3 +380,4 @@ const styles = {
 };
 
 export default RoleSwitcher;
+

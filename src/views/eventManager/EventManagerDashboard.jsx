@@ -4,12 +4,15 @@ import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 導入 AuthContext
+import { useEvent } from '../../contexts/EventContext'; // 🆕 導入 EventContext
 import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
 import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
 import UserList from '../../components/common/UserList';
 import PointsManagement from '../../components/common/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
 import DepartmentManagement from '../../components/common/DepartmentManagement'; // 部门管理
 import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { safeFetch } from '../../services/safeFetch'; // 🆕 用于调用 Cloud Functions
 import UsersIcon from '../../assets/users.svg?react';
 import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
@@ -103,7 +106,7 @@ const EventManagerDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
   const { userProfile, loading: authLoading, isAuthenticated } = useAuth(); // 🆕 使用 AuthContext
-
+  const { eventCode } = useEvent(); // 🆕 从 EventContext 获取 eventCode
   const [loading, setLoading] = useState(true);
   const [eventData, setEventData] = useState(null);
   const [orgData, setOrgData] = useState(null);
@@ -253,26 +256,26 @@ const EventManagerDashboard = () => {
 
     // 验证必填字段
     if (!editForm.chineseName.trim()) {
-      alert('请输入中文姓名');
+      window.mybazaarShowToast('请输入中文姓名');
       return;
     }
     if (!editForm.englishName.trim()) {
-      alert('请输入英文姓名');
+      window.mybazaarShowToast('请输入英文姓名');
       return;
     }
     if (!editForm.phoneNumber.trim()) {
-      alert('请输入电话号码');
+      window.mybazaarShowToast('请输入电话号码');
       return;
     }
     if (!editForm.identityId.trim()) {
-      alert('请输入身份ID');
+      window.mybazaarShowToast('请输入身份ID');
       return;
     }
 
     // 验证电话号码格式（马来西亚手机号）
     const phoneRegex = /^(01)[0-9]{8,9}$/;
     if (!phoneRegex.test(editForm.phoneNumber)) {
-      alert('电话号码格式不正确\n马来西亚手机号应为: 01X-XXXXXXXX (10-11位数字)');
+      window.mybazaarShowToast('电话号码格式不正确\n马来西亚手机号应为: 01X-XXXXXXXX (10-11位数字)');
       return;
     }
 
@@ -290,13 +293,13 @@ const EventManagerDashboard = () => {
 
     // 🚫 禁止 Event Manager 修改自己的角色
     if (isModifyingSelf && hasEventManager) {
-      alert('Event Manager 不能修改自己的角色');
+      window.mybazaarShowToast('Event Manager 不能修改自己的角色');
       return;
     }
 
     // 🚫 Event Manager 不能同时拥有其他 manager 角色
     if (hasEventManager && hasOtherManagerRoles) {
-      alert('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier');
+      window.mybazaarShowToast('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier');
       return;
     }
 
@@ -352,7 +355,7 @@ const EventManagerDashboard = () => {
         throw new Error(errorData.error || '角色更新失败');
       }
 
-      alert('✅ 用户信息和角色更新成功!');
+      window.mybazaarShowToast('✅ 用户信息和角色更新成功!');
       setShowEditModal(false);
       setEditingUser(null);
 
@@ -360,7 +363,7 @@ const EventManagerDashboard = () => {
       await loadDashboardData();
     } catch (error) {
       console.error('❌ 更新用户失败:', error);
-      alert('更新失败: ' + error.message);
+      window.mybazaarShowToast('更新失败: ' + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -379,12 +382,12 @@ const EventManagerDashboard = () => {
     try {
       // 验证输入
       if (!grantIdentityTag || grantIdentityTag.length === 0) {
-        alert('请选择至少一个目标身份标签');
+        window.mybazaarShowToast('请选择至少一个目标身份标签');
         return;
       }
 
       if (!grantAmount || isNaN(grantAmount) || Number(grantAmount) <= 0) {
-        alert('请输入有效的赠送点数（必须大于0）');
+        window.mybazaarShowToast('请输入有效的赠送点数（必须大于0）');
         return;
       }
 
@@ -442,7 +445,7 @@ const EventManagerDashboard = () => {
         totalGranted += result.grantedCount || 0;
       }
 
-      alert(`✅ 赠送成功！\n已赠送给 ${totalGranted} 个用户\n每人 ${pointsToGrant} 点数`);
+      window.mybazaarShowToast(`✅ 赠送成功！\n已赠送给 ${totalGranted} 个用户\n每人 ${pointsToGrant} 点数`);
 
       // 关闭Modal
       setShowGrantPointsModal(false);
@@ -455,7 +458,7 @@ const EventManagerDashboard = () => {
 
     } catch (error) {
       console.error('❌ 赠送点数失败:', error);
-      alert('赠送失败: ' + error.message);
+      window.mybazaarShowToast('赠送失败: ' + error.message);
     } finally {
       setIsGranting(false);
     }
@@ -626,8 +629,12 @@ const EventManagerDashboard = () => {
       navigate(`/login/${orgEventCodeRoute}`);
     } catch (error) {
       console.error('登出失败:', error);
-      alert('登出失败');
+      window.mybazaarShowToast('登出失败');
     }
+  };
+
+  const handleRefresh = () => {
+    window.location.reload();
   };
 
   const handlePageChange = (newPage) => {
@@ -741,51 +748,22 @@ const EventManagerDashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {(eventData?.logoUrl || orgData?.logoUrl) && (
-            <img
-              src={eventData?.logoUrl || orgData?.logoUrl}
-              alt="event Logo"
-              style={{ width: '100px', height: '100px', borderRadius: '8px', objectFit: 'cover' }}
-            />
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h1 style={{ ...styles.title, margin: 0 }}>
-              {eventData?.eventName?.['zh-CN'] || eventData?.eventName?.['zh-TW'] || eventData?.eventName?.['en-US'] || 'Event Manager Dashboard'} 管理后台
-            </h1>
-            <div style={{ marginTop: '0.25rem', ...styles.userGreeting, marginBottom: 0 }}>
-              欢迎管理员  {userInfo?.chineseName || userInfo?.englishName}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
-          <RoleSwitcher currentRole="eventManager" orgEventCode={orgEventCode} />
-          <button
-            onClick={handleLogout}
-            style={{
-              ...styles.logoutButton,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '0.5rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="登出"
-          >
-            <img
-              src={leaveIcon}
-              alt="登出"
-              style={{ width: '24px', height: '24px', objectFit: 'contain' }}
-            />
-          </button>
-        </div>
-      </div>
+      {/* 🆕 共用 Header 组件（临时，如需自定义，稍后可修改参数） */}
+      <DashboardHeader
+        title={eventData ? `${(eventData.eventName?.['zh-CN'] || eventData.eventName?.['zh-TW'] || eventData.eventName?.['en-US'] || (typeof eventData.eventName === 'string' ? eventData.eventName : ''))} 活动管理` : "活动管理"}
+        subtitle="Event Manager Dashboard"
+        logoUrl={eventData?.logoUrl || orgData?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName}
+        userPhone={userProfile?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.[0] || 'eventManager'}
+        orgEventCode={undefined}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
       {/* Statistics */}
       <div style={styles.statsGrid}>
@@ -1661,6 +1639,13 @@ const EventManagerDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={eventData}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };
@@ -1684,7 +1669,8 @@ const styles = {
   container: {
     minHeight: '100vh',
     background: '#f3f4f6',
-    padding: '2rem'
+    padding: '0 2rem 2rem 2rem', /* 移除 top padding */
+    paddingTop: 0 /* 确保 header 有空间 */
   },
   loadingContainer: {
     display: 'flex',
@@ -1741,6 +1727,7 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(60px, 0.5fr))',
     gap: '1rem',
+    marginTop: '1rem',
     marginBottom: '1.5rem'
   },
   statCard: {

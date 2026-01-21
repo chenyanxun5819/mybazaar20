@@ -262,3 +262,4 @@ export const generateCustomerReceivePointsQR = (organizationId, eventId, custome
 
   return JSON.stringify(qrData);
 };
+

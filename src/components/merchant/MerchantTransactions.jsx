@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db, functions } from '../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -99,14 +99,16 @@ const TransactionCard = ({ transaction, onRefund, userRole, currentUserId }) => 
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [refunding, setRefunding] = useState(false);
+  const [refundError, setRefundError] = useState('');
 
   const handleRefund = async () => {
     if (!refundReason.trim()) {
-      alert('请输入退款原因');
+      setRefundError('请输入退款原因');
       return;
     }
 
     setRefunding(true);
+    setRefundError('');
     try {
       await onRefund(transaction.id, refundReason);
       setShowRefundDialog(false);
@@ -245,11 +247,19 @@ const TransactionCard = ({ transaction, onRefund, userRole, currentUserId }) => 
             </p>
             <textarea
               value={refundReason}
-              onChange={(e) => setRefundReason(e.target.value)}
+              onChange={(e) => {
+                setRefundReason(e.target.value);
+                setRefundError('');
+              }}
               placeholder="请输入退款原因（必填）"
               rows={3}
               className="refund-reason-input"
             />
+            {refundError && (
+              <p style={{ color: '#ef4444', fontSize: '14px', margin: '8px 0 0 0' }}>
+                {refundError}
+              </p>
+            )}
             <div className="refund-dialog-actions">
               <button
                 onClick={handleRefund}
@@ -300,6 +310,39 @@ const MerchantTransactions = ({
   const [allTransactions, setAllTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // ⭐ 通知狀態
+  const [notification, setNotification] = useState(null);
+  const notificationTimeoutRef = useRef(null);
+
+  // ⭐ 顯示通知函數
+  const showNotification = (status, message, amount = null, merchantName = null, eventName = null) => {
+    // 使用 eventName 作為 title（如果沒有就用 merchantName）
+    const title = eventName || merchantName || merchant?.stallName || '摊位通知';
+    
+    setNotification({
+      status,
+      title,
+      message,
+      amount,
+      merchantName
+    });
+
+    // 5秒後自動消失
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
+  // ⭐ 關閉通知
+  const closeNotification = () => {
+    setNotification(null);
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+  };
 
   // ⭐ Tab 配置
   const tabs = [
@@ -366,26 +409,13 @@ const MerchantTransactions = ({
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    // ⭐ 根据角色筛选交易
-    let q;
-    if (userRole === 'merchantAsist') {
-      // merchantAsist 只能看自己确认的交易
-      q = query(
-        transactionsRef,
-        where('merchantId', '==', merchant.id),
-        where('collectedBy', '==', currentUserId),
-        where('timestamp', '>=', Timestamp.fromDate(todayStart)),
-        orderBy('timestamp', 'desc')
-      );
-    } else {
-      // merchantOwner 可以看所有交易
-      q = query(
-        transactionsRef,
-        where('merchantId', '==', merchant.id),
-        where('timestamp', '>=', Timestamp.fromDate(todayStart)),
-        orderBy('timestamp', 'desc')
-      );
-    }
+    // ⭐ 简化查询：只查询 merchantId 的交易，避免复合索引问题
+    // 客户端过滤其他条件（collectedBy、timestamp、status）
+    const q = query(
+      transactionsRef,
+      where('merchantId', '==', merchant.id),
+      orderBy('timestamp', 'desc')
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -393,13 +423,21 @@ const MerchantTransactions = ({
         const transactions = [];
         snapshot.forEach((doc) => {
           const data = doc.data();
-          // 只显示非 pending 的交易
-          if (data.status !== 'pending') {
-            transactions.push({
-              id: doc.id,
-              ...data
-            });
-          }
+          
+          // ⭐ 客户端过滤逻辑
+          // 1. 过滤非 pending 交易
+          if (data.status === 'pending') return;
+          
+          // 2. 过滤今日交易（时间在今天00:00之后）
+          if (!data.timestamp || data.timestamp.toDate() < todayStart) return;
+          
+          // 3. 如果是 merchantAsist，只显示自己确认的交易
+          if (userRole === 'merchantAsist' && data.collectedBy !== currentUserId) return;
+          
+          transactions.push({
+            id: doc.id,
+            ...data
+          });
         });
         setTodayTransactions(transactions);
       },
@@ -425,24 +463,13 @@ const MerchantTransactions = ({
       'transactions'
     );
 
-    // ⭐ 根据角色筛选交易
-    let q;
-    if (userRole === 'merchantAsist') {
-      // merchantAsist 只能看自己确认的交易
-      q = query(
-        transactionsRef,
-        where('merchantId', '==', merchant.id),
-        where('collectedBy', '==', currentUserId),
-        orderBy('timestamp', 'desc')
-      );
-    } else {
-      // merchantOwner 可以看所有交易
-      q = query(
-        transactionsRef,
-        where('merchantId', '==', merchant.id),
-        orderBy('timestamp', 'desc')
-      );
-    }
+    // ⭐ 简化查询：只查询 merchantId 的交易，避免复合索引问题
+    // 客户端过滤其他条件（collectedBy、status）
+    const q = query(
+      transactionsRef,
+      where('merchantId', '==', merchant.id),
+      orderBy('timestamp', 'desc')
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -450,13 +477,18 @@ const MerchantTransactions = ({
         const transactions = [];
         snapshot.forEach((doc) => {
           const data = doc.data();
-          // 只显示非 pending 的交易
-          if (data.status !== 'pending') {
-            transactions.push({
-              id: doc.id,
-              ...data
-            });
-          }
+          
+          // ⭐ 客户端过滤逻辑
+          // 1. 过滤非 pending 交易
+          if (data.status === 'pending') return;
+          
+          // 2. 如果是 merchantAsist，只显示自己确认的交易
+          if (userRole === 'merchantAsist' && data.collectedBy !== currentUserId) return;
+          
+          transactions.push({
+            id: doc.id,
+            ...data
+          });
         });
         setAllTransactions(transactions);
         setLoading(false);
@@ -471,28 +503,44 @@ const MerchantTransactions = ({
     return () => unsubscribe();
   }, [merchant?.id, organizationId, eventId, userRole, currentUserId]);
 
-  // ============================================
-  // ⭐ 4. 确认收款
-  // ============================================
-  const handleConfirmPayment = async (transactionId) => {
-    try {
-      const confirmPayment = httpsCallable(functions, 'confirmMerchantPayment');
-      
-      const result = await confirmPayment({
-        organizationId,
-        eventId,
-        transactionId
-      });
+// ============================================
+// ⭐ 4. 确认收款
+// ============================================
+const handleConfirmPayment = async (transactionId) => {
+  try {
+    const confirmPayment = httpsCallable(functions, 'confirmMerchantPayment');
+    
+    const result = await confirmPayment({
+      organizationId,
+      eventId,
+      transactionId
+    });
 
-      if (result.data.success) {
-        // 交易会自动从 pending 列表中移除（因为 onSnapshot）
-        console.log('✅ 收款确认成功:', result.data);
-      }
-    } catch (error) {
-      console.error('❌ 确认收款失败:', error);
-      alert(`确认收款失败：${error.message}`);
+    if (result.data.success) {
+      // ⭐ 显示通知
+      showNotification('completed', '收款成功', result.data.amount, result.data.merchantName, result.data.eventName);
+      
+      // 交易会自动从 pending 列表中移除（因为 onSnapshot）
+      console.log('✅ 收款确认成功:', result.data);
     }
-  };
+  } catch (error) {
+    console.error('❌ 确认收款失败:', error);
+    
+    // ⭐ 改进错误提示
+    let errorMessage = '确认收款失败';
+    if (error.code === 'permission-denied') {
+      errorMessage = '无权限操作';
+    } else if (error.code === 'not-found') {
+      errorMessage = '交易不存在';
+    } else if (error.code === 'failed-precondition') {
+      errorMessage = error.message || '交易状态错误';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    showNotification('error', errorMessage);
+  }
+};
 
   // ============================================
   // ⭐ 5. 取消交易
@@ -515,7 +563,7 @@ const MerchantTransactions = ({
       }
     } catch (error) {
       console.error('❌ 取消交易失败:', error);
-      alert(`取消交易失败：${error.message}`);
+      showNotification('error', `取消交易失败：${error.message}`);
     }
   };
 
@@ -534,12 +582,12 @@ const MerchantTransactions = ({
       });
 
       if (result.data.success) {
-        alert('退款成功！');
+        showNotification('completed', '退款成功', result.data.amount, result.data.merchantName, result.data.eventName);
         console.log('✅ 退款成功:', result.data);
       }
     } catch (error) {
       console.error('❌ 退款失败:', error);
-      alert(`退款失败：${error.message}`);
+      showNotification('error', `退款失败：${error.message}`);
     }
   };
 
@@ -567,6 +615,54 @@ const MerchantTransactions = ({
 
   return (
     <div className="merchant-transactions-container">
+      {/* ⭐ 交易通知橫幅 */}
+      {notification && (
+        <div
+          className="customer-notification-banner"
+          onClick={closeNotification}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: notification.status === 'completed' ? '#10b981' : '#ef4444',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '12px',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            cursor: 'pointer',
+            zIndex: 1000,
+            minWidth: '320px',
+            maxWidth: '90%'
+          }}
+        >
+          {notification.status === 'completed' ? (
+            <CheckCircle size={24} />
+          ) : (
+            <XCircle size={24} />
+          )}
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '16px' }}>
+              {notification.title || notification.message}
+            </p>
+            {notification.message && notification.message !== notification.title && (
+              <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+                {notification.message}
+              </p>
+            )}
+            {notification.amount && (
+              <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+                金額：{notification.amount} 點
+              </p>
+            )}
+          </div>
+          <Bell size={20} style={{ opacity: 0.7 }} />
+        </div>
+      )}
+
       {/* Tabs Navigation */}
       <div className="transactions-tabs">
         {tabs.map((tab) => {

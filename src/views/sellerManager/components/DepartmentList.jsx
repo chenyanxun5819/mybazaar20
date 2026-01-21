@@ -475,3 +475,4 @@ const styles = {
 };
 
 export default DepartmentList;
+

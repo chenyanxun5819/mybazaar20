@@ -67,3 +67,4 @@ export function useTransactions(maxRecords = 50) {
 
   return { transactions, loading, error };
 }
+

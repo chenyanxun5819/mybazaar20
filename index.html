@@ -9,6 +9,57 @@
     <!-- ✅ 添加 Eruda 调试工具 - 在手机上显示控制台 -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>
+      // ✅ 先於 Eruda 初始化之前：攔截並靜默忽略 AbortError（Firestore Listen 長連線在切頁/重連時常見）
+      (function () {
+        function isAbortNoise(value) {
+          try {
+            if (value && value.name === 'AbortError') return true;
+            var text = String(value || '').toLowerCase();
+            return (
+              text.indexOf('aborterror') !== -1 ||
+              text.indexOf('the user aborted a request') !== -1 ||
+              text.indexOf('aborted a request') !== -1 ||
+              text.indexOf('fetch is aborted') !== -1 ||
+              (text.indexOf('abort') !== -1 && (text.indexOf('request') !== -1 || text.indexOf('fetch') !== -1))
+            );
+          } catch (e) {
+            return false;
+          }
+        }
+
+        try {
+          window.addEventListener(
+            'unhandledrejection',
+            function (evt) {
+              try {
+                if (isAbortNoise(evt && evt.reason)) {
+                  evt.preventDefault && evt.preventDefault();
+                  evt.stopImmediatePropagation && evt.stopImmediatePropagation();
+                  evt.stopPropagation && evt.stopPropagation();
+                }
+              } catch (e) {}
+            },
+            true
+          );
+        } catch (e) {}
+
+        try {
+          window.addEventListener(
+            'error',
+            function (evt) {
+              try {
+                if (isAbortNoise(evt && (evt.error || evt.message))) {
+                  evt.preventDefault && evt.preventDefault();
+                  evt.stopImmediatePropagation && evt.stopImmediatePropagation();
+                  evt.stopPropagation && evt.stopPropagation();
+                }
+              } catch (e) {}
+            },
+            true
+          );
+        } catch (e) {}
+      })();
+
       // 只在移动设备上启用 Eruda
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         eruda.init();

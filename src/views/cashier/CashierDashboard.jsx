@@ -11,6 +11,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { auth, db, functions } from '../../config/firebase';
 import {
   collection,
@@ -164,8 +166,12 @@ const CashierDashboard = () => {
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('退出登录失败:', error);
-      alert('退出登录失败: ' + error.message);
+      window.mybazaarShowToast('退出登录失败: ' + error.message);
     }
+  };
+
+  const handleRefresh = () => {
+    window.location.reload();
   };
 
   // ===== 1. 权限验证 =====
@@ -383,21 +389,22 @@ const CashierDashboard = () => {
 
   return (
     <div className="fm-container">
-      {/* 头部 */}
-      <header className="fm-header">
-        <div className="fm-header-left">
-          <h1 className="fm-title">💰 财务管理</h1>
-          <p className="fm-welcome-text">
-            欢迎，{financeData?.basicInfo?.name || userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName || '收银员'}
-          </p>
-        </div>
-        <div className="fm-header-right">
-          <span className="fm-date">{new Date().toLocaleDateString('zh-CN')}</span>
-          <button className="fm-logout-button" onClick={handleLogout}>
-            🚪 退出登录
-          </button>
-        </div>
-      </header>
+      {/* 🆕 共用 Header 组件（临时，如需自定义，稍后可修改参数） */}
+      <DashboardHeader
+        title="财务管理"
+        subtitle="Cashier Dashboard"
+        logoUrl={event?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName}
+        userPhone={userProfile?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.includes('cashier') ? 'cashier' : userProfile?.roles?.[0]}
+        orgEventCode={orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
       {/* Tab 导航 */}
       <nav className="fm-tab-nav">
@@ -440,6 +447,13 @@ const CashierDashboard = () => {
           />
         )}
       </main>
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={event}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };
@@ -587,4 +601,5 @@ const styles = {
 // 全局動畫已移至外部 CSS 檔案
 
 export default CashierDashboard;
+
 

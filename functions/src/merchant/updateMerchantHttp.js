@@ -301,7 +301,8 @@ exports.updateMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
             .collection('users').doc(asistId);
           
           transaction.update(asistRef, {
-            'merchantAsist.assignedMerchants': admin.firestore.FieldValue.arrayUnion(merchantId),
+            'merchantAsist.merchantId': merchantId,
+            'merchantAsist.stallName': updateData.stallName || currentData.stallName,
             'updatedAt': now
           });
         }
@@ -313,7 +314,8 @@ exports.updateMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
             .collection('users').doc(asistId);
           
           transaction.update(asistRef, {
-            'merchantAsist.assignedMerchants': admin.firestore.FieldValue.arrayRemove(merchantId),
+            'merchantAsist.merchantId': admin.firestore.FieldValue.delete(),
+            'merchantAsist.stallName': admin.firestore.FieldValue.delete(),
             'updatedAt': now
           });
         }

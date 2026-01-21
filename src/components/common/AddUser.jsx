@@ -285,7 +285,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
       const result = await response.json();
       console.log('[AddUser] Success:', result);
-      alert('用户创建成功！');
+      window.mybazaarShowToast('用户创建成功！');
 
       if (onSuccess) {
         onSuccess();

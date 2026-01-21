@@ -12,7 +12,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const bcrypt = require('bcryptjs');
+const { verifyTransactionPin } = require('../../utils/verifyTransactionPin');
 
 exports.claimAndConfirmCashSubmission = onCall({ region: 'asia-southeast1' }, async (request) => {
     // ===== 1. 身份验证 =====
@@ -65,63 +65,7 @@ exports.claimAndConfirmCashSubmission = onCall({ region: 'asia-southeast1' }, as
     }
 
     // ===== 3. 验证交易密码 =====
-    // 改用 basicInfo.* 存取交易密碼與錯誤/鎖定欄位，以與其他函式一致
-    const basicInfo = userData.basicInfo || {};
-    const storedPinHash = basicInfo.transactionPinHash;
-
-    if (!storedPinHash) {
-      throw new HttpsError(
-        'failed-precondition',
-        '您还未设置交易密码，请先设置交易密码'
-      );
-    }
-
-    const isPinValid = await bcrypt.compare(transactionPin, storedPinHash);
-
-    if (!isPinValid) {
-      // 记录失败次数
-      const failedAttempts = (basicInfo.pinFailedAttempts || 0) + 1;
-      const lockUntil = basicInfo.pinLockedUntil;
-
-      // 检查是否已锁定
-      if (lockUntil && lockUntil.toDate() > new Date()) {
-        const remainingMinutes = Math.ceil((lockUntil.toDate() - new Date()) / 60000);
-        throw new HttpsError(
-          'permission-denied',
-          `账号已锁定，请${remainingMinutes}分钟后再试`
-        );
-      }
-
-      // 更新失败次数
-      await userRef.update({
-        'basicInfo.pinFailedAttempts': failedAttempts,
-        'basicInfo.lastPinFailedAt': admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      // 5次失败后锁定1小时
-      if (failedAttempts >= 5) {
-        const lockUntilTime = new Date(Date.now() + 60 * 60 * 1000);
-        await userRef.update({
-          'basicInfo.pinLockedUntil': admin.firestore.Timestamp.fromDate(lockUntilTime),
-          'basicInfo.pinFailedAttempts': 0
-        });
-        throw new HttpsError(
-          'permission-denied',
-          '交易密码错误次数过多，账号已锁定1小时'
-        );
-      }
-
-      throw new HttpsError(
-        'permission-denied',
-        `交易密码错误，还剩 ${5 - failedAttempts} 次机会`
-      );
-    }
-
-    // 密码正确，重置失败次数
-    await userRef.update({
-      'basicInfo.pinFailedAttempts': 0,
-      'basicInfo.lastPinSuccessAt': admin.firestore.FieldValue.serverTimestamp()
-    });
+    await verifyTransactionPin(cashierId, transactionPin, orgId, eventId);
 
     // ===== 4. 使用 Transaction 确认收款（防止重复） =====
     const db = admin.firestore();
@@ -175,7 +119,7 @@ exports.claimAndConfirmCashSubmission = onCall({ region: 'asia-southeast1' }, as
         // 更新 Cashier 统计
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const todayTimestamp = admin.firestore.Timestamp.fromDate(today);
+        // todayTimestamp not used; removed to satisfy lint
 
         transaction.update(userRef, {
           'cashier.cashStats.totalCollected': admin.firestore.FieldValue.increment(confirmedAmount),

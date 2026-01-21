@@ -267,7 +267,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         if (jsonData.length < 2) {
-          alert('Excel 文件格式不正确，至少需要表头和一行数据');
+          window.mybazaarShowToast('Excel 文件格式不正确，至少需要表头和一行数据');
           return;
         }
 
@@ -280,7 +280,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         const missingFields = requiredFields.filter(field => mapping[field] === undefined);
         
         if (missingFields.length > 0) {
-          alert(`Excel 文件缺少必填列: ${missingFields.join(', ')}\n请检查表头是否正确`);
+          window.mybazaarShowToast(`Excel 文件缺少必填列: ${missingFields.join(', ')}\n请检查表头是否正确`);
           console.error('[BatchImportUser] 缺少字段:', missingFields);
           console.error('[BatchImportUser] 检测到的表头:', headers);
           return;
@@ -329,7 +329,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         setErrors(validatedUsers.filter(u => u.errors.length > 0));
       } catch (error) {
         console.error('文件解析失败:', error);
-        alert('文件格式不正确，请使用提供的模板');
+        window.mybazaarShowToast('文件格式不正确，请使用提供的模板');
       }
     };
 
@@ -338,7 +338,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
   const handleImportUsers = async () => {
     if (errors.length > 0) {
-      alert('请先修正所有错误');
+      window.mybazaarShowToast('请先修正所有错误');
       return;
     }
 
@@ -391,7 +391,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
       const result = await response.json();
       const imported = typeof result.imported === 'number' ? result.imported : (result.successCount || 0);
-      alert(`成功导入 ${imported} 位用户`);
+      window.mybazaarShowToast(`成功导入 ${imported} 位用户`);
       
       if (onSuccess) {
         onSuccess();
@@ -401,7 +401,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 
     } catch (error) {
       console.error('批量导入失败:', error);
-      alert(`导入失败: ${error.message}`);
+      window.mybazaarShowToast(`导入失败: ${error.message}`);
     } finally {
       setImporting(false);
     }
@@ -543,3 +543,4 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
 };
 
 export default BatchImportUser;
+

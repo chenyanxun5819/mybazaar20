@@ -315,3 +315,4 @@ export const authService = {
   normalizePhone,
   validatePassword
 };
+

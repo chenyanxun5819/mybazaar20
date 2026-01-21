@@ -239,6 +239,66 @@
   height: 1.25rem;
 }
 
+/* ========================================
+   Tab 导航（模仿 SellerDashboard 樣式）
+   ======================================== */
+
+.tab-navigation {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background-color: white;
+}
+
+/* 避免點擊 tab 後留下瀏覽器預設 focus 外框（常被看成底部黑線） */
+.tab-navigation button:focus,
+.tab-navigation button:focus-visible {
+  outline: none;
+}
+
+.tab-navigation button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab-button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1rem 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #757575;
+  transition: all 0.2s;
+  border-bottom: 3px solid transparent;
+}
+
+.tab-button svg {
+  color: inherit;
+}
+
+.tab-button.active {
+  color: #2196F3;
+  border-bottom-color: #2196F3;
+}
+
+.tab-icon-img {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: block;
+  object-fit: contain;
+}
+
+.tab-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
 /* Loading State */
 .merchant-loading {
   min-height: 100vh;
@@ -527,5 +587,197 @@
 @media (max-width: 768px) {
   .merchant-dashboard:has(.merchant-notification-banner) .merchant-main {
     padding-top: 64px;
+  }
+}
+
+
+/* ============================================
+   尚未分配摊位状态
+   ============================================ */
+
+.merchant-not-assigned {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.merchant-not-assigned-card {
+  background: white;
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.merchant-not-assigned-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.merchant-not-assigned-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.merchant-not-assigned-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.merchant-not-assigned-content {
+  margin-bottom: 32px;
+}
+
+.merchant-not-assigned-message {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.merchant-not-assigned-steps {
+  background: #f5f5f5;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: left;
+  margin-bottom: 24px;
+}
+
+.merchant-not-assigned-steps h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.merchant-not-assigned-steps ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.merchant-not-assigned-steps li {
+  font-size: 15px;
+  color: #666;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.merchant-not-assigned-steps li:last-child {
+  margin-bottom: 0;
+}
+
+.merchant-not-assigned-steps strong {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.merchant-not-assigned-info {
+  background: #fff3e0;
+  border-left: 4px solid #f57c00;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: left;
+}
+
+.merchant-not-assigned-info p {
+  font-size: 14px;
+  color: #666;
+  margin: 8px 0;
+}
+
+.merchant-not-assigned-info strong {
+  color: #333;
+  font-weight: 600;
+}
+
+.merchant-not-assigned-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.merchant-not-assigned-actions .merchant-refresh-btn,
+.merchant-not-assigned-actions .merchant-to-customer-btn {
+  flex: 1;
+  max-width: 200px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.merchant-not-assigned-actions .merchant-refresh-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.merchant-not-assigned-actions .merchant-refresh-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.merchant-not-assigned-actions .merchant-to-customer-btn {
+  background: white;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+
+.merchant-not-assigned-actions .merchant-to-customer-btn:hover {
+  background: #f5f5f5;
+  border-color: #d0d0d0;
+}
+
+.merchant-to-customer-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .merchant-not-assigned-card {
+    padding: 24px;
+  }
+
+  .merchant-not-assigned-title {
+    font-size: 20px;
+  }
+
+  .merchant-not-assigned-message {
+    font-size: 14px;
+  }
+
+  .merchant-not-assigned-steps {
+    padding: 16px;
+  }
+
+  .merchant-not-assigned-actions {
+    flex-direction: column;
+  }
+
+  .merchant-not-assigned-actions .merchant-refresh-btn,
+  .merchant-not-assigned-actions .merchant-logout-btn {
+    max-width: 100%;
   }
 }

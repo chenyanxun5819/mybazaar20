@@ -1,46 +1,58 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QrCode, Receipt, Store, LogOut, Menu, X, Bell } from 'lucide-react';
+import { QrCode, Receipt, Store, Bell, Scan } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
+import { useEvent } from '../../contexts/EventContext'; // 🆕 导入 EventContext
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { useMerchantData } from '../../hooks/useMerchantData';
 import { formatAmount } from '../../services/transactionService';
 import MerchantQRCode from '../../components/merchant/MerchantQRCode';
 import MerchantStats from '../../components/merchant/MerchantStats';
 import MerchantTransactions from '../../components/merchant/MerchantTransactions';
 import MerchantProfile from '../../components/merchant/MerchantProfile';
+import MerchantScanner from '../../components/merchant/MerchantScanner'; // ⭐ 新增：扫码收款组件
+import userBagIcon from '../../assets/user-bag.svg';
 import './MerchantDashboard.css';
 
 /**
  * MerchantDashboard - 商家摊位界面 (Mobile)
- * ⭐ 新版本：添加全局通知系统
- * ⭐ 同时支持 merchantOwner 和 merchantAsist 角色
- * merchantOwner: 可查看所有交易、退款、编辑资料
- * merchantAsist: 只能查看自己的交易、不能退款、不能编辑资料
+ * ⭐ 修复版本（2026-01-17）：
+ * 1. 优化通知系统，避免 AbortError
+ * 2. 过滤初始加载，只通知真正的新交易
+ * 3. 使用 useRef 防止重复监听器
  */
 const MerchantDashboard = () => {
   const { orgEventCode } = useParams();
   const navigate = useNavigate();
   const [currentTab, setCurrentTab] = useState('qrcode');
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [organizationId, setOrganizationId] = useState(null);
   const [eventId, setEventId] = useState(null);
-  
-  // ⭐ 新增：通知系统状态
+
+  // 🆕 从 EventContext 获取 event 对象
+  const { event, eventCode } = useEvent();
+
+  // ⭐ 通知系统状态
   const [notification, setNotification] = useState(null);
-  
+
+  // ⭐ 防止重复监听与重复通知
+  const processedTransactionsRef = useRef(new Set());
+  const unsubscribeRef = useRef(null);
+  const notificationTimeoutRef = useRef(null);
+  const isInitialLoadRef = useRef(true);  // ⭐ 新增：标记初始加载
+
   const { userProfile } = useAuth();
 
   // ⭐ 检测用户角色
   const isMerchantOwner = userProfile?.roles?.includes('merchantOwner');
   const isMerchantAsist = userProfile?.roles?.includes('merchantAsist');
-  
-  // 获取用户角色信息（用于传递给子组件）
-  const userRole = isMerchantOwner ? 'merchantOwner' : isMerchantAsist ? 'merchantAsist' : null;
 
-  // 使用 AuthContext 的 userProfile 组织/活动 ID
+  // 获取用户角色信息
+  const userRole = isMerchantOwner ? 'merchantOwner' : isMerchantAsist ? 'merchantAsist' : null;
+  // 设置组织和活动 ID
   useEffect(() => {
     if (userProfile?.organizationId && userProfile?.eventId) {
       setOrganizationId(userProfile.organizationId);
@@ -48,7 +60,6 @@ const MerchantDashboard = () => {
       return;
     }
 
-    // 后备方案：解析 orgEventCode
     if (orgEventCode) {
       const [orgCode, eventCode] = orgEventCode.split('-');
       setOrganizationId(orgCode);
@@ -56,7 +67,6 @@ const MerchantDashboard = () => {
     }
   }, [userProfile?.organizationId, userProfile?.eventId, orgEventCode]);
 
-  // 取得当前用户
   const currentUser = auth.currentUser;
   const {
     merchant,
@@ -73,17 +83,33 @@ const MerchantDashboard = () => {
   );
 
   // ============================================
-  // ⭐ 全局通知系统：监听新的 pending 交易
+  // ⭐ 全局通知系统（修复版）
   // ============================================
   useEffect(() => {
-    if (!merchant?.id || !organizationId || !eventId) return;
+    // ⭐ 条件不满足：清理并返回
+    if (!merchant?.id || !organizationId || !eventId) {
+      if (unsubscribeRef.current) {
+        console.log('🔔 [Dashboard] Cleaning up listener (conditions not met)');
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+        processedTransactionsRef.current.clear();
+        isInitialLoadRef.current = true;
+      }
+      return;
+    }
 
-    console.log('🔔 Setting up notification listener for merchant:', merchant.id);
+    // ⭐ 已经有监听器：避免重复创建
+    if (unsubscribeRef.current) {
+      console.log('🔔 [Dashboard] Listener already exists, skipping setup');
+      return;
+    }
+
+    console.log('🔔 [Dashboard] Setting up notification listener for merchant:', merchant.id);
 
     const transactionsRef = collection(
-      db, 
-      'organizations', organizationId, 
-      'events', eventId, 
+      db,
+      'organizations', organizationId,
+      'events', eventId,
       'transactions'
     );
 
@@ -94,22 +120,46 @@ const MerchantDashboard = () => {
       orderBy('timestamp', 'desc')
     );
 
-    const unsubscribe = onSnapshot(
+    unsubscribeRef.current = onSnapshot(
       q,
       (snapshot) => {
+        console.log('🔔 [Dashboard] Snapshot received, isInitialLoad:', isInitialLoadRef.current);
+        
+        // ⭐ 初始加载：标记所有现有交易为已处理，但不显示通知
+        if (isInitialLoadRef.current) {
+          snapshot.docs.forEach(doc => {
+            processedTransactionsRef.current.add(doc.id);
+            console.log('🔔 [Dashboard] Initial load - marked as processed:', doc.id);
+          });
+          isInitialLoadRef.current = false;
+          console.log('🔔 [Dashboard] Initial load completed, future changes will trigger notifications');
+          return;
+        }
+
+        // ⭐ 后续更新：只处理真正的新交易
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
-            const data = change.doc.data();
+            const docId = change.doc.id;
+
+            // ⭐ 去重：避免同一笔交易重复弹通知
+            if (processedTransactionsRef.current.has(docId)) {
+              console.log('🔔 [Dashboard] Already processed:', docId);
+              return;
+            }
             
+            processedTransactionsRef.current.add(docId);
+
+            const data = change.doc.data();
+
             // ⭐ 新的 pending 交易 - 显示通知
-            console.log('🔔 New pending payment detected:', {
-              id: change.doc.id,
+            console.log('🔔 [Dashboard] 🎉 New pending payment detected:', {
+              id: docId,
               customerName: data.customerName,
               amount: data.amount
             });
 
             showNotification({
-              id: change.doc.id,
+              id: docId,
               customerName: data.customerName || '顾客',
               amount: data.amount
             });
@@ -117,24 +167,37 @@ const MerchantDashboard = () => {
         });
       },
       (error) => {
-        console.error('❌ Error listening to pending payments:', error);
+        // ⭐ 忽略 AbortError（这是正常的清理行为）
+        if (error?.name === 'AbortError' || error?.code === 'cancelled') {
+          console.log('🔔 [Dashboard] Listener aborted (expected during cleanup)');
+          return;
+        }
+        console.error('❌ [Dashboard] Error listening to pending payments:', error);
       }
     );
 
     return () => {
-      console.log('🔔 Cleaning up notification listener');
-      unsubscribe();
+      console.log('🔔 [Dashboard] Cleaning up notification listener');
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      // ⭐ 不清空 processedTransactionsRef，保留已处理记录
     };
   }, [merchant?.id, organizationId, eventId]);
 
   // ⭐ 显示通知（5秒后自动消失）
   const showNotification = (data) => {
-    console.log('🔔 Showing notification:', data);
+    console.log('🔔 [Dashboard] Showing notification:', data);
     setNotification(data);
-    
+
     // 5秒后自动消失
-    setTimeout(() => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = setTimeout(() => {
       setNotification(null);
+      notificationTimeoutRef.current = null;
     }, 5000);
   };
 
@@ -151,14 +214,15 @@ const MerchantDashboard = () => {
         navigate(`/login/${orgEventCode}`);
       } catch (error) {
         console.error('Logout error:', error);
-        alert('登出失败');
+        window.mybazaarShowToast('登出失败');
       }
     }
   };
 
-  // Tab 配置（根据角色调整）
+  // Tab 配置（保留用於其他参考）
   const tabs = [
     { id: 'qrcode', label: 'QR Code', icon: QrCode },
+    { id: 'scanner', label: '扫码收款', icon: Scan },
     { id: 'transactions', label: '交易记录', icon: Receipt },
     ...(isMerchantOwner ? [{ id: 'profile', label: '摊位资料', icon: Store }] : [])
   ];
@@ -196,17 +260,52 @@ const MerchantDashboard = () => {
 
   if (!merchant) {
     return (
-      <div className="merchant-not-found">
-        <div className="merchant-not-found-card">
-          <Store className="merchant-not-found-icon" />
-          <h2 className="merchant-not-found-title">找不到商家资料</h2>
-          <p className="merchant-not-found-message">请联络活动管理员</p>
-          <button
-            onClick={handleLogout}
-            className="merchant-not-found-btn"
-          >
-            返回登入
-          </button>
+      <div className="merchant-not-assigned">
+        <div className="merchant-not-assigned-card">
+          <div className="merchant-not-assigned-icon">
+            <Store />
+          </div>
+          <h2 className="merchant-not-assigned-title">尚未设置摊位资料</h2>
+          <div className="merchant-not-assigned-content">
+            <p className="merchant-not-assigned-message">
+              您已拥有{isMerchantOwner ? '摊主' : '助理'}角色，但还没有被分配到摊位。
+            </p>
+            <div className="merchant-not-assigned-steps">
+              <h3>请按照以下步骤操作：</h3>
+              <ol>
+                <li>联络活动的 <strong>Merchant Manager</strong> 或 <strong>Event Manager</strong></li>
+                <li>
+                  {isMerchantOwner && '请他们为您创建摊位并分配给您'}
+                  {isMerchantAsist && '请他们将您分配到摊位'}
+                </li>
+                <li>分配完成后，刷新此页面即可查看摊位资料</li>
+              </ol>
+            </div>
+            <div className="merchant-not-assigned-info">
+              <p><strong>您的角色：</strong>{isMerchantOwner ? '摊主 (Merchant Owner)' : '助理 (Merchant Assistant)'}</p>
+              <p><strong>用户 ID：</strong>{currentUser?.uid?.substring(0, 12)}...</p>
+            </div>
+          </div>
+          <div className="merchant-not-assigned-actions">
+            <button
+              onClick={() => window.location.reload()}
+              className="merchant-refresh-btn"
+            >
+              刷新页面
+            </button>
+            <button
+              onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
+              className="merchant-to-customer-btn"
+              title="返回消費者頁面"
+            >
+              <img 
+                src={userBagIcon}
+                alt="返回消費者頁面" 
+                className="merchant-to-customer-icon"
+              />
+              <span>返回消費者頁面</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -214,74 +313,63 @@ const MerchantDashboard = () => {
 
   return (
     <div className="merchant-dashboard">
-      {/* Header */}
-      <header className="merchant-header">
-        <div className="merchant-header-container">
-          <div className="merchant-header-content">
-            {/* Logo & Title */}
-            <div className="merchant-logo-section">
-              <div className="merchant-logo">
-                <Store />
-              </div>
-              <div className="merchant-title-section">
-                <h1>{merchant.stallName || '商家管理'}</h1>
-                <p>
-                  {isMerchantOwner && '摊主 (Owner)'}
-                  {isMerchantAsist && '助理 (Assistant)'}
-                  {!isMerchantOwner && !isMerchantAsist && 'Merchant Dashboard'}
-                </p>
-              </div>
-            </div>
+      {/* 🆕 共用 Header 组件（临时，如需自定义，稍后可修改参数） */}
+      <DashboardHeader
+        title={merchant.stallName || '商家管理'}
+        subtitle="Merchant Dashboard"
+        logoUrl={event?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || currentUser?.displayName || '商家'}
+        userPhone={userProfile?.basicInfo?.phoneNumber || currentUser?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={refreshStats}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userRole || userProfile?.roles?.[0]}
+        orgEventCode={orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
-            {/* Desktop Actions */}
-            <div className="merchant-desktop-actions">
-              <button
-                onClick={refreshStats}
-                className="merchant-refresh-btn"
-              >
-                刷新
-              </button>
-              <button
-                onClick={handleLogout}
-                className="merchant-logout-btn"
-              >
-                <LogOut />
-                登出
-              </button>
-            </div>
+      {/* Tab 導航（模仿 SellerDashboard 樣式） */}
+      <nav className="tab-navigation">
+        <button
+          className={`tab-button ${currentTab === 'qrcode' ? 'active' : ''}`}
+          onClick={() => setCurrentTab('qrcode')}
+        >
+          <QrCode className="tab-icon-img" />
+          <span className="tab-label">QR Code</span>
+        </button>
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="merchant-mobile-menu-btn"
-            >
-              {showMobileMenu ? <X /> : <Menu />}
-            </button>
-          </div>
+        <button
+          className={`tab-button ${currentTab === 'scanner' ? 'active' : ''}`}
+          onClick={() => setCurrentTab('scanner')}
+        >
+          <Scan className="tab-icon-img" />
+          <span className="tab-label">扫码收款</span>
+        </button>
 
-          {/* Mobile Menu */}
-          {showMobileMenu && (
-            <div className="merchant-mobile-menu">
-              <button
-                onClick={refreshStats}
-                className="refresh-item"
-              >
-                刷新资料
-              </button>
-              <button
-                onClick={handleLogout}
-                className="logout-item"
-              >
-                登出
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+        <button
+          className={`tab-button ${currentTab === 'transactions' ? 'active' : ''}`}
+          onClick={() => setCurrentTab('transactions')}
+        >
+          <Receipt className="tab-icon-img" />
+          <span className="tab-label">交易记录</span>
+        </button>
+
+        {isMerchantOwner && (
+          <button
+            className={`tab-button ${currentTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('profile')}
+          >
+            <Store className="tab-icon-img" />
+            <span className="tab-label">摊位资料</span>
+          </button>
+        )}
+      </nav>
 
       {/* ⭐ 全局通知横幅 */}
       {notification && (
-        <div 
+        <div
           className="merchant-notification-banner"
           onClick={handleNotificationClick}
         >
@@ -303,31 +391,10 @@ const MerchantDashboard = () => {
 
       {/* Main Content */}
       <main className="merchant-main">
-        {/* Stats Cards */}
         <div className="merchant-stats-section">
           <MerchantStats stats={stats} userRole={userRole} />
         </div>
 
-        {/* Tabs Navigation */}
-        <div className="merchant-tabs-container">
-          <div className="merchant-tabs-nav">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setCurrentTab(tab.id)}
-                  className={`merchant-tab-btn ${currentTab === tab.id ? 'active' : 'inactive'}`}
-                >
-                  <Icon />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Tab Content */}
         <div>
           {currentTab === 'qrcode' && (
             <MerchantQRCode
@@ -337,6 +404,16 @@ const MerchantDashboard = () => {
               userRole={userRole}
             />
           )}
+          {currentTab === 'scanner' && (
+            <MerchantScanner
+              merchant={merchant}
+              organizationId={organizationId}
+              eventId={eventId}
+              userRole={userRole}
+              currentUserId={currentUser?.uid}
+            />
+          )}
+
 
           {currentTab === 'transactions' && (
             <MerchantTransactions
@@ -357,6 +434,13 @@ const MerchantDashboard = () => {
           )}
         </div>
       </main>
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={event}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };

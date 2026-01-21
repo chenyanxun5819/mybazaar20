@@ -4,6 +4,9 @@ import { auth, db, BUILD_TIMESTAMP } from '../../config/firebase';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 Use AuthContext
+import { useEvent } from '../../contexts/EventContext'; // 🆕 导入 EventContext
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
@@ -98,7 +101,7 @@ const SellerManagerDashboard = () => {
         console.log('[SM Dashboard] 用户信息 (AuthContext):', userProfile);
 
         if (!userProfile.roles || !userProfile.roles.includes('sellerManager')) {
-          alert('您没有 Seller Manager 权限');
+          window.mybazaarShowToast('您没有 Seller Manager 权限');
           navigate(`/login/${orgEventCode}`);
           return;
         }
@@ -109,7 +112,7 @@ const SellerManagerDashboard = () => {
 
         if (!Array.isArray(managedDepts) || managedDepts.length === 0) {
           console.warn('[SM Dashboard] ⚠️ 注意：您还没有被分配管理任何部门');
-          // alert('您还没有被分配管理任何部门'); // 🚫 移除阻塞性 Alert，允许进入 Dashboard 查看空状态
+          // window.mybazaarShowToast('您还没有被分配管理任何部门'); // 🚫 移除阻塞性 Alert，允许进入 Dashboard 查看空状态
         }
 
         // 构建兼容的 userInfo 对象
@@ -404,8 +407,12 @@ const SellerManagerDashboard = () => {
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
       console.error('[SM Dashboard] 登出失败:', error);
-      alert('登出失败，请重试');
+      window.mybazaarShowToast('登出失败，请重试');
     }
+  };
+
+  const handleRefresh = () => {
+    window.location.reload();
   };
 
   if (loading) {
@@ -447,35 +454,22 @@ const SellerManagerDashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div>
-            <h1 style={styles.title}>Seller Manager 控制台</h1>
-            <p style={styles.subtitle}>{eventName}</p>
-            <p style={styles.roleLabel}>
-              管理 {safeCurrentUser.managedDepartments?.length || 0} 个部门
-            </p>
-          </div>
-        </div>
-
-        <div style={styles.headerActions}>
-          <div style={styles.userInfo}>
-            <div style={styles.userName}>{userName}</div>
-            <div style={styles.allocationLimit}>
-              每次最高分配: RM {maxPerAllocation}
-            </div>
-          </div>
-          <button style={styles.logoutButton} onClick={handleLogout}>
-            登出
-          </button>
-          {BUILD_TIMESTAMP && (
-            <div style={styles.versionBadge}>
-              {BUILD_TIMESTAMP}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* 🆕 共用 Header 组件（临时，如需自定义，稍后可修改参数） */}
+      <DashboardHeader
+        title="班导师管理"
+        subtitle="Seller Manager Dashboard"
+        logoUrl={eventData?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName}
+        userPhone={userProfile?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.includes('sellerManager') ? 'sellerManager' : userProfile?.roles?.[0]}
+        orgEventCode={orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
       {/* Tabs */}
       <div style={styles.tabs}>
@@ -674,6 +668,13 @@ const SellerManagerDashboard = () => {
           }}
         />
       )}
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter 
+        event={eventData}
+        eventCode={eventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };

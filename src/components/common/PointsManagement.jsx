@@ -184,7 +184,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     } catch (error) {
       console.error('获取数据失败:', error);
-      alert('获取数据失败: ' + error.message);
+      window.mybazaarShowToast('获取数据失败: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -242,14 +242,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 点数分配
   const handleAllocatePoints = async () => {
     if (!pointsAmount || !selectedUser) {
-      alert('请输入分配点数');
+      window.mybazaarShowToast('请输入分配点数');
       return;
     }
 
     const points = parseInt(pointsAmount, 10);
 
     if (isNaN(points) || points <= 0) {
-      alert('请输入有效的点数（大于0）');
+      window.mybazaarShowToast('请输入有效的点数（大于0）');
       return;
     }
 
@@ -261,7 +261,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
-        alert('用户没有可分配点数的角色');
+        window.mybazaarShowToast('用户没有可分配点数的角色');
         return;
       }
 
@@ -287,14 +287,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.error || '分配失败');
 
-      alert(`成功分配 ${points.toLocaleString()} 点数！`);
+      window.mybazaarShowToast(`成功分配 ${points.toLocaleString()} 点数！`);
       setShowPointsModal(false);
       fetchData();
       if (onUpdate) onUpdate();
 
     } catch (error) {
       console.error('❌ 点数分配失败:', error);
-      alert('点数分配失败: ' + error.message);
+      window.mybazaarShowToast('点数分配失败: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -303,14 +303,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 点数回收
   const handleRecallPoints = async () => {
     if (!recallAmount || !selectedUser) {
-      alert('请输入回收点数');
+      window.mybazaarShowToast('请输入回收点数');
       return;
     }
 
     const points = parseInt(recallAmount, 10);
 
     if (isNaN(points) || points <= 0) {
-      alert('请输入有效的点数（大于0）');
+      window.mybazaarShowToast('请输入有效的点数（大于0）');
       return;
     }
 
@@ -322,7 +322,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
-        alert('用户没有可回收点数的角色');
+        window.mybazaarShowToast('用户没有可回收点数的角色');
         return;
       }
 
@@ -348,14 +348,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.error || '回收失败');
 
-      alert(`成功回收 ${points.toLocaleString()} 点数！`);
+      window.mybazaarShowToast(`成功回收 ${points.toLocaleString()} 点数！`);
       setShowRecallModal(false);
       fetchData();
       if (onUpdate) onUpdate();
 
     } catch (error) {
       console.error('❌ 点数回收失败:', error);
-      alert('点数回收失败: ' + error.message);
+      window.mybazaarShowToast('点数回收失败: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -364,14 +364,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 🔧 批量点数分配（修改为按 identityTag 过滤）
   const handleBatchAllocate = async () => {
     if (!selectedIdentityTag || selectedIdentityTag.length === 0 || !batchAmount) {
-      alert('请选择至少一个身份标签并输入分配点数');
+      window.mybazaarShowToast('请选择至少一个身份标签并输入分配点数');
       return;
     }
 
     const points = parseInt(batchAmount, 10);
 
     if (isNaN(points) || points <= 0) {
-      alert('请输入有效的点数（大于0）');
+      window.mybazaarShowToast('请输入有效的点数（大于0）');
       return;
     }
 
@@ -387,7 +387,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     if (targetUsers.length === 0) {
       const selectedTags = selectedIdentityTag.map(tagId => getIdentityTagInfo(tagId).label).join('、');
-      alert(`身份标签 "${selectedTags}" 中没有可分配点数的用户`);
+      window.mybazaarShowToast(`身份标签 "${selectedTags}" 中没有可分配点数的用户`);
       return;
     }
 
@@ -438,14 +438,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       await batch.commit();
 
-      alert(`成功为 ${targetUsers.length} 个用户批量分配点数！\n每人: ${points.toLocaleString()}\n总计: ${totalPoints.toLocaleString()}`);
+      window.mybazaarShowToast(`成功为 ${targetUsers.length} 个用户批量分配点数！\n每人: ${points.toLocaleString()}\n总计: ${totalPoints.toLocaleString()}`);
       setShowBatchModal(false);
       fetchData();
       if (onUpdate) onUpdate();
 
     } catch (error) {
       console.error('❌ 批量分配失败:', error);
-      alert('批量分配失败: ' + error.message);
+      window.mybazaarShowToast('批量分配失败: ' + error.message);
     } finally {
       setIsProcessing(false);
     }

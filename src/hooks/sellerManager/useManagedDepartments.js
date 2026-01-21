@@ -200,3 +200,4 @@ export function useManagedDepartments(organizationId, eventId, managedDepartment
  */
 
 export default useManagedDepartments;
+

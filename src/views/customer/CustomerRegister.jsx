@@ -223,7 +223,7 @@ const CustomerRegister = () => {
 
     // 验证组织和活动ID
     if (!resolvedIds.organizationId || !resolvedIds.eventId) {
-      alert(resolvedIds.error || '缺少必要的活动信息，请从正确的链接访问注册页面');
+      window.mybazaarShowToast(resolvedIds.error || '缺少必要的活动信息，请从正确的链接访问注册页面');
       return;
     }
 
@@ -250,7 +250,7 @@ const CustomerRegister = () => {
       console.log('[CustomerRegister] 注册成功:', result.data);
 
       // 显示成功消息
-      alert('注册成功！即将跳转到登录页面');
+      window.mybazaarShowToast('注册成功！即将跳转到登录页面');
       // 跳转到登录页面
       navigate(`/login/${orgEventCode}`);
 
@@ -265,7 +265,7 @@ const CustomerRegister = () => {
         errorMessage = error.message;
       }
 
-      alert(errorMessage);
+      window.mybazaarShowToast(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -716,3 +716,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default CustomerRegister;
+

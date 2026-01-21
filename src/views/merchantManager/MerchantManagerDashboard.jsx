@@ -6,6 +6,8 @@ import { signOut } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
+import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
+import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { fetchDoc, fetchCollectionWithOrder, fetchCollectionDocs } from '../../utils/firestoreHelpers';
 import CreateMerchantModal from './components/CreateMerchantModal.jsx';
 import EditMerchantModal from './components/EditMerchantModal.jsx';
@@ -181,18 +183,18 @@ const MerchantManagerDashboard = () => {
   const [eventData, setEventData] = useState(null);
   const [organizationId, setOrganizationId] = useState('');
   const [eventId, setEventId] = useState('');
-  
+
   // 筛选和搜索
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all, active, inactive
   const [ownerFilter, setOwnerFilter] = useState('all'); // all, assigned, unassigned
-  
+
   // 模态框
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedMerchant, setSelectedMerchant] = useState(null);
-  
+
   // 统计数据
   const [statistics, setStatistics] = useState({
     totalMerchants: 0,
@@ -233,7 +235,7 @@ const MerchantManagerDashboard = () => {
         console.warn('缺少必要参数:', { organizationId: orgId, eventId: evtId });
         return;
       }
-      
+
       // 使用安全助手加载摊位列表
       const merchantsList = await fetchCollectionWithOrder(
         { field: 'metadata.createdAt', direction: 'desc' },
@@ -243,17 +245,17 @@ const MerchantManagerDashboard = () => {
         evtId,
         'merchants'
       );
-      
+
       setMerchants(merchantsList);
       calculateStatistics(merchantsList);
     } catch (error) {
       console.error('加载摊位列表失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('loadMerchants unauth/perm');
         return;
       }
-      alert('加载摊位列表失败: ' + (error?.message || String(error)));
+      window.mybazaarShowToast('加载摊位列表失败: ' + (error?.message || String(error)));
     } finally {
       setLoading(false);
     }
@@ -269,7 +271,7 @@ const MerchantManagerDashboard = () => {
         console.warn('缺少必要参数:', { organizationId: orgId, eventId: evtId });
         return;
       }
-      
+
       // 使用安全助手加载用户列表
       const users = await fetchCollectionDocs(
         'organizations',
@@ -297,9 +299,9 @@ const MerchantManagerDashboard = () => {
           console.log(`(truncated) showing first 50 of ${merchantOwnerRoleUsers.length}`);
         }
       }
-      
+
       // 筛选 merchantOwner（未被分配的）
-      const owners = users.filter(user => 
+      const owners = users.filter(user =>
         user.roles?.includes('merchantOwner') &&
         !user.merchantOwner?.merchantId
       );
@@ -314,18 +316,33 @@ const MerchantManagerDashboard = () => {
         console.table(excludedMerchantOwners.slice(0, 50));
       }
       console.groupEnd();
-      
-      // 筛选 merchantAsist（所有）
-      const asists = users.filter(user => 
-        user.roles?.includes('merchantAsist')
+
+
+      // 筛选 merchantAsist（未被分配的）
+      const asists = users.filter(user =>
+        user.roles?.includes('merchantAsist') &&
+        !user.merchantAsist?.merchantId  // 👈 关键修复
       );
-      
+
+      // Debug 信息（可选）
+      const excludedMerchantAsists = users
+        .filter(u => Array.isArray(u.roles) && u.roles.includes('merchantAsist'))
+        .filter(u => !!u.merchantAsist?.merchantId)
+        .map(u => ({ id: u.id, merchantAsistMerchantId: u.merchantAsist?.merchantId ?? null }));
+      console.log('availableAsists count (after unassigned filter)', asists.length);
+      if (excludedMerchantAsists.length > 0) {
+        console.log('excluded merchantAsist users because merchantAsist.merchantId is set', excludedMerchantAsists.length);
+        console.table(excludedMerchantAsists.slice(0, 50));
+      }
+      console.groupEnd();
+
       setAvailableOwners(owners);
       setAvailableAsists(asists);
+
     } catch (error) {
       console.error('加载用户列表失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('loadAvailableUsers unauth/perm');
         return;
       }
@@ -352,14 +369,14 @@ const MerchantManagerDashboard = () => {
   // ============================================
   const filterMerchants = () => {
     let filtered = [...merchants];
-    
+
     // 搜索
     if (searchTerm) {
-      filtered = filtered.filter(m => 
+      filtered = filtered.filter(m =>
         m.stallName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     // 营业状态筛选
     if (statusFilter !== 'all') {
       filtered = filtered.filter(m => {
@@ -368,7 +385,7 @@ const MerchantManagerDashboard = () => {
         return true;
       });
     }
-    
+
     // 摊主筛选
     if (ownerFilter !== 'all') {
       filtered = filtered.filter(m => {
@@ -377,7 +394,7 @@ const MerchantManagerDashboard = () => {
         return true;
       });
     }
-    
+
     setFilteredMerchants(filtered);
   };
 
@@ -387,30 +404,30 @@ const MerchantManagerDashboard = () => {
   const handleCreateMerchant = async (merchantData) => {
     try {
       if (authLoading || !authReady) {
-        alert('登录状态尚未就绪，请稍后再试');
+        window.mybazaarShowToast('登录状态尚未就绪，请稍后再试');
         redirectToLogin('createMerchant auth not ready');
         return;
       }
-      
+
       const result = await callFunction('createMerchantHttp', {
         organizationId,
         eventId,
         ...merchantData
       });
-      
+
       console.log('创建摊位成功:', result.data);
-      alert('摊位创建成功！');
+      window.mybazaarShowToast('摊位创建成功！');
       setShowCreateModal(false);
       loadMerchants(); // 刷新列表
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('创建摊位失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('createMerchant unauth/perm');
         return;
       }
-      alert('创建摊位失败: ' + (error?.message || String(error)));
+      window.mybazaarShowToast('创建摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -420,31 +437,31 @@ const MerchantManagerDashboard = () => {
   const handleUpdateMerchant = async (merchantId, updates) => {
     try {
       if (authLoading || !authReady) {
-        alert('登录状态尚未就绪，请稍后再试');
+        window.mybazaarShowToast('登录状态尚未就绪，请稍后再试');
         redirectToLogin('updateMerchant auth not ready');
         return;
       }
-      
+
       const result = await callFunction('updateMerchantHttp', {
         organizationId,
         eventId,
         merchantId,
         updates
       });
-      
+
       console.log('更新摊位成功:', result.data);
-      alert('摊位更新成功！');
+      window.mybazaarShowToast('摊位更新成功！');
       setShowEditModal(false);
       loadMerchants(); // 刷新列表
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('更新摊位失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('updateMerchant unauth/perm');
         return;
       }
-      alert('更新摊位失败: ' + (error?.message || String(error)));
+      window.mybazaarShowToast('更新摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -454,11 +471,11 @@ const MerchantManagerDashboard = () => {
   const handleToggleStatus = async (merchantId, isActive, pauseReason = '') => {
     try {
       if (authLoading || !authReady) {
-        alert('登录状态尚未就绪，请稍后再试');
+        window.mybazaarShowToast('登录状态尚未就绪，请稍后再试');
         redirectToLogin('toggleStatus auth not ready');
         return;
       }
-      
+
       const result = await callFunction('toggleMerchantStatusHttp', {
         organizationId,
         eventId,
@@ -466,18 +483,18 @@ const MerchantManagerDashboard = () => {
         isActive,
         pauseReason
       });
-      
+
       console.log('状态切换成功:', result.data);
-      alert(result.data.message);
+      window.mybazaarShowToast(result.data.message);
       loadMerchants(); // 刷新列表
     } catch (error) {
       console.error('状态切换失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('toggleStatus unauth/perm');
         return;
       }
-      alert('状态切换失败: ' + (error?.message || String(error)));
+      window.mybazaarShowToast('状态切换失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -488,14 +505,14 @@ const MerchantManagerDashboard = () => {
     if (!confirm('确定要删除这个摊位吗？\n\n这将是软删除，数据会保留。')) {
       return;
     }
-    
+
     try {
       if (authLoading || !authReady) {
-        alert('登录状态尚未就绪，请稍后再试');
+        window.mybazaarShowToast('登录状态尚未就绪，请稍后再试');
         redirectToLogin('deleteMerchant auth not ready');
         return;
       }
-      
+
       const result = await callFunction('deleteMerchantHttp', {
         organizationId,
         eventId,
@@ -503,19 +520,19 @@ const MerchantManagerDashboard = () => {
         hardDelete: false,
         deleteReason: '管理员删除'
       });
-      
+
       console.log('删除摊位成功:', result.data);
-      alert('摊位已删除！');
+      window.mybazaarShowToast('摊位已删除！');
       loadMerchants(); // 刷新列表
       loadAvailableUsers(); // 刷新可用用户
     } catch (error) {
       console.error('删除摊位失败:', error);
       if (isUnauthOrPermError(error)) {
-        alert('登录状态已失效，请重新登录');
+        window.mybazaarShowToast('登录状态已失效，请重新登录');
         redirectToLogin('deleteMerchant unauth/perm');
         return;
       }
-      alert('删除摊位失败: ' + (error?.message || String(error)));
+      window.mybazaarShowToast('删除摊位失败: ' + (error?.message || String(error)));
     }
   };
 
@@ -543,8 +560,12 @@ const MerchantManagerDashboard = () => {
       navigate(`/login/${orgEventCode}`, { replace: true });
     } catch (error) {
       console.error('[MerchantManager] 登出失败:', error);
-      alert('登出失败，请重试');
+      window.mybazaarShowToast('登出失败，请重试');
     }
+  };
+
+  const handleRefresh = () => {
+    window.location.reload();
   };
 
   // ============================================
@@ -561,28 +582,22 @@ const MerchantManagerDashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* 顶部标题栏 */}
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>摊位管理</h1>
-          <p style={styles.subtitle}>
-            {getLocalizedText(eventData?.eventName || eventData?.basicInfo?.eventName) || '活动'}
-            {(() => {
-              const dateText =
-                formatDateText(eventData?.eventInfo?.fairDate) ||
-                formatDateText(eventData?.eventDate) ||
-                formatDateText(eventData?.eventInfo?.eventDate);
-              return dateText ? ` - ${dateText}` : '';
-            })()}
-          </p>
-        </div>
-        <button
-          onClick={handleLogout}
-          style={styles.backButton}
-        >
-          ←登出
-        </button>
-      </div>
+      {/* 🆕 共用 Header 组件（临时，如需自定义，稍后可修改参数） */}
+      <DashboardHeader
+        title="摊位管理"
+        subtitle="Merchant Manager Dashboard"
+        logoUrl={eventData?.logoUrl}
+        userName={userProfile?.basicInfo?.chineseName || userProfile?.basicInfo?.englishName}
+        userPhone={userProfile?.basicInfo?.phoneNumber}
+        onLogout={handleLogout}
+        onRefresh={handleRefresh}
+        showRoleSwitcher={true}
+        showRefreshButton={true}
+        currentRole={userProfile?.roles?.includes('merchantManager') ? 'merchantManager' : userProfile?.roles?.[0]}
+        orgEventCode={orgEventCode}
+        availableRoles={userProfile?.roles || []}
+        userInfo={userProfile}
+      />
 
       {/* 统计面板 */}
       <div style={styles.statsGrid}>
@@ -593,7 +608,7 @@ const MerchantManagerDashboard = () => {
             <div style={styles.statLabel}>摊位总数</div>
           </div>
         </div>
-        
+
         <div style={styles.statCard}>
           <div style={styles.statIcon}>✅</div>
           <div>
@@ -601,7 +616,7 @@ const MerchantManagerDashboard = () => {
             <div style={styles.statLabel}>营业中</div>
           </div>
         </div>
-        
+
         <div style={styles.statCard}>
           <div style={styles.statIcon}>💰</div>
           <div>
@@ -609,7 +624,7 @@ const MerchantManagerDashboard = () => {
             <div style={styles.statLabel}>总收入</div>
           </div>
         </div>
-        
+
         <div style={styles.statCard}>
           <div style={styles.statIcon}>📈</div>
           <div>
@@ -617,7 +632,7 @@ const MerchantManagerDashboard = () => {
             <div style={styles.statLabel}>今日收入</div>
           </div>
         </div>
-        
+
         <div style={styles.statCard}>
           <div style={styles.statIcon}>👥</div>
           <div>
@@ -625,7 +640,7 @@ const MerchantManagerDashboard = () => {
             <div style={styles.statLabel}>助理总数</div>
           </div>
         </div>
-        
+
         <div style={styles.statCard}>
           <div style={styles.statIcon}>🤝</div>
           <div>
@@ -643,7 +658,7 @@ const MerchantManagerDashboard = () => {
         >
           ➕ 创建摊位
         </button>
-        
+
         <div style={styles.filters}>
           {/* 搜索 */}
           <input
@@ -653,7 +668,7 @@ const MerchantManagerDashboard = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={styles.searchInput}
           />
-          
+
           {/* 营业状态筛选 */}
           <select
             value={statusFilter}
@@ -664,7 +679,7 @@ const MerchantManagerDashboard = () => {
             <option value="active">营业中</option>
             <option value="inactive">已暂停</option>
           </select>
-          
+
           {/* 摊主筛选 */}
           <select
             value={ownerFilter}
@@ -675,7 +690,7 @@ const MerchantManagerDashboard = () => {
             <option value="assigned">已指定摊主</option>
             <option value="unassigned">未指定摊主</option>
           </select>
-          
+
           {/* 刷新按钮 */}
           <button
             onClick={loadMerchants}
@@ -830,6 +845,13 @@ const MerchantManagerDashboard = () => {
           }}
         />
       )}
+
+      {/* 🆕 共用 Footer 组件 */}
+      <DashboardFooter
+        event={ctxEvent}
+        eventCode={orgEventCode}
+        showEventInfo={true}
+      />
     </div>
   );
 };
@@ -1065,3 +1087,4 @@ const styles = {
 };
 
 export default MerchantManagerDashboard;
+

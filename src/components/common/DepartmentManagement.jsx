@@ -414,3 +414,4 @@ const styles = {
 };
 
 export default DepartmentManagement;
+

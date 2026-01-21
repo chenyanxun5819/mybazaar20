@@ -315,3 +315,4 @@ export const validatePaymentAmount = (amount, customerBalance) => {
     error: null
   };
 };
+

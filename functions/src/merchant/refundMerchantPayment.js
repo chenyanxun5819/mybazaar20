@@ -2,6 +2,11 @@
  * refundMerchantPayment.js
  * 退款 - 仅 merchantOwner 可以退款已完成的交易
  * 
+ * ⭐ 修复版本（2026-01-17）
+ * 修复内容：
+ * 1. 修正交易字段名称：transactionType（不是 type）
+ * 2. 修正 statusHistory 时间戳：使用 Date 对象
+ * 
  * 功能：
  * 1. 验证交易状态为 completed
  * 2. 验证调用者权限（仅 merchantOwner）
@@ -66,7 +71,8 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     }
 
     // ========== 6. 验证交易类型 ==========
-    if (transactionData.type !== 'customer_to_merchant') {
+    // ⭐ 修复：改为 transactionType（匹配 Firestore 架构）
+    if (transactionData.transactionType !== 'customer_to_merchant') {
       throw new HttpsError('invalid-argument', '交易类型错误');
     }
 
@@ -135,14 +141,20 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     const collectedBy = transactionData.collectedBy;
 
     // ========== 10. 使用事务执行操作 ==========
+    // ⭐ 修复：声明 Date 对象用于 statusHistory
+    const now = new Date();
+
     await db.runTransaction(async (transaction) => {
       // 10.1 退回 Customer 点数
-      const newCustomerBalance = (customerData.customer?.availablePoints || 0) + amount;
-      const newCustomerTotalSpent = Math.max(0, (customerData.customer?.totalPointsSpent || 0) - amount);
+      // ⭐ 修复：改为 customer.pointsAccount.availablePoints（匹配 confirmMerchantPayment）
+      const newCustomerBalance = (customerData.customer?.pointsAccount?.availablePoints || 0) + amount;
+      const newCustomerTotalSpent = Math.max(0, (customerData.customer?.pointsAccount?.totalSpent || 0) - amount);
 
       transaction.update(customerRef, {
-        'customer.availablePoints': newCustomerBalance,
-        'customer.totalPointsSpent': newCustomerTotalSpent,
+        'customer.pointsAccount.availablePoints': newCustomerBalance,
+        'customer.pointsAccount.totalSpent': newCustomerTotalSpent,
+        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(-1),
+        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(-1),
         'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -183,6 +195,7 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
       });
 
       // 10.4 更新交易状态
+      // ⭐ 修复：statusHistory 中不能使用 FieldValue.serverTimestamp()
       transaction.update(transactionRef, {
         status: 'refunded',
         refundedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -190,7 +203,7 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
         refundReason: refundReason,
         statusHistory: admin.firestore.FieldValue.arrayUnion({
           status: 'refunded',
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          timestamp: now,  // ✅ 使用 Date 对象
           updatedBy: auth.uid,
           updaterRole: 'merchantOwner',
           note: refundReason
@@ -238,7 +251,8 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
       transactionId,
       amount,
       refundedBy: auth.uid,
-      newCustomerBalance: (customerData.customer?.availablePoints || 0) + amount
+      // ⭐ 修復：使用正確的字段路徑
+      newCustomerBalance: (customerData.customer?.pointsAccount?.availablePoints || 0) + amount
     };
 
   } catch (error) {

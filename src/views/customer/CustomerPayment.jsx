@@ -861,3 +861,4 @@ if (typeof document !== 'undefined') {
 }
 
 export default CustomerPayment;
+

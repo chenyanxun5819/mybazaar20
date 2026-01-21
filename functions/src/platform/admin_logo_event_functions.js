@@ -458,7 +458,7 @@ exports.resetEventUsersHttp = onRequest(
           return res.status(404).json({ error: '活動不存在' });
         }
 
-        const eventData = eventDoc.data();
+        const _eventData = eventDoc.data();
 
         // ========== 步驟 6: 刪除所有 users ==========
         const usersRef = eventRef.collection('users');

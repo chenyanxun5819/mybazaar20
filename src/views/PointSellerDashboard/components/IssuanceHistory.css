@@ -4,8 +4,14 @@
  */
 
 .issuance-history {
-  max-width: 1400px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
+  padding: 0 1rem 2rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* ===== 头部 ===== */
@@ -13,7 +19,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin: 0 auto 24px;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
 }
 
 .history-header h2 {
@@ -46,7 +55,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
-  margin-bottom: 32px;
+  margin: 0 auto 32px;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
 }
 
 .stat-card {
@@ -117,8 +129,12 @@
 .total-stats {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 32px;
+  padding: 24px 16px;
+  margin: 0 auto 32px;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .total-stats h3 {
@@ -158,8 +174,11 @@
 .filter-section {
   display: flex;
   gap: 16px;
-  margin-bottom: 24px;
+  margin: 0 auto 24px;
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
 }
 
 .filter-buttons {
@@ -211,6 +230,13 @@
 }
 
 /* ===== 记录列表 ===== */
+.records-section {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
 .records-section h3 {
   font-size: 18px;
   font-weight: 700;
@@ -222,6 +248,8 @@
   overflow-x: auto;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .records-table {
@@ -283,12 +311,16 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card-number,
 .customer-name {
   font-weight: 600;
   color: #2d3748;
+  word-break: break-word;
+  overflow: hidden;
 }
 
 .card-id,
@@ -296,6 +328,8 @@
   font-size: 12px;
   color: #718096;
   font-family: 'Courier New', monospace;
+  word-break: break-all;
+  overflow: hidden;
 }
 
 /* ===== 其他单元格 ===== */
@@ -350,6 +384,10 @@
 
 /* ===== 响应式设计 ===== */
 @media (max-width: 768px) {
+  .stats-cards {
+    grid-template-columns: 1fr;
+  }
+
   .filter-section {
     flex-direction: column;
   }
@@ -368,7 +406,7 @@
 
   .records-table th,
   .records-table td {
-    padding: 12px;
+    padding: 12px 8px;
   }
 
   .card-content .value {
@@ -377,5 +415,29 @@
 
   .total-value {
     font-size: 20px;
+  }
+
+  .total-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .history-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .refresh-button {
+    width: 100%;
+  }
+
+  .card-content .value {
+    font-size: 20px;
+  }
+
+  .total-value {
+    font-size: 18px;
   }
 }

@@ -22,7 +22,8 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
   }
 
   const { orgCode, eventCode } = req.body || {};
-  const orgCodeLower = String(orgCode || '').trim().toLowerCase();
+  const orgCodeRaw = String(orgCode || '').trim();
+  const orgCodeLower = orgCodeRaw.toLowerCase();
   const eventCodeStr = String(eventCode || '').trim();
 
   if (!orgCodeLower || !eventCodeStr) {
@@ -41,6 +42,29 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (orgSnapshot.empty) {
+      // 向后兼容：若传入的是组织/活动 Firestore 文档 ID（orgId-eventId），直接按 docId 验证
+      const orgByIdSnap = await db.collection('organizations').doc(orgCodeRaw).get();
+      if (orgByIdSnap.exists) {
+        const evtByIdSnap = await db
+          .collection('organizations')
+          .doc(orgCodeRaw)
+          .collection('events')
+          .doc(eventCodeStr)
+          .get();
+
+        if (evtByIdSnap.exists) {
+          return res.status(200).json({
+            success: true,
+            organizationId: orgCodeRaw,
+            eventId: eventCodeStr
+          });
+        }
+
+        return res.status(404).json({
+          error: { message: `找不到活动代码: ${eventCodeStr}` }
+        });
+      }
+
       return res.status(404).json({
         error: { message: `找不到组织代码: ${orgCodeLower}` }
       });
@@ -58,6 +82,22 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (eventSnapshot.empty) {
+      // 向后兼容：允许 eventCodeStr 其实是 eventId
+      const evtByIdSnap = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('events')
+        .doc(eventCodeStr)
+        .get();
+
+      if (evtByIdSnap.exists) {
+        return res.status(200).json({
+          success: true,
+          organizationId,
+          eventId: eventCodeStr
+        });
+      }
+
       return res.status(404).json({
         error: { message: `找不到活动代码: ${eventCodeStr}` }
       });

@@ -1889,7 +1889,7 @@ exports.addDepartment = onRequest({ region: 'asia-southeast1' }, async (req, res
       const callerUid = decodedToken.uid;
       const db = getDb();
       const orgRef = db.collection('organizations').doc(organizationId);
-      const eventsSnapshot = await orgRef.collection('events').get();
+      // eventsSnapshot not required here; removed to avoid unused variable lint
 
       // ✅ 使用通用权限检查函数
       const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
@@ -1982,7 +1982,7 @@ exports.deleteDepartment = onRequest({ region: 'asia-southeast1' }, async (req, 
       const callerUid = decodedToken.uid;
       const db = getDb();
       const orgRef = db.collection('organizations').doc(organizationId);
-      const eventsSnapshot = await orgRef.collection('events').get();
+      // eventsSnapshot not required here; removed to avoid unused variable lint
 
       // ✅ 使用通用权限检查函数
       const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
@@ -2009,7 +2009,8 @@ exports.deleteDepartment = onRequest({ region: 'asia-southeast1' }, async (req, 
 
       // Clear department from users
       let clearedUsersCount = 0;
-      for (const eventDoc of eventsSnapshot.docs) {
+      const _eventsSnapshot = await orgRef.collection('events').get();
+      for (const eventDoc of _eventsSnapshot.docs) {
         const usersSnapshot = await eventDoc.ref.collection('users')
           .where('identityInfo.department', '==', deptToDelete.name)
           .get();
@@ -2080,7 +2081,7 @@ exports.reorderDepartments = onRequest({ region: 'asia-southeast1' }, async (req
       const callerUid = decodedToken.uid;
       const db = getDb();
       const orgRef = db.collection('organizations').doc(organizationId);
-      const eventsSnapshot = await orgRef.collection('events').get();
+      const _eventsSnapshot = await orgRef.collection('events').get();
 
       // ✅ 使用通用权限检查函数
       const hasPermission = await checkEventManagerPermission(callerUid, orgRef);
@@ -2811,7 +2812,8 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       const currentRoles = userData.roles || [];
 
       // 检查是否是 Event Manager 修改自己的角色
-      const isModifyingSelf = (callerUid === userId) || 
+      // mark potential self-modification check (prefixed to avoid unused-var lint)
+      const _isModifyingSelf = (callerUid === userId) || 
         (callerUid === userData.authUid) ||
         (callerUid === `phone_${userData.basicInfo?.phoneNumber}`) ||
         (callerUid === `eventManager_${userData.basicInfo?.phoneNumber}`);
