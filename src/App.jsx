@@ -225,13 +225,15 @@ function App() {
 
       {/* Point Seller Dashboard */}
       <Route path="/pointseller/:orgEventCode/dashboard" element={
-        <EventProvider>
-          <AuthProvider>
-            <ProtectedRoute allowedRoles={["pointSeller"]}>
-              <PointSellerDashboard />
-            </ProtectedRoute>
-          </AuthProvider>
-        </EventProvider>
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["pointSeller"]}>
+                <PointSellerDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
       } />
 
       <Route path="/merchant/:orgEventCode/dashboard" element={
@@ -365,4 +367,3 @@ function App() {
 }
 
 export default App;
-

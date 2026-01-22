@@ -10,8 +10,8 @@ import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 �
 import AllocatePoints from './components/AllocatePoints';
 import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
-import SubmitCash from './components/SubmitCash';
 import CollectCash from './components/CollectCash';
+import SubmitCash from './components/SubmitCash'; // ✅ 使用舊組件
 import AllocationHistory from './components/AllocationHistory'; // ✅ 新增
 /**
  * Seller Manager Dashboard (完整版 v2.0)
@@ -122,6 +122,11 @@ const SellerManagerDashboard = () => {
         };
 
         setCurrentUser(userInfo);
+        setUserInfo({
+          userId: userProfile.userId,
+          userName: userProfile.basicInfo?.chineseName || userProfile.basicInfo?.englishName,
+          ...userInfo
+        });
         setEventId(userProfile.eventId);
 
         // 加载活动信息
@@ -598,12 +603,7 @@ const SellerManagerDashboard = () => {
 
         {/* 🆕 新增Tab内容 */}
         {activeTab === 'submit' && (
-          <div style={styles.section}>
-            <SubmitCash
-              userInfo={safeCurrentUser}
-              eventData={safeEventData}
-            />
-          </div>
+          <SubmitCash userInfo={safeCurrentUser} eventData={safeEventData} />
         )}
 
         {activeTab === 'sellers' && (

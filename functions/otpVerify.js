@@ -597,11 +597,11 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
     // === 判断场景类型 ===
     // 仅当 scenario 明确为 login 时，才执行“登录场景：生成 Custom Token”。
     // universalLogin 等场景只做 OTP 验证，不应强制去 users 集合查找（eventManager 可能不在 users）。
-    const isLoginScenario = otpData.scenario === 'login';
+    const isLoginScenario = otpData.scenario === 'login' || otpData.scenario === 'universalLogin';
 
     // === 登录场景：生成 Custom Token（兼容旧逻辑）===
     if (isLoginScenario) {
-      console.log('[verifyOtpHttp] 登录场景，执行完整用户验证...');
+      console.log('[verifyOtpHttp] 登录场景，执行完整用户验证...', { scenario: otpData.scenario });
 
       // 查找组织
       const orgQuery = await db.collection('organizations')

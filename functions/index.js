@@ -52,6 +52,9 @@ const { claimAndConfirmCashSubmission } = require('./src/cashier/Claimandconfirm
 // Cash Submission (callable)
 const { submitCashToFinance } = require('./src/cash/Submitcashtofinance');
 const { submitCashToSellerManager } = require('./src/cash/Submitcashtosellermanager');
+// 新增 CashSubmission/Confirmation functions
+const { createCashSubmission } = require('./src/cashSubmission/createCashSubmission');
+const { confirmCashSubmissionByCashier } = require('./src/cashier/confirmCashSubmissionByCashier');
 
 // 導入 Customer 相關 callable 函式
 const {
@@ -135,6 +138,7 @@ exports.confirmCashSubmission = financeManagerFunctions.confirmCashSubmission;
 
 // Cashier callable functions
 exports.getCashierStats = financeManagerFunctions.getCashierStats;
+exports.confirmCashSubmissionByCashier = confirmCashSubmissionByCashier;
 
 // Finance: claim + confirm cash submission (callable)
 exports.claimAndConfirmCashSubmission = claimAndConfirmCashSubmission;
@@ -142,6 +146,7 @@ exports.claimAndConfirmCashSubmission = claimAndConfirmCashSubmission;
 // Cash Submission (callable)
 exports.submitCashToFinance = submitCashToFinance;
 exports.submitCashToSellerManager = submitCashToSellerManager;
+exports.createCashSubmission = createCashSubmission;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
 exports.createCustomer = createCustomer;
 exports.processCustomerPayment = processCustomerPayment;

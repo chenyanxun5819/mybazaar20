@@ -391,10 +391,6 @@ const MerchantDashboard = () => {
 
       {/* Main Content */}
       <main className="merchant-main">
-        <div className="merchant-stats-section">
-          <MerchantStats stats={stats} userRole={userRole} />
-        </div>
-
         <div>
           {currentTab === 'qrcode' && (
             <MerchantQRCode
@@ -426,11 +422,16 @@ const MerchantDashboard = () => {
           )}
 
           {currentTab === 'profile' && isMerchantOwner && (
-            <MerchantProfile
-              merchant={merchant}
-              onUpdate={updateProfile}
-              onToggleStatus={toggleStatus}
-            />
+            <>
+              <div className="merchant-stats-section">
+                <MerchantStats stats={stats} userRole={userRole} />
+              </div>
+              <MerchantProfile
+                merchant={merchant}
+                onUpdate={updateProfile}
+                onToggleStatus={toggleStatus}
+              />
+            </>
           )}
         </div>
       </main>

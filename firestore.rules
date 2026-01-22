@@ -280,6 +280,69 @@ service cloud.firestore {
         }
         
         // ========================================================================
+        // Cash Submissions (现金上交记录 - 待认领池子模式 - Event 级别集合)
+        // ⭐ 新增：2026-01-22
+        // ========================================================================
+        
+        match /cashSubmissions/{submissionId} {
+          /**
+           * ✅ 读取规则
+           * 1. 提交者可以读取自己的记录
+           * 2. Cashier 可以读取所有记录（用于待认领池子和历史查询）
+           * 3. Event Manager 可以读取所有记录
+           * 4. 已接单的 FM（receivedBy）可以读取该记录
+           */
+          allow read: if isAuthenticated() &&
+                         (resource.data.submittedBy == request.auth.token.userId ||
+                          isCashier(organizationId, eventId) ||
+                          isEventManager(organizationId, eventId) ||
+                          (resource.data.receivedBy != null && resource.data.receivedBy == request.auth.token.userId));
+          
+          /**
+           * ✅ 创建规则
+           * 1. Seller / Seller Manager / Point Seller 可以创建上交记录
+           * 2. 必须包含必填字段
+           * 3. 状态必须是 'pending'
+           * 4. receivedBy 初始必须是 null（待认领池子）
+           * 5. 提交者必须是当前登录用户
+           */
+          allow create: if isAuthenticated() &&
+                           request.resource.data.keys().hasAll([
+                             'submittedBy', 'submitterRole', 'submitterName', 'amount',
+                             'status', 'eventId', 'organizationId', 'submittedAt'
+                           ]) &&
+                           request.resource.data.submittedBy == request.auth.token.userId &&
+                           request.resource.data.amount > 0 &&
+                           request.resource.data.status == 'pending' &&
+                           request.resource.data.receivedBy == null &&
+                           request.resource.data.organizationId == organizationId &&
+                           request.resource.data.eventId == eventId &&
+                           (hasRole('seller') || hasRole('sellerManager') || hasRole('pointSeller'));
+          
+          /**
+           * ✅ 更新规则
+           * 1. Cashier 可以接单：更新 receivedBy / status / confirmedAt 等
+           * 2. Event Manager 可以更新任何字段用于管理
+           * 3. 提交者只能在待认领时取消（status: cancelled）
+           * 4. 更新必须是限制字段，防止篡改
+           */
+          allow update: if isCashier(organizationId, eventId) &&
+                           onlyAllowedFields(['status', 'receivedBy', 'receiverName', 'confirmedAt', 'note', 'updatedAt']) ||
+                           isEventManager(organizationId, eventId) ||
+                           (isAuthenticated() &&
+                            request.auth.token.userId == resource.data.submittedBy &&
+                            resource.data.status == 'pending' &&
+                            request.resource.data.status == 'cancelled' &&
+                            onlyAllowedFields(['status', 'updatedAt']));
+          
+          /**
+           * ✅ 删除规则
+           * 只能通过 Cloud Functions 或 Event Manager
+           */
+          allow delete: if isEventManager(organizationId, eventId);
+        }
+        
+        // ========================================================================
         // Department Stats (部门统计 - Event 级别集合)
         // ========================================================================
         
@@ -397,59 +460,44 @@ service cloud.firestore {
         
         // ========================================================================
         // Point Cards (点数卡 - Event 级别集合)
+        // ⭐ 修正日期：2025-01-20
+        // ⭐ 核心原则：所有写入操作必须通过 Cloud Functions
         // ========================================================================
         
         match /pointCards/{cardId} {
           /**
-           * 辅助函数：检查是否为 PointSeller
+           * ✅ 创建规则：
+           * 只能通过 Cloud Functions 创建
+           * 禁止前端直接创建，防止伪造点数卡
            */
-          function isPointSeller() {
-            return isAuthenticated() && 
-                   hasRole('pointSeller') &&
-                   isInContext(organizationId, eventId);
-          }
+          allow create: if false;
           
           /**
-           * 辅助函数：检查是否为 Merchant
+           * ✅ 读取规则：
+           * 1. 任何认证用户可以读取（用于查询余额）
+           *    - Merchant 扫码后查询点数卡余额
+           *    - Customer 查询自己的点数卡余额
+           * 2. PointSeller 可以读取自己发行的点数卡
+           * 3. Event Manager 可以读取所有点数卡
+           * 4. Cashier 可以读取所有点数卡（用于财务审计）
+           * 
+           * 注意：读取不会泄露敏感信息，点数卡是不记名的
            */
-          function isMerchant() {
-            return isAuthenticated() && 
-                   hasRole('merchant') &&
-                   isInContext(organizationId, eventId);
-          }
+          allow read: if isAuthenticated() && isInContext(organizationId, eventId);
           
           /**
-           * 创建规则：
-           * PointSeller 可以创建点数卡（必须设置自己为 issuer）
+           * ✅ 更新规则：
+           * 只能通过 Cloud Functions 更新
+           * 禁止前端直接修改余额，防止恶意篡改
+           * 
+           * 所有余额变动必须经过后端验证：
+           * - processPointCardPayment (Merchant 扣款)
+           * - topupFromPointCard (Customer 充值)
            */
-          allow create: if isPointSeller() && 
-                           request.resource.data.issuer.pointSellerId == request.auth.uid &&
-                           request.resource.data.organizationId == organizationId &&
-                           request.resource.data.eventId == eventId;
+          allow update: if false;
           
           /**
-           * 读取规则：
-           * 1. PointSeller 可以读取自己发行的点数卡
-           * 2. Merchant 可以读取所有点数卡（用于扫码收款验证余额）
-           * 3. Cashier 可以读取所有点数卡（用于财务管理）
-           * 4. Event Manager 可以读取所有点数卡（用于系统管理）
-           */
-          allow read: if (isPointSeller() && 
-                         resource.data.issuer.pointSellerId == request.auth.uid) ||
-                         isMerchant() ||
-                         isCashier(organizationId, eventId) ||
-                         isEventManager(organizationId, eventId);
-          
-          /**
-           * 更新规则：
-           * 1. Merchant 可以更新点数卡余额（扫码收款时）
-           * 2. 只能修改余额相关字段
-           */
-          allow update: if isMerchant() &&
-                           onlyAllowedFields(['balance', 'transactions', 'updatedAt', 'metadata']);
-          
-          /**
-           * 删除规则：
+           * ✅ 删除规则：
            * 只能通过 Cloud Functions 或 Event Manager
            */
           allow delete: if isEventManager(organizationId, eventId);

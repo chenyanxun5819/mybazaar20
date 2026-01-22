@@ -29,6 +29,18 @@ const ProtectedRoute = ({ allowedRoles = [], children }) => {
     }
   }
 
+  // ✅ 已登入但 Profile/roles 尚未就緒：先顯示 loading，避免瞬間閃過「權限不足」
+  if (allowedRoles.length > 0) {
+    const rolesReady = Array.isArray(userProfile?.roles) && userProfile.roles.length > 0;
+    if (!rolesReady) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <p>加载中...</p>
+        </div>
+      );
+    }
+  }
+
   const roles = userProfile?.roles || [];
   const has = allowedRoles.some(r => roles.includes(r));
 

@@ -359,6 +359,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      // ⭐ 關鍵：任何 Auth 狀態切換都先進入 loading，避免路由守衛在 profile 未就緒時誤判「權限不足」
+      setLoading(true);
+
       // ✅ 检测是否在登录页面或密码设置页面（用于静默处理警告）
       const isLoginPage = window.location.pathname.includes('/login') || 
                           window.location.pathname.includes('/setup-passwords');
@@ -408,12 +411,30 @@ export const AuthProvider = ({ children }) => {
 
           // ✅ 步驟 4: 從 Firestore 加載完整用戶數據 (基於 URL 的 Context)
           if (profile.needsFirestoreLoad) {
-            const loadedProfile = await loadUserProfile(user.uid);
-            if (loadedProfile) {
-              profile = loadedProfile;
-            } else {
-              console.warn('[AuthContext] ⚠️ 在當前活動中找不到該用戶的數據');
-              profile = null;
+            try {
+              const loadedProfile = await loadUserProfile(user.uid);
+              if (loadedProfile) {
+                profile = loadedProfile;
+              } else {
+                console.warn('[AuthContext] ⚠️ 在當前活動中找不到該用戶的數據（Firestore 查詢返回空）');
+                profile = null;
+              }
+            } catch (firestoreError) {
+              console.warn('[AuthContext] ⚠️ Firestore 讀取失敗（可能是權限問題）:', firestoreError?.message);
+              // 降級：嘗試從 localStorage 恢復
+              console.log('[AuthContext] 📱 嘗試從 localStorage 恢復用戶資料...');
+              const storedUser = localStorage.getItem('currentUser');
+              if (storedUser) {
+                try {
+                  profile = JSON.parse(storedUser);
+                  console.log('[AuthContext] ✅ 從 localStorage 恢復用戶資料成功');
+                } catch (parseError) {
+                  console.error('[AuthContext] localStorage 恢復失敗:', parseError);
+                  profile = null;
+                }
+              } else {
+                profile = null;
+              }
             }
           }
 

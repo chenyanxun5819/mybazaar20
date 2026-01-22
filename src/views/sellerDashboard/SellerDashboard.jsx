@@ -170,7 +170,6 @@ function SellerDashboard() {
         {activeTab === 'overview' && <PointsOverview />}
         {activeTab === 'sale' && <MakeSale />}
         {activeTab === 'history' && <TransactionHistory />}
-        {/* 🔧 修复：不再传递userInfo，组件自己用useSellerStats获取数据 */}
         {activeTab === 'submit' && <SellerSubmitCash />}
       </main>
       

@@ -806,7 +806,11 @@ const UniversalLogin = () => {
         <div style={styles.loginCard}>
           {/* Logo 和标题 */}
           <div style={styles.header}>
-            <div style={styles.logo}>🔐</div>
+            {eventMeta?.logoUrl ? (
+              <img src={eventMeta.logoUrl} alt="Event Logo" style={styles.logo} />
+            ) : (
+              <div style={styles.logo}>🔐</div>
+            )}
             <h1 style={styles.title}>验证码验证</h1>
             <p style={styles.subtitle}>
               验证码已发送至 {formData.phoneNumber}
@@ -814,10 +818,12 @@ const UniversalLogin = () => {
           </div>
 
           <form onSubmit={handleOtpVerify} style={styles.form}>
-            <div style={styles.formGroup}>
+            <div style={{ ...styles.formGroup, alignItems: 'center' }}>
               <label style={styles.label}>请输入6位验证码</label>
               <input
-                type="text"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 style={styles.otpInput}
                 value={otp}
                 onChange={(e) => {
@@ -831,6 +837,7 @@ const UniversalLogin = () => {
                 maxLength="6"
                 disabled={otpLoading}
                 autoFocus
+                autoComplete="one-time-code"
               />
             </div>
 
@@ -1097,14 +1104,19 @@ const styles = {
     transition: 'border-color 0.2s'
   },
   otpInput: {
-    padding: '1.5rem',
+    padding: '0.75rem 1rem',
+    width: '260px',
+    maxWidth: '100%',
+    boxSizing: 'border-box',
     border: '2px solid #e5e7eb',
     borderRadius: '8px',
-    fontSize: '2rem',
+    fontSize: '1.25rem',
     textAlign: 'center',
-    letterSpacing: '0.5rem',
+    letterSpacing: '0.35rem',
     fontFamily: 'monospace',
     outline: 'none',
+    display: 'block',
+    margin: '0.25rem auto',
     transition: 'border-color 0.2s'
   },
   hint: {

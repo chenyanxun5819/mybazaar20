@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 import UsersIcon from '../../assets/users.svg?react';
 import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
@@ -27,9 +27,38 @@ import UserBagIcon from '../../assets/user-bag.svg?react';
  */
 const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const [alignRight, setAlignRight] = useState(false);
+  const [displayRole, setDisplayRole] = useState(currentRole);
+
+  // 从 URL 路由推断当前角色
+  const inferRoleFromUrl = () => {
+    const pathname = location.pathname;
+    if (pathname.includes('/customer/')) return 'customer';
+    if (pathname.includes('/seller/')) return 'seller';
+    if (pathname.includes('/pointseller/')) return 'pointSeller';
+    if (pathname.includes('/cashier/')) return 'cashier';
+    if (pathname.includes('/event-manager/')) return 'eventManager';
+    if (pathname.includes('/seller-manager/')) return 'sellerManager';
+    if (pathname.includes('/merchant-manager/')) return 'merchantManager';
+    if (pathname.includes('/customer-manager/')) return 'customerManager';
+    if (pathname.includes('/platform-admin/')) return 'platformAdmin';
+    
+    // 对于 /merchant/ 路径，需要从 userProfile 中区分 merchantOwner 和 merchantAsist
+    if (pathname.includes('/merchant/')) {
+      if (userInfo?.roles?.includes('merchantAsist')) return 'merchantAsist';
+      if (userInfo?.roles?.includes('merchantOwner')) return 'merchantOwner';
+      // 如果 userInfo 不可用，则从 currentRole 判断
+      return currentRole;
+    }
+    
+    return currentRole;
+  };
+
+  const urlInferredRole = inferRoleFromUrl();
+  const actualCurrentRole = urlInferredRole || currentRole;
 
   const isMobile = (() => {
     if (typeof window === 'undefined') return false;
@@ -114,13 +143,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
         : (Array.isArray(resolvedUserInfo.roles) ? resolvedUserInfo.roles : []);
 
   const resolvedAvailableRoles = Array.from(new Set(
-    (currentRole ? [currentRole, ...resolvedAvailableRolesRaw] : [...resolvedAvailableRolesRaw])
+    (actualCurrentRole ? [actualCurrentRole, ...resolvedAvailableRolesRaw] : [...resolvedAvailableRolesRaw])
       .filter(Boolean)
   ));
 
   // 设备过滤规则（按你的要求）
   // - Desktop: 只显示 manager + cashier
-  // - Mobile: 只显示非 manager（手机角色），并包含 pointSeller
+  // - : 只显示非 manager（手机角色），并包含 pointSeller
   const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier'];
   const mobileOnlyRoles = ['seller', 'customer', 'merchantOwner', 'merchantAsist', 'pointSeller'];
 
@@ -144,10 +173,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
    * 切换角色
    */
   const handleRoleSwitch = (newRole) => {
-    if (newRole === currentRole) {
+    if (newRole === displayRole) {
       setIsOpen(false);
       return;
     }
+
+    // 立即更新本地显示，避免UI闪烁
+    setDisplayRole(newRole);
 
     // 更新 localStorage
     const newStorageKey = storageKeys[newRole];
@@ -167,9 +199,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
       : '';
 
     if (route && (!route.includes('/undefined/') && !route.includes('/null/') && !route.endsWith('//dashboard'))) {
-      console.log('[RoleSwitcher] 切换角色:', currentRole, '->', newRole);
+      console.log('[RoleSwitcher] 切换角色:', displayRole, '->', newRole);
       navigate(route);
       setIsOpen(false);
+    } else {
+      // 如果路由生成失败，回滚 displayRole
+      console.warn('[RoleSwitcher] 路由生成失败，回滚角色切换');
+      setDisplayRole(actualCurrentRole);
     }
   };
 
@@ -178,7 +214,7 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     return null;
   }
 
-  const currentConfig = roleConfig[currentRole] || { label: currentRole, icon: UsersIcon, color: '#6b7280' };
+  const currentConfig = roleConfig[displayRole] || { label: displayRole, icon: UsersIcon, color: '#6b7280' };
 
   const computeAlign = () => {
     if (typeof window === 'undefined' || !containerRef.current) return;
@@ -204,6 +240,11 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [isOpen]);
+
+  // 监听 currentRole 或 URL 路由的变化，更新 displayRole
+  useEffect(() => {
+    setDisplayRole(actualCurrentRole);
+  }, [actualCurrentRole]);
 
   return (
     <div style={styles.container} ref={containerRef}>
@@ -250,7 +291,7 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
             <div style={styles.dropdownHeader}>切换身份</div>
             {deviceFilteredRoles.map(role => {
               const config = roleConfig[role] || { label: role, icon: UsersIcon, color: '#6b7280' };
-              const isCurrentRole = role === currentRole;
+              const isCurrentRole = role === displayRole;
 
               return (
                 <button

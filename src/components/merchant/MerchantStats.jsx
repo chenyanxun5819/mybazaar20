@@ -75,105 +75,72 @@ const MerchantStats = ({ stats, userRole }) => {
 
   // merchantOwner: 显示所有统计
   if (isMerchantOwner) {
-    // 计算平均交易金额
-    const averageAmount = transactionCount > 0 
-      ? Math.round(totalRevenue / transactionCount)
-      : 0;
-
-    // 计算今日平均
-    const todayAverage = todayTransactionCount > 0
-      ? Math.round(todayRevenue / todayTransactionCount)
-      : 0;
-
     return (
-      <div className="merchant-stats-grid">
-        {/* 总收入 */}
-        <StatCard
-          icon={DollarSign}
-          label="总收入（全部）"
-          value={`${formatAmount(totalRevenue)} 点`}
-          subValue={`平均 ${formatAmount(averageAmount)} 点/笔`}
-          color="purple"
-          badge="全部"
-        />
+      <div className="merchant-owner-summary">
+        <div className="merchant-summary-card">
+          <div className="merchant-summary-header">
+            <span className="merchant-summary-label">总收入</span>
+            <span className="merchant-summary-badge">全部</span>
+          </div>
 
-        {/* 今日收入 */}
-        <StatCard
-          icon={TrendingUp}
-          label="今日收入"
-          value={`${formatAmount(todayRevenue)} 点`}
-          subValue={todayTransactionCount > 0 ? `${todayTransactionCount} 笔交易` : '尚无交易'}
-          color="blue"
-        />
+          <div className="merchant-summary-amount">
+            <span className="merchant-summary-number">{formatAmount(totalRevenue)}</span>
+            <span className="merchant-summary-unit">点</span>
+          </div>
 
-        {/* 交易笔数 */}
-        <StatCard
-          icon={ShoppingBag}
-          label="总交易笔数"
-          value={formatAmount(transactionCount)}
-          subValue={`今日 ${todayTransactionCount} 笔`}
-          color="green"
-        />
-
-        {/* ⭐ 摊主个人收入 */}
-        <StatCard
-          icon={User}
-          label="摊主收入"
-          value={`${formatAmount(ownerCollectedRevenue)} 点`}
-          subValue={`助理收入 ${formatAmount(asistsCollectedRevenue)} 点`}
-          color="orange"
-          badge="个人"
-        />
+          <div className="merchant-summary-stats">
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(todayRevenue)}</span>
+              <span className="merchant-summary-stat-label">今日收入</span>
+            </div>
+            <div className="merchant-summary-stat-divider"></div>
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(transactionCount)}</span>
+              <span className="merchant-summary-stat-label">总交易笔数</span>
+            </div>
+            <div className="merchant-summary-stat-divider"></div>
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(ownerCollectedRevenue)}</span>
+              <span className="merchant-summary-stat-label">摊主收入</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   // merchantAsist: 只显示个人统计
   if (isMerchantAsist) {
-    // 计算个人平均交易金额
-    const personalAverage = personalTransactionCount > 0
-      ? Math.round(personalTotalCollected / personalTransactionCount)
-      : 0;
-
     return (
-      <div className="merchant-stats-grid">
-        {/* 个人总收入 */}
-        <StatCard
-          icon={User}
-          label="个人总收入"
-          value={`${formatAmount(personalTotalCollected)} 点`}
-          subValue={`平均 ${formatAmount(personalAverage)} 点/笔`}
-          color="purple"
-          badge="个人"
-        />
+      <div className="merchant-owner-summary">
+        <div className="merchant-summary-card">
+          <div className="merchant-summary-header">
+            <span className="merchant-summary-label">个人总收入</span>
+            <span className="merchant-summary-badge">个人</span>
+          </div>
 
-        {/* 今日个人收入 */}
-        <StatCard
-          icon={TrendingUp}
-          label="今日收入"
-          value={`${formatAmount(personalTodayCollected)} 点`}
-          subValue={personalTodayTransactionCount > 0 ? `${personalTodayTransactionCount} 笔交易` : '尚无交易'}
-          color="blue"
-        />
+          <div className="merchant-summary-amount">
+            <span className="merchant-summary-number">{formatAmount(personalTotalCollected)}</span>
+            <span className="merchant-summary-unit">点</span>
+          </div>
 
-        {/* 个人交易笔数 */}
-        <StatCard
-          icon={ShoppingBag}
-          label="交易笔数"
-          value={formatAmount(personalTransactionCount)}
-          subValue={`今日 ${personalTodayTransactionCount} 笔`}
-          color="green"
-        />
-
-        {/* ⭐ 摊位总收入（参考） */}
-        <StatCard
-          icon={Users}
-          label="摊位总收入"
-          value={`${formatAmount(totalRevenue)} 点`}
-          subValue="包含所有人"
-          color="gray"
-          badge="参考"
-        />
+          <div className="merchant-summary-stats">
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(personalTodayCollected)}</span>
+              <span className="merchant-summary-stat-label">今日收入</span>
+            </div>
+            <div className="merchant-summary-stat-divider"></div>
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(personalTransactionCount)}</span>
+              <span className="merchant-summary-stat-label">交易笔数</span>
+            </div>
+            <div className="merchant-summary-stat-divider"></div>
+            <div className="merchant-summary-stat-item">
+              <span className="merchant-summary-stat-value">{formatAmount(totalRevenue)}</span>
+              <span className="merchant-summary-stat-label">摊位总收入</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

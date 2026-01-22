@@ -7,6 +7,84 @@
   gap: 1rem;
 }
 
+/* merchantOwner：参考 CustomerDashboard「可用点数」卡片版型 */
+.merchant-owner-summary {
+  width: 100%;
+}
+
+.merchant-summary-card {
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+  color: #fff;
+  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+}
+
+.merchant-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.merchant-summary-label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.merchant-summary-badge {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+}
+
+.merchant-summary-amount {
+  margin-bottom: 1.5rem;
+}
+
+.merchant-summary-number {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-right: 0.5rem;
+}
+
+.merchant-summary-unit {
+  font-size: 1.2rem;
+  opacity: 0.9;
+}
+
+.merchant-summary-stats {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.merchant-summary-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.merchant-summary-stat-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.merchant-summary-stat-label {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-top: 0.25rem;
+}
+
+.merchant-summary-stat-divider {
+  width: 1px;
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
 @media (min-width: 768px) {
   .merchant-stats-grid {
     grid-template-columns: repeat(2, 1fr);
