@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QrCode, Receipt, Store, Bell, Scan } from 'lucide-react';
+import { QrCode, Receipt, Store, Bell, Scan, X } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
@@ -407,6 +407,7 @@ const MerchantDashboard = () => {
               eventId={eventId}
               userRole={userRole}
               currentUserId={currentUser?.uid}
+              autoStart={true}
             />
           )}
 

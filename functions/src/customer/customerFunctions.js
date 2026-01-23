@@ -749,30 +749,25 @@ const result = await db.runTransaction(async (transaction) => {
     throw new HttpsError('failed-precondition', '商家暂停营业');
   }
 
-  // ⭐ 修改：不立即扣除Customer点数
-  // ⭐ 等待 Merchant 确认后才扣除
-  // transaction.update(customerRef, {
-  //   'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
-  //   'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
-  //   'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
-  //   'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
-  //   'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
-  // });
-
-  // ⭐ 只更新活动时间
+  // ⭐ 修改（2026-01-23）：立即扣除 Customer 点数
+  // 改为实时扣除模式，Customer 支付时立即扣除，不等待 Merchant 确认
   transaction.update(customerRef, {
+    'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
+    'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
+    'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
+    'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
     'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
   });
 
-  // ⭐ 修改：不立即增加Merchant收入
-  // ⭐ 等待 Merchant 确认后才增加
-  // transaction.update(merchantRef, {
-  //   'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
-  //   'revenueStats.todayRevenue': admin.firestore.FieldValue.increment(amount),
-  //   'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
-  //   'revenueStats.todayTransactionCount': admin.firestore.FieldValue.increment(1),
-  //   'revenueStats.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp()
-  // });
+  // ⭐ 修改（2026-01-23）：立即增加 Merchant 收入
+  // Customer 支付时立即增加收入（不等待确认）
+  transaction.update(merchantRef, {
+    'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
+    'revenueStats.todayRevenue': admin.firestore.FieldValue.increment(amount),
+    'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
+    'revenueStats.todayTransactionCount': admin.firestore.FieldValue.increment(1),
+    'revenueStats.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp()
+  });
 
   // 创建交易记录
   const transactionId = db
@@ -830,8 +825,8 @@ console.log('[processCustomerPayment] ✅ 付款请求已创建（待商家确�
 return {
   success: true,
   transactionId: result.transactionId,
-  remainingBalance: result.remainingBalance,
-  message: '付款请求已发送，等待商家确认'  // ⭐ 修改消息
+  remainingBalance: result.remainingBalance - amount,  // ⭐ 修改：扣除後的余額
+  message: '支付成功，等待商家确认'  // ⭐ 修改消息
 };
 
 // ============================================

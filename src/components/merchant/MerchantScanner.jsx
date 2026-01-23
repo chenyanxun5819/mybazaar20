@@ -17,9 +17,9 @@ import TransactionPinDialog from '../../views/PointSellerDashboard/common/Transa
 import { formatAmount } from '../../services/transactionService';
 import './MerchantScanner.css';
 
-const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentUserId }) => {
-  // 扫码状态
-  const [scanning, setScanning] = useState(false);
+const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentUserId, autoStart = false }) => {
+  // 扫码状态 - 如果 autoStart=true，初始就开始扫描
+  const [scanning, setScanning] = useState(autoStart);
   const html5QrCodeRef = useRef(null);
 
   // QR Code数据
@@ -387,13 +387,7 @@ const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentU
   if (step === 'scan') {
     return (
       <div className="merchant-scanner">
-        <div className="scanner-header">
-          <Scan className="scanner-icon" />
-          <h2>扫码收款</h2>
-          <p>请扫描顾客的点数卡 QR Code</p>
-        </div>
-
-        {error && (
+          {error && (
           <div className="scanner-error">
             <AlertCircle />
             <p>{error}</p>

@@ -10,7 +10,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
  * 3. 自动开始扫描
  */
 const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart = false, helpText }) => {
-  const [scanning, setScanning] = useState(false);
+  const [scanning, setScanning] = useState(autoStart); // ⭐ 如果 autoStart=true，初始就开始扫描
   const [cameraPermission, setCameraPermission] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
@@ -28,6 +28,9 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
   };
 
   useEffect(() => {
+    if (autoStart) {
+      addDebugLog('⚡ autoStart=true，直接开始扫描（跳过权限按钮）');
+    }
     checkCameraPermission();
     return () => {
       if (qrScannerRef.current) {
@@ -77,12 +80,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         setCameraPermission('prompt');
       }
 
-      if (autoStart) {
-        addDebugLog('⚡ autoStart=true，直接启动扫描（只会请求一次权限）');
-        setTimeout(() => {
-          setScanning(true);
-        }, 50);
-      }
     } catch (error) {
       addDebugLog(`❌ 权限状态检查失败: ${error.name} - ${error.message}`);
       setCameraPermission('prompt');
@@ -268,36 +265,66 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
   };
 
   // 🔁 直接模式回退：避開 Scanner 包裝的 UI 與某些瀏覽器 Bug
-  const initDirectHtml5qrcode = () => {
+  // ⭐ 改用 MerchantScanner 的優化配置：fps 30 + 自動對焦 + 高分辨率
+  const initDirectHtml5qrcode = async () => {
     const el = document.getElementById('qr-reader');
     if (!el) {
       throw new Error('#qr-reader 元素未找到');
     }
 
-    addDebugLog('🧩 使用直接模式初始化 Html5Qrcode...');
+    addDebugLog('🧩 使用直接模式初始化 Html5Qrcode（優化版）...');
     const html5Qr = new Html5Qrcode('qr-reader');
     qrScannerRef.current = html5Qr;
 
-    const constraints = { facingMode: 'environment' }; // 避免 exact，增加兼容性
+    // ⭐ 優先挑選後置攝像頭；若取不到則用 facingMode
+    let cameraConfig = { 
+      facingMode: 'environment',
+      advanced: [
+        { focusMode: 'continuous' }  // 🔍 自動對焦（關鍵！）
+      ]
+    };
+    
+    try {
+      const cameras = await Html5Qrcode.getCameras();
+      const backCam = cameras?.find((c) => /back|rear|environment/i.test(c?.label || ''));
+      if (backCam?.id) {
+        // 如果找到後置攝像頭，使用設備 ID
+        cameraConfig = backCam.id;
+        addDebugLog(`📹 使用後置攝像頭: ${backCam.label}`);
+      }
+    } catch (e) {
+      // iOS 在未授權前可能無法列舉相機，直接用 facingMode 走授權流程即可
+      addDebugLog(`⚠️ 無法列舉相機，使用 facingMode: ${e?.message}`);
+    }
+
+    // ⭐ 高性能掃碼配置（參考 MerchantScanner）
     const config = {
-      fps: 10,
-      disableFlip: true,
-      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+      fps: 30,  // ⬆️⬆️ 提高到 30 fps，掃碼更快
+      aspectRatio: 1.0,
+      disableFlip: false,  // ✅ 允許翻轉以應對各種設備方向
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      // ⬆️ 添加高分辨率視頻約束
+      videoConstraints: {
+        width: { ideal: 1920 },      // 🎥 高分辨率
+        height: { ideal: 1080 },
+        focusMode: { ideal: 'continuous' },  // 🔍 持續自動對焦
+        facingMode: 'environment'
+      }
     };
 
-    addDebugLog(`🛠️ 直接模式配置: ${JSON.stringify({ constraints, config })}`);
+    addDebugLog(`🛠️ 優化配置: fps=30, 自動對焦=true, 高分辨率=1920x1080`);
 
     return html5Qr.start(
-      constraints,
+      cameraConfig,
       config,
       handleScanSuccess,
       handleScanFailure
     ).then(() => {
-      addDebugLog('✅ 直接模式啟動成功，攝像頭應該已打開');
+      addDebugLog('✅ 優化模式啟動成功，攝像頭已打開');
       setCameraPermission('granted');
     }).catch((e) => {
       const name = e?.name || '';
-      addDebugLog(`❌ 直接模式啟動失敗: ${name} ${e?.message || e}`);
+      addDebugLog(`❌ 優化模式啟動失敗: ${name} ${e?.message || e}`);
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         setCameraPermission('denied');
       }
@@ -350,17 +377,16 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         </div>
       ) : (
         <div style={styles.scannerContainer}>
-          <div style={styles.scannerHeader}>
-            <h3 style={styles.scannerTitle}>请对准QR Code</h3>
-            <button onClick={stopScanning} style={styles.cancelButton}>取消</button>
+          {/* ⬆️ 扫码提示框 */}
+          <div style={styles.scannerTips}>
+            <p style={styles.scannerTipText}>💡 保持 QR Code 在画面中央，距离 10-20cm</p>
           </div>
 
           {/* ✅ QR 扫描器容器 */}
           <div id="qr-reader" style={styles.readerContainer}></div>
 
-          <div style={styles.scannerTips}>
-            <p style={styles.scannerTipText}>{getInstructionText()}</p>
-          </div>
+          {/* 停止扫描按钮 */}
+          <button onClick={stopScanning} style={styles.cancelButton}>停止扫描</button>
         </div>
       )}
 
@@ -413,8 +439,11 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
           display: none !important;
         }
         
-        /* 只显示视频和扫描框 */
+        /* 只显示视频和扫描框，让视频填满容器 */
         #qr-reader video {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
           display: block !important;
         }
         
@@ -433,6 +462,7 @@ const styles = {
     margin: '0 auto'
   },
   startContainer: {
+    width: '100%',
     backgroundColor: '#fff',
     borderRadius: '12px',
     padding: '2rem',
@@ -499,46 +529,53 @@ const styles = {
     fontSize: '1.2rem'
   },
   scannerContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     borderRadius: '12px',
-    padding: '1.5rem',
+    padding: '0.5rem',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   },
   scannerHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1rem'
+    display: 'none'
   },
   scannerTitle: {
-    fontSize: '1.2rem',
-    fontWeight: '600',
-    color: '#333',
-    margin: 0
+    display: 'none'
   },
   cancelButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.9rem',
-    backgroundColor: '#fff',
-    color: '#f44336',
-    border: '1px solid #f44336',
-    borderRadius: '6px',
-    cursor: 'pointer'
+    background: '#f44336',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '0.75rem 1.5rem',
+    fontSize: '1rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    margin: '0 auto',
+    display: 'block'
   },
   readerContainer: {
     width: '100%',
-    marginBottom: '1rem'
+    minHeight: '70vh',
+    maxHeight: '75vh',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    marginBottom: '0.75rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   scannerTips: {
-    backgroundColor: '#f8f9fa',
-    padding: '0.75rem',
-    borderRadius: '8px',
-    textAlign: 'center'
+    background: 'rgba(33, 150, 243, 0.1)',
+    borderLeft: '3px solid #2196F3',
+    borderRadius: '4px',
+    padding: '0.5rem 0.75rem',
+    marginBottom: '0.5rem'
   },
   scannerTipText: {
     margin: 0,
     fontSize: '0.85rem',
-    color: '#666'
+    color: '#1976D2',
+    fontWeight: 500
   },
   debugPanel: {
     marginTop: '1rem',
@@ -600,4 +637,3 @@ const styles = {
 };
 
 export default QRScanner;
-

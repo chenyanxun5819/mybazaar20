@@ -237,7 +237,6 @@ const CustomerPayment = () => {
     setPinError('');
   };
 
-  // 执行支付（包含 PIN 验证）
   const handleExecutePayment = async () => {
     console.log('[CustomerPayment] ========== 开始执行支付 ==========');
 
@@ -271,6 +270,32 @@ const CustomerPayment = () => {
       });
 
       console.log('[CustomerPayment] 支付成功:', result.data);
+
+      // ⭐ 修改（2026-01-23）：更新本地 customerData 状态
+      // 后端已立即扣除，这里同步状态以显示正确的剩余余额
+      const newRemainingBalance = result.data.remainingBalance || 
+        (customerData?.customer?.pointsAccount?.availablePoints || 0) - parseFloat(amount);
+      
+      setCustomerData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          customer: {
+            ...prev.customer,
+            pointsAccount: {
+              ...prev.customer?.pointsAccount,
+              availablePoints: newRemainingBalance,
+              totalSpent: (prev.customer?.pointsAccount?.totalSpent || 0) + parseFloat(amount)
+            },
+            stats: {
+              ...prev.customer?.stats,
+              transactionCount: (prev.customer?.stats?.transactionCount || 0) + 1,
+              merchantPaymentCount: (prev.customer?.stats?.merchantPaymentCount || 0) + 1,
+              lastActivityAt: new Date()
+            }
+          }
+        };
+      });
 
       // 显示成功页面
       setStep('success');
@@ -315,31 +340,32 @@ const CustomerPayment = () => {
 
   return (
     <div style={styles.container}>
-      {/* 顶部导航 */}
-      <div style={styles.header}>
-        <button
-          onClick={() => {
-            if (step === 'confirm') {
-              setStep('scan');
-            } else if (step === 'pin') {
-              setStep('confirm');
-            } else {
-              navigate(`/customer/${orgEventCode}/dashboard`);
-            }
-          }}
-          style={styles.backButton}
-        >
-          ← 返回
-        </button>
-        <h1 style={styles.title}>
-          {step === 'scan' && '扫码支付'}
-          {step === 'confirm' && '确认支付'}
-          {step === 'pin' && '输入交易密码'}
-          {step === 'processing' && '处理中...'}
-          {step === 'success' && '支付成功'}
-        </h1>
-        <div style={{ width: '60px' }}></div>
-      </div>
+      {/* 顶部导航 - 在扫描页面时隐藏 */}
+      {step !== 'scan' && (
+        <div style={styles.header}>
+          <button
+            onClick={() => {
+              if (step === 'confirm') {
+                setStep('scan');
+              } else if (step === 'pin') {
+                setStep('confirm');
+              } else {
+                navigate(`/customer/${orgEventCode}/dashboard`);
+              }
+            }}
+            style={styles.backButton}
+          >
+            ← 返回
+          </button>
+          <h1 style={styles.title}>
+            {step === 'confirm' && '确认支付'}
+            {step === 'pin' && '输入交易密码'}
+            {step === 'processing' && '处理中...'}
+            {step === 'success' && '支付成功'}
+          </h1>
+          <div style={{ width: '60px' }}></div>
+        </div>
+      )}
 
       {/* 错误提示 */}
       {error && (
@@ -357,6 +383,7 @@ const CustomerPayment = () => {
           <QRScanner
             onScanSuccess={handleScanSuccess}
             onScanError={handleScanError}
+            autoStart={true}
           />
         )}
 
@@ -595,11 +622,11 @@ const styles = {
     color: '#856404'
   },
   content: {
-    padding: '1rem'
+    padding: '1.5rem 1rem'
   },
   merchantCard: {
-    marginBottom: '1rem',
-    padding: '1.5rem',
+    marginBottom: '0.5rem',
+    padding: '0.75rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
@@ -607,63 +634,63 @@ const styles = {
   merchantHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem'
+    gap: '0.5rem'
   },
   merchantIcon: {
-    fontSize: '2.5rem'
+    fontSize: '1.75rem'
   },
   merchantName: {
-    fontSize: '1.3rem',
+    fontSize: '1rem',
     fontWeight: '600',
     color: '#333',
-    margin: '0 0 0.25rem 0'
+    margin: '0 0 0.15rem 0'
   },
   merchantInfo: {
-    fontSize: '0.9rem',
+    fontSize: '0.8rem',
     color: '#666',
     margin: 0
   },
   balanceCard: {
-    marginBottom: '1rem',
-    padding: '1rem 1.5rem',
+    marginBottom: '0.5rem',
+    padding: '0.6rem 0.8rem',
     backgroundColor: '#f0f7ff',
     borderRadius: '8px',
     border: '1px solid #2196F3'
   },
   balanceLabel: {
-    fontSize: '0.9rem',
+    fontSize: '0.8rem',
     color: '#666',
-    margin: '0 0 0.25rem 0'
+    margin: '0 0 0.15rem 0'
   },
   balanceAmount: {
-    fontSize: '1.8rem',
+    fontSize: '1.3rem',
     fontWeight: '700',
     color: '#2196F3',
     margin: 0
   },
   inputCard: {
-    marginBottom: '1.5rem',
-    padding: '1.5rem',
+    marginBottom: '0.75rem',
+    padding: '0.75rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
   },
   inputLabel: {
     display: 'block',
-    fontSize: '0.9rem',
+    fontSize: '0.8rem',
     fontWeight: '600',
     color: '#333',
-    marginBottom: '0.75rem'
+    marginBottom: '0.4rem'
   },
   amountInputContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.5rem'
+    gap: '0.4rem'
   },
   amountInput: {
     flex: 1,
-    padding: '1rem',
-    fontSize: '2rem',
+    padding: '0.6rem',
+    fontSize: '1.3rem',
     fontWeight: '600',
     textAlign: 'center',
     border: '2px solid #ddd',
@@ -671,7 +698,7 @@ const styles = {
     outline: 'none'
   },
   amountUnit: {
-    fontSize: '1.2rem',
+    fontSize: '0.9rem',
     fontWeight: '600',
     color: '#666'
   },
@@ -679,18 +706,18 @@ const styles = {
     borderColor: '#f44336'
   },
   errorText: {
-    margin: '0.5rem 0 0 0',
-    fontSize: '0.85rem',
+    margin: '0.2rem 0 0 0',
+    fontSize: '0.75rem',
     color: '#f44336'
   },
   actions: {
     display: 'flex',
-    gap: '1rem'
+    gap: '0.6rem'
   },
   button: {
     flex: 1,
-    padding: '1rem',
-    fontSize: '1rem',
+    padding: '0.65rem',
+    fontSize: '0.9rem',
     fontWeight: '600',
     border: 'none',
     borderRadius: '8px',
@@ -718,48 +745,48 @@ const styles = {
   },
   pinCard: {
     width: '100%',
-    maxWidth: '400px',
-    padding: '2rem',
+    maxWidth: '380px',
+    padding: '1.5rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
     textAlign: 'center'
   },
   pinIcon: {
-    fontSize: '3rem',
-    marginBottom: '1rem'
+    fontSize: '2.5rem',
+    marginBottom: '0.75rem'
   },
   pinTitle: {
-    fontSize: '1.5rem',
+    fontSize: '1.3rem',
     fontWeight: '600',
     color: '#333',
-    margin: '0 0 0.5rem 0'
+    margin: '0 0 0.4rem 0'
   },
   pinSubtitle: {
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     color: '#666',
-    marginBottom: '2rem'
+    marginBottom: '1.5rem'
   },
   pinInput: {
     width: '100%',
-    padding: '1.5rem',
-    fontSize: '2rem',
+    padding: '1.2rem',
+    fontSize: '1.8rem',
     fontWeight: '600',
     textAlign: 'center',
     letterSpacing: '0.5rem',
     border: '2px solid #ddd',
     borderRadius: '8px',
     outline: 'none',
-    marginBottom: '1rem'
+    marginBottom: '0.75rem'
   },
   pinHint: {
-    fontSize: '0.85rem',
+    fontSize: '0.8rem',
     color: '#999',
-    marginBottom: '2rem'
+    marginBottom: '1.5rem'
   },
   pinActions: {
     display: 'flex',
-    gap: '1rem'
+    gap: '0.6rem'
   },
   processingContainer: {
     display: 'flex',
@@ -861,4 +888,3 @@ if (typeof document !== 'undefined') {
 }
 
 export default CustomerPayment;
-

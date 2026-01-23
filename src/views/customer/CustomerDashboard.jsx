@@ -19,7 +19,13 @@ import { Bell, CheckCircle, XCircle } from 'lucide-react';
  */
 import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
 import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
-
+import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
+import QrScanIcon from '../../assets/qr-scan.svg?react';
+import PointsTransferIcon from '../../assets/points-transfer.svg?react';
+import MemoCircleCheckIcon from '../../assets/memo-circle-check.svg?react';
+import CustomerPayment from './CustomerPayment';
+import CustomerTransfer from './CustomerTransfer';
+import CustomerTransactions from './CustomerTransactions';
 
 const CustomerDashboard = () => {
   const navigate = useNavigate();
@@ -28,6 +34,7 @@ const CustomerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [customerData, setCustomerData] = useState(null);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
   // ⭐ 新增：交易通知状态
   const [notification, setNotification] = useState(null);
   const [organizationId, setOrganizationId] = useState(eventOrgId);
@@ -371,169 +378,127 @@ const CustomerDashboard = () => {
         </div>
       )}
 
-
-
-      {/* 用户信息卡片 */}
-      <div style={styles.userCard}>
-        <div style={styles.userInfo}>
-          <div style={styles.avatar}>
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <h2 style={styles.userName}>{displayName}</h2>
-            <p style={styles.userPhone}>{phoneNumber}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 余额卡片 */}
-      <div style={styles.balanceCard}>
-        <div style={styles.balanceHeader}>
-          <span style={styles.balanceLabel}>可用点数</span>
-          <button
-            onClick={() => setShowQRCode(!showQRCode)}
-            style={styles.qrButton}
-          >
-            {showQRCode ? '隐藏QR码' : '显示收点数QR码'}
-          </button>
-        </div>
-        <div style={styles.balanceAmount}>
-          <span style={styles.balanceNumber}>{pointsAccount.availablePoints || 0}</span>
-          <span style={styles.balanceUnit}>点</span>
-        </div>
-
-        {/* 统计信息 */}
-        <div style={styles.balanceStats}>
-          <div style={styles.statItem}>
-            <span style={styles.statValue}>{pointsAccount.totalReceived || 0}</span>
-            <span style={styles.statLabel}>累计获得</span>
-          </div>
-          <div style={styles.statDivider}></div>
-          <div style={styles.statItem}>
-            <span style={styles.statValue}>{pointsAccount.totalSpent || 0}</span>
-            <span style={styles.statLabel}>累计消费</span>
-          </div>
-          <div style={styles.statDivider}></div>
-          <div style={styles.statItem}>
-            <span style={styles.statValue}>{stats.transactionCount || 0}</span>
-            <span style={styles.statLabel}>交易次数</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 收点数QR Code */}
-      {showQRCode && (
-        <div style={styles.qrCodeSection}>
-          <QRCodeDisplay
-            qrData={{
-              type: 'CUSTOMER_RECEIVE_POINTS',  // ✅ 改为大写
-              v: '1.0',                          // ✅ 添加版本号
-              orgId: orgId,                      // ✅ 使用无前缀的orgId
-              eventId: evtId,                    // ✅ 使用无前缀的eventId
-              customerId: auth.currentUser?.uid, // ✅ 改用customerId
-              displayName: displayName,
-              phoneNumber: phoneNumber,
-              ts: Date.now()                     // ✅ 添加时间戳
-            }}
-            userName={displayName}
-            subtitle="Customer收点数QR Code"
-            size="medium"
-          />
-        </div>
-      )}
-
-      {/* 功能菜单 */}
-      <div style={styles.menuGrid}>
-        {/* 扫码付款 */}
+      {/* Tab 导航 */}
+      <nav className="tab-navigation" style={styles.tabNavigation}>
         <button
-          onClick={handleScanPayClick}
-          style={styles.menuButton}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'overview' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('overview')}
         >
-          <div style={styles.menuIcon}>💳</div>
-          <div style={styles.menuText}>
-            <div style={styles.menuTitle}>扫码付款</div>
-            <div style={styles.menuSubtitle}>扫描商家QR码</div>
-          </div>
+          <ChartHistogramIcon style={{ width: '1.5rem', height: '1.5rem', color: activeTab === 'overview' ? '#2196F3' : '#757575' }} />
+          <span style={styles.tabLabel}>总览</span>
         </button>
-
-        {/* 点数转让 */}
         <button
-          onClick={() => navigate(`/customer/${orgEventCode}/transfer`)}
-          style={styles.menuButton}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'payment' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('payment')}
         >
-          <div style={styles.menuIcon}>💸</div>
-          <div style={styles.menuText}>
-            <div style={styles.menuTitle}>点数转让</div>
-            <div style={styles.menuSubtitle}>转给其他会员</div>
-          </div>
+          <QrScanIcon style={{ width: '1.5rem', height: '1.5rem', color: activeTab === 'payment' ? '#2196F3' : '#757575' }} />
+          <span style={styles.tabLabel}>扫码付款</span>
         </button>
-
-        {/* 点数卡充值 */}
         <button
-          onClick={() => navigate(`/customer/${orgEventCode}/topup`)}
-          style={styles.menuButton}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'transfer' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('transfer')}
         >
-          <div style={styles.menuIcon}>🎫</div>
-          <div style={styles.menuText}>
-            <div style={styles.menuTitle}>点数卡充值</div>
-            <div style={styles.menuSubtitle}>扫描点数卡</div>
-          </div>
+          <PointsTransferIcon style={{ width: '1.5rem', height: '1.5rem', color: activeTab === 'transfer' ? '#2196F3' : '#757575' }} />
+          <span style={styles.tabLabel}>点数转让</span>
         </button>
-
-        {/* 消费记录 */}
         <button
-          onClick={() => navigate(`/customer/${orgEventCode}/transactions`)}
-          style={styles.menuButton}
+          style={{
+            ...styles.tabButton,
+            ...(activeTab === 'history' ? styles.tabButtonActive : {})
+          }}
+          onClick={() => setActiveTab('history')}
         >
-          <div style={styles.menuIcon}>📋</div>
-          <div style={styles.menuText}>
-            <div style={styles.menuTitle}>消费记录</div>
-            <div style={styles.menuSubtitle}>查看交易历史</div>
-          </div>
+          <MemoCircleCheckIcon style={{ width: '1.5rem', height: '1.5rem', color: activeTab === 'history' ? '#2196F3' : '#757575' }} />
+          <span style={styles.tabLabel}>消费记录</span>
         </button>
-      </div>
+      </nav>
 
-      {/* 活动统计卡片 */}
-      <div style={styles.statsCard}>
-        <h3 style={styles.statsTitle}>我的活动</h3>
-        <div style={styles.statsGrid}>
-          <div style={styles.statsItem}>
-            <div style={styles.statsIcon}>🏪</div>
-            <div style={styles.statsInfo}>
-              <div style={styles.statsValue}>{stats.merchantsVisited?.length || 0}</div>
-              <div style={styles.statsLabel}>访问商家</div>
-            </div>
-          </div>
-          <div style={styles.statsItem}>
-            <div style={styles.statsIcon}>🎫</div>
-            <div style={styles.statsInfo}>
-              <div style={styles.statsValue}>{stats.pointCardsRedeemed || 0}</div>
-              <div style={styles.statsLabel}>兑换点数卡</div>
-            </div>
-          </div>
-          <div style={styles.statsItem}>
-            <div style={styles.statsIcon}>🔄</div>
-            <div style={styles.statsInfo}>
-              <div style={styles.statsValue}>{stats.transfersSent || 0}</div>
-              <div style={styles.statsLabel}>转让次数</div>
-            </div>
-          </div>
-          <div style={styles.statsItem}>
-            <div style={styles.statsIcon}>📥</div>
-            <div style={styles.statsInfo}>
-              <div style={styles.statsValue}>{stats.transfersReceived || 0}</div>
-              <div style={styles.statsLabel}>接收转让</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* 主内容区 */}
+      <main className="dashboard-content" style={styles.dashboardContent}>
+        {/* Overview Tab - 余额卡片 */}
+        {activeTab === 'overview' && (
+          <>
+            <div style={styles.balanceCard}>
+              <div style={styles.balanceHeader}>
+                <span style={styles.balanceLabel}>💰 我的余额</span>
+                <button
+                  onClick={() => setShowQRCode(!showQRCode)}
+                  style={styles.qrButton}
+                >
+                  {showQRCode ? '隐藏QR码' : '显示收点数QR码'}
+                </button>
+              </div>
+              <div style={styles.balanceAmount}>
+                <span style={styles.balanceNumber}>{pointsAccount.availablePoints || 0}</span>
+                <span style={styles.balanceUnit}>点</span>
+              </div>
+              <div style={{ textAlign: 'center', color: '#757575', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                可用于消费
+              </div>
 
-      {/* 底部提示 */}
-      <div style={styles.footer}>
-        <p style={styles.footerText}>
-          💡 提示：使用"显示收点数QR码"让其他会员扫描向您转账
-        </p>
-      </div>
+              {/* 统计信息 */}
+              <div style={styles.balanceStats}>
+                <div style={styles.statItem}>
+                  <span style={styles.statLabel}>累计获得</span>
+                  <span style={styles.statValue}>{pointsAccount.totalReceived || 0}</span>
+                </div>
+                <div style={styles.statItem}>
+                  <span style={styles.statLabel}>累计消费</span>
+                  <span style={styles.statValue}>{pointsAccount.totalSpent || 0}</span>
+                </div>
+                <div style={styles.statItem}>
+                  <span style={styles.statLabel}>交易次数</span>
+                  <span style={styles.statValue}>{stats.transactionCount || 0}</span>
+                </div>
+              </div>
+            </div>
+
+
+            {/* 活动统计卡片 */}
+            <div style={styles.statsCard}>
+              <h3 style={styles.statsTitle}>📊 我的活动</h3>
+              <div style={styles.statsGrid}>
+                <div style={styles.statsItem}>
+                  <span style={styles.statLabel}>访问商家</span>
+                  <span style={styles.statValue}>{stats.merchantsVisited?.length || 0}</span>
+                </div>
+                <div style={styles.statsItem}>
+                  <span style={styles.statLabel}>转让次数</span>
+                  <span style={styles.statValue}>{stats.transfersSent || 0}</span>
+                </div>
+                <div style={styles.statsItem}>
+                  <span style={styles.statLabel}>接收转让</span>
+                  <span style={styles.statValue}>{stats.transfersReceived || 0}</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Payment Tab */}
+        {activeTab === 'payment' && (
+          <CustomerPayment />
+        )}
+
+        {/* Transfer Tab */}
+        {activeTab === 'transfer' && (
+          <CustomerTransfer />
+        )}
+
+        {/* History Tab */}
+        {activeTab === 'history' && (
+          <CustomerTransactions />
+        )}
+      </main>
 
       {/* 🆕 共用 Footer 组件 */}
       <DashboardFooter 
@@ -550,6 +515,77 @@ const styles = {
     minHeight: '100vh',
     backgroundColor: '#f5f5f5',
     paddingBottom: '2rem'
+  },
+  tabNavigation: {
+    display: 'flex',
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e0e0e0',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+    overflowX: 'auto',
+    overflowY: 'hidden'
+  },
+  tabButton: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.25rem',
+    padding: '1rem 0.5rem',
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    cursor: 'pointer',
+    color: '#757575',
+    transition: 'all 0.2s',
+    borderBottom: '3px solid transparent'
+  },
+  tabButtonActive: {
+    color: '#2196F3',
+    borderBottomColor: '#2196F3'
+  },
+  tabLabel: {
+    fontSize: '0.85rem',
+    fontWeight: 500
+  },
+  dashboardContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    padding: '1rem',
+    margin: 0,
+    width: '100%',
+    maxWidth: 'none',
+    minHeight: 'auto'
+  },
+  tabContent: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '60vh',
+    padding: '2rem 1rem',
+    backgroundColor: '#f5f5f5'
+  },
+  largeActionButton: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '3rem 2rem',
+    backgroundColor: '#fff',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.3s',
+    width: '100%',
+    maxWidth: '400px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+    '&:hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
+    }
   },
   loadingCard: {
     display: 'flex',
@@ -661,13 +697,11 @@ const styles = {
     margin: 0
   },
   balanceCard: {
-    margin: '0 1rem 1rem',
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: '8px',
     padding: '1.5rem',
-    backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(33,150,243,0.3)',
-    color: '#fff'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
   },
   balanceHeader: {
     display: 'flex',
@@ -676,59 +710,67 @@ const styles = {
     marginBottom: '1rem'
   },
   balanceLabel: {
-    fontSize: '0.9rem',
-    opacity: 0.9
+    fontSize: '1.1rem',
+    fontWeight: '600',
+    color: '#333'
   },
   qrButton: {
     padding: '0.5rem 1rem',
-    fontSize: '0.8rem',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    color: '#fff',
-    border: '1px solid rgba(255,255,255,0.3)',
+    fontSize: '0.85rem',
+    backgroundColor: '#f5f5f5',
+    color: '#2196F3',
+    border: '1px solid #e0e0e0',
     borderRadius: '6px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   },
   balanceAmount: {
+    textAlign: 'center',
     marginBottom: '1.5rem'
   },
   balanceNumber: {
-    fontSize: '2.5rem',
+    fontSize: '3rem',
     fontWeight: '700',
+    color: '#2196F3',
     marginRight: '0.5rem'
   },
   balanceUnit: {
     fontSize: '1.2rem',
-    opacity: 0.9
+    color: '#757575',
+    marginLeft: '0.5rem'
   },
   balanceStats: {
     display: 'flex',
-    justifyContent: 'space-around',
+    flexDirection: 'column',
+    gap: '1rem',
+    marginTop: '1rem',
     paddingTop: '1rem',
-    borderTop: '1px solid rgba(255,255,255,0.2)'
+    borderTop: '1px solid #e0e0e0'
   },
   statItem: {
     display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center'
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0.75rem',
+    backgroundColor: '#f9f9f9',
+    borderRadius: '4px'
   },
   statValue: {
-    fontSize: '1.2rem',
-    fontWeight: '600'
+    fontSize: '1.1rem',
+    fontWeight: '600',
+    color: '#333'
   },
   statLabel: {
-    fontSize: '0.8rem',
-    opacity: 0.8,
-    marginTop: '0.25rem'
+    fontSize: '0.95rem',
+    color: '#666'
   },
   statDivider: {
-    width: '1px',
-    backgroundColor: 'rgba(255,255,255,0.2)'
+    display: 'none'
   },
   qrCodeSection: {
-    margin: '0 1rem 1rem',
-    padding: '1rem',
     backgroundColor: '#fff',
-    borderRadius: '12px',
+    borderRadius: '8px',
+    padding: '1.5rem',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
   },
   menuGrid: {
@@ -767,36 +809,36 @@ const styles = {
     color: '#999'
   },
   statsCard: {
-    margin: '0 1rem 1rem',
-    padding: '1.5rem',
+    width: '100%',
     backgroundColor: '#fff',
-    borderRadius: '12px',
+    borderRadius: '8px',
+    padding: '1.5rem',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
   },
   statsTitle: {
     fontSize: '1.1rem',
     fontWeight: '600',
     color: '#333',
-    marginBottom: '1rem'
+    margin: '0 0 1rem 0'
   },
   statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '1rem'
   },
   statsItem: {
     display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '0.75rem',
-    padding: '1rem',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px'
+    padding: '0.75rem',
+    backgroundColor: '#f9f9fa',
+    borderRadius: '4px'
   },
   statsIcon: {
-    fontSize: '1.5rem'
+    display: 'none'
   },
   statsInfo: {
-    flex: 1
+    display: 'none'
   },
   statsValue: {
     display: 'block',
@@ -809,21 +851,7 @@ const styles = {
     fontSize: '0.8rem',
     color: '#666',
     marginTop: '0.25rem'
-  },
-  footer: {
-    margin: '0 1rem',
-    padding: '1rem',
-    backgroundColor: '#fff3cd',
-    borderRadius: '8px',
-    border: '1px solid #ffc107'
-  },
-  footerText: {
-    margin: 0,
-    fontSize: '0.85rem',
-    color: '#856404',
-    textAlign: 'center'
   }
 };
 
 export default CustomerDashboard;
-
