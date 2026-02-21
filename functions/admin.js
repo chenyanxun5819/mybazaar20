@@ -10,7 +10,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://mybazaar-c4881.web.app',
-  'https://mybazaar-c4881.firebaseapp.com'
+  'https://mybazaar-c4881.firebaseapp.com',
+  'https://system.mybazaar.my',
+  'https://demo.mybazaar.my'
 ];
 
 const corsHandler = cors({
@@ -910,7 +912,7 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 验证角色是否有效
-      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'seller', 'merchant', 'customer', 'pointSeller'];
+      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'seller', 'merchant', 'customer', 'pointSeller'];
       const invalidRoles = roles.filter(role => !validRoles.includes(role));
       if (invalidRoles.length > 0) {
         res.status(400).json({ error: `无效的角色: ${invalidRoles.join(', ')}` });
@@ -2367,7 +2369,7 @@ exports.departmentsHttp = onRequest({ region: 'asia-southeast1' }, async (req, r
 
 // ========== 批量匯入使用者（Event Manager） ==========
 // POST /api/batchImportUsers  { organizationId, eventId, users: [...], idToken, skipAuth? }
-// 每個 user 項目: { phoneNumber, password, englishName, chineseName?, email, identityTag, department?, roles[], identityId? }
+// 每個 user 項目: { phoneNumber, englishName, chineseName?, email, identityTag, department?, roles[], identityId? }
 // 效能策略：
 // 1. 先驗證權限與基本欄位
 // 2. 一次讀取現有使用者手機集合做重複過濾
@@ -2406,6 +2408,8 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
 
       let hasPermission = false;
       const eventData = eventSnap.data() || {};
+      const eventOrgCode = eventData.orgCode;
+      const eventCode = eventData.eventCode;
       const admins = Array.isArray(eventData.admins) ? eventData.admins : [];
       const decodedRoles = Array.isArray(decoded.roles) ? decoded.roles : [];
 
@@ -2515,7 +2519,6 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         // 基本欄位解析
         const {
           phoneNumber,
-          password,
           englishName,
           chineseName = '',
           email = '',
@@ -2526,12 +2529,8 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         } = raw || {};
 
         // 驗證
-        if (!phoneNumber || !password || !englishName || !Array.isArray(roles) || roles.length === 0) {
-          errors.push({ phoneNumber, reason: '缺少必填字段(需: phoneNumber,password,englishName,roles)' });
-          continue;
-        }
-        if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
-          errors.push({ phoneNumber, reason: '密码强度不足' });
+        if (!phoneNumber || !englishName || !Array.isArray(roles) || roles.length === 0) {
+          errors.push({ phoneNumber, reason: '缺少必填字段(需: phoneNumber,englishName,roles)' });
           continue;
         }
         if (existingPhones.has(phoneNumber)) {
@@ -2559,10 +2558,6 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
           }
         }
 
-        // 密碼雜湊
-        const passwordSalt = crypto.randomBytes(16).toString('hex');
-        const passwordHash = sha256(password + passwordSalt);
-
         const tagMeta = identityTagMap.get(identityTag);
         const identityName = (tagMeta && tagMeta.name && (tagMeta.name['zh-CN'] || tagMeta.name.zhCN || tagMeta.name.cn)) || identityTag;
         const identityNameEn = (tagMeta && tagMeta.name && (tagMeta.name['en'] || tagMeta.name.en || tagMeta.name['zh-CN'])) || identityTag;
@@ -2586,12 +2581,10 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
             // email 可留空；若為空則不寫入欄位
             ...(email && email.trim() ? { email: email.trim() } : {}),
 
-            // 登录密码
-            passwordHash,
-            passwordSalt,
-            hasDefaultPassword: true,        // ← 新增
-            isFirstLogin: true,              // ← 新增
-            passwordLastChanged: null,       // ← 新增
+            // OTP 登录，不再设置预设登录密码
+            hasDefaultPassword: false,
+            isFirstLogin: false,
+            passwordLastChanged: null,
 
             // 交易密码（初始为空）
             transactionPinHash: null,        // ← 新增
@@ -2657,20 +2650,11 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         // ✅ 修改：设置 Custom Claims（支持多事件）
         if (!skipAuth) {
           try {
-            // 读取 event 文档获取 orgCode 和 eventCode
-            const eventDoc = await eventRef.get();
-            
-            if (eventDoc.exists) {
-              const eventData = eventDoc.data();
-              const orgCode = eventData.orgCode;
-              const eventCode = eventData.eventCode;
-              
-              if (orgCode && eventCode) {
-                await updateUserCustomClaims(authUid, orgCode, eventCode, 'add');
-                console.log(`[batchImportUsersHttp] ✅ Custom Claims 设置成功: ${authUid}`);
-              } else {
-                console.warn(`[batchImportUsersHttp] ⚠️ Event 文档缺少 orgCode 或 eventCode`);
-              }
+            if (eventOrgCode && eventCode) {
+              await updateUserCustomClaims(authUid, eventOrgCode, eventCode, 'add');
+              console.log(`[batchImportUsersHttp] ✅ Custom Claims 设置成功: ${authUid}`);
+            } else {
+              console.warn(`[batchImportUsersHttp] ⚠️ Event 文档缺少 orgCode 或 eventCode`);
             }
           } catch (e) {
             console.error(`[batchImportUsersHttp] ⚠️ Custom Claims 设置失败（非致命）: ${e.message}`);
@@ -2841,7 +2825,21 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       const managerRoles = [];
       const participantRoles = [];
 
+      // 🆕 Auditor 互斥验证：auditor 不能与其他 manager 角色共存
+      // auditor 只能与 seller / customer 共用
+      const auditorIncompatibleRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
+      if (roles.auditor) {
+        const conflict = auditorIncompatibleRoles.filter(r => roles[r]);
+        if (conflict.length > 0) {
+          return res.status(400).json({
+            error: `稽核人员（Auditor）不能与以下角色共存：${conflict.join('、')}。Auditor 只能与 Seller / Customer 共用。`,
+            code: 'auditor-role-conflict'
+          });
+        }
+      }
+
       // 分类角色
+      if (roles.auditor) { newRoles.push('auditor'); managerRoles.push('auditor'); }       // 🆕
       if (roles.sellerManager) { newRoles.push('sellerManager'); managerRoles.push('sellerManager'); }
       if (roles.merchantManager) { newRoles.push('merchantManager'); managerRoles.push('merchantManager'); }
       if (roles.customerManager) { newRoles.push('customerManager'); managerRoles.push('customerManager'); }
@@ -2897,6 +2895,12 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
 
       // 初始化新角色的点数账户
       const additionalUpdateData = {};
+
+      // 🆕 auditor 初始化（只读角色，无需点数账户，仅记录时间）
+      if (roles.auditor && !previousRoles?.includes('auditor')) {
+        additionalUpdateData['auditor.assignedAt'] = new Date();
+        additionalUpdateData['auditor.assignedBy'] = callerUid;
+      }
 
       if (roles.seller && !previousRoles?.includes('seller')) {
         additionalUpdateData['seller.availablePoints'] = 0;

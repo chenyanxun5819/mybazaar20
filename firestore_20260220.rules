@@ -72,14 +72,6 @@ service cloud.firestore {
     function isCashier(orgId, eventId) {
       return isInContext(orgId, eventId) && hasRole('cashier');
     }
-
-    /**
-     * ✨ 检查用户是否是 Auditor（从 Custom Claims 读取）
-     * Auditor 是只读角色，可以查阅活动内所有数据但不能修改任何内容
-     */
-    function isAuditor(orgId, eventId) {
-      return isInContext(orgId, eventId) && hasRole('auditor');
-    }
     
     /**
      * ✨ 检查用户是否管理特定部门（从 Custom Claims 读取）
@@ -178,8 +170,7 @@ service cloud.firestore {
            */
           allow read: if isAuthenticated() && (
                          request.auth.token.userId == userId ||
-                         isEventManager(organizationId, eventId) ||
-                         isAuditor(organizationId, eventId)
+                         isEventManager(organizationId, eventId)
                        ) ||
                        isAuthenticated(); // 暂时放宽以支持销售流程
           
@@ -244,7 +235,6 @@ service cloud.firestore {
                           resource.data.sellerId == request.auth.token.userId ||
                           isCashier(organizationId, eventId) ||
                           isEventManager(organizationId, eventId) ||
-                          isAuditor(organizationId, eventId) ||
                           isSellerManager(organizationId, eventId));
 
           // 统一由 Cloud Functions（Admin SDK）写入，前端不允许直接改写
@@ -266,8 +256,7 @@ service cloud.firestore {
           allow read: if isAuthenticated() &&
                          (resource.data.submittedBy == request.auth.token.userId ||
                           isCashier(organizationId, eventId) ||
-                          isEventManager(organizationId, eventId) ||
-                          isAuditor(organizationId, eventId)) ||
+                          isEventManager(organizationId, eventId)) ||
                          (isAuthenticated() && resource.data.submittedBy == request.auth.token.userId) ||
                          (isSellerManager(organizationId, eventId) && 
                           resource.data.receivedBy == request.auth.token.userId);
@@ -330,7 +319,6 @@ service cloud.firestore {
                          (resource.data.submittedBy == request.auth.token.userId ||
                           isCashier(organizationId, eventId) ||
                           isEventManager(organizationId, eventId) ||
-                          isAuditor(organizationId, eventId) ||
                           (resource.data.receivedBy != null && resource.data.receivedBy == request.auth.token.userId));
           
           /**
@@ -390,7 +378,6 @@ service cloud.firestore {
            */
           allow read: if isEventManager(organizationId, eventId) ||
                          isCashier(organizationId, eventId) ||
-                         isAuditor(organizationId, eventId) ||
                          (isSellerManager(organizationId, eventId) &&
                           managesDepartment(organizationId, eventId, departmentCode));
           
@@ -413,8 +400,7 @@ service cloud.firestore {
            */
           allow read: if (isAuthenticated() && request.auth.token.userId == sellerManagerId) ||
                          isEventManager(organizationId, eventId) ||
-                         isCashier(organizationId, eventId) ||
-                         isAuditor(organizationId, eventId);
+                         isCashier(organizationId, eventId);
           
           /**
            * 写入规则：只能通过 Cloud Functions（自动维护统计）
@@ -433,8 +419,7 @@ service cloud.firestore {
            * 2. Event Manager 可以读取所有 Cashier 统计
            */
           allow read: if (isAuthenticated() && request.auth.token.userId == cashierId) ||
-                         isEventManager(organizationId, eventId) ||
-                         isAuditor(organizationId, eventId);
+                         isEventManager(organizationId, eventId);
           
           /**
            * 写入规则：只能通过 Cloud Functions（自动维护统计）
@@ -489,7 +474,6 @@ service cloud.firestore {
             hasRole('merchantAsist') ||
             isMerchantManager(organizationId, eventId) ||
             isEventManager(organizationId, eventId) ||
-            isAuditor(organizationId, eventId) ||
             (hasRole('customer') && resource.data.operationStatus.isActive == true)
           );
           

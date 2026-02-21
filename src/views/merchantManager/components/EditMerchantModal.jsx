@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, availableAsists }) => {
+const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, ownerDirectory = [], availableAsists, asistDirectory = [] }) => {
   const [formData, setFormData] = useState({
     stallName: '',
     description: '',
@@ -20,6 +20,19 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
   const [currentAsists, setCurrentAsists] = useState([]);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const getOwnerDisplayName = (ownerId) => {
+    if (!ownerId) return '';
+    const owner = ownerDirectory.find(o => o.id === ownerId) || availableOwners.find(o => o.id === ownerId);
+    return owner?.basicInfo?.chineseName || owner?.basicInfo?.englishName || ownerId;
+  };
+
+  const getAsistDisplayInfo = (asistId) => {
+    const asist = asistDirectory.find(a => a.id === asistId) || availableAsists.find(a => a.id === asistId);
+    const name = asist?.basicInfo?.chineseName || asist?.basicInfo?.englishName || asistId;
+    const phone = asist?.basicInfo?.phoneNumber || '';
+    return { name, phone };
+  };
 
   // 初始化表单数据
   useEffect(() => {
@@ -223,15 +236,15 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
                 >
                   <option value="">-- 不指定摊主 --</option>
                   {/* 当前摊主 */}
-                  {merchant.merchantOwnerId && (
+                  {merchant.merchantOwnerId && !availableOwners.some(owner => owner.id === merchant.merchantOwnerId) && (
                     <option value={merchant.merchantOwnerId}>
-                      （当前）{/* 这里应该显示摊主姓名 */}
+                      （当前）{getOwnerDisplayName(merchant.merchantOwnerId)}
                     </option>
                   )}
                   {/* 可用摊主 */}
                   {availableOwners.map(owner => (
                     <option key={owner.id} value={owner.id}>
-                      {owner.basicInfo?.chineseName || owner.id}
+                      {owner.basicInfo?.chineseName || owner.basicInfo?.englishName || owner.id}
                     </option>
                   ))}
                 </select>
@@ -253,13 +266,14 @@ const EditMerchantModal = ({ merchant, onClose, onSubmit, availableOwners, avail
                   <label style={styles.label}>当前助理</label>
                   <div style={styles.asistList}>
                     {currentAsists.map(asistId => {
-                      const asist = availableAsists.find(a => a.id === asistId);
+                      const { name, phone } = getAsistDisplayInfo(asistId);
                       const status = getAsistStatus(asistId);
                       
                       return (
                         <div key={asistId} style={styles.asistItem}>
                           <span>
-                            {asist?.basicInfo?.chineseName || asistId}
+                            {name}
+                            {phone ? <span style={styles.asistCount}>（{phone}）</span> : null}
                           </span>
                           {status === 'current' && (
                             <button

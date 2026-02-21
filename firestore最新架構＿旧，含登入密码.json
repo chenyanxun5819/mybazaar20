@@ -1,9 +1,15 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-01-09-v9",
-    "lastUpdated": "2026-01-09",
+    "version": "2026-02-13-v10",
+    "lastUpdated": "2026-02-13",
     "architectureChanges": {
+      "version_2026-02-13-v10": [
+        "🔐 Events 新增 otpSettings 配置字段（控制是否启用真实OTP）",
+        "📱 支持 Platform Admin 为每个Event独立开启/关闭真实OTP验证",
+        "🔧 默认使用开发OTP (223344)，可选择启用360真实短信",
+        "🎯 UniversalLogin 改为纯OTP登录（移除密码输入步骤）"
+      ],
       "version_2026-01-09-v9": [
         "🖼️ Organizations 新增 logo 相關字段（logoUrl, logoUpdatedAt, logoUpdatedBy）",
         "🎨 Events 新增 logo 相關字段（logoUrl, logoUpdatedAt, logoUpdatedBy）",
@@ -207,6 +213,13 @@
               "logoUrl": "string (活動 logo URL，可選)",
               "logoUpdatedAt": "timestamp (logo 更新時間，可選)",
               "logoUpdatedBy": "string (Platform Admin UID，可選)",
+              "otpSettings": {
+                "enabled": "boolean (是否启用真实OTP验证，默认false使用开发OTP 223344)",
+                "enabledAt": "timestamp (启用时间，可选)",
+                "enabledBy": "string (Platform Admin UID，可选)",
+                "provider": "string (SMS提供商，默认'360')",
+                "notes": "当 enabled=false 时使用固定OTP: 223344；enabled=true 时发送真实360短信"
+              },
               "eventManager": {
                 "description": "活动负责人基本联络信息（从 users 集合复制）",
                 "chineseName": "string (中文姓名)",

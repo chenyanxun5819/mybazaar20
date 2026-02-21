@@ -13,24 +13,14 @@ const InitialPasswordSetup = () => {
   const location = useLocation();
   const { orgEventCode } = useParams();
   const { updateUserProfile, refreshProfile } = useAuth();
-  const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
 
-  // 当前步骤 (1: 登录密码, 2: 交易密码, 3: 完成)
-  // 🔧 修复：所有用户都需要设置交易密码（包括 eventManager）
+  // 当前步骤 (1: 交易密码, 2: 完成)
   const [step, setStep] = useState(1);
-  const [needsTransactionPin, setNeedsTransactionPin] = useState(true);
 
   // 用户信息（从 location.state 或 sessionStorage 获取）
   const [userInfo, setUserInfo] = useState(null);
 
-  // Step 1: 登录密码
-  const [loginPasswordData, setLoginPasswordData] = useState({
-    oldPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
-
-  // Step 2: 交易密码
+  // Step 1: 交易密码
   const [transactionPinData, setTransactionPinData] = useState({
     pin: '',
     confirmPin: ''
@@ -58,95 +48,13 @@ const InitialPasswordSetup = () => {
 
     setUserInfo(info);
 
-    // 🔧 修复：所有用户都需要设置交易密码（包括 eventManager）
-    // 交易密码用于确认所有支付和转账操作
-    setNeedsTransactionPin(true);
-
     // 清理 sessionStorage
     if (sessionUserInfo) {
       sessionStorage.removeItem('passwordSetupPending');
     }
   }, [location.state, orgEventCode, navigate]);
 
-  // ========== Step 1: 修改登录密码 ==========
-  const handleChangeLoginPassword = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    // 验证表单
-    if (!loginPasswordData.oldPassword || !loginPasswordData.newPassword || !loginPasswordData.confirmPassword) {
-      setError('请填写所有字段');
-      return;
-    }
-
-    if (loginPasswordData.newPassword.length < 8) {
-      setError('新密码至少需要 8 个字符');
-      return;
-    }
-
-    if (!/[a-zA-Z]/.test(loginPasswordData.newPassword) || !/\d/.test(loginPasswordData.newPassword)) {
-      setError('新密码必须包含英文字母和数字');
-      return;
-    }
-
-    if (loginPasswordData.newPassword !== loginPasswordData.confirmPassword) {
-      setError('两次输入的新密码不一致');
-      return;
-    }
-
-    if (loginPasswordData.oldPassword === loginPasswordData.newPassword) {
-      setError('新密码不能与旧密码相同');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      console.log('[InitialPasswordSetup] 正在修改登录密码...');
-
-      const changePassword = httpsCallable(functions, 'changeLoginPassword');
-      const result = await changePassword({
-        userId: userInfo.userId,
-        organizationId: userInfo.organizationId,
-        eventId: userInfo.eventId,
-        oldPassword: loginPasswordData.oldPassword,
-        newPassword: loginPasswordData.newPassword
-      });
-
-      console.log('[InitialPasswordSetup] 登录密码修改成功:', result.data);
-
-      // 🔧 修复：如果不需要设置交易密码，直接进入完成步骤
-      if (!needsTransactionPin) {
-        setStep(3);
-        setTimeout(() => {
-          navigateToDashboard();
-        }, 3000);
-        return;
-      }
-
-      // 进入 Step 2
-      setStep(2);
-      setError('');
-      setLoginPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
-
-    } catch (error) {
-      console.error('[InitialPasswordSetup] 修改登录密码失败:', error);
-
-      const errorMessage = error.message || '修改密码失败，请重试';
-
-      if (errorMessage.includes('旧密码') || errorMessage.includes('验证失败')) {
-        setError('旧密码错误，请检查');
-      } else if (errorMessage.includes('格式') || errorMessage.includes('长度')) {
-        setError('新密码格式不正确');
-      } else {
-        setError(errorMessage);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ========== Step 2: 设置交易密码 ==========
+  // ========== Step 1: 设置交易密码 ==========
   const handleSetupTransactionPin = async (e) => {
     e.preventDefault();
     setError('');
@@ -200,8 +108,8 @@ const InitialPasswordSetup = () => {
         }));
       }
 
-      // 进入 Step 3（完成）
-      setStep(3);
+      // 进入 Step 2（完成）
+      setStep(2);
       setError('');
       setTransactionPinData({ pin: '', confirmPin: '' });
 
@@ -317,9 +225,9 @@ const InitialPasswordSetup = () => {
         {/* Logo 和标题 */}
         <div className="setup-header">
           <div className="setup-logo">🔐</div>
-          <h1 className="setup-title">设置您的密码</h1>
+          <h1 className="setup-title">设置交易密码</h1>
           <p className="setup-subtitle">
-            {needsTransactionPin ? '首次登录需要设置新密码和交易密码' : '首次登录需要设置新密码'}
+            首次登录需要设置交易密码
           </p>
         </div>
 
@@ -327,106 +235,20 @@ const InitialPasswordSetup = () => {
         <div className="steps-indicator">
           <div className={`step ${step >= 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}`}>
             <div className="step-number">1</div>
-            <div className="step-label">登录密码</div>
+            <div className="step-label">交易密码</div>
           </div>
-          {needsTransactionPin && (
-            <>
-              <div className="step-divider"></div>
-              <div className={`step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
-                <div className="step-number">2</div>
-                <div className="step-label">交易密码</div>
-              </div>
-            </>
-          )}
           <div className="step-divider"></div>
-          <div className={`step ${step >= (needsTransactionPin ? 3 : 2) ? 'active' : ''}`}>
-            <div className="step-number">{needsTransactionPin ? 3 : 2}</div>
+          <div className={`step ${step >= 2 ? 'active' : ''}`}>
+            <div className="step-number">2</div>
             <div className="step-label">完成</div>
           </div>
         </div>
 
-        {/* Step 1: 修改登录密码 */}
+        {/* Step 1: 设置交易密码 */}
         {step === 1 && (
-          <form onSubmit={handleChangeLoginPassword} className="setup-form">
-            <div className="form-section">
-              <h2 className="section-title">步骤 1: 设置登录密码</h2>
-              <p className="section-description">
-                请输入您收到的初始密码，然后设置新的登录密码
-              </p>
-
-              <div className="form-group">
-                <label className="form-label">初始密码</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  value={loginPasswordData.oldPassword}
-                  onChange={(e) => setLoginPasswordData(prev => ({
-                    ...prev,
-                    oldPassword: e.target.value
-                  }))}
-                  placeholder="输入您收到的初始密码"
-                  disabled={loading}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">新密码</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  value={loginPasswordData.newPassword}
-                  onChange={(e) => setLoginPasswordData(prev => ({
-                    ...prev,
-                    newPassword: e.target.value
-                  }))}
-                  placeholder="至少 8 个字符，包含字母和数字"
-                  disabled={loading}
-                  required
-                />
-                <div className="input-hint">
-                  密码必须至少 8 个字符，包含英文字母和数字
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">确认新密码</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  value={loginPasswordData.confirmPassword}
-                  onChange={(e) => setLoginPasswordData(prev => ({
-                    ...prev,
-                    confirmPassword: e.target.value
-                  }))}
-                  placeholder="再次输入新密码"
-                  disabled={loading}
-                  required
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="error-message">
-                ⚠️ {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="submit-button"
-              disabled={loading}
-            >
-              {loading ? '处理中...' : (needsTransactionPin ? '下一步' : '完成')}
-            </button>
-          </form>
-        )}
-
-        {/* Step 2: 设置交易密码 */}
-        {step === 2 && needsTransactionPin && (
           <form onSubmit={handleSetupTransactionPin} className="setup-form">
             <div className="form-section">
-              <h2 className="section-title">步骤 2: 设置交易密码</h2>
+              <h2 className="section-title">步骤 1: 设置交易密码</h2>
               <p className="section-description">
                 交易密码用于确认支付和转账操作，请设置 6 位数字密码
               </p>
@@ -495,13 +317,13 @@ const InitialPasswordSetup = () => {
           </form>
         )}
 
-        {/* Step 3: 完成 */}
-        {step === 3 && (
+        {/* Step 2: 完成 */}
+        {step === 2 && (
           <div className="completion-section">
             <div className="success-icon">✅</div>
             <h2 className="success-title">设置完成！</h2>
             <p className="success-message">
-              您的登录密码和交易密码已设置成功
+              您的交易密码已设置成功
             </p>
             <p className="redirect-message">
               正在跳转到您的 Dashboard...

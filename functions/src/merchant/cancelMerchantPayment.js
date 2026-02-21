@@ -2,16 +2,21 @@
  * cancelMerchantPayment.js
  * 取消交易 - merchantOwner 或 merchantAsist 取消待收的交易
  * 
- * ⭐ 修复版本（2026-01-17）
+ * ⭐ 修复版本（2026-02-19）
  * 修复内容：
- * 1. 修正交易字段名称：transactionType（不是 type）
- * 2. 修正 statusHistory 时间戳：使用 Date 对象
+ * 1. ✅ 修正交易字段名称：transactionType（不是 type）
+ * 2. ✅ 修正 statusHistory 时间戳：使用 Date 对象
+ * 3. ⭐ 新增 reservedPoints 处理（关键修复）
+ * 4. ⭐ 修正 Merchant 字段路径（dailyRevenue.today）
+ * 5. ⭐ 增强日志便于调试
  * 
  * 功能：
  * 1. 验证交易状态为 pending
  * 2. 验证调用者权限（merchantOwner 或 merchantAsist）
- * 3. 更新交易状态为 cancelled
- * 4. 记录取消人信息
+ * 3. 回滚 Customer 点数（availablePoints + reservedPoints）
+ * 4. 回滚 Merchant 统计
+ * 5. 更新交易状态为 cancelled
+ * 6. 记录取消人信息
  * 
  * 注意：Customer 不能自己取消交易（防止欺诈）
  */
@@ -69,7 +74,6 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     }
 
     // ========== 6. 验证交易类型 ==========
-    // ⭐ 修复：改为 transactionType（匹配 processCustomerPayment）
     if (transactionData.transactionType !== 'customer_to_merchant') {
       throw new HttpsError('invalid-argument', '交易类型错误');
     }
@@ -118,27 +122,138 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
       throw new HttpsError('permission-denied', '此交易不属于您的商家');
     }
 
-    // ========== 9. 更新交易状态 ==========
-    // ⭐ 修复：statusHistory 中不能使用 FieldValue.serverTimestamp()
-    const now = new Date();
-    
-    await transactionRef.update({
-      status: 'cancelled',
-      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-      cancelledBy: auth.uid,
-      cancellerRole: cancellerRole,
-      cancelReason: cancelReason || '商家取消',
-      statusHistory: admin.firestore.FieldValue.arrayUnion({
-        status: 'cancelled',
-        timestamp: now,  // ✅ 使用 Date 对象
-        updatedBy: auth.uid,
-        updaterRole: cancellerRole,
-        note: cancelReason || '商家取消'
-      })
+    // ========== 9. 取消交易并回滚点数/统计 ==========
+    const amount = Number(transactionData.amount) || 0;
+    if (amount <= 0) {
+      throw new HttpsError('failed-precondition', '交易金额无效');
+    }
+
+    // ⭐ 新增：详细日志
+    console.log('[cancelMerchantPayment] 准备取消交易:', {
+      transactionId,
+      amount,
+      merchantId: transactionData.merchantId,
+      customerId: transactionData.customerId,
+      cancellerRole,
+      cancelReason: cancelReason || '商家取消'
     });
 
-    console.log('[cancelMerchantPayment] 取消成功:', {
+    const customerRef = db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('users').doc(transactionData.customerId);
+
+    const merchantRef = db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId)
+      .collection('merchants').doc(transactionData.merchantId);
+
+    const now = new Date();
+
+    await db.runTransaction(async (transaction) => {
+      const [txDoc, customerDoc, merchantDoc] = await Promise.all([
+        transaction.get(transactionRef),
+        transaction.get(customerRef),
+        transaction.get(merchantRef)
+      ]);
+
+      if (!txDoc.exists) {
+        throw new HttpsError('not-found', '交易不存在');
+      }
+
+      const latestTx = txDoc.data();
+      if (latestTx.status !== 'pending') {
+        throw new HttpsError('failed-precondition', `交易状态为 ${latestTx.status}，无法取消`);
+      }
+
+      if (!customerDoc.exists) {
+        throw new HttpsError('not-found', '顾客不存在');
+      }
+
+      if (!merchantDoc.exists) {
+        throw new HttpsError('not-found', '商家不存在');
+      }
+
+      // ⭐ 新增：获取当前点数状态用于日志
+      const customerData = customerDoc.data();
+      const currentAvailable = customerData.customer?.pointsAccount?.availablePoints || 0;
+      const currentReserved = customerData.customer?.pointsAccount?.reservedPoints || 0;
+
+      console.log('[cancelMerchantPayment] Customer 当前点数状态:', {
+        customerId: transactionData.customerId,
+        availablePoints: currentAvailable,
+        reservedPoints: currentReserved,
+        refundAmount: amount
+      });
+
+      // ========================================
+      // ⭐ 关键修复：回滚 Customer 点数（包含 reservedPoints）
+      // ========================================
+      transaction.update(customerRef, {
+        // ✅ 加回可用点数
+        'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(amount),
+        // ⭐ 释放预留点数（关键修复）
+        'customer.pointsAccount.reservedPoints': admin.firestore.FieldValue.increment(-amount),
+        // ✅ 减少累计消费
+        'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(-amount),
+        // ✅ 更新统计
+        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(-1),
+        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(-1),
+        'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log('[cancelMerchantPayment] Customer 点数回滚后:', {
+        availablePoints: currentAvailable + amount,
+        reservedPoints: Math.max(0, currentReserved - amount)
+      });
+
+      // ========================================
+      // ⭐ 关键修复：回滚 Merchant 统计（修正字段路径）
+      // ========================================
+      const merchantData = merchantDoc.data();
+      const currentTotalRevenue = merchantData.revenueStats?.totalRevenue || 0;
+      const currentTodayRevenue = merchantData.dailyRevenue?.today || 0;
+
+      console.log('[cancelMerchantPayment] Merchant 当前统计:', {
+        merchantId: transactionData.merchantId,
+        totalRevenue: currentTotalRevenue,
+        todayRevenue: currentTodayRevenue,
+        refundAmount: amount
+      });
+
+      transaction.update(merchantRef, {
+        // ✅ 减少总收入
+        'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(-amount),
+        'revenueStats.transactionCount': admin.firestore.FieldValue.increment(-1),
+        // ⭐ 修正字段路径：dailyRevenue.today（不是 revenueStats.todayRevenue）
+        'dailyRevenue.today': admin.firestore.FieldValue.increment(-amount),
+        'dailyRevenue.todayTransactionCount': admin.firestore.FieldValue.increment(-1),
+        // ✅ 更新时间戳
+        'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // ========================================
+      // 更新交易状态
+      // ========================================
+      transaction.update(transactionRef, {
+        status: 'cancelled',
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelledBy: auth.uid,
+        cancellerRole: cancellerRole,
+        cancelReason: cancelReason || '商家取消',
+        statusHistory: admin.firestore.FieldValue.arrayUnion({
+          status: 'cancelled',
+          timestamp: now,
+          updatedBy: auth.uid,
+          updaterRole: cancellerRole,
+          note: cancelReason || '商家取消'
+        })
+      });
+    });
+
+    console.log('[cancelMerchantPayment] ✅ 取消成功:', {
       transactionId,
+      amount,
       cancellerRole,
       cancellerUid: auth.uid
     });
@@ -146,14 +261,15 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     // ========== 10. 返回成功 ==========
     return {
       success: true,
-      message: '交易已取消',
+      message: '交易已取消，点数已退回顾客',
       transactionId,
+      refundedAmount: amount,
       cancelledBy: auth.uid,
       cancellerRole
     };
 
   } catch (error) {
-    console.error('[cancelMerchantPayment] 错误:', error);
+    console.error('[cancelMerchantPayment] ❌ 取消失败:', error);
 
     if (error instanceof HttpsError) {
       throw error;

@@ -12,6 +12,23 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
   const [roleFilter, setRoleFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
 
+  // 验证提交者身份是否符合 Cashier 直接交款条件
+  // 仅允许：sellerManager / pointSeller / seller+teacher / seller+staff
+  const isValidSubmitter = (submission) => {
+    const submitterRole = submission.submitterRole;
+    const identityTag = submission.resolvedSubmitterIdentityTag ?? submission.submitterIdentityTag ?? null;
+
+    if (submitterRole === 'sellerManager' || submitterRole === 'pointSeller') {
+      return true;
+    }
+
+    if (submitterRole === 'seller') {
+      return identityTag === 'teacher' || identityTag === 'staff';
+    }
+
+    return false;
+  };
+
   // 格式化金额
   const formatAmount = (amount) => {
     if (!amount && amount !== 0) return 'RM 0.00';
@@ -78,6 +95,11 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
   // 筛选和搜索
   const filteredSubmissions = useMemo(() => {
     return submissions.filter(submission => {
+      // 身份验证：只显示符合条件的提交者
+      if (!isValidSubmitter(submission)) {
+        return false;
+      }
+
       // 状态筛选
       if (statusFilter !== 'all' && submission.status !== statusFilter) {
         return false;
@@ -109,15 +131,18 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
 
   // 统计数据
   const statistics = useMemo(() => {
-    const total = submissions.length;
-    const confirmed = submissions.filter(s => s.status === 'confirmed').length;
-    const pending = submissions.filter(s => s.status === 'pending').length;
+    // 只统计符合条件的提交者
+    const validSubmissions = submissions.filter(isValidSubmitter);
+    
+    const total = validSubmissions.length;
+    const confirmed = validSubmissions.filter(s => s.status === 'confirmed').length;
+    const pending = validSubmissions.filter(s => s.status === 'pending').length;
 
-    const totalAmount = submissions.reduce((sum, s) => sum + (s.amount || 0), 0);
-    const confirmedAmount = submissions
+    const totalAmount = validSubmissions.reduce((sum, s) => sum + (s.amount || 0), 0);
+    const confirmedAmount = validSubmissions
       .filter(s => s.status === 'confirmed')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
-    const pendingAmount = submissions
+    const pendingAmount = validSubmissions
       .filter(s => s.status === 'pending')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
@@ -136,7 +161,7 @@ const CollectionHistory = ({ submissions, onRefresh }) => {
     const fmMap = new Map();
     
     submissions
-      .filter(s => s.status === 'confirmed' && s.receivedBy)
+      .filter(s => isValidSubmitter(s) && s.status === 'confirmed' && s.receivedBy)
       .forEach(s => {
         const key = s.receivedBy;
         if (!fmMap.has(key)) {

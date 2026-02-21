@@ -37,6 +37,8 @@ const DashboardHeader = ({
   customActions,     // 自訂操作按鈕陣列（可選）
 }) => {
   const [logoutHover, setLogoutHover] = useState(false);
+  const resolvedUserName = userName || userInfo?.basicInfo?.chineseName || userInfo?.basicInfo?.englishName || '';
+  const resolvedUserPhone = userPhone || userInfo?.basicInfo?.phoneNumber || userInfo?.phoneNumber || '';
 
   return (
     <header className="dashboard-header-shared">
@@ -55,10 +57,10 @@ const DashboardHeader = ({
             {subtitle && (
               <p className="dashboard-header-subtitle">{subtitle}</p>
             )}
-            {userName && (
+            {(resolvedUserName || resolvedUserPhone) && (
               <p className="dashboard-header-user">
-                {userName}
-                {userPhone && ` · ${userPhone}`}
+                {resolvedUserName}
+                {resolvedUserPhone && ` · ${resolvedUserPhone}`}
               </p>
             )}
           </div>

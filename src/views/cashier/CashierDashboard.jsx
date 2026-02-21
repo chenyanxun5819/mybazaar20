@@ -7,7 +7,7 @@
  * 2. 收款记录 - 历史查询（所有收银员可互相查看）
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext';
@@ -138,6 +138,7 @@ const CashierDashboard = () => {
   const [financeData, setFinanceData] = useState(null);
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [allSubmissions, setAllSubmissions] = useState([]);
+  const [usersIdentityMap, setUsersIdentityMap] = useState({});
   const [statistics, setStatistics] = useState({
     cashStats: {
       totalCollected: 0,
@@ -155,6 +156,60 @@ const CashierDashboard = () => {
 
   // 解析 orgEventCode
   const [orgCode, eventCode] = orgEventCode?.split('-') || [];
+
+  // 验证提交者身份是否符合 Cashier 直接交款条件
+  // 仅允许：sellerManager / pointSeller / seller+teacher / seller+staff
+  const isValidSubmitter = (submission) => {
+    const submitterRole = submission.submitterRole;
+    const identityTag = submission.resolvedSubmitterIdentityTag ?? submission.submitterIdentityTag ?? null;
+
+    if (submitterRole === 'sellerManager' || submitterRole === 'pointSeller') {
+      return true;
+    }
+
+    if (submitterRole === 'seller') {
+      return identityTag === 'teacher' || identityTag === 'staff';
+    }
+
+    return false;
+  };
+
+  const enrichSubmissionWithIdentityTag = (submission) => {
+    const identityTagFromUser = usersIdentityMap[submission.submittedBy] || null;
+    return {
+      ...submission,
+      resolvedSubmitterIdentityTag: submission.submitterIdentityTag ?? identityTagFromUser
+    };
+  };
+
+  const resolvedPendingSubmissions = useMemo(
+    () => pendingSubmissions.map(enrichSubmissionWithIdentityTag),
+    [pendingSubmissions, usersIdentityMap]
+  );
+
+  const resolvedAllSubmissions = useMemo(
+    () => allSubmissions.map(enrichSubmissionWithIdentityTag),
+    [allSubmissions, usersIdentityMap]
+  );
+
+  const eligiblePendingSubmissions = useMemo(
+    () => resolvedPendingSubmissions.filter(isValidSubmitter),
+    [resolvedPendingSubmissions]
+  );
+
+  const eligibleAllSubmissions = useMemo(
+    () => resolvedAllSubmissions.filter(isValidSubmitter),
+    [resolvedAllSubmissions]
+  );
+
+  const effectivePendingStats = useMemo(() => {
+    const pendingAmount = eligiblePendingSubmissions.reduce((sum, submission) => sum + (submission.amount || 0), 0);
+    return {
+      ...statistics.pendingStats,
+      pendingAmount,
+      pendingCount: eligiblePendingSubmissions.length
+    };
+  }, [eligiblePendingSubmissions, statistics.pendingStats]);
 
   // 登出处理
   const handleLogout = async () => {
@@ -248,7 +303,37 @@ const CashierDashboard = () => {
     }
   };
 
-  // ===== 3. 实时监听待认领池子 =====
+  // ===== 3. 实时监听用户身份标签（用于严格过滤提交者） =====
+  useEffect(() => {
+    const orgId = userProfile?.organizationId || organizationId;
+    const evtId = userProfile?.eventId || eventId;
+
+    if (!orgId || !evtId) return;
+
+    const usersRef = collection(
+      db,
+      'organizations',
+      orgId,
+      'events',
+      evtId,
+      'users'
+    );
+
+    const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+      const identityMap = {};
+      snapshot.forEach((doc) => {
+        const user = doc.data();
+        identityMap[doc.id] = user.identityTag || null;
+      });
+      setUsersIdentityMap(identityMap);
+    }, (listenError) => {
+      console.error('监听用户身份标签失败:', listenError);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile?.organizationId, userProfile?.eventId, organizationId, eventId]);
+
+  // ===== 4. 实时监听待认领池子 =====
   useEffect(() => {
     const orgId = userProfile?.organizationId || organizationId;
     const evtId = userProfile?.eventId || eventId;
@@ -296,7 +381,7 @@ const CashierDashboard = () => {
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, organizationId, eventId]);
 
-  // ===== 🆕 4. 实时监听所有收款记录（Tab 3用 - 所有FM可互相查看） =====
+  // ===== 🆕 5. 实时监听所有收款记录（Tab 3用 - 所有FM可互相查看） =====
   useEffect(() => {
     const orgId = userProfile?.organizationId || organizationId;
     const evtId = userProfile?.eventId || eventId;
@@ -332,7 +417,7 @@ const CashierDashboard = () => {
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, organizationId, eventId]);
 
-  // ===== 5. 接单确认收款 =====
+  // ===== 6. 接单确认收款 =====
   const handleClaimSubmission = async (submissionId, transactionPin, confirmationNote) => {
     try {
       await getFreshIdToken();
@@ -368,7 +453,7 @@ const CashierDashboard = () => {
     }
   };
 
-  // ===== 6. 渲染 =====
+  // ===== 7. 渲染 =====
   if (loading) {
     return (
       <div className="fm-loading-container">
@@ -422,8 +507,8 @@ const CashierDashboard = () => {
         >
           <span className="fm-tab-icon">📋</span>
           <span>收款记录</span>
-          {allSubmissions.length > 0 && (
-            <span className="fm-badge">{allSubmissions.length}</span>
+          {eligibleAllSubmissions.length > 0 && (
+            <span className="fm-badge">{eligibleAllSubmissions.length}</span>
           )}
         </button>
       </nav>
@@ -432,8 +517,11 @@ const CashierDashboard = () => {
       <main className="fm-content">
         {activeTab === 'overview' && (
           <CollectionOverview
-            pendingSubmissions={pendingSubmissions}
-            statistics={statistics}
+            pendingSubmissions={eligiblePendingSubmissions}
+            statistics={{
+              ...statistics,
+              pendingStats: effectivePendingStats
+            }}
             onClaim={handleClaimSubmission}
             onRefresh={loadFinanceData}
             currentUser={currentUser}
@@ -442,7 +530,7 @@ const CashierDashboard = () => {
 
         {activeTab === 'history' && (
           <CollectionHistory
-            submissions={allSubmissions}
+            submissions={eligibleAllSubmissions}
             onRefresh={loadFinanceData}
           />
         )}

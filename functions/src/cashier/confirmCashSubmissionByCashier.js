@@ -19,7 +19,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
 // 导入共用的交易密码验证函数
-const { verifyTransactionPin } = require('../utils/verifyTransactionPin');
+const { verifyTransactionPin } = require('../../utils/verifyTransactionPin');
 
 exports.confirmCashSubmissionByCashier = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;

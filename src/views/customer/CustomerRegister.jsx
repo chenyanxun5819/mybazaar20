@@ -3,15 +3,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import safeFetch from '../../services/safeFetch';
+import OTPInput from '../../components/OTPInput';
 
 /**
- * Customer注册页面
+ * Customer注册页面（纯OTP版本）
+ * 
+ * 流程：
+ * 步骤1：输入手机号和昵称
+ * 步骤2：OTP验证
+ * 步骤3：设置交易密码
  * 
  * 路由参数：
  * - orgEventCode: 组织-活动代码 (格式: orgCode-eventCode, 例如: fch-2025)
- * 
- * 路由示例：
- * /customer/fch-2025/register
  */
 const CustomerRegister = () => {
   const navigate = useNavigate();
@@ -85,22 +88,29 @@ const CustomerRegister = () => {
     run();
   }, [orgCode, eventCode]);
 
+  // 表单数据
   const [formData, setFormData] = useState({
     phoneNumber: '',
     displayName: '',
-    password: '',
-    confirmPassword: '',
     email: '',
     transactionPin: '',
     confirmPin: ''
   });
+
+  // 步骤控制
+  const [currentStep, setCurrentStep] = useState(1); // 1=基本信息, 2=OTP验证, 3=设置交易密码
+
+  // OTP相关状态
+  const [otp, setOtp] = useState('');
+  const [otpSessionId, setOtpSessionId] = useState('');
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [otpLoading, setOtpLoading] = useState(false);
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
   // 验证手机号
   const validatePhone = (phone) => {
-    // 马来西亚手机号：+60或60开头，9-10位数字
     const phoneRegex = /^(\+?60|0)?1\d{8,9}$/;
     return phoneRegex.test(phone.replace(/[\s-]/g, ''));
   };
@@ -130,7 +140,6 @@ const CustomerRegister = () => {
       [name]: value
     }));
 
-    // 清除该字段的错误
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -139,18 +148,16 @@ const CustomerRegister = () => {
     }
   };
 
-  // 验证表单
-  const validateForm = () => {
+  // 验证步骤1（基本信息）
+  const validateStep1 = () => {
     const newErrors = {};
 
-    // 手机号验证
     if (!formData.phoneNumber) {
       newErrors.phoneNumber = '请输入手机号';
     } else if (!validatePhone(formData.phoneNumber)) {
       newErrors.phoneNumber = '手机号格式不正确';
     }
 
-    // 昵称验证
     if (!formData.displayName) {
       newErrors.displayName = '请输入昵称';
     } else if (formData.displayName.length < 2) {
@@ -159,27 +166,23 @@ const CustomerRegister = () => {
       newErrors.displayName = '昵称不能超过20个字符';
     }
 
-    // 密码验证
-    if (!formData.password) {
-      newErrors.password = '请输入密码';
-    } else if (formData.password.length < 6) {
-      newErrors.password = '密码至少6个字符';
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = '邮箱格式不正确';
     }
 
-    // 确认密码验证
-    if (!formData.confirmPassword) {
-      newErrors.confirmPassword = '请确认密码';
-    } else if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = '两次输入的密码不一致';
-    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
-    // ========== ✨ 新增：PIN 验证 ========== 
+  // 验证步骤3（交易密码）
+  const validateStep3 = () => {
+    const newErrors = {};
+
     if (!formData.transactionPin) {
       newErrors.transactionPin = '请输入交易密码';
     } else if (!/^\d{6}$/.test(formData.transactionPin)) {
       newErrors.transactionPin = '交易密码必须是6位数字';
     } else {
-      // 检查弱密码
       const weakPins = ['000000', '111111', '222222', '333333', '444444',
         '555555', '666666', '777777', '888888', '999999',
         '123456', '654321', '123123'];
@@ -187,7 +190,6 @@ const CustomerRegister = () => {
       if (weakPins.includes(formData.transactionPin)) {
         newErrors.transactionPin = '请使用更安全的密码组合';
       } else {
-        // 检查连续数字
         const digits = formData.transactionPin.split('').map(Number);
         let isAscending = true;
         let isDescending = true;
@@ -201,34 +203,266 @@ const CustomerRegister = () => {
       }
     }
 
-    // 确认 PIN 验证
     if (!formData.confirmPin) {
       newErrors.confirmPin = '请确认交易密码';
     } else if (formData.transactionPin !== formData.confirmPin) {
       newErrors.confirmPin = '两次输入的交易密码不一致';
     }
 
-    // 邮箱验证（可选）
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = '邮箱格式不正确';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // 处理注册
-  const handleRegister = async (e) => {
+  // 发送OTP
+  const sendOtp = async () => {
+    try {
+      console.log('[CustomerRegister] 发送 OTP 到:', formData.phoneNumber);
+
+      const sendPayload = {
+        phoneNumber: formData.phoneNumber,
+        orgCode: orgCode.toLowerCase(),
+        eventCode: eventCode,
+        scenario: 'customerRegister'
+      };
+
+      console.log('[CustomerRegister] sendOtp 请求体:', sendPayload);
+
+      const resp = await safeFetch('/api/sendOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sendPayload)
+      });
+
+      console.log('[CustomerRegister] sendOtp 响应状态:', {
+        status: resp.status,
+        ok: resp.ok,
+        aborted: resp.aborted
+      });
+
+      if (resp.status === 0 || resp.aborted) {
+        throw new Error('网络请求被中断，请检查网络连接后重试');
+      }
+
+      let data = null;
+      try {
+        const responseText = await resp.text();
+        console.log('[CustomerRegister] sendOtp 原始响应:', responseText.slice(0, 500));
+        
+        if (responseText) {
+          data = JSON.parse(responseText);
+        }
+      } catch (parseError) {
+        console.error('[CustomerRegister] sendOtp 响应解析失败:', parseError);
+        throw new Error('服务器返回无效的响应格式');
+      }
+
+      console.log('[CustomerRegister] sendOtp 解析后的数据:', {
+        success: data?.success,
+        hasSessionId: !!data?.sessionId,
+        hasError: !!data?.error
+      });
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error?.message || '发送 OTP 失败');
+      }
+
+      console.log('[CustomerRegister] ✅ OTP 已发送');
+
+      if (data?.sessionId) {
+        setOtpSessionId(String(data.sessionId));
+        console.log('[CustomerRegister] ✓ sessionId 已保存:', data.sessionId.slice(0, 20) + '...');
+      } else {
+        console.warn('[CustomerRegister] ⚠️ 响应中缺少 sessionId');
+      }
+
+      setOtpTimer(data.expiresIn || 300);
+      startOtpTimer();
+
+      if (data?.devMode && data?.testOtp) {
+        console.log('[CustomerRegister] DEV 模式：自动填入测试 OTP', data.testOtp);
+        setOtp(String(data.testOtp));
+      }
+
+    } catch (error) {
+      console.error('[CustomerRegister] 发送 OTP 错误:', {
+        message: error.message,
+        stack: error.stack
+      });
+      throw new Error(error.message || '发送验证码失败，请重试');
+    }
+  };
+
+  // OTP 倒计时
+  const startOtpTimer = () => {
+    const interval = setInterval(() => {
+      setOtpTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // 验证OTP
+  const verifyOtp = async () => {
+    try {
+      if (!otp || otp.length !== 6) {
+        throw new Error('请输入6位验证码');
+      }
+
+      console.log('[CustomerRegister] 开始验证 OTP', {
+        otpLength: otp.length,
+        sessionId: otpSessionId ? '✓ 已设置' : '✗ 未设置',
+        phoneNumber: formData.phoneNumber ? '✓ 已设置' : '✗ 未设置'
+      });
+
+      // 构建验证请求
+      const verifyPayload = {
+        otp: otp
+      };
+
+      // 优先使用 sessionId，备用方案是 phoneNumber
+      if (otpSessionId) {
+        console.log('[CustomerRegister] 使用 sessionId 验证');
+        verifyPayload.sessionId = otpSessionId;
+      } else if (formData.phoneNumber && orgCode && eventCode) {
+        console.log('[CustomerRegister] sessionId 不存在，使用备用方案 (phoneNumber)');
+        verifyPayload.phoneNumber = formData.phoneNumber;
+        verifyPayload.orgCode = orgCode;
+        verifyPayload.eventCode = eventCode;
+      } else {
+        throw new Error('验证条件不足：缺少 sessionId 和必要的备用信息');
+      }
+
+      console.log('[CustomerRegister] 发送验证请求到 /api/verifyOtpHttp');
+
+      const resp = await safeFetch('/api/verifyOtpHttp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verifyPayload)
+      });
+
+      console.log('[CustomerRegister] 收到响应', {
+        status: resp.status,
+        ok: resp.ok,
+        contentType: resp.headers?.get?.('content-type') || 'unknown'
+      });
+
+      // 处理可能的网络中断
+      if (resp.status === 0 || resp.aborted) {
+        throw new Error('网络请求被中断或超时，请检查网络连接后重试');
+      }
+
+      let data = null;
+      try {
+        const responseText = await resp.text();
+        console.log('[CustomerRegister] 原始响应:', responseText.slice(0, 500));
+        
+        if (responseText) {
+          data = JSON.parse(responseText);
+        }
+      } catch (parseError) {
+        console.error('[CustomerRegister] 响应解析失败:', parseError);
+        throw new Error(`服务器返回无效的响应格式`);
+      }
+
+      console.log('[CustomerRegister] 解析后的数据:', {
+        success: data?.success,
+        verified: data?.verified,
+        hasError: !!data?.error,
+        errorCode: data?.error?.code,
+        errorMessage: data?.error?.message
+      });
+
+      if (!resp.ok) {
+        const errorMsg = data?.error?.message || `HTTP ${resp.status}: OTP 验证失败`;
+        throw new Error(errorMsg);
+      }
+
+      if (!data?.success && !data?.verified) {
+        throw new Error(data?.error?.message || 'OTP 验证失败');
+      }
+
+      console.log('[CustomerRegister] ✅ OTP 验证成功');
+      return true;
+
+    } catch (error) {
+      console.error('[CustomerRegister] OTP 验证错误:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      throw error;
+    }
+  };
+
+  // 步骤1：提交基本信息并发送OTP
+  const handleStep1Submit = async (e) => {
     e.preventDefault();
 
-    // 验证组织和活动ID
     if (!resolvedIds.organizationId || !resolvedIds.eventId) {
-      window.mybazaarShowToast(resolvedIds.error || '缺少必要的活动信息，请从正确的链接访问注册页面');
+      window.mybazaarShowToast(resolvedIds.error || '缺少必要的活动信息');
       return;
     }
 
-    // 验证表单
-    if (!validateForm()) {
+    if (!validateStep1()) {
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await sendOtp();
+      setCurrentStep(2);
+      setOtp('');
+    } catch (error) {
+      window.mybazaarShowToast(error.message || '发送验证码失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 步骤2：验证OTP
+  const handleStep2Submit = async (e) => {
+    e.preventDefault();
+
+    console.log('[handleStep2Submit] 表单提交事件触发', {
+      otpValue: otp,
+      otpLength: otp?.length || 0,
+      otpLoading,
+      buttonDisabledCondition: `otpLoading=${otpLoading} OR otp.length !== 6 (${otp?.length} !== 6)`
+    });
+
+    if (!otp || otp.length !== 6) {
+      const msg = `❌ OTP长度不足：${otp?.length || 0}/6`;
+      console.warn('[handleStep2Submit] 验证失败:', msg);
+      window.mybazaarShowToast?.(msg);
+      return;
+    }
+
+    setOtpLoading(true);
+
+    try {
+      console.log('[handleStep2Submit] 开始验证 OTP');
+      await verifyOtp();
+      console.log('[handleStep2Submit] ✅ OTP 验证成功，跳转到步骤3');
+      setCurrentStep(3);
+    } catch (error) {
+      const errorMsg = error?.message || 'OTP验证失败，请重试';
+      console.error('[handleStep2Submit] 捕获到错误:', errorMsg);
+      window.mybazaarShowToast?.(errorMsg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // 步骤3：设置交易密码并完成注册
+  const handleStep3Submit = async (e) => {
+    e.preventDefault();
+
+    if (!validateStep3()) {
       return;
     }
 
@@ -242,17 +476,17 @@ const CustomerRegister = () => {
         eventId: resolvedIds.eventId,
         phoneNumber: formatPhoneNumber(formData.phoneNumber),
         displayName: formData.displayName.trim(),
-        password: formData.password,
-        transactionPin: formData.transactionPin,  // ← ✨ 新增
+        transactionPin: formData.transactionPin,
         email: formData.email.trim() || null
       });
 
       console.log('[CustomerRegister] 注册成功:', result.data);
 
-      // 显示成功消息
-      window.mybazaarShowToast('注册成功！即将跳转到登录页面');
-      // 跳转到登录页面
-      navigate(`/login/${orgEventCode}`);
+      window.mybazaarShowToast('✅ 注册成功！即将跳转到登录页面');
+      
+      setTimeout(() => {
+        navigate(`/login/${orgEventCode}`);
+      }, 1500);
 
     } catch (error) {
       console.error('[CustomerRegister] 注册失败:', error);
@@ -271,10 +505,37 @@ const CustomerRegister = () => {
     }
   };
 
+  // 重新发送OTP
+  const handleResendOtp = async () => {
+    try {
+      console.log('[handleResendOtp] 用户请求重新发送 OTP');
+      setOtpLoading(true);
+      await sendOtp();
+      setOtp('');
+      window.mybazaarShowToast?.('✅ 验证码已重新发送');
+    } catch (error) {
+      const errorMsg = error?.message || '发送失败，请重试';
+      console.error('[handleResendOtp] 错误:', errorMsg);
+      window.mybazaarShowToast?.(errorMsg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // 返回上一步
+  const handleBackStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+      setErrors({});
+    }
+  };
+
   // 跳转到登录页面
   const handleGoToLogin = () => {
     navigate(`/login/${orgEventCode}`);
   };
+
+  // ========== UI渲染 ==========
 
   return (
     <div style={styles.container}>
@@ -284,278 +545,320 @@ const CustomerRegister = () => {
           <div style={styles.logo}>🎪</div>
           <h1 style={styles.title}>MyBazaar</h1>
           <h2 style={styles.subtitle}>Customer会员注册</h2>
+          
+          {/* 步骤指示器 */}
+          <div style={styles.stepIndicator}>
+            <div style={{
+              ...styles.step,
+              ...(currentStep >= 1 ? styles.stepActive : {})
+            }}>
+              <span>1</span>
+              <small>基本信息</small>
+            </div>
+            <div style={styles.stepLine}></div>
+            <div style={{
+              ...styles.step,
+              ...(currentStep >= 2 ? styles.stepActive : {})
+            }}>
+              <span>2</span>
+              <small>验证手机</small>
+            </div>
+            <div style={styles.stepLine}></div>
+            <div style={{
+              ...styles.step,
+              ...(currentStep >= 3 ? styles.stepActive : {})
+            }}>
+              <span>3</span>
+              <small>设置密码</small>
+            </div>
+          </div>
         </div>
 
-        {/* 注册表单 */}
-        <form onSubmit={handleRegister} style={styles.form}>
-          {resolvedIds.loading && (
-            <div style={{
-              padding: '0.75rem 1rem',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px',
-              fontSize: '0.9rem',
-              color: '#666'
-            }}>
-              正在载入活动信息...
+        {/* 活动信息加载中 */}
+        {resolvedIds.loading && (
+          <div style={styles.loadingBox}>
+            正在载入活动信息...
+          </div>
+        )}
+
+        {/* 活动信息错误 */}
+        {!!resolvedIds.error && !resolvedIds.loading && (
+          <div style={styles.errorBox}>
+            ⚠️ {resolvedIds.error}
+          </div>
+        )}
+
+        {/* 步骤1：基本信息 */}
+        {currentStep === 1 && !resolvedIds.loading && !resolvedIds.error && (
+          <form onSubmit={handleStep1Submit} style={styles.form}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>
+                手机号 <span style={styles.required}>*</span>
+              </label>
+              <input
+                type="tel"
+                name="phoneNumber"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                placeholder="60123456789"
+                style={{
+                  ...styles.input,
+                  ...(errors.phoneNumber ? styles.inputError : {})
+                }}
+                disabled={loading}
+              />
+              {errors.phoneNumber && (
+                <p style={styles.errorText}>{errors.phoneNumber}</p>
+              )}
+              <p style={styles.hint}>马来西亚手机号</p>
             </div>
-          )}
 
-          {!!resolvedIds.error && !resolvedIds.loading && (
-            <div style={{
-              padding: '0.75rem 1rem',
-              backgroundColor: '#fee2e2',
-              borderRadius: '8px',
-              fontSize: '0.9rem',
-              color: '#991b1b'
-            }}>
-              {resolvedIds.error}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>
+                昵称 <span style={styles.required}>*</span>
+              </label>
+              <input
+                type="text"
+                name="displayName"
+                value={formData.displayName}
+                onChange={handleChange}
+                placeholder="请输入昵称"
+                style={{
+                  ...styles.input,
+                  ...(errors.displayName ? styles.inputError : {})
+                }}
+                disabled={loading}
+              />
+              {errors.displayName && (
+                <p style={styles.errorText}>{errors.displayName}</p>
+              )}
             </div>
-          )}
-          {/* 手机号 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              手机号 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="tel"
-              name="phoneNumber"
-              value={formData.phoneNumber}
-              onChange={handleChange}
-              placeholder="例：0123456789 或 +60123456789"
-              style={{
-                ...styles.input,
-                ...(errors.phoneNumber ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.phoneNumber && (
-              <p style={styles.errorText}>{errors.phoneNumber}</p>
-            )}
-            <p style={styles.hint}>马来西亚手机号，用于登录和接收通知</p>
-          </div>
 
-          {/* 昵称 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              昵称 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="text"
-              name="displayName"
-              value={formData.displayName}
-              onChange={handleChange}
-              placeholder="请输入您的昵称"
-              style={{
-                ...styles.input,
-                ...(errors.displayName ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.displayName && (
-              <p style={styles.errorText}>{errors.displayName}</p>
-            )}
-            <p style={styles.hint}>2-20个字符，将显示给其他用户</p>
-          </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>邮箱（可选）</label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="example@email.com"
+                style={{
+                  ...styles.input,
+                  ...(errors.email ? styles.inputError : {})
+                }}
+                disabled={loading}
+              />
+              {errors.email && (
+                <p style={styles.errorText}>{errors.email}</p>
+              )}
+            </div>
 
-          {/* 密码 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              密码 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="请输入密码"
-              style={{
-                ...styles.input,
-                ...(errors.password ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.password && (
-              <p style={styles.errorText}>{errors.password}</p>
-            )}
-            <p style={styles.hint}>至少6个字符</p>
-          </div>
-
-          {/* 确认密码 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              确认密码 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="password"
-              name="confirmPassword"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              placeholder="请再次输入密码"
-              style={{
-                ...styles.input,
-                ...(errors.confirmPassword ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.confirmPassword && (
-              <p style={styles.errorText}>{errors.confirmPassword}</p>
-            )}
-          </div>
-
-          {/* ========== ✨ 新增：交易密码 ========== */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              交易密码 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="password"
-              name="transactionPin"
-              value={formData.transactionPin}
-              onChange={(e) => {
-                // 只允许数字，最多6位
-                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setFormData(prev => ({ ...prev, transactionPin: value }));
-                if (errors.transactionPin) {
-                  setErrors(prev => ({ ...prev, transactionPin: '' }));
-                }
-              }}
-              placeholder="请输入6位数字"
-              maxLength="6"
-              style={{
-                ...styles.input,
-                fontSize: '1.5rem',
-                letterSpacing: '0.5rem',
-                textAlign: 'center',
-                ...(errors.transactionPin ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.transactionPin && (
-              <p style={styles.errorText}>{errors.transactionPin}</p>
-            )}
-            <p style={styles.hint}>用于点数转账和支付验证</p>
-          </div>
-
-          {/* 确认交易密码 */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              确认交易密码 <span style={styles.required}>*</span>
-            </label>
-            <input
-              type="password"
-              name="confirmPin"
-              value={formData.confirmPin}
-              onChange={(e) => {
-                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setFormData(prev => ({ ...prev, confirmPin: value }));
-                if (errors.confirmPin) {
-                  setErrors(prev => ({ ...prev, confirmPin: '' }));
-                }
-              }}
-              placeholder="请再次输入6位数字"
-              maxLength="6"
-              style={{
-                ...styles.input,
-                fontSize: '1.5rem',
-                letterSpacing: '0.5rem',
-                textAlign: 'center',
-                ...(errors.confirmPin ? styles.inputError : {})
-              }}
-              disabled={loading}
-            />
-            {errors.confirmPin && (
-              <p style={styles.errorText}>{errors.confirmPin}</p>
-            )}
-          </div>
-
-          {/* 安全提示 */}
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#e3f2fd',
-            borderRadius: '8px',
-            borderLeft: '4px solid #2196F3'
-          }}>
-            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: '600', color: '#1976d2' }}>
-              💡 交易密码用途
-            </p>
-            <ul style={{ margin: 0, paddingLeft: '1.5rem', fontSize: '0.85rem', color: '#666' }}>
-              <li>购买点数时验证</li>
-              <li>支付给商家时验证</li>
-              <li>转让点数给他人时验证</li>
-              <li>请勿使用简单密码（如 123456）</li>
-            </ul>
-          </div>
-
-          {/* 邮箱（可选） */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>
-              邮箱（可选）
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="example@email.com"
-              style={{
-                ...styles.input,
-                ...(errors.email ? styles.inputError : {})
-              }}
-              autoComplete="off" 
-              disabled={loading}
-            />
-            {errors.email && (
-              <p style={styles.errorText}>{errors.email}</p>
-            )}
-          </div>
-
-          {/* 提交按钮 */}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              ...styles.submitButton,
-              ...(loading ? styles.buttonDisabled : {})
-            }}
-          >
-            {loading ? (
-              <>
-                <span style={styles.spinner}></span>
-                注册中...
-              </>
-            ) : (
-              '注册'
-            )}
-          </button>
-        </form>
-
-        {/* 登录链接 */}
-        <div style={styles.footer}>
-          <p style={styles.footerText}>
-            已有账号？
             <button
-              onClick={handleGoToLogin}
+              type="submit"
               disabled={loading}
-              style={styles.linkButton}
+              style={{
+                ...styles.submitButton,
+                ...(loading ? styles.buttonDisabled : {})
+              }}
             >
-              立即登录
+              {loading ? '发送中...' : '下一步：获取验证码'}
             </button>
-          </p>
-        </div>
+
+            <div style={styles.footer}>
+              <p style={styles.footerText}>
+                已有账号？
+                <button onClick={handleGoToLogin} style={styles.linkButton}>
+                  立即登录
+                </button>
+              </p>
+            </div>
+          </form>
+        )}
+
+        {/* 步骤2：OTP验证 */}
+        {currentStep === 2 && (
+          <form onSubmit={handleStep2Submit} style={styles.form}>
+            <div style={styles.otpInfo}>
+              <p style={styles.otpTitle}>📱 验证码已发送</p>
+              <p style={styles.otpSubtitle}>
+                已发送至 {formData.phoneNumber}
+              </p>
+            </div>
+
+            <OTPInput
+              value={otp}
+              onChange={(otpCode) => {
+                console.log('[CustomerRegister] OTPInput onChange:', otpCode);
+                setOtp(otpCode);
+              }}
+              onComplete={(otpCode) => {
+                console.log('[CustomerRegister] OTPInput onComplete 回调:', otpCode);
+                setOtp(otpCode);
+              }}
+              onResend={handleResendOtp}
+              expiresIn={otpTimer}
+              loading={otpLoading}
+            />
+
+            {otpTimer > 0 && (
+              <p style={styles.timerText}>
+                {Math.floor(otpTimer / 60)}:{String(otpTimer % 60).padStart(2, '0')} 后可重新发送
+              </p>
+            )}
+
+            {otpTimer === 0 && (
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={otpLoading}
+                style={styles.resendButton}
+              >
+                重新发送验证码
+              </button>
+            )}
+
+            <button
+              type="submit"
+              disabled={otpLoading || otp.length !== 6}
+              style={{
+                ...styles.submitButton,
+                ...(otpLoading || otp.length !== 6 ? styles.buttonDisabled : {})
+              }}
+            >
+              {otpLoading ? '验证中...' : '下一步'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBackStep}
+              style={styles.backButton}
+            >
+              ← 返回上一步
+            </button>
+          </form>
+        )}
+
+        {/* 步骤3：设置交易密码 */}
+        {currentStep === 3 && (
+          <form onSubmit={handleStep3Submit} style={styles.form}>
+            <div style={styles.successInfo}>
+              <p>✅ 手机号验证成功！</p>
+              <p>现在设置您的交易密码</p>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>
+                交易密码 <span style={styles.required}>*</span>
+              </label>
+              <input
+                type="password"
+                name="transactionPin"
+                value={formData.transactionPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setFormData(prev => ({ ...prev, transactionPin: value }));
+                  if (errors.transactionPin) {
+                    setErrors(prev => ({ ...prev, transactionPin: '' }));
+                  }
+                }}
+                placeholder="请输入6位数字"
+                maxLength="6"
+                style={{
+                  ...styles.input,
+                  fontSize: '1.5rem',
+                  letterSpacing: '0.5rem',
+                  textAlign: 'center',
+                  ...(errors.transactionPin ? styles.inputError : {})
+                }}
+                disabled={loading}
+              />
+              {errors.transactionPin && (
+                <p style={styles.errorText}>{errors.transactionPin}</p>
+              )}
+              <p style={styles.hint}>用于点数转账和支付验证</p>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>
+                确认交易密码 <span style={styles.required}>*</span>
+              </label>
+              <input
+                type="password"
+                name="confirmPin"
+                value={formData.confirmPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setFormData(prev => ({ ...prev, confirmPin: value }));
+                  if (errors.confirmPin) {
+                    setErrors(prev => ({ ...prev, confirmPin: '' }));
+                  }
+                }}
+                placeholder="请再次输入6位数字"
+                maxLength="6"
+                style={{
+                  ...styles.input,
+                  fontSize: '1.5rem',
+                  letterSpacing: '0.5rem',
+                  textAlign: 'center',
+                  ...(errors.confirmPin ? styles.inputError : {})
+                }}
+                disabled={loading}
+              />
+              {errors.confirmPin && (
+                <p style={styles.errorText}>{errors.confirmPin}</p>
+              )}
+            </div>
+
+            <div style={styles.pinHint}>
+              <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600' }}>
+                💡 交易密码用途
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.5rem', fontSize: '0.85rem' }}>
+                <li>购买点数时验证</li>
+                <li>支付给商家时验证</li>
+                <li>转让点数给他人时验证</li>
+                <li>请勿使用简单密码（如 123456）</li>
+              </ul>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                ...styles.submitButton,
+                ...(loading ? styles.buttonDisabled : {})
+              }}
+            >
+              {loading ? '注册中...' : '完成注册'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBackStep}
+              style={styles.backButton}
+            >
+              ← 返回上一步
+            </button>
+          </form>
+        )}
 
         {/* 使用条款 */}
-        <div style={styles.terms}>
-          <p style={styles.termsText}>
-            注册即表示您同意MyBazaar的
-            <a href="/terms" style={styles.link}>使用条款</a>
-            和
-            <a href="/privacy" style={styles.link}>隐私政策</a>
-          </p>
-        </div>
+        {!resolvedIds.loading && !resolvedIds.error && (
+          <div style={styles.terms}>
+            <p style={styles.termsText}>
+              注册即表示您同意MyBazaar的
+              <a href="/terms" style={styles.link}>使用条款</a>
+              和
+              <a href="/privacy" style={styles.link}>隐私政策</a>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+// ========== 样式 ==========
 
 const styles = {
   container: {
@@ -568,7 +871,7 @@ const styles = {
   },
   card: {
     width: '100%',
-    maxWidth: '450px',
+    maxWidth: '500px',
     backgroundColor: '#fff',
     borderRadius: '12px',
     padding: '2rem',
@@ -592,7 +895,29 @@ const styles = {
     fontSize: '1.1rem',
     fontWeight: '500',
     color: '#666',
-    margin: 0
+    margin: '0 0 1.5rem 0'
+  },
+  stepIndicator: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    marginTop: '1.5rem'
+  },
+  step: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.25rem'
+  },
+  stepActive: {
+    color: '#2196F3',
+    fontWeight: '600'
+  },
+  stepLine: {
+    width: '40px',
+    height: '2px',
+    backgroundColor: '#ddd'
   },
   form: {
     display: 'flex',
@@ -633,6 +958,70 @@ const styles = {
     fontSize: '0.8rem',
     color: '#999'
   },
+  loadingBox: {
+    padding: '0.75rem 1rem',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+    fontSize: '0.9rem',
+    color: '#666',
+    textAlign: 'center'
+  },
+  errorBox: {
+    padding: '0.75rem 1rem',
+    backgroundColor: '#fee',
+    borderRadius: '8px',
+    fontSize: '0.9rem',
+    color: '#c33',
+    textAlign: 'center'
+  },
+  otpInfo: {
+    textAlign: 'center',
+    padding: '1rem',
+    backgroundColor: '#f0f9ff',
+    borderRadius: '8px',
+    marginBottom: '0.5rem'
+  },
+  otpTitle: {
+    margin: '0 0 0.5rem 0',
+    fontSize: '1rem',
+    fontWeight: '600',
+    color: '#1976d2'
+  },
+  otpSubtitle: {
+    margin: 0,
+    fontSize: '0.9rem',
+    color: '#666'
+  },
+  timerText: {
+    textAlign: 'center',
+    fontSize: '0.85rem',
+    color: '#666',
+    margin: '0.5rem 0'
+  },
+  resendButton: {
+    padding: '0.5rem',
+    fontSize: '0.9rem',
+    color: '#2196F3',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    textDecoration: 'underline'
+  },
+  successInfo: {
+    textAlign: 'center',
+    padding: '1rem',
+    backgroundColor: '#e8f5e9',
+    borderRadius: '8px',
+    color: '#2e7d32',
+    marginBottom: '0.5rem'
+  },
+  pinHint: {
+    padding: '1rem',
+    backgroundColor: '#e3f2fd',
+    borderRadius: '8px',
+    borderLeft: '4px solid #2196F3',
+    color: '#666'
+  },
   submitButton: {
     marginTop: '0.5rem',
     padding: '1rem',
@@ -643,26 +1032,23 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '0.5rem'
+    transition: 'all 0.2s'
+  },
+  backButton: {
+    padding: '0.75rem',
+    fontSize: '0.9rem',
+    color: '#666',
+    backgroundColor: '#f5f5f5',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer'
   },
   buttonDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed'
   },
-  spinner: {
-    width: '16px',
-    height: '16px',
-    border: '2px solid #fff',
-    borderTop: '2px solid transparent',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite'
-  },
   footer: {
-    marginTop: '1.5rem',
+    marginTop: '1rem',
     textAlign: 'center'
   },
   footerText: {
@@ -699,21 +1085,4 @@ const styles = {
   }
 };
 
-// 添加旋转动画
-if (typeof document !== 'undefined') {
-  const styleSheet = document.styleSheets[0];
-  const keyframes = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  `;
-  try {
-    styleSheet.insertRule(keyframes, styleSheet.cssRules.length);
-  } catch (e) {
-    // 动画可能已存在
-  }
-}
-
 export default CustomerRegister;
-

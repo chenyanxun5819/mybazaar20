@@ -16,7 +16,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../../config/firebase';
 
@@ -34,12 +34,35 @@ const CollectCash = ({ userInfo, eventData }) => {
   // 搜索和筛选
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('dateDesc');
+  // ✅ 实时监听 SM 用户文档中的 cashStats
+  const [liveCashStats, setLiveCashStats] = useState(null);
 
   const orgId = userInfo?.organizationId?.replace('organization_', '') || '';
   const eventId = userInfo?.eventId?.replace('event_', '') || '';
   const smId = userInfo?.userId;
 
   console.log('[CollectCash] 初始化:', { orgId, eventId, smId });
+
+  // ✅ 实时监听 SM 用户文档，确认收款后立即反映最新 cashOnHand
+  useEffect(() => {
+    if (!orgId || !eventId || !smId) return;
+
+    const smDocRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${smId}`);
+
+    const unsubscribe = onSnapshot(
+      smDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          setLiveCashStats(snap.data()?.sellerManager?.cashStats || {});
+        }
+      },
+      (error) => {
+        console.error('[CollectCash] 监听 SM 用户文档失败:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [orgId, eventId, smId]);
 
   // ===== 加载待确认的submissions =====
   useEffect(() => {
@@ -104,11 +127,13 @@ const CollectCash = ({ userInfo, eventData }) => {
   }, [orgId, eventId, smId]);
 
   // ===== 统计数据计算 =====
+  // ✅ 优先使用实时监听数据，回退到 userInfo（首次渲染前的初始值）
+  const cashStats = liveCashStats ?? userInfo?.sellerManager?.cashStats ?? {};
   const stats = {
     totalPending: pendingSubmissions.reduce((sum, s) => sum + (s.amount || 0), 0),
     count: pendingSubmissions.length,
-    cashOnHand: userInfo?.sellerManager?.cashStats?.cashOnHand || 0,
-    confirmedFromSellers: userInfo?.sellerManager?.cashStats?.confirmedFromSellers || 0
+    cashOnHand: cashStats.cashOnHand || 0,
+    confirmedFromSellers: cashStats.confirmedFromSellers || 0
   };
 
   // ===== 搜索和排序 =====

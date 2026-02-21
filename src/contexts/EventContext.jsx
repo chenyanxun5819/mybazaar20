@@ -51,6 +51,27 @@ export const EventProvider = ({ children }) => {
     parseUrlAndLoadData();
   }, []);
 
+  // ✅ 动态更新 favicon 和页面标题（跟随 Event Logo）
+  useEffect(() => {
+    if (!event) return;
+
+    // 更新页面标题
+    const eventName = event.eventName?.['zh-CN'] || event.eventName?.['en-US'] || event.eventCode || 'MyBazaar';
+    document.title = `${eventName} - MyBazaar`;
+
+    // 更新 favicon
+    const logoUrl = event.logoUrl;
+    if (logoUrl) {
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = logoUrl;
+    }
+  }, [event]);
+
   const parseUrlAndLoadData = async () => {
     try {
       setLoading(true);
@@ -104,7 +125,8 @@ export const EventProvider = ({ children }) => {
         //       /merchant-manager/:orgEventCode/dashboard
         //       /customer-manager/:orgEventCode/dashboard
         //       /event-manager/:orgEventCode/dashboard
-        if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager', 'event-manager'].includes(first)) {
+        //       /auditor/:orgEventCode/dashboard
+        if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager', 'event-manager', 'auditor'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
           if (orgEvent && third === 'dashboard') {
@@ -135,11 +157,11 @@ export const EventProvider = ({ children }) => {
 
       if (!parsedOrgCode || !parsedEventCode) {
         console.warn('[EventContext] URL 格式无法识别！: ' + urlPath);
-        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type)/:orgEventCode/dashboard');
+        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type|auditor)/:orgEventCode/dashboard');
         const hints = [
           'URL 格式不正确，请使用正确的链接',
           '例如: /login/xhessbn-2025 或 /seller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
-          '或 /cashier/xhessbn-2025/dashboard',
+          '或 /cashier/xhessbn-2025/dashboard 或 /auditor/xhessbn-2025/dashboard',
           '',
           '可能原因：',
           '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',
@@ -510,4 +532,3 @@ if (typeof document !== 'undefined') {
   `;
   document.head.appendChild(style);
 }
-

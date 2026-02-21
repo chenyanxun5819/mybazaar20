@@ -49,6 +49,13 @@
         ]
       }
     ],
+    "redirects": [
+      {
+        "source": "/",
+        "destination": "/login/demo-2026",
+        "type": 301
+      }
+    ],
     "rewrites": [
       {
         "source": "/api/sendOtpHttp",
@@ -66,7 +73,6 @@
         "source": "/api/resolveOrgEventHttp",
         "function": "resolveOrgEventHttp"
       },
-      
       {
         "source": "/api/batchImportUsersHttp",
         "function": "batchImportUsersHttp"

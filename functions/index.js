@@ -69,6 +69,7 @@ const { createPointCard } = require('./src/pointseller/createPointCard');
 const { pointSellerDirectSale } = require('./src/pointseller/pointSellerDirectSale');
 const { submitCashAsPointSeller } = require('./src/pointseller/submitCashAsPointSeller');
 const { sellerManagerDirectSale } = require('./src/sellerManager/sellerManagerDirectSale');
+const { sellerDirectSale } = require('./src/sellerManager/sellerDirectSale');
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
 const { setupTransactionPin: setupTransactionPinFn } = require('./setupTransactionPin');
@@ -118,6 +119,7 @@ exports.onCashCollection = onCashCollection;
 
 // 导出 Seller Manager Functions
 exports.sellerManagerDirectSale = sellerManagerDirectSale;
+exports.sellerDirectSale = sellerDirectSale;
 exports.onSellerManagerAllocation = onSellerManagerAllocation;
 // exports.updateUserPointsStats = updateUserPointsStats;
 // exports.checkCollectionWarnings = checkCollectionWarnings;
@@ -197,7 +199,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://mybazaar-c4881.web.app',
-  'https://mybazaar-c4881.firebaseapp.com'
+  'https://mybazaar-c4881.firebaseapp.com',
+  'https://system.mybazaar.my',
+  'https://demo.mybazaar.my'
 ];
 const corsHandler = cors({
   origin: allowedOrigins,

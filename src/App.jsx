@@ -15,10 +15,11 @@ import EventManagerDashboard from './views/eventManager/EventManagerDashboard.js
 import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
 import CashierDashboard from './views/cashier/CashierDashboard';
 import MerchantManagerDashboard from './views/merchantManager/MerchantManagerDashboard';
-import SellerDashboard from './views/SellerDashboard/SellerDashboard';
+import SellerDashboard from './views/sellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
 import PointSellerDashboard from './views/PointSellerDashboard/PointSellerDashboard';
+import AuditorDashboard from './views/auditor/auditorDashboard'; // 🆕 稽核人员仪表板
 import InitialSetup from './pages/InitialSetup/InitialSetup';
 // ✅ 新增：导入其他Customer页面
 import CustomerRegister from './views/customer/CustomerRegister';
@@ -225,15 +226,13 @@ function App() {
 
       {/* Point Seller Dashboard */}
       <Route path="/pointseller/:orgEventCode/dashboard" element={
-        <MobileGuard>
-          <EventProvider>
-            <AuthProvider>
-              <ProtectedRoute allowedRoles={["pointSeller"]}>
-                <PointSellerDashboard />
-              </ProtectedRoute>
-            </AuthProvider>
-          </EventProvider>
-        </MobileGuard>
+        <EventProvider>
+          <AuthProvider>
+            <ProtectedRoute allowedRoles={["pointSeller"]}>
+              <PointSellerDashboard />
+            </ProtectedRoute>
+          </AuthProvider>
+        </EventProvider>
       } />
 
       <Route path="/merchant/:orgEventCode/dashboard" element={
@@ -329,6 +328,19 @@ function App() {
             </ProtectedRoute>
           </AuthProvider>
         </EventProvider>
+      } />
+
+      {/* 🆕 Auditor 稽核人员仪表板 - Desktop 版本 */}
+      <Route path="/auditor/:orgEventCode/dashboard" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["auditor"]}>
+                <AuditorDashboard />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
       } />
 
       {/* 默认路由 */}

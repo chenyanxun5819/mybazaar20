@@ -1,14 +1,13 @@
 /**
- * SubmitCash.jsx (待认领池子模式)
- * Seller Manager 上交现金给 Cashier 的界面
+ * SubmitCash.jsx (数据源统一修复版)
  * 
- * 🆕 更新：改为待认领池子模式（receivedBy=null）
- * - 不再选择特定的FM
- * - 直接提交到待认领池子
- * - 任何FM都可以接单确认
+ * 🔧 关键修复：
+ * 1. 统计卡片的"当前持有现金"改为从 userInfo.sellerManager.cashStats.cashOnHand 读取
+ * 2. 保持与 CollectCash.jsx 的数据源一致性
+ * 3. cashCollections 集合仍用于列表展示和选择，但统计数据以 cashStats 为准
  * 
- * @version 2.0
- * @date 2025-01-01
+ * @version 2.1 (数据源统一)
+ * @date 2025-02-15
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -18,7 +17,8 @@ import {
   where,
   onSnapshot,
   orderBy,
-  getDocs
+  getDocs,
+  doc
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, functions } from '../../../config/firebase';
@@ -34,12 +34,35 @@ const SubmitCash = ({ userInfo, eventData }) => {
   const [filterStatus, setFilterStatus] = useState('collected');
   const [submitting, setSubmitting] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
+  // ✅ 实时监听 SM 用户文档中的 cashStats，避免依赖静态 userInfo prop
+  const [liveCashStats, setLiveCashStats] = useState(null);
 
   const orgId = userInfo.organizationId;
   const eventId = userInfo.eventId;
   const smId = userInfo.userId;
 
   // ========== 数据加载 ==========
+
+  // ✅ 实时监听 SM 用户文档，确保 cashStats 在 CollectCash 确认后立即更新
+  useEffect(() => {
+    if (!orgId || !eventId || !smId) return;
+
+    const smDocRef = doc(db, `organizations/${orgId}/events/${eventId}/users/${smId}`);
+
+    const unsubscribe = onSnapshot(
+      smDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          setLiveCashStats(snap.data()?.sellerManager?.cashStats || {});
+        }
+      },
+      (error) => {
+        console.error('[SubmitCash] 监听 SM 用户文档失败:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [orgId, eventId, smId]);
 
   // 加载收款记录（从学生收集的现金）
   useEffect(() => {
@@ -126,31 +149,42 @@ const SubmitCash = ({ userInfo, eventData }) => {
     }, 0);
   }, [selectedCollections, collections]);
 
-  // 统计数据
+  // ✅ 统计数据优先读取实时监听的 liveCashStats，回退到 userInfo（首次渲染）
   const stats = useMemo(() => {
+    const cashStats = liveCashStats ?? userInfo?.sellerManager?.cashStats ?? {};
+
+    // ✅ 当前持有现金：从实时 cashStats.cashOnHand 读取
+    const cashHolding = cashStats.cashOnHand || 0;
+    
+    // 可上交的收款记录数量（用于显示）
     const availableCollections = collections.filter(c => 
       c.status === 'collected' && !c.submittedToFinance
     );
-    const cashHolding = availableCollections.reduce((sum, c) => sum + (c.amount || 0), 0);
+    const availableCount = availableCollections.length;
     
+    // 待认领池子（pending状态的submission）
     const submittedCount = submissions.filter(s => s.status === 'pending').length;
     const submittedAmount = submissions
       .filter(s => s.status === 'pending')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
     
+    // 已确认的总额
     const confirmedAmount = submissions
       .filter(s => s.status === 'confirmed')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
+    // ✅ 修正字段名：submitCashToFinance.js 写入的是 totalSubmitted（不是 totalSubmittedToCashier）
+    const totalSubmitted = cashStats.totalSubmitted || 0;
+
     return {
       cashHolding,
-      availableCount: availableCollections.length,
+      availableCount,
       submittedCount,
       submittedAmount,
       confirmedAmount,
-      totalSubmitted: submissions.reduce((sum, s) => sum + (s.amount || 0), 0)
+      totalSubmitted
     };
-  }, [collections, submissions]);
+  }, [collections, submissions, liveCashStats, userInfo]);
 
   // ========== 事件处理 ==========
 
@@ -189,7 +223,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
     setSubmitNote('');
   }, []);
 
-  // 🆕 提交到待认领池子
+  // 提交到待认领池子
   const handleSubmit = async () => {
     if (selectedCollections.length === 0) {
       window.mybazaarShowToast('请选择要上交的收款记录');
@@ -223,7 +257,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
 
       const idToken = await user.getIdToken();
 
-      // 🔴 调用 Cloud Function - 提交到待认领池子
+      // 调用 Cloud Function - 提交到待认领池子
       const submitCashToFinance = httpsCallable(functions, 'submitCashToFinance');
       
       const result = await submitCashToFinance({
@@ -312,83 +346,85 @@ const SubmitCash = ({ userInfo, eventData }) => {
         />
         <StatCard
           icon="📤"
-          title="待认领池子"
+          title="待认领现金"
           value={`RM ${stats.submittedAmount.toLocaleString()}`}
           color="#f59e0b"
-          description={`${stats.submittedCount} 笔等待FM确认`}
+          description={`${stats.submittedCount} 笔待FM确认`}
         />
         <StatCard
           icon="✅"
-          title="已确认总额"
+          title="已确认总金额"
           value={`RM ${stats.confirmedAmount.toLocaleString()}`}
-          color="#3b82f6"
-          description="Finance 已确认"
+          color="#10b981"
+          description="Finance已确认"
         />
         <StatCard
           icon="📊"
           title="累计上交"
           value={`RM ${stats.totalSubmitted.toLocaleString()}`}
-          color="#8b5cf6"
+          color="#3b82f6"
           description="历史总额"
         />
       </div>
 
-      {/* 提示横幅 */}
-      <div style={styles.infoBanner}>
-        <span style={styles.infoIcon}>ℹ️</span>
-        <span style={styles.infoText}>
+      {/* ⚠️ 待认领池子提示信息 */}
+      {stats.submittedCount > 0 && (
+        <div style={styles.infoBanner}>
+          <span style={{ fontSize: '1.25rem' }}>ℹ️</span>
           <strong>待认领池子模式：</strong>
-          上交的现金将进入待认领池子，任何Cashier都可以接单确认，无需指定特定的Cashier。
-        </span>
-      </div>
+          上交现金会进入待认领池子，任何Cashier都可以接单确认。无需指定特定的Cashier。
+        </div>
+      )}
 
-      {/* 批量操作栏 */}
-      {stats.availableCount > 0 && (
-        <div style={styles.batchActions}>
+      {/* 选择工具栏 */}
+      {filteredCollections.length > 0 && filterStatus === 'collected' && (
+        <div style={styles.selectionToolbar}>
           <div style={styles.selectionInfo}>
-            <span style={styles.selectionText}>
-              已选择 <strong>{selectedCollections.length}</strong> 笔，
-              总额 <strong style={{ color: '#10b981' }}>RM {selectedTotal.toLocaleString()}</strong>
-            </span>
+            已选择 <strong>{selectedCollections.length}</strong> 笔收款，
+            总额 <strong style={{ color: '#10b981' }}>RM {selectedTotal.toLocaleString()}</strong>
           </div>
-          <div style={styles.actionButtons}>
-            <button onClick={selectAll} style={styles.actionButton}>
-              全选可上交
+          <div style={styles.selectionButtons}>
+            <button onClick={selectAll} style={styles.selectButton}>
+              ✅ 全选
             </button>
-            <button onClick={deselectAll} style={styles.actionButton}>
-              取消选择
+            <button onClick={deselectAll} style={styles.selectButton}>
+              ❌ 清空
             </button>
             <button
               onClick={handleOpenSubmitModal}
+              disabled={selectedCollections.length === 0}
               style={{
-                ...styles.submitBtn,
+                ...styles.submitToPoolButton,
                 opacity: selectedCollections.length === 0 ? 0.5 : 1,
                 cursor: selectedCollections.length === 0 ? 'not-allowed' : 'pointer'
               }}
-              disabled={selectedCollections.length === 0}
             >
-              📤 上交到待认领池子
+              📤 上交现金到待认领池子
             </button>
           </div>
         </div>
       )}
 
-      {/* 筛选器 */}
-      <div style={styles.toolbar}>
-        <h3 style={styles.sectionTitle}>收款记录</h3>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          style={styles.select}
+      {/* 筛选标签 */}
+      <div style={styles.filterTabs}>
+        <button
+          onClick={() => setFilterStatus('collected')}
+          style={{
+            ...styles.filterTab,
+            ...(filterStatus === 'collected' ? styles.filterTabActive : {})
+          }}
         >
-          <option value="collected">
-            可上交 ({collections.filter(c => c.status === 'collected' && !c.submittedToFinance).length})
-          </option>
-          <option value="submitted">
-            已上交 ({collections.filter(c => c.submittedToFinance).length})
-          </option>
-          <option value="all">全部 ({collections.length})</option>
-        </select>
+          💰 可上交 ({collections.filter(c => c.status === 'collected' && !c.submittedToFinance).length})
+        </button>
+        <button
+          onClick={() => setFilterStatus('submitted')}
+          style={{
+            ...styles.filterTab,
+            ...(filterStatus === 'submitted' ? styles.filterTabActive : {})
+          }}
+        >
+          📤 已上交 ({collections.filter(c => c.submittedToFinance === true).length})
+        </button>
       </div>
 
       {/* 收款记录列表 */}
@@ -405,20 +441,21 @@ const SubmitCash = ({ userInfo, eventData }) => {
               key={collection.id}
               collection={collection}
               isSelected={selectedCollections.includes(collection.id)}
-              onToggle={() => toggleSelection(collection.id)}
-              formatDate={formatDate}
+              onToggleSelect={toggleSelection}
+              canSelect={filterStatus === 'collected'}
             />
           ))}
         </div>
       )}
 
-      {/* 上交历史 */}
+      {/* 上交历史记录 */}
       {submissions.length > 0 && (
         <div style={styles.historySection}>
-          <h3 style={styles.sectionTitle}>📜 上交历史</h3>
+          <h3 style={{ marginBottom: '1.5rem', color: '#1f2937' }}>📋 分配历史</h3>
+          
           <div style={styles.submissionsList}>
             {submissions.map(submission => (
-              <SubmissionCard
+              <SubmissionHistoryCard
                 key={submission.id}
                 submission={submission}
                 formatFullDate={formatFullDate}
@@ -429,7 +466,7 @@ const SubmitCash = ({ userInfo, eventData }) => {
         </div>
       )}
 
-      {/* 上交确认模态框 */}
+      {/* 上交确认对话框 */}
       {showSubmitModal && (
         <SubmitModal
           selectedTotal={selectedTotal}
@@ -437,11 +474,10 @@ const SubmitCash = ({ userInfo, eventData }) => {
           collections={collections}
           selectedCollections={selectedCollections}
           submitNote={submitNote}
-          setSubmitNote={setSubmitNote}
-          submitting={submitting}
+          onNoteChange={setSubmitNote}
           onSubmit={handleSubmit}
           onClose={handleCloseSubmitModal}
-          formatDate={formatDate}
+          submitting={submitting}
         />
       )}
     </div>
@@ -454,141 +490,160 @@ const StatCard = ({ icon, title, value, color, description }) => (
   <div style={{ ...styles.statCard, borderLeftColor: color }}>
     <div style={styles.statIcon}>{icon}</div>
     <div style={styles.statContent}>
-      <div style={styles.statValue}>{value}</div>
       <div style={styles.statTitle}>{title}</div>
+      <div style={styles.statValue}>{value}</div>
       {description && <div style={styles.statDescription}>{description}</div>}
     </div>
   </div>
 );
 
-const CollectionCard = ({ collection, isSelected, onToggle, formatDate }) => {
-  const canSelect = collection.status === 'collected' && !collection.submittedToFinance;
-  
+const CollectionCard = ({ collection, isSelected, onToggleSelect, canSelect }) => {
+  const hasDiscrepancy = collection.discrepancy && collection.discrepancy !== 0;
+  const isSubmitted = collection.submittedToFinance;
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '未知';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   return (
-    <div 
+    <div
       style={{
         ...styles.collectionCard,
-        borderColor: isSelected ? '#10b981' : '#e5e7eb',
-        background: isSelected ? '#f0fdf4' : '#fafafa'
+        borderColor: isSelected ? '#10b981' : (hasDiscrepancy ? '#f59e0b' : '#e5e7eb'),
+        background: isSelected ? '#f0fdf4' : (isSubmitted ? '#fafafa' : '#ffffff')
       }}
     >
       <div style={styles.cardHeader}>
-        {canSelect && (
+        {canSelect && !isSubmitted && (
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={onToggle}
+            onChange={() => onToggleSelect(collection.id)}
             style={styles.checkbox}
           />
         )}
         <div style={styles.cardInfo}>
           <div style={styles.cardTitle}>
-            <span className="seller-icon">🛍️</span>
-            <span>{collection.sellerName}</span>
+            {collection.sellerName}
+            {hasDiscrepancy && <span style={{ color: '#f59e0b', fontSize: '1.25rem' }}>⚠️</span>}
           </div>
           <div style={styles.cardMeta}>
-            <span>{formatDate(collection.collectedAt)}</span>
+            {collection.sellerDepartment} · {formatDate(collection.collectedAt)}
           </div>
         </div>
         <div style={styles.cardAmount}>
-          RM {(collection.amount || 0).toLocaleString()}
+          RM {collection.amount?.toLocaleString() || 0}
         </div>
       </div>
 
-      {collection.discrepancy !== 0 && (
+      {hasDiscrepancy && (
         <div style={styles.discrepancyBox}>
-          ⚠️ 差异: RM {collection.discrepancy} ({collection.discrepancyType})
+          ⚠️ 差额: RM {Math.abs(collection.discrepancy).toLocaleString()}
+          （{collection.discrepancy > 0 ? '多收' : '少收'}）
         </div>
       )}
 
-      {collection.notes && (
+      {collection.note && (
         <div style={styles.noteBox}>
-          📝 {collection.notes}
+          📝 备注: {collection.note}
         </div>
       )}
 
-      {collection.submittedToFinance && (
+      {isSubmitted && (
         <div style={styles.submittedBadge}>
-          ✅ 已上交到待认领池子
+          ✅ 已上交给Finance
         </div>
       )}
     </div>
   );
 };
 
-const SubmissionCard = ({ submission, formatFullDate, getStatusBadge }) => {
-  const [showDetails, setShowDetails] = useState(false);
-  const statusInfo = getStatusBadge(submission.status);
+const SubmissionHistoryCard = ({ submission, formatFullDate, getStatusBadge }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const statusBadge = getStatusBadge(submission.status);
 
   return (
     <div style={styles.submissionCard}>
       <div style={styles.submissionHeader}>
         <div>
           <div style={styles.submissionTitle}>
-            上交编号: {submission.submissionNumber || submission.id.slice(0, 8)}
+            流水号: {submission.submissionNumber || submission.id.slice(0, 8)}
           </div>
           <div style={styles.submissionDate}>
-            提交时间: {formatFullDate(submission.submittedAt)}
+            {formatFullDate(submission.submittedAt)}
           </div>
         </div>
-        <div 
+        <div
           style={{
             ...styles.submissionStatus,
-            background: statusInfo.color
+            background: statusBadge.color
           }}
         >
-          {statusInfo.label}
+          {statusBadge.label}
         </div>
       </div>
 
       <div style={styles.submissionStats}>
         <div style={styles.submissionStat}>
-          <span>金额</span>
-          <strong>RM {(submission.amount || 0).toLocaleString()}</strong>
+          <span>上交金额</span>
+          <strong style={{ color: '#10b981', fontSize: '1.125rem' }}>
+            RM {submission.amount?.toLocaleString() || 0}
+          </strong>
         </div>
         <div style={styles.submissionStat}>
-          <span>包含记录</span>
-          <strong>{submission.includedSales?.length || 0} 笔</strong>
+          <span>包含收款</span>
+          <strong>{submission.includedCollections?.length || 0} 笔</strong>
         </div>
       </div>
 
       {submission.note && (
         <div style={styles.submissionNote}>
-          📝 提交备注: {submission.note}
+          📝 备注: {submission.note}
         </div>
       )}
 
-      {submission.status === 'confirmed' && (
+      {submission.status === 'confirmed' && submission.confirmedBy && (
         <div style={styles.confirmedInfo}>
           <div style={styles.detailRow}>
-            <span>接收人:</span>
-            <strong>{submission.receiverName}</strong>
+            <span>确认人:</span>
+            <strong>{submission.confirmedByName || '未知'}</strong>
           </div>
           <div style={styles.detailRow}>
             <span>确认时间:</span>
             <strong>{formatFullDate(submission.confirmedAt)}</strong>
           </div>
-          {submission.confirmationNote && (
-            <div style={styles.submissionNote}>
-              ✅ 确认备注: {submission.confirmationNote}
+          {submission.confirmNote && (
+            <div style={styles.detailRow}>
+              <span>确认备注:</span>
+              <strong>{submission.confirmNote}</strong>
             </div>
           )}
         </div>
       )}
 
       <button
+        onClick={() => setIsExpanded(!isExpanded)}
         style={styles.expandButton}
-        onClick={() => setShowDetails(!showDetails)}
       >
-        {showDetails ? '▲ 收起明细' : '▼ 查看明细'}
+        {isExpanded ? '收起详情' : '查看详情'}
       </button>
 
-      {showDetails && submission.includedSales && (
+      {isExpanded && submission.includedSales && (
         <div style={styles.detailsSection}>
+          <h4 style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem' }}>
+            包含的收款明细
+          </h4>
           {submission.includedSales.map((sale, index) => (
             <div key={index} style={styles.detailItem}>
-              <span>{sale.sellerName}</span>
-              <span>RM {sale.amount?.toLocaleString()}</span>
+              <span>{sale.sellerName} ({sale.salesDate})</span>
+              <strong>RM {sale.amount?.toLocaleString() || 0}</strong>
             </div>
           ))}
         </div>
@@ -597,88 +652,92 @@ const SubmissionCard = ({ submission, formatFullDate, getStatusBadge }) => {
   );
 };
 
-const SubmitModal = ({ 
-  selectedTotal, 
-  selectedCount, 
-  collections, 
+const SubmitModal = ({
+  selectedTotal,
+  selectedCount,
+  collections,
   selectedCollections,
   submitNote,
-  setSubmitNote,
-  submitting,
+  onNoteChange,
   onSubmit,
   onClose,
-  formatDate
+  submitting
 }) => {
   const selectedDetails = collections.filter(c => selectedCollections.includes(c.id));
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '未知';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <h2 style={{ margin: 0 }}>📤 确认上交现金</h2>
-          <button style={styles.closeButton} onClick={onClose}>✕</button>
+          <h3>📤 上交现金到待认领池子</h3>
+          <button onClick={onClose} style={styles.closeButton}>✕</button>
         </div>
 
         <div style={styles.modalBody}>
-          {/* 提示横幅 */}
+          {/* 🆕 待认领池子说明 */}
           <div style={styles.modalInfoBanner}>
-            <span>ℹ️</span>
+            <span style={{ fontSize: '1.25rem' }}>ℹ️</span>
             <span>
-              现金将提交到<strong>待认领池子</strong>，任何Cashier都可以接单确认。
+              <strong>待认领池子模式：</strong>提交后，任何Cashier都可以认领并确认收款。无需指定特定的Cashier。
             </span>
           </div>
 
-          {/* 汇总 */}
           <div style={styles.summaryBox}>
             <div style={styles.summaryRow}>
-              <span>选中记录数:</span>
-              <strong style={{ fontSize: '1.25rem' }}>{selectedCount} 笔</strong>
-            </div>
-            <div style={styles.summaryRow}>
-              <span>上交总额:</span>
+              <span style={{ color: '#6b7280' }}>上交金额</span>
               <strong style={{ fontSize: '1.5rem', color: '#10b981' }}>
                 RM {selectedTotal.toLocaleString()}
               </strong>
             </div>
+            <div style={styles.summaryRow}>
+              <span style={{ color: '#6b7280' }}>包含收款</span>
+              <strong>{selectedCount} 笔</strong>
+            </div>
           </div>
 
-          {/* 明细列表 */}
           <div style={styles.detailsList}>
-            <div style={styles.detailsTitle}>包含的收款记录:</div>
-            {selectedDetails.map(detail => (
-              <div key={detail.id} style={styles.detailListItem}>
-                <span>{detail.sellerName}</span>
-                <span>RM {detail.amount?.toLocaleString()}</span>
+            <div style={styles.detailsTitle}>明细列表</div>
+            {selectedDetails.map(collection => (
+              <div key={collection.id} style={styles.detailListItem}>
+                <span>{collection.sellerName} ({formatDate(collection.collectedAt)})</span>
+                <strong>RM {collection.amount?.toLocaleString() || 0}</strong>
               </div>
             ))}
           </div>
 
-          {/* 备注输入 */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>备注（可选）</label>
+            <label style={styles.label}>
+              备注（可选）
+            </label>
             <textarea
               value={submitNote}
-              onChange={(e) => setSubmitNote(e.target.value)}
-              placeholder="例如：第一批学生现金上交"
+              onChange={(e) => onNoteChange(e.target.value)}
+              placeholder="添加备注信息..."
+              rows="3"
               style={styles.textarea}
-              rows={3}
-              disabled={submitting}
             />
           </div>
         </div>
 
         <div style={styles.modalFooter}>
-          <button 
-            style={styles.cancelButton} 
-            onClick={onClose}
-            disabled={submitting}
-          >
+          <button onClick={onClose} style={styles.cancelButton}>
             取消
           </button>
-          <button 
-            style={styles.submitButton} 
+          <button
             onClick={onSubmit}
             disabled={submitting}
+            style={styles.submitButton}
           >
             {submitting ? '提交中...' : '✅ 确认上交'}
           </button>
@@ -689,12 +748,9 @@ const SubmitModal = ({
 };
 
 // ========== 样式 ==========
-
 const styles = {
   container: {
-    padding: '20px',
-    maxWidth: '1400px',
-    margin: '0 auto'
+    padding: '0'
   },
   loading: {
     display: 'flex',
@@ -705,17 +761,17 @@ const styles = {
     color: '#6b7280'
   },
   spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #f3f4f6',
-    borderTop: '4px solid #3b82f6',
+    width: '3rem',
+    height: '3rem',
+    border: '4px solid #e5e7eb',
+    borderTopColor: '#f59e0b',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
     marginBottom: '1rem'
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: '1rem',
     marginBottom: '1.5rem'
   },
@@ -725,9 +781,8 @@ const styles = {
     borderRadius: '12px',
     borderLeft: '4px solid',
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '1rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+    alignItems: 'center',
+    gap: '1rem'
   },
   statIcon: {
     fontSize: '2rem'
@@ -735,16 +790,16 @@ const styles = {
   statContent: {
     flex: 1
   },
-  statValue: {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: '0.25rem'
-  },
   statTitle: {
     fontSize: '0.875rem',
     color: '#6b7280',
-    fontWeight: '500'
+    fontWeight: '500',
+    marginBottom: '0.25rem'
+  },
+  statValue: {
+    fontSize: '1.5rem',
+    fontWeight: 'bold',
+    color: '#1f2937'
   },
   statDescription: {
     fontSize: '0.75rem',
@@ -754,26 +809,18 @@ const styles = {
   infoBanner: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    background: 'linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%)',
-    borderLeft: '4px solid #3b82f6',
+    gap: '8px',
+    padding: '12px',
+    background: '#dbeafe',
     borderRadius: '8px',
-    marginBottom: '1.5rem'
+    marginBottom: '1.5rem',
+    fontSize: '0.875rem',
+    color: '#1e40af'
   },
-  infoIcon: {
-    fontSize: '20px'
-  },
-  infoText: {
-    fontSize: '14px',
-    color: '#1e40af',
-    lineHeight: '1.5'
-  },
-  batchActions: {
-    background: 'white',
+  selectionToolbar: {
+    background: '#f3f4f6',
     padding: '1rem',
-    borderRadius: '12px',
-    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
     marginBottom: '1.5rem',
     display: 'flex',
     justifyContent: 'space-between',
@@ -782,19 +829,15 @@ const styles = {
     gap: '1rem'
   },
   selectionInfo: {
-    flex: '1',
-    minWidth: '200px'
-  },
-  selectionText: {
     fontSize: '0.875rem',
     color: '#374151'
   },
-  actionButtons: {
+  selectionButtons: {
     display: 'flex',
-    gap: '0.75rem',
+    gap: '0.5rem',
     flexWrap: 'wrap'
   },
-  actionButton: {
+  selectButton: {
     padding: '0.5rem 1rem',
     background: 'white',
     border: '2px solid #e5e7eb',
@@ -802,41 +845,38 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#374151',
-    transition: 'all 0.2s'
+    color: '#374151'
   },
-  submitBtn: {
+  submitToPoolButton: {
     padding: '0.5rem 1.5rem',
     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600'
+  },
+  filterTabs: {
+    display: 'flex',
+    gap: '0.5rem',
+    marginBottom: '1.5rem',
+    borderBottom: '2px solid #e5e7eb',
+    paddingBottom: '0.5rem'
+  },
+  filterTab: {
+    padding: '0.5rem 1rem',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px 8px 0 0',
     cursor: 'pointer',
     fontSize: '0.875rem',
     fontWeight: '600',
+    color: '#6b7280',
     transition: 'all 0.2s'
   },
-  toolbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1rem',
-    flexWrap: 'wrap',
-    gap: '1rem'
-  },
-  sectionTitle: {
-    fontSize: '1.25rem',
-    fontWeight: 'bold',
-    color: '#1f2937',
-    margin: 0
-  },
-  select: {
-    padding: '0.5rem 1rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-    background: 'white'
+  filterTabActive: {
+    color: '#10b981',
+    background: '#f0fdf4'
   },
   collectionsList: {
     display: 'grid',

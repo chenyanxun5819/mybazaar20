@@ -71,7 +71,8 @@ function sendSmsVia360(phoneNumber, message) {
         user: API_KEY_360,
         pass: API_SECRET_360,
         to: msisdn,
-        text: message
+        text: message,
+        detail: '1'
       });
 
       const bodyStr = queryParams.toString();
@@ -96,7 +97,13 @@ function sendSmsVia360(phoneNumber, message) {
             if (result.code === 200 || result.code === '200') {
               resolve(result);
             } else {
-              reject(new Error(`360 API error (code=${result.code}): ${result.desc || data}`));
+              const providerError = new Error(`360 API error (code=${result.code}): ${result.desc || data}`);
+              providerError.provider = '360';
+              providerError.providerCode = Number(result.code);
+              providerError.providerDesc = result.desc || '';
+              providerError.providerBalance = result.balance;
+              providerError.providerCurrency = result.currency;
+              reject(providerError);
             }
           } catch (e) {
             reject(new Error(`Failed to parse 360 API response: ${data}`));
@@ -170,15 +177,29 @@ function sendSmsViaHttps(phoneNumber, message) {
 
 /**
  * 生成 OTP 码
+ * @param {object} settings - Platform设置
+ * @param {object} eventSettings - Event级别的OTP设置（优先级高于Platform设置）
  */
-function generateOtpCode(settings = null) {
+function generateOtpCode(settings = null, eventSettings = null) {
+  // ✅ 优先检查 Event 级别的设置
+  if (eventSettings && eventSettings.enabled === false) {
+    console.log('[generateOtpCode] 🔧 Event设置：使用开发OTP (Event未启用真实OTP)');
+    return DEV_OTP_CODE;
+  }
+  
+  if (eventSettings && eventSettings.enabled === true) {
+    console.log('[generateOtpCode] 📱 Event设置：使用真实OTP (Event已启用真实OTP)');
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  // 如果没有Event设置，回退到Platform设置
   if (settings && settings.otp && settings.otp.devMode && settings.otp.devMode.enabled) {
-    console.log('[generateOtpCode] 🔧 开发模式（platform_settings）：返回固定 OTP');
+    console.log('[generateOtpCode] 🔧 Platform设置：返回固定 OTP');
     return settings.otp.devMode.fixedCode || DEV_OTP_CODE;
   }
 
   if (USE_DEV_OTP) {
-    console.log('[generateOtpCode] 🔧 开发模式（环境变量）：返回固定 OTP');
+    console.log('[generateOtpCode] 🔧 环境变量：返回固定 OTP');
     return DEV_OTP_CODE;
   }
 
@@ -297,15 +318,60 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 
     console.log('[sendOtpHttp] ✅ 参数验证通过');
 
-    // 测试 getPlatformSettings
+    // ========== 步驟1: 获取 Platform Settings ==========
     console.log('[sendOtpHttp] 调用 getPlatformSettings...');
     const settings = await getPlatformSettings();
-    console.log('[sendOtpHttp] Settings:', settings ? 'Loaded' : 'Null');
+    console.log('[sendOtpHttp] Platform Settings:', settings ? 'Loaded' : 'Null');
 
-    // 测试 generateOtpCode
+    // ========== ✨ 步驟2: 获取 Event 级别的 OTP 设置（如果有 orgCode 和 eventCode）==========
+    let eventOtpSettings = null;
+    if (orgCode && eventCode) {
+      try {
+        const db = admin.firestore();
+        console.log('[sendOtpHttp] 查询 Event OTP 设置:', { orgCode, eventCode });
+        
+        // 查找组织
+        const orgQuery = await db.collection('organizations')
+          .where('orgCode', '==', orgCode.toLowerCase())
+          .limit(1)
+          .get();
+        
+        if (!orgQuery.empty) {
+          const orgId = orgQuery.docs[0].id;
+          
+          // 查找活动
+          const eventQuery = await db
+            .collection('organizations').doc(orgId)
+            .collection('events')
+            .where('eventCode', '==', eventCode)
+            .limit(1)
+            .get();
+          
+          if (!eventQuery.empty) {
+            const eventData = eventQuery.docs[0].data();
+            eventOtpSettings = eventData.otpSettings || null;
+            console.log('[sendOtpHttp] Event OTP Settings:', eventOtpSettings);
+          } else {
+            console.warn('[sendOtpHttp] Event 未找到:', eventCode);
+          }
+        } else {
+          console.warn('[sendOtpHttp] Organization 未找到:', orgCode);
+        }
+      } catch (error) {
+        console.error('[sendOtpHttp] 获取 Event OTP 设置失败:', error);
+        // 继续执行，使用默认设置
+      }
+    }
+
+    // ========== 步驟3: 生成 OTP Code（优先使用Event设置）==========
     console.log('[sendOtpHttp] 调用 generateOtpCode...');
-    const otpCode = generateOtpCode(settings);
+    const otpCode = generateOtpCode(settings, eventOtpSettings);
     console.log('[sendOtpHttp] OTP Code:', otpCode);
+    
+    // ========== 步驟4: 决定是否发送真实SMS ==========
+    // 如果Event明确启用了真实OTP，则发送真实短信
+    const shouldSendRealSms = eventOtpSettings?.enabled === true;
+    console.log('[sendOtpHttp] 是否发送真实SMS:', shouldSendRealSms);
 
     // 生成 session ID
     const sessionId = `otp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -346,11 +412,12 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 
     if (bypassSms) {
       console.log('[sendOtpHttp] ⚠️ 测试号码，跳过 SMS 发送');
-    } else if (USE_DEV_OTP) {
-      // 🔧 開發模式：不發送真實 SMS，只使用固定 OTP
-      console.log('[sendOtpHttp] 🔧 開發模式：跳過實際 SMS 發送，使用固定 OTP:', DEV_OTP_CODE);
-    } else {
-      // 生產模式：發送真實 SMS
+    } else if (!shouldSendRealSms && USE_DEV_OTP) {
+      // 🔧 开发模式 OR Event未启用真实OTP：不发送真实 SMS
+      console.log('[sendOtpHttp] 🔧 开发模式 OR Event未启用真实OTP：跳过实际 SMS 发送，使用固定 OTP:', DEV_OTP_CODE);
+    } else if (shouldSendRealSms) {
+      // ✅ Event启用了真实OTP：发送真实 SMS
+      console.log('[sendOtpHttp] 📱 Event已启用真实OTP：发送真实短信');
       // 准备 SMS 消息
       let smsMessage;
       const scenarioKey = scenario || (loginType ? 'login' : 'universalLogin');
@@ -387,7 +454,24 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
         console.error('[sendOtpHttp] ⚠️ SMS 发送失败:', smsError);
         console.error('[sendOtpHttp] Error details:', smsError.message);
 
-        // ⚠️ 生産模式：SMS 失敗要拋錯
+        if (smsError && smsError.provider === '360' && smsError.providerCode === 402) {
+          const balanceText = smsError.providerBalance != null
+            ? `（当前余额: ${smsError.providerBalance}${smsError.providerCurrency ? ` ${smsError.providerCurrency}` : ''}）`
+            : '';
+          throw new functions.https.HttpsError(
+            'resource-exhausted',
+            `SMS 发送失败：360 账户点数不足${balanceText}`
+          );
+        }
+
+        if (smsError && smsError.provider === '360' && smsError.providerCode === 403) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'SMS 发送失败：360 API 未启用或服务器 IP 未加入白名单'
+          );
+        }
+
+        // ⚠️ 其他错误
         throw new functions.https.HttpsError('internal', `SMS 发送失败: ${smsError.message}`);
       }
     }
@@ -714,6 +798,11 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
 
       const customToken = await admin.auth().createCustomToken(userId, customClaims);
 
+      const hasDefaultPassword = userData.basicInfo?.hasDefaultPassword === true;
+      const isFirstLogin = userData.basicInfo?.isFirstLogin === true;
+      const hasTransactionPin = !!userData.basicInfo?.transactionPinHash;
+      const needsPasswordSetup = isFirstLogin || !hasTransactionPin;
+
       // 更新最后登录时间
       await userDoc.ref.update({
         'accountStatus.lastLogin': admin.firestore.FieldValue.serverTimestamp()
@@ -739,6 +828,10 @@ exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
         managedDepartments,
         department: userData.identityInfo?.department || '',
         identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
+        needsPasswordSetup,
+        hasDefaultPassword,
+        isFirstLogin,
+        hasTransactionPin,
 
         phoneNumber: otpData.phoneNumber,
         devMode: otpData.devMode || false

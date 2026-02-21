@@ -79,7 +79,9 @@ export function useSellerManagerStats(organizationId, eventId, sellerManagerId) 
           setSmStats(data);
           setError(null);
         } else {
-          console.warn('[useSellerManagerStats] ⚠️ 统计文档不存在');
+          if (import.meta.env.DEV) {
+            console.info('[useSellerManagerStats] 调试信息: 统计文档不存在，使用默认空统计');
+          }
           
           // 设置默认空数据结构
           setSmStats({

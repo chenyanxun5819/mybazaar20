@@ -165,6 +165,35 @@ exports.confirmCashSubmission = onCall(
           'sellerManager.cashStats.lastConfirmedAt': now
         });
 
+        // 4.3 同步建立 cashCollections（將已確認的現金寫入 cashCollections，供 SubmitCash.jsx 讀取）
+        try {
+          const collectionRef = db
+            .collection('organizations').doc(orgId)
+            .collection('events').doc(eventId)
+            .collection('cashCollections').doc();
+
+          const collectionData = {
+            sellerId: submissionData.submittedBy || null,
+            sellerName: submissionData.submitterName || '未知',
+            amount: submissionData.amount || 0,
+            collectedAt: now,
+            collectedBy: userId, // SellerManager who confirmed
+            status: 'collected',
+            submittedToFinance: false,
+            notes: submissionData.note || '',
+            submissionId: submissionId,
+            metadata: {
+              createdAt: now,
+              updatedAt: now
+            }
+          };
+
+          transaction.set(collectionRef, collectionData);
+          console.log('[confirmCashSubmission] ✅ 已建立 cashCollections 文檔:', collectionRef.id);
+        } catch (err) {
+          console.error('[confirmCashSubmission] ⚠️ 建立 cashCollections 失敗，將繼續但請檢查:', err.message);
+        }
+
         return {
           success: true,
           submissionId,

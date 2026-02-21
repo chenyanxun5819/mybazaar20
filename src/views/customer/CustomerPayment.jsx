@@ -14,9 +14,10 @@ import QRScanner from '../../components/QRScanner';
  * 2. 改用交易密码（6位数字PIN）验证
  * 3. 后端统一验证 PIN 并执行支付
  */
-const CustomerPayment = () => {
+const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onBack, onPaymentSuccess }) => {
   const navigate = useNavigate();
-  const { orgEventCode } = useParams();
+  const { orgEventCode: orgEventCodeParam } = useParams();
+  const orgEventCode = orgEventCodeProp || orgEventCodeParam;
 
   const [step, setStep] = useState('scan'); // scan | confirm | pin | processing | success
   const [customerData, setCustomerData] = useState(null);
@@ -40,6 +41,20 @@ const CustomerPayment = () => {
     }
     loadCustomerData();
   }, [orgEventCode]);
+
+  const handleReturnToDashboard = () => {
+    if (embedded && typeof onBack === 'function') {
+      onBack();
+      return;
+    }
+
+    if (orgEventCode) {
+      navigate(`/customer/${orgEventCode}/dashboard`);
+      return;
+    }
+
+    setStep('scan');
+  };
 
   const loadCustomerData = async () => {
     try {
@@ -300,9 +315,22 @@ const CustomerPayment = () => {
       // 显示成功页面
       setStep('success');
 
+      if (typeof onPaymentSuccess === 'function') {
+        onPaymentSuccess({
+          amount: parseFloat(amount),
+          remainingBalance: newRemainingBalance,
+          merchantId: merchantData.merchantId,
+          merchantName: merchantData.stallName || '商家'
+        });
+      }
+
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
       // 3秒后自动返回
       setTimeout(() => {
-        navigate(`/customer/${orgEventCode}/dashboard`);
+        handleReturnToDashboard();
       }, 3000);
 
     } catch (error) {
@@ -339,7 +367,7 @@ const CustomerPayment = () => {
   };
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, ...(embedded ? styles.embeddedContainer : {}) }}>
       {/* 顶部导航 - 在扫描页面时隐藏 */}
       {step !== 'scan' && (
         <div style={styles.header}>
@@ -350,7 +378,7 @@ const CustomerPayment = () => {
               } else if (step === 'pin') {
                 setStep('confirm');
               } else {
-                navigate(`/customer/${orgEventCode}/dashboard`);
+                handleReturnToDashboard();
               }
             }}
             style={styles.backButton}
@@ -563,7 +591,7 @@ const CustomerPayment = () => {
             </div>
             <p style={styles.successSubtext}>3秒后自动返回...</p>
             <button
-              onClick={() => navigate(`/customer/${orgEventCode}/dashboard`)}
+              onClick={handleReturnToDashboard}
               style={styles.returnButton}
             >
               立即返回
@@ -579,6 +607,10 @@ const styles = {
   container: {
     minHeight: '100vh',
     backgroundColor: '#f5f5f5'
+  },
+  embeddedContainer: {
+    minHeight: 'auto',
+    backgroundColor: 'transparent'
   },
   header: {
     display: 'flex',

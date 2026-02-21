@@ -7,7 +7,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://mybazaar-c4881.web.app',
-  'https://mybazaar-c4881.firebaseapp.com'
+  'https://mybazaar-c4881.firebaseapp.com',
+  'https://system.mybazaar.my',
+  'https://demo.mybazaar.my'
 ];
 
 const corsHandler = cors({
@@ -345,6 +347,21 @@ exports.updateEventDetailsHttp = onRequest(
           updateData.logoUrl = updates.logoUrl;
           updateData.logoUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
           updateData.logoUpdatedBy = callerUid;
+        }
+
+        // ========== ✨ 新增：更新 OTP 设置 ==========
+        if (typeof updates.otpEnabled === 'boolean') {
+          updateData['otpSettings.enabled'] = updates.otpEnabled;
+          if (updates.otpEnabled) {
+            // 如果启用真实OTP，记录启用时间和操作者
+            updateData['otpSettings.enabledAt'] = admin.firestore.FieldValue.serverTimestamp();
+            updateData['otpSettings.enabledBy'] = callerUid;
+            updateData['otpSettings.provider'] = '360'; // 默认使用360
+          }
+          console.log('[updateEventDetailsHttp] 更新 OTP 设置:', {
+            enabled: updates.otpEnabled,
+            provider: updates.otpEnabled ? '360' : 'dev'
+          });
         }
 
         // ========== 步驟 6: 執行更新 ==========

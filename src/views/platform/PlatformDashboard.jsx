@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 // ✅ 新增 Storage imports
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import MerchantQRPrintModal from './components/MerchantQRPrintModal';
 
 const PlatformDashboard = () => {
   const navigate = useNavigate();
@@ -203,7 +204,7 @@ const PlatformDashboard = () => {
 const uploadLogo = async (file, path) => {
   try {
     console.log('[uploadLogo] 开始上传:', path);
-    
+
     // 验证文件大小（2MB 限制）
     if (file.size > 2 * 1024 * 1024) {
       throw new Error('文件大小不能超过 2MB');
@@ -217,7 +218,7 @@ const uploadLogo = async (file, path) => {
     const storageRef = ref(storage, path);
     const snapshot = await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(snapshot.ref);
-    
+
     console.log('[uploadLogo] ✅ 上传成功:', downloadURL);
     return downloadURL;
   } catch (error) {
@@ -249,7 +250,7 @@ const updateOrganizationLogo = async (organizationId, logoUrl, idToken) => {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('[updateOrganizationLogo] 错误:', error);
@@ -281,7 +282,7 @@ const updateEventLogo = async (organizationId, eventId, logoUrl, idToken) => {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('[updateEventLogo] 错误:', error);
@@ -313,7 +314,7 @@ const updateEventDetails = async (organizationId, eventId, updates, idToken) => 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('[updateEventDetails] 错误:', error);
@@ -345,7 +346,7 @@ const resetEventUsers = async (organizationId, eventId, newEventManager, idToken
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('[resetEventUsers] 错误:', error);
@@ -419,12 +420,12 @@ const LogoUploadButton = ({ onUpload, currentLogoUrl, entityType = 'organization
 const convertFirebaseTimestampToDateString = (timestamp) => {
   try {
     if (!timestamp) return '';
-    
+
     let date;
     // 处理 Firestore Timestamp 对象
     if (timestamp.seconds) {
       date = new Date(timestamp.seconds * 1000);
-    } 
+    }
     // 处理 JavaScript Date 对象
     else if (timestamp instanceof Date) {
       date = timestamp;
@@ -457,7 +458,7 @@ const convertFirebaseTimestampToDateString = (timestamp) => {
 const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  
+
   // 表单状态 - ✅ 改用安全的转换函数
   const [fairDate, setFairDate] = useState(
     convertFirebaseTimestampToDateString(event.eventInfo?.fairDate) || ''
@@ -469,7 +470,7 @@ const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
     convertFirebaseTimestampToDateString(event.eventInfo?.consumptionPeriod?.end) || ''
   );
   const [logoUrl, setLogoUrl] = useState(event.logoUrl || '');
-  
+
   // 重置 users 相关状态
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetManagerData, setResetManagerData] = useState({
@@ -497,7 +498,7 @@ const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
       setSubmitting(true);
 
       const idToken = await auth.currentUser.getIdToken();
-      
+
       const updates = {};
       if (fairDate) {
         updates.fairDate = new Date(fairDate).getTime();
@@ -532,7 +533,7 @@ const EditEventModal = ({ organization, event, onClose, onSuccess }) => {
 
       const idToken = await auth.currentUser.getIdToken();
       await resetEventUsers(organization.id, event.id, resetManagerData, idToken);
-      
+
       window.mybazaarShowToast('活动 users 已重置，新 Event Manager 已创建');
       setSubmitting(false);
       onSuccess();
@@ -712,10 +713,10 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
       setUploadingLogo(true);
       const path = `organizations/${organization.id}/logo_${Date.now()}`;
       const downloadUrl = await uploadLogo(file, path);
-      
+
       const idToken = await auth.currentUser.getIdToken();
       await updateOrganizationLogo(organization.id, downloadUrl, idToken);
-      
+
       window.mybazaarShowToast('组织 logo 更新成功');
       onReload();
       setUploadingLogo(false);
@@ -834,14 +835,13 @@ const OrganizationCard = ({ organization, onCreateEvent, onReload }) => {
 // 完整版：删除事件功能（包含 admins 清理）
 // ============================================
 
-
 const EventCard = ({ event, organization, onReload }) => {
   const [copySuccess, setCopySuccess] = useState('');
   const [eventManager, setEventManager] = useState(null);
   const [loadingManager, setLoadingManager] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showEditEvent, setShowEditEvent] = useState(false);  // ✅ 新增
-
+  const [showQRPrint, setShowQRPrint] = useState(false);      // 🆕 摊位 QR Code 输出
   // ✅ 新架构：直接使用 Event.eventManager 對象
   useEffect(() => {
     if (event.eventManager) {
@@ -964,7 +964,8 @@ const EventCard = ({ event, organization, onReload }) => {
 
   // 生成登录网址
   const generateLoginUrl = () => {
-    const baseUrl = window.location.origin;
+    // 統一使用 system.mybazaar.my
+    const baseUrl = 'https://system.mybazaar.my';
     return `${baseUrl}/login/${organization.orgCode}-${event.eventCode}`;
   };
 
@@ -1096,6 +1097,87 @@ const EventCard = ({ event, organization, onReload }) => {
         )}
       </div>
 
+      {/* ========== ✨ 新增：OTP 设置 ========== */}
+      <div style={styles.otpSettingsSection}>
+        <div style={styles.otpSettingsHeader}>
+          <span style={styles.dateLabel}>🔐 OTP 验证设置：</span>
+        </div>
+        <div style={styles.otpSettingsContent}>
+          <label style={styles.otpSwitchLabel}>
+            <input
+              type="checkbox"
+              checked={event.otpSettings?.enabled || false}
+              onChange={async (e) => {
+                const newEnabled = e.target.checked;
+                console.log('[OTP Switch] 开关切换:', { newEnabled, currentUser: !!auth.currentUser });
+
+                if (confirm(
+                  newEnabled
+                    ? '✅ 确定要启用真实OTP验证吗？\n\n启用后，用户登录时将收到360发送的真实验证码短信（需要短信费用）。'
+                    : '⚠️ 确定要使用测试OTP吗？\n\n关闭后，系统将使用固定验证码 223344（仅用于开发测试）。'
+                )) {
+                  try {
+                    if (!auth.currentUser) {
+                      throw new Error('用户未登录，请重新登录');
+                    }
+
+                    const idToken = await auth.currentUser.getIdToken();
+                    console.log('[OTP Switch] 调用 updateEventDetails...');
+
+                    await updateEventDetails(organization.id, event.id, {
+                      otpEnabled: newEnabled
+                    }, idToken);
+
+                    console.log('[OTP Switch] ✅ 更新成功，等待 Firestore 同步...');
+
+                    // 等待 1 秒确保 Firestore 数据已同步
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    window.mybazaarShowToast(
+                      newEnabled
+                        ? '✅ 已启用真实OTP验证（360短信）'
+                        : '✅ 已切换为测试模式（固定码 223344）'
+                    );
+
+                    console.log('[OTP Switch] 开始重新加载数据...');
+                    onReload();
+                  } catch (error) {
+                    console.error('[OTP Switch] ❌ 更新失败:', error);
+                    window.mybazaarShowToast('更新失败：' + error.message);
+                  }
+                }
+              }}
+              style={styles.otpCheckbox}
+            />
+            <span style={styles.otpSwitchText}>
+              启用真实OTP验证（360短信）
+            </span>
+          </label>
+
+          {/* 当前状态显示 */}
+          <div style={{
+            ...styles.otpStatusBadge,
+            ...(event.otpSettings?.enabled ? styles.otpStatusEnabled : styles.otpStatusDisabled)
+          }}>
+            {event.otpSettings?.enabled
+              ? '✅ 当前状态：真实短信验证码'
+              : '🔧 当前状态：测试验证码（223344）'}
+          </div>
+
+          <div style={styles.otpHint}>
+            {event.otpSettings?.enabled
+              ? '💰 用户登录时将收到真实的6位验证码短信（产生短信费用）'
+              : '🆓 所有用户统一使用固定验证码 223344（免费，仅用于开发测试）'}
+          </div>
+
+          {event.otpSettings?.enabled && event.otpSettings?.enabledAt && (
+            <div style={styles.otpMeta}>
+              启用时间：{new Date(event.otpSettings.enabledAt.toDate()).toLocaleString('zh-CN')}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 操作按钮 */}
       <div style={styles.actionButtons}>
         {/* 删除按钮 */}
@@ -1116,6 +1198,13 @@ const EventCard = ({ event, organization, onReload }) => {
         >
           ✏️ 编辑活动
         </button>
+        {/* 🆕 输出摊位 QR Code 按钮 */}
+        <button
+          style={styles.qrPrintButton}
+          onClick={() => setShowQRPrint(true)}
+        >
+          📱 输出摊位 QR Code
+        </button>
       </div>
       {/* ✅ 新增：编辑活动 Modal */}
       {showEditEvent && (
@@ -1129,6 +1218,17 @@ const EventCard = ({ event, organization, onReload }) => {
           }}
         />
       )}
+      {/* 🆕 摊位 QR Code 打印 Modal */}
+      {showQRPrint && (
+        <MerchantQRPrintModal
+          organizationId={organization.id}
+          eventId={event.id}
+          eventName={event.eventName?.['zh-CN'] || event.eventName?.['en-US'] || event.eventCode}
+          onClose={() => setShowQRPrint(false)}
+        />
+      )}
+
+
     </div>
   );
 };
@@ -1270,7 +1370,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   // 提交保存
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setSubmitting(true);
@@ -2253,6 +2353,16 @@ const styles = {
     fontWeight: '500',
     cursor: 'pointer'
   },
+    qrPrintButton: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#f3e8ff',
+    color: '#7c3aed',
+    border: '1.5px solid #c4b5fd',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600'
+  },
   logoutButton: {
     padding: '0.75rem 1.5rem',
     background: '#ef4444',
@@ -2951,6 +3061,70 @@ const styles = {
     padding: '0.75rem',
     borderRadius: '6px',
     marginBottom: '1rem'
+  },
+  // ========== ✨ 新增：OTP 设置样式 ==========
+  otpSettingsSection: {
+    background: '#f0f9ff',
+    border: '2px solid #bae6fd',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '1rem'
+  },
+  otpSettingsHeader: {
+    marginBottom: '0.75rem'
+  },
+  otpSettingsContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  otpSwitchLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    cursor: 'pointer',
+    userSelect: 'none'
+  },
+  otpCheckbox: {
+    width: '20px',
+    height: '20px',
+    cursor: 'pointer'
+  },
+  otpSwitchText: {
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    color: '#0c4a6e'
+  },
+  otpStatusBadge: {
+    padding: '0.75rem 1rem',
+    borderRadius: '6px',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginLeft: '2rem',
+    marginTop: '0.5rem',
+    marginBottom: '0.5rem'
+  },
+  otpStatusEnabled: {
+    background: '#d1fae5',
+    color: '#065f46',
+    border: '1px solid #a7f3d0'
+  },
+  otpStatusDisabled: {
+    background: '#fef3c7',
+    color: '#92400e',
+    border: '1px solid #fde68a'
+  },
+  otpHint: {
+    fontSize: '0.85rem',
+    color: '#0369a1',
+    fontStyle: 'italic',
+    marginLeft: '2rem'
+  },
+  otpMeta: {
+    fontSize: '0.75rem',
+    color: '#64748b',
+    marginLeft: '2rem',
+    marginTop: '0.25rem'
   }
 };
 
@@ -2966,4 +3140,3 @@ if (typeof document !== 'undefined') {
 }
 
 export default PlatformDashboard;
-

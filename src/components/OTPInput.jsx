@@ -15,10 +15,27 @@ import { useState, useRef, useEffect } from 'react';
  * @param {number} props.expiresIn - 过期时间（秒）
  * @param {boolean} props.loading - 加载状态
  */
-const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) => {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+const OTPInput = ({ value = '', onChange, onComplete, onResend, expiresIn = 300, loading = false, disabled = false, length = 6 }) => {
+  const [otp, setOtp] = useState(Array(length).fill(''));
   const [timeLeft, setTimeLeft] = useState(expiresIn);
   const inputRefs = useRef([]);
+
+  useEffect(() => {
+    if (typeof value !== 'string') return;
+    const digits = value.replace(/\D/g, '').slice(0, length).split('');
+    const merged = Array.from({ length }, (_, i) => digits[i] || '');
+    setOtp(merged);
+  }, [value, length]);
+
+  const emitOtpChange = (nextOtpArr) => {
+    const otpCode = nextOtpArr.join('');
+    if (typeof onChange === 'function') {
+      onChange(otpCode);
+    }
+    if (nextOtpArr.every((digit) => digit !== '') && typeof onComplete === 'function') {
+      onComplete(otpCode);
+    }
+  };
 
   // 倒计时
   useEffect(() => {
@@ -47,21 +64,33 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
   // 处理输入
   const handleChange = (index, value) => {
     // 只允许数字
-    if (value && !/^\d$/.test(value)) return;
+    if (!value) {
+      const newOtp = [...otp];
+      newOtp[index] = '';
+      setOtp(newOtp);
+      emitOtpChange(newOtp);
+      return;
+    }
+
+    if (/^\d+$/.test(value) && value.length > 1) {
+      const pastedDigits = value.slice(0, length).split('');
+      const newOtp = Array.from({ length }, (_, i) => pastedDigits[i] || '');
+      setOtp(newOtp);
+      emitOtpChange(newOtp);
+      inputRefs.current[Math.min(length - 1, pastedDigits.length - 1)]?.focus();
+      return;
+    }
+
+    if (!/^\d$/.test(value)) return;
 
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
+    emitOtpChange(newOtp);
 
     // 自动聚焦下一个输入框
-    if (value && index < 5) {
+    if (value && index < length - 1) {
       inputRefs.current[index + 1]?.focus();
-    }
-
-    // 如果全部输入完成
-    if (newOtp.every((digit) => digit !== '')) {
-      const otpCode = newOtp.join('');
-      onComplete(otpCode);
     }
   };
 
@@ -73,16 +102,18 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
         const newOtp = [...otp];
         newOtp[index - 1] = '';
         setOtp(newOtp);
+        emitOtpChange(newOtp);
         inputRefs.current[index - 1]?.focus();
       } else {
         // 删除当前
         const newOtp = [...otp];
         newOtp[index] = '';
         setOtp(newOtp);
+        emitOtpChange(newOtp);
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       inputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
+    } else if (e.key === 'ArrowRight' && index < length - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -93,21 +124,21 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
     const pastedData = e.clipboardData.getData('text/plain').trim();
     
     // 只允许6位数字
-    if (!/^\d{6}$/.test(pastedData)) return;
+    if (!new RegExp(`^\\d{${length}}$`).test(pastedData)) return;
 
     const newOtp = pastedData.split('');
     setOtp(newOtp);
+    emitOtpChange(newOtp);
     
     // 聚焦最后一个输入框
-    inputRefs.current[5]?.focus();
-    
-    // 自动提交
-    onComplete(pastedData);
+    inputRefs.current[length - 1]?.focus();
   };
 
   // 重置
   const handleReset = () => {
-    setOtp(['', '', '', '', '', '']);
+    const resetOtp = Array(length).fill('');
+    setOtp(resetOtp);
+    emitOtpChange(resetOtp);
     setTimeLeft(expiresIn);
     inputRefs.current[0]?.focus();
   };
@@ -146,11 +177,11 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
             value={digit}
             onChange={(e) => handleChange(index, e.target.value)}
             onKeyDown={(e) => handleKeyDown(index, e)}
-            disabled={loading || timeLeft === 0}
+            disabled={loading || disabled || timeLeft === 0}
             style={{
               ...styles.input,
               ...(digit ? styles.inputFilled : {}),
-              ...(loading ? styles.inputDisabled : {})
+              ...((loading || disabled) ? styles.inputDisabled : {})
             }}
             autoFocus={index === 0}
           />
@@ -160,6 +191,7 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
       <div style={styles.actions}>
         {timeLeft === 0 ? (
           <button
+            type="button"
             onClick={handleResend}
             disabled={loading}
             style={{
@@ -171,6 +203,7 @@ const OTPInput = ({ onComplete, onResend, expiresIn = 300, loading = false }) =>
           </button>
         ) : (
           <button
+            type="button"
             onClick={handleResend}
             disabled={loading || timeLeft > 240}
             style={{

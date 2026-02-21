@@ -27,6 +27,29 @@ import CustomerPayment from './CustomerPayment';
 import CustomerTransfer from './CustomerTransfer';
 import CustomerTransactions from './CustomerTransactions';
 
+// ⭐ 添加通知横幅动画样式
+const notificationStyles = `
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.customer-notification-banner:hover {
+  transform: translateX(-50%) scale(1.02) !important;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.3) !important;
+}
+
+.customer-notification-banner:active {
+  transform: translateX(-50%) scale(0.98) !important;
+}
+`;
+
 const CustomerDashboard = () => {
   const navigate = useNavigate();
   const { userProfile } = useAuth(); // 🆕 获取 userProfile
@@ -39,8 +62,9 @@ const CustomerDashboard = () => {
   const [notification, setNotification] = useState(null);
   const [organizationId, setOrganizationId] = useState(eventOrgId);
   const [eventId, setEventId] = useState(eventEventId);
-  const processedTransactionsRef = useRef(new Set());
+  const processedTransactionStatusRef = useRef(new Set());
   const notificationTimeoutRef = useRef(null);
+  const isInitialLoadRef = useRef(true);  // ⭐ 新增：标记初始加载
 
   // EventContext 初始化完成后，同步 organizationId/eventId
   useEffect(() => {
@@ -141,73 +165,189 @@ const CustomerDashboard = () => {
   useEffect(() => {
     if (!auth.currentUser || !organizationId || !eventId) return;
 
-    const userId = auth.currentUser.uid;
+    let unsubscribe = () => {};
+    let isUnmounted = false;
 
-    console.log('🔔 [CustomerDashboard] Setting up transaction listener');
+    const setupTransactionListener = async () => {
+      try {
+        const tokenResult = await auth.currentUser.getIdTokenResult();
+        const targetUserId = tokenResult?.claims?.userId || auth.currentUser.uid;
 
-    const transactionsRef = collection(
-      db,
-      'organizations', organizationId,
-      'events', eventId,
-      'transactions'
-    );
+        if (isUnmounted) return;
 
-    const q = query(
-      transactionsRef,
-      where('customerId', '==', userId),
-      where('transactionType', '==', 'customer_to_merchant')
-    );
+        console.log('🔔 [CustomerDashboard] Setting up transaction listener', {
+          targetUserId,
+          organizationId,
+          eventId
+        });
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const docId = change.doc.id;
-          const data = change.doc.data();
+        const transactionsRef = collection(
+          db,
+          'organizations', organizationId,
+          'events', eventId,
+          'transactions'
+        );
 
-          // 跳过已处理的交易
-          if (processedTransactionsRef.current.has(docId)) {
-            return;
-          }
+        const q = query(
+          transactionsRef,
+          where('customerId', '==', targetUserId),
+          where('transactionType', '==', 'customer_to_merchant')
+        );
 
-          // 只处理状态变更为 completed 或 cancelled 的交易
-          if (change.type === 'modified') {
-            if (data.status === 'completed' || data.status === 'cancelled') {
-              processedTransactionsRef.current.add(docId);
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            console.log('🔔 [CustomerDashboard] Snapshot received, isInitialLoad:', isInitialLoadRef.current, 'docs:', snapshot.docs.length);
+            
+            // ⭐ 初始加载：只标记现有交易，不触发通知
+            if (isInitialLoadRef.current) {
+              console.log('🔔 [CustomerDashboard] 初始加载 - 标记所有现有交易');
+              snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.status === 'completed' || data.status === 'cancelled') {
+                  processedTransactionStatusRef.current.add(`${doc.id}:${data.status}`);
+                }
+                console.log('  • 已标记:', doc.id, '| 状态:', data.status, '| 金额:', data.amount);
+              });
+              isInitialLoadRef.current = false;
+              console.log('🔔 [CustomerDashboard] 初始加载完成，已标记', processedTransactionStatusRef.current.size, '笔已完成/已取消交易');
+              return;  // ⚠️ 关键：初始加载不继续处理
+            }
 
-              console.log('🔔 [CustomerDashboard] Transaction status changed:', {
-                id: docId,
+            // ⭐ 后续更新：正常处理状态变化
+            snapshot.docChanges().forEach((change) => {
+              const docId = change.doc.id;
+              const data = change.doc.data();
+
+              console.log('🔔 [CustomerDashboard] 检测到交易变化', {
+                changeType: change.type,
+                transactionId: docId,
                 status: data.status,
                 amount: data.amount,
                 merchantName: data.merchantName
               });
 
-              showNotification({
-                id: docId,
-                status: data.status,
-                amount: data.amount,
-                merchantName: data.merchantName || '商家',
-                title: data.merchantName || '商家'
-              });
+              // ⭐ 只处理状态变更（modified）
+              if (change.type === 'modified') {
+                
+                // ⭐ 检查是否是关键状态变化
+                if (data.status === 'completed' || data.status === 'cancelled') {
+                  
+                  // ⭐ 去重检查（按「交易ID + 状态」去重）
+                  const processKey = `${docId}:${data.status}`;
+                  if (processedTransactionStatusRef.current.has(processKey)) {
+                    console.log('🔔 [CustomerDashboard] 交易已处理过，跳过:', docId);
+                    return;
+                  }
+
+                  processedTransactionStatusRef.current.add(processKey);
+                  console.log('✅ [CustomerDashboard] 关键状态变化 -', data.status, '| 交易:', docId);
+
+                  // 处理取消交易的余额回滚
+                  if (data.status === 'cancelled') {
+                    const cancelledAmount = Number(data.amount) || 0;
+                    
+                    console.log('🔄 [CustomerDashboard] 回滚余额', {
+                      transactionId: docId,
+                      cancelledAmount,
+                      currentAvailable: customerData?.customer?.pointsAccount?.availablePoints
+                    });
+
+                    if (cancelledAmount > 0) {
+                      setCustomerData((prev) => {
+                        if (!prev) return prev;
+
+                        const available = prev.customer?.pointsAccount?.availablePoints || 0;
+                        const totalSpent = prev.customer?.pointsAccount?.totalSpent || 0;
+                        const txCount = prev.customer?.stats?.transactionCount || 0;
+                        const paymentCount = prev.customer?.stats?.merchantPaymentCount || 0;
+
+                        console.log('  • 当前余额:', {
+                          availablePoints: available,
+                          totalSpent
+                        });
+
+                        const newData = {
+                          ...prev,
+                          customer: {
+                            ...prev.customer,
+                            pointsAccount: {
+                              ...prev.customer?.pointsAccount,
+                              availablePoints: available + cancelledAmount,
+                              totalSpent: Math.max(0, totalSpent - cancelledAmount)
+                            },
+                            stats: {
+                              ...prev.customer?.stats,
+                              transactionCount: Math.max(0, txCount - 1),
+                              merchantPaymentCount: Math.max(0, paymentCount - 1),
+                              lastActivityAt: new Date()
+                            }
+                          }
+                        };
+
+                        console.log('  • 更新后余额:', {
+                          availablePoints: newData.customer.pointsAccount.availablePoints,
+                          totalSpent: newData.customer.pointsAccount.totalSpent
+                        });
+
+                        return newData;
+                      });
+
+                      // 显示 Toast 提示
+                      if (typeof window !== 'undefined' && typeof window.mybazaarShowToast === 'function') {
+                        window.mybazaarShowToast(
+                          `交易已取消，已退回 ${cancelledAmount} 点`,
+                          'info'
+                        );
+                      }
+                    }
+                  }
+
+                  // ⭐ 显示通知横幅
+                  console.log('🔔 [CustomerDashboard] 准备显示通知');
+                  showNotification({
+                    id: docId,
+                    status: data.status,
+                    amount: data.amount,
+                    merchantName: data.merchantName || '商家',
+                    title: data.status === 'completed' ? '收款成功' : '交易已取消'
+                  });
+                }
+              } 
+              // ⭐ 新增交易（added）- 只标记
+              else if (change.type === 'added') {
+                if (data.status === 'completed' || data.status === 'cancelled') {
+                  processedTransactionStatusRef.current.add(`${docId}:${data.status}`);
+                }
+                console.log('➕ [CustomerDashboard] 新增交易已标记:', docId, '| 状态:', data.status);
+              }
+            });
+          },
+          (error) => {
+            if (error?.name === 'AbortError' || error?.code === 'cancelled') {
+              console.log('🔔 [CustomerDashboard] Listener aborted (expected)');
+              return;
             }
-          } else if (change.type === 'added') {
-            // 标记已存在的交易，避免初始加载时弹通知
-            processedTransactionsRef.current.add(docId);
+            console.error('❌ [CustomerDashboard] Error listening to transactions:', error);
           }
-        });
-      },
-      (error) => {
-        if (error?.name === 'AbortError' || error?.code === 'cancelled') {
-          console.log('🔔 [CustomerDashboard] Listener aborted (expected)');
-          return;
-        }
-        console.error('❌ [CustomerDashboard] Error listening to transactions:', error);
+        );
+      } catch (error) {
+        console.error('❌ [CustomerDashboard] Setup transaction listener failed:', error);
       }
-    );
+    };
+
+    setupTransactionListener();
 
     return () => {
+      isUnmounted = true;
       console.log('🔔 [CustomerDashboard] Cleaning up transaction listener');
       unsubscribe();
+      
+      // ⭐ 清理时重置初始加载标记，以便下次重新初始化
+      if (processedTransactionStatusRef.current.size > 0) {
+        console.log('🔔 [CustomerDashboard] 保留已处理的交易状态记录:', processedTransactionStatusRef.current.size, '笔');
+      }
+      isInitialLoadRef.current = true;  // ⭐ 重置初始加载标记
     };
   }, [organizationId, eventId]);
 
@@ -255,6 +395,11 @@ const CustomerDashboard = () => {
   // 刷新数据
   const handleRefresh = () => {
     loadCustomerData();
+  };
+
+  const handlePaymentExit = async () => {
+    setActiveTab('overview');
+    await loadCustomerData();
   };
 
   // 讓 iOS 在「點擊扫码付款」當下就跳出系統相機授權（避免進入付款頁後再按一次）
@@ -320,6 +465,9 @@ const CustomerDashboard = () => {
   return (
     
     <div style={styles.container}>
+      {/* ⭐ 注入通知动画样式 */}
+      <style>{notificationStyles}</style>
+      
       {/* 🆕 共用 Header 组件（包含角色切换器和登出按钮） */}
       <DashboardHeader
         title="消费者"
@@ -337,28 +485,31 @@ const CustomerDashboard = () => {
         userInfo={userProfile}
       />
 
-      {/* ⭐ 交易通知横幅 */}
+      {/* ⭐ 交易通知横幅 - 修复版 */}
       {notification && (
         <div
           className="customer-notification-banner"
           onClick={handleNotificationClick}
           style={{
             position: 'fixed',
-            top: '20px',
+            top: '80px',  // ⭐ 修复：避免被 Header 遮挡（Header 高度约 60-70px）
             left: '50%',
             transform: 'translateX(-50%)',
             backgroundColor: notification.status === 'completed' ? '#10b981' : '#ef4444',
             color: 'white',
             padding: '16px 24px',
             borderRadius: '12px',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            boxShadow: '0 8px 16px rgba(0,0,0,0.2)',  // ⭐ 增强阴影
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
             cursor: 'pointer',
-            zIndex: 1000,
+            zIndex: 9999,  // ⭐ 修复：提高到最顶层
             minWidth: '320px',
-            maxWidth: '90%'
+            maxWidth: '90%',
+            animation: 'slideDown 0.3s ease-out',  // ⭐ 添加滑入动画
+            border: '2px solid rgba(255,255,255,0.2)',  // ⭐ 添加边框突出显示
+            transition: 'all 0.3s ease'
           }}
         >
           {notification.status === 'completed' ? (
@@ -486,7 +637,14 @@ const CustomerDashboard = () => {
 
         {/* Payment Tab */}
         {activeTab === 'payment' && (
-          <CustomerPayment />
+          <CustomerPayment
+            embedded={true}
+            orgEventCode={orgEventCode}
+            onBack={handlePaymentExit}
+            onPaymentSuccess={() => {
+              loadCustomerData();
+            }}
+          />
         )}
 
         {/* Transfer Tab */}

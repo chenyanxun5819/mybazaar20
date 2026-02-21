@@ -3,14 +3,10 @@ import {
   collection, 
   query, 
   where, 
-  getDocs, 
-  doc, 
-  setDoc,
-  updateDoc,
-  increment, 
-  serverTimestamp 
+  getDocs
 } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { db, functions } from '../../../config/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useEvent } from '../../../contexts/EventContext';
 import { useSellerStats } from '../hooks/useSellerStats';
@@ -25,6 +21,9 @@ function MakeSale() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [showPinInput, setShowPinInput] = useState(false);
+  const [transactionPin, setTransactionPin] = useState('');
+  const [pinError, setPinError] = useState('');
 
   // 查找客户
   const handleSearchCustomer = async () => {
@@ -127,7 +126,7 @@ function MakeSale() {
   };
 
   // 提交销售
-  const handleSubmitSale = async () => {
+  const handleSubmitSale = () => {
     if (!customer || !amount) {
       setError('请完成所有字段');
       return;
@@ -151,9 +150,49 @@ function MakeSale() {
       return;
     }
 
+    setPinError('');
+    setTransactionPin('');
+    setShowPinInput(true);
+    setError(null);
+  };
+
+  const handleConfirmSaleWithPin = async () => {
+    if (!customer || !amount) {
+      setError('请完成所有字段');
+      return;
+    }
+
+    if (!organizationId || !eventId || !userProfile?.userId) {
+      setError('无法获取组织、活动或用户信息，请刷新页面');
+      return;
+    }
+
+    const saleAmount = parseInt(amount, 10);
+
+    if (isNaN(saleAmount) || saleAmount <= 0) {
+      setError('金额必须大于 0');
+      return;
+    }
+
+    if (sellerBalance < saleAmount) {
+      setError(`您的点数库存不足！当前库存: ${sellerBalance} 点`);
+      return;
+    }
+
+    if (!transactionPin || transactionPin.length !== 6) {
+      setPinError('请输入6位交易密码');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(transactionPin)) {
+      setPinError('交易密码必须是6位数字');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
+    setPinError('');
 
     try {
       console.log('[MakeSale] 开始销售:', {
@@ -163,93 +202,16 @@ function MakeSale() {
         saleAmount: saleAmount
       });
 
-      // 1. 创建交易记录（單步提交）
-      const transactionRef = doc(
-        collection(
-          db,
-          `organizations/${organizationId}/events/${eventId}/transactions`
-        )
-      );
-      console.log('[MakeSale] 將寫入 transaction 路徑:', transactionRef.path);
-      
-      const transactionData = {
-        transactionId: transactionRef.id,
-        organizationId: organizationId,
-        eventId: eventId,
-        type: 'seller_to_customer',
-        sellerId: userProfile.userId,
-        sellerName: userProfile.basicInfo?.chineseName || userProfile.basicInfo?.englishName || 'Unknown',
+      const sellerDirectSale = httpsCallable(functions, 'sellerDirectSale');
+      const result = await sellerDirectSale({
+        orgId: organizationId,
+        eventId,
         customerId: customer.id,
-        customerName: customer.basicInfo?.chineseName || customer.basicInfo?.englishName || 'Unknown',
-        points: saleAmount,
         amount: saleAmount,
-        paymentMethod: 'cash',
-        status: 'completed',
-        timestamp: serverTimestamp(),
-        createdAt: serverTimestamp()
-      };
-      
-      try {
-        await setDoc(transactionRef, transactionData);
-        console.log('[MakeSale] ✅ 交易寫入成功');
-      } catch (e) {
-        console.error('[MakeSale] ❌ 交易寫入失敗:', e);
-        setError('交易建立失敗: ' + (e.message || '未知錯誤'));
-        setLoading(false);
-        return;
-      }
+        transactionPin
+      });
 
-      // 2. 🔥 更新 Seller（减少点数库存，增加现金收入）
-      const sellerRef = doc(
-        db,
-        `organizations/${organizationId}/events/${eventId}/users/${userProfile.userId}`
-      );
-      console.log('[MakeSale] 將更新 seller 路徑:', sellerRef.path);
-      
-      const sellerUpdate = {
-        'seller.availablePoints': increment(-saleAmount),
-        'seller.totalPointsSold': increment(saleAmount),
-        'seller.totalRevenue': increment(saleAmount),
-        'seller.totalCashCollected': increment(saleAmount),
-        'seller.pendingCollection': increment(saleAmount),
-        'updatedAt': serverTimestamp()
-      };
-      
-      try {
-        await updateDoc(sellerRef, sellerUpdate);
-        console.log('[MakeSale] ✅ Seller 更新成功');
-      } catch (e) {
-        console.error('[MakeSale] ❌ Seller 更新失敗:', e);
-        setError('更新 Seller 失敗: ' + (e.message || '未知錯誤'));
-        setLoading(false);
-        return;
-      }
-
-      // 3. ✅ 修复：更新 Customer（使用新架构）
-      const customerRef = doc(
-        db,
-        `organizations/${organizationId}/events/${eventId}/users/${customer.id}`
-      );
-      console.log('[MakeSale] 將更新 customer 路徑:', customerRef.path);
-      
-      const customerUpdate = {
-        // ✅ 新架构：嵌套在 pointsAccount 下
-        'customer.pointsAccount.availablePoints': increment(saleAmount),
-        'customer.pointsAccount.totalReceived': increment(saleAmount),
-        'updatedAt': serverTimestamp()
-      };
-      
-      try {
-        await updateDoc(customerRef, customerUpdate);
-        console.log('[MakeSale] ✅ Customer 更新成功');
-      } catch (e) {
-        console.error('[MakeSale] ❌ Customer 更新失敗:', e);
-        setError('更新 Customer 失敗: ' + (e.message || '未知錯誤'));
-        setLoading(false);
-        return;
-      }
-      
-      console.log('[MakeSale] ✅ 銷售三步驟全部成功');
+      console.log('[MakeSale] ✅ 销售成功:', result.data);
 
       // 成功提示
       setSuccessMessage(`销售成功！金额: RM ${saleAmount}，客户获得 ${saleAmount} 点`);
@@ -258,6 +220,9 @@ function MakeSale() {
       setCustomerPhone('');
       setAmount('');
       setCustomer(null);
+      setShowPinInput(false);
+      setTransactionPin('');
+      setPinError('');
 
     } catch (err) {
       console.error('[MakeSale] 销售失败:', err);
@@ -266,8 +231,16 @@ function MakeSale() {
         message: err.message
       });
 
-      if (err.code === 'permission-denied') {
-        setError('权限不足，无法完成销售。请联系管理员检查 Security Rules。');
+      if (err.code === 'functions/permission-denied' || err.code === 'permission-denied') {
+        const message = err.message || '交易密码错误或权限不足';
+        setPinError(message);
+      } else if (err.code === 'functions/failed-precondition' || err.code === 'failed-precondition') {
+        const message = err.message || '操作失败';
+        if (message.includes('密码') || message.includes('锁定')) {
+          setPinError(message);
+        } else {
+          setError(message);
+        }
       } else {
         setError(`销售失败: ${err.message}`);
       }
@@ -359,7 +332,12 @@ function MakeSale() {
                 id="amount"
                 type="number"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setShowPinInput(false);
+                  setTransactionPin('');
+                  setPinError('');
+                }}
                 onKeyPress={handleAmountKeyPress}
                 placeholder="100"
                 min="1"
@@ -402,7 +380,7 @@ function MakeSale() {
         )}
 
         {/* 提交按钮 */}
-        {customer && amount && (
+        {customer && amount && !showPinInput && (
           <button
             onClick={handleSubmitSale}
             disabled={loading || parseInt(amount) > sellerBalance}
@@ -411,10 +389,163 @@ function MakeSale() {
             {loading ? '处理中...' : `确认销售 ${amount} 点 (收取 RM ${amount})`}
           </button>
         )}
+
+        {/* 交易密码输入页面（复制 CustomerPayment UI 风格） */}
+        {customer && amount && showPinInput && (
+          <div style={pinStyles.pinContainer}>
+            <div style={pinStyles.pinCard}>
+              <div style={pinStyles.pinIcon}>🔐</div>
+              <h2 style={pinStyles.pinTitle}>请输入交易密码</h2>
+              <p style={pinStyles.pinSubtitle}>
+                向 {customer.basicInfo?.chineseName || customer.basicInfo?.englishName || '客户'} 销售 {amount} 点
+              </p>
+
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength="6"
+                value={transactionPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setTransactionPin(value);
+                  setPinError('');
+                }}
+                placeholder="请输入6位数字"
+                style={{
+                  ...pinStyles.pinInput,
+                  ...(pinError ? pinStyles.inputError : {})
+                }}
+                autoFocus
+                disabled={loading}
+              />
+
+              {pinError && <p style={pinStyles.errorText}>{pinError}</p>}
+
+              <p style={pinStyles.pinHint}>
+                交易密码是您在注册时设置的6位数字密码
+              </p>
+
+              <div style={pinStyles.pinActions}>
+                <button
+                  onClick={() => {
+                    setShowPinInput(false);
+                    setTransactionPin('');
+                    setPinError('');
+                  }}
+                  style={{
+                    ...pinStyles.button,
+                    ...pinStyles.secondaryButton
+                  }}
+                  disabled={loading}
+                >
+                  返回修改金额
+                </button>
+                <button
+                  onClick={handleConfirmSaleWithPin}
+                  style={{
+                    ...pinStyles.button,
+                    ...pinStyles.primaryButton,
+                    ...(loading ? pinStyles.buttonDisabled : {})
+                  }}
+                  disabled={loading || transactionPin.length !== 6}
+                >
+                  {loading ? '验证中...' : '确认销售'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+const pinStyles = {
+  pinContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '220px',
+    marginTop: '1rem'
+  },
+  pinCard: {
+    width: '100%',
+    maxWidth: '380px',
+    padding: '1.5rem',
+    backgroundColor: '#fff',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    textAlign: 'center'
+  },
+  pinIcon: {
+    fontSize: '2.5rem',
+    marginBottom: '0.75rem'
+  },
+  pinTitle: {
+    fontSize: '1.3rem',
+    fontWeight: '600',
+    color: '#333',
+    margin: '0 0 0.4rem 0'
+  },
+  pinSubtitle: {
+    fontSize: '0.9rem',
+    color: '#666',
+    marginBottom: '1.5rem'
+  },
+  pinInput: {
+    width: '100%',
+    padding: '1.2rem',
+    fontSize: '1.8rem',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: '0.5rem',
+    border: '2px solid #ddd',
+    borderRadius: '8px',
+    outline: 'none',
+    marginBottom: '0.75rem',
+    boxSizing: 'border-box'
+  },
+  pinHint: {
+    fontSize: '0.8rem',
+    color: '#999',
+    marginBottom: '1.5rem'
+  },
+  pinActions: {
+    display: 'flex',
+    gap: '0.6rem'
+  },
+  button: {
+    flex: 1,
+    padding: '0.65rem',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  primaryButton: {
+    backgroundColor: '#2196F3',
+    color: '#fff'
+  },
+  secondaryButton: {
+    backgroundColor: '#fff',
+    color: '#2196F3',
+    border: '1px solid #2196F3'
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed'
+  },
+  inputError: {
+    borderColor: '#f44336'
+  },
+  errorText: {
+    margin: '0.2rem 0 0 0',
+    fontSize: '0.75rem',
+    color: '#f44336'
+  }
+};
 
 export default MakeSale;
 

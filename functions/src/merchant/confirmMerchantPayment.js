@@ -2,20 +2,18 @@
  * confirmMerchantPayment.js
  * 确认收款 - merchantOwner 或 merchantAsist 确认待收的交易
  * 
- * ⭐ 修复版本（2026-01-17）
+ * ⭐ 最新修复版本（2026-02-19 v2）
  * 修复内容：
- * 1. 修正 Customer 数据结构路径：customer.pointsAccount.availablePoints
- * 2. 修正交易字段名称：transactionType（不是 type）
- * 3. 添加 Customer 统计更新
- * 4. 添加访问过的商家列表
+ * 1. ✅ 修正重复扣款问题（processCustomerPayment 已扣款，confirm 不再扣款）
+ * 2. ✅ 修正重复增加收入问题（processCustomerPayment 已增加，confirm 不再增加）
+ * 3. ✅ confirm 只更新交易状态和收款人信息
+ * 4. ✅ 修正 Firestore Transaction 顺序（先读取，后写入）
  * 
- * 功能：
- * 1. 验证交易状态为 pending
- * 2. 验证调用者权限（merchantOwner 或 merchantAsist）
- * 3. 扣除 customer 点数
- * 4. 增加 merchant 收入统计
- * 5. 更新交易状态为 completed
- * 6. 记录收款人信息（collectedBy, collectorRole）
+ * ⚠️ 重要说明：
+ * 系统采用"立即扣除模式"（2026-01-23 修改）：
+ * - processCustomerPayment: 立即扣除 Customer 点数，立即增加 Merchant 收入
+ * - confirmMerchantPayment: 只更新状态，不再扣款和增加收入
+ * - cancelMerchantPayment: 回滚点数和收入
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -70,7 +68,6 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
     }
 
     // ========== 6. 验证交易类型 ==========
-    // ⭐ 修复：改为 transactionType（匹配 processCustomerPayment）
     if (transactionData.transactionType !== 'customer_to_merchant') {
       throw new HttpsError('invalid-argument', '交易类型错误');
     }
@@ -98,7 +95,7 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
       throw new HttpsError('permission-denied', '只有商家摊主或助理可以确认收款');
     }
 
-    // 以 merchants 文档为准验证商家归属（避免 users.merchantOwner/merchantAsist.merchantId 缺失导致无法确认）
+    // 以 merchants 文档为准验证商家归属
     const merchantRefForAuth = db
       .collection('organizations').doc(organizationId)
       .collection('events').doc(eventId)
@@ -132,106 +129,60 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
       throw new HttpsError('permission-denied', '此交易不属于您的商家');
     }
 
-    // ========== 9. 获取 Customer 和 Merchant 文档 ==========
-    const customerRef = db
-      .collection('organizations').doc(organizationId)
-      .collection('events').doc(eventId)
-      .collection('users').doc(transactionData.customerId);
-
-    const merchantRef = merchantRefForAuth;
-
-    const [customerDoc, merchantDoc] = await Promise.all([
-      customerRef.get(),
-      merchantRef.get()
-    ]);
-
-    if (!customerDoc.exists) {
-      throw new HttpsError('not-found', '顾客不存在');
-    }
-
-    if (!merchantDoc.exists) {
-      throw new HttpsError('not-found', '商家不存在');
-    }
-
-    const customerData = customerDoc.data();
-    const merchantData = merchantDoc.data();
-
-    // ========== 10. 验证 Customer 余额 ==========
-    // ⭐ 修复：改为 customer.pointsAccount.availablePoints
-    const customerBalance = customerData.customer?.pointsAccount?.availablePoints || 0;
     const amount = transactionData.amount;
 
-    if (customerBalance < amount) {
-      throw new HttpsError(
-        'failed-precondition',
-        `顾客余额不足（余额：${customerBalance}，需要：${amount}）`
-      );
-    }
+    console.log('[confirmMerchantPayment] ⭐ 准备确认收款（立即扣除模式）:', {
+      transactionId,
+      amount,
+      collectorRole,
+      note: '已在 processCustomerPayment 中扣除，此处只更新状态'
+    });
 
-    // ========== 11. 使用事务执行操作 ==========
+    // ========== 9. 使用事务执行操作 ==========
+    const now = new Date();
+
     await db.runTransaction(async (transaction) => {
-      // 11.1 扣除 Customer 点数
-      const newCustomerBalance = customerBalance - amount;
-      // ⭐ 修复：改为 customer.pointsAccount.totalSpent
-      const newCustomerTotalSpent = (customerData.customer?.pointsAccount?.totalSpent || 0) + amount;
+      
+      // ⭐⭐⭐ 关键修复：所有读取操作必须在写入操作之前
+      
+      // ========================================
+      // 第一步：执行所有读取操作
+      // ========================================
+      
+      // 读取 Merchant 数据
+      const merchantRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('merchants').doc(transactionData.merchantId);
 
-      // ⭐ 修复：更新正确的字段路径，并添加统计
-      transaction.update(customerRef, {
-        'customer.pointsAccount.availablePoints': newCustomerBalance,
-        'customer.pointsAccount.totalSpent': newCustomerTotalSpent,
-        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
-        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
-        'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      // ⭐ 新增：添加到访问过的商家列表
-      const merchantsVisited = customerData.customer?.stats?.merchantsVisited || [];
-      if (!merchantsVisited.includes(transactionData.merchantId)) {
-        transaction.update(customerRef, {
-          'customer.stats.merchantsVisited': admin.firestore.FieldValue.arrayUnion(transactionData.merchantId)
-        });
+      const merchantDoc = await transaction.get(merchantRef);
+      
+      if (!merchantDoc.exists) {
+        throw new HttpsError('not-found', 'Merchant 不存在');
       }
+      
+      const merchantData = merchantDoc.data() || {};
 
-      // 11.2 增加 Merchant 收入
-      const newTotalRevenue = (merchantData.revenueStats?.totalRevenue || 0) + amount;
-      const newTransactionCount = (merchantData.revenueStats?.transactionCount || 0) + 1;
-      const newTodayRevenue = (merchantData.dailyRevenue?.today || 0) + amount;
-      const newTodayTransactionCount = (merchantData.dailyRevenue?.todayTransactionCount || 0) + 1;
+      console.log('[confirmMerchantPayment] ✅ 已读取 Merchant 数据');
 
-      // 11.3 根据收款人角色更新分类收入
-      let ownerUpdate = {};
-      let asistUpdate = {};
+      // 读取 Customer 数据
+      const customerRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('users').doc(transactionData.customerId);
 
-      if (collectorRole === 'merchantOwner') {
-        const newOwnerRevenue = (merchantData.revenueStats?.ownerCollectedRevenue || 0) + amount;
-        const newTodayOwnerCollected = (merchantData.dailyRevenue?.todayOwnerCollected || 0) + amount;
-        ownerUpdate = {
-          'revenueStats.ownerCollectedRevenue': newOwnerRevenue,
-          'dailyRevenue.todayOwnerCollected': newTodayOwnerCollected
-        };
-      } else if (collectorRole === 'merchantAsist') {
-        const newAsistsRevenue = (merchantData.revenueStats?.asistsCollectedRevenue || 0) + amount;
-        const newTodayAsistsCollected = (merchantData.dailyRevenue?.todayAsistsCollected || 0) + amount;
-        asistUpdate = {
-          'revenueStats.asistsCollectedRevenue': newAsistsRevenue,
-          'dailyRevenue.todayAsistsCollected': newTodayAsistsCollected
-        };
-      }
+      const customerDoc = await transaction.get(customerRef);
+      const customerData = customerDoc.exists ? customerDoc.data() : null;
 
-      transaction.update(merchantRef, {
-        'revenueStats.totalRevenue': newTotalRevenue,
-        'revenueStats.transactionCount': newTransactionCount,
-        'dailyRevenue.today': newTodayRevenue,
-        'dailyRevenue.todayTransactionCount': newTodayTransactionCount,
-        ...ownerUpdate,
-        ...asistUpdate,
-        'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
-      });
+      console.log('[confirmMerchantPayment] ✅ 已读取 Customer 数据');
 
-      // 11.4 更新交易状态
-      // 先生成当前时间
-      const now = new Date();
+      // ========================================
+      // 第二步：执行所有写入操作
+      // ========================================
+      
+      console.log('[confirmMerchantPayment] ✅ 跳过扣款和增加收入（已在 processCustomerPayment 中完成）');
 
+      // 9.1 更新交易状态
       transaction.update(transactionRef, {
         status: 'completed',
         collectedBy: auth.uid,
@@ -239,14 +190,16 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         statusHistory: admin.firestore.FieldValue.arrayUnion({
           status: 'completed',
-          timestamp: now,  // ✅ 使用普通 Date 对象
+          timestamp: now,
           updatedBy: auth.uid,
           updaterRole: collectorRole,
           note: '收款确认'
         })
       });
 
-      // 11.5 更新收款人统计（merchantAsist）
+      console.log('[confirmMerchantPayment] ✅ 交易状态已更新为 completed');
+
+      // 9.2 更新收款人个人统计（merchantAsist）
       if (collectorRole === 'merchantAsist') {
         const newPersonalTotal = (callerData.merchantAsist?.statistics?.totalCollected || 0) + amount;
         const newPersonalCount = (callerData.merchantAsist?.statistics?.transactionCount || 0) + 1;
@@ -261,24 +214,69 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
           'merchantAsist.statistics.lastCollectionAt': admin.firestore.FieldValue.serverTimestamp(),
           'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
         });
+
+        console.log('[confirmMerchantPayment] ✅ 已更新收款人个人统计:', {
+          asistId: auth.uid,
+          amount,
+          newTotal: newPersonalTotal
+        });
+      }
+
+      // 9.3 更新 Merchant 的收款人分类（记录是谁收的款）
+      if (collectorRole === 'merchantOwner') {
+        const newOwnerRevenue = (merchantData.revenueStats?.ownerCollectedRevenue || 0) + amount;
+        const newTodayOwnerCollected = (merchantData.dailyRevenue?.todayOwnerCollected || 0) + amount;
+        
+        transaction.update(merchantRef, {
+          'revenueStats.ownerCollectedRevenue': newOwnerRevenue,
+          'dailyRevenue.todayOwnerCollected': newTodayOwnerCollected,
+          'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('[confirmMerchantPayment] ✅ 已更新 merchantOwner 收款分类');
+      } else if (collectorRole === 'merchantAsist') {
+        const newAsistsRevenue = (merchantData.revenueStats?.asistsCollectedRevenue || 0) + amount;
+        const newTodayAsistsCollected = (merchantData.dailyRevenue?.todayAsistsCollected || 0) + amount;
+        
+        transaction.update(merchantRef, {
+          'revenueStats.asistsCollectedRevenue': newAsistsRevenue,
+          'dailyRevenue.todayAsistsCollected': newTodayAsistsCollected,
+          'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('[confirmMerchantPayment] ✅ 已更新 merchantAsist 收款分类');
+      }
+
+      // 9.4 更新 Customer 访问过的商家列表
+      if (customerData) {
+        const merchantsVisited = customerData.customer?.stats?.merchantsVisited || [];
+        
+        if (!merchantsVisited.includes(transactionData.merchantId)) {
+          transaction.update(customerRef, {
+            'customer.stats.merchantsVisited': admin.firestore.FieldValue.arrayUnion(transactionData.merchantId),
+            'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          console.log('[confirmMerchantPayment] ✅ 已添加到访问过的商家列表');
+        }
       }
     });
 
-    console.log('[confirmMerchantPayment] 确认成功:', {
+    console.log('[confirmMerchantPayment] ✅ 确认成功:', {
       transactionId,
       amount,
       collectorRole,
       collectorUid: auth.uid
     });
 
-    // ========== 12. 返回成功 ==========
+    // ========== 10. 返回成功 ==========
     return {
       success: true,
       message: '收款确认成功',
       transactionId,
       amount,
       collectorRole,
-      newCustomerBalance: customerBalance - amount
+      note: '已在扫码时扣款，确认时不重复扣款'
     };
 
   } catch (error) {
@@ -291,3 +289,25 @@ exports.confirmMerchantPayment = onCall({ region: 'asia-southeast1' }, async (re
     throw new HttpsError('internal', error.message || '确认收款失败，请重试');
   }
 });
+
+// ============================================
+// 关键修复说明
+// ============================================
+/*
+问题：Firestore Transaction 规则违反
+- 错误：先执行 transaction.update()，后执行 transaction.get()
+- 规则：所有读取必须在所有写入之前
+
+修复：
+1. ✅ 在 transaction 开始时立即读取 merchantDoc 和 customerDoc
+2. ✅ 然后执行所有 transaction.update() 操作
+3. ✅ 确保顺序：先读取，后写入
+
+正确的顺序：
+- 第一步：transaction.get(merchantRef) ← 读取
+- 第二步：transaction.get(customerRef) ← 读取
+- 第三步：transaction.update(transactionRef) ← 写入
+- 第四步：transaction.update(callerRef) ← 写入
+- 第五步：transaction.update(merchantRef) ← 写入
+- 第六步：transaction.update(customerRef) ← 写入
+*/

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
-import { signInWithCustomToken } from 'firebase/auth';
+import { signInWithCustomToken, signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
@@ -26,15 +26,14 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
  */
 const UniversalLogin = () => {
   const navigate = useNavigate();
-  const { login, getNavigationPath, isAuthenticated, userProfile } = useAuth();
+  const { login, getNavigationPath, isAuthenticated, userProfile, loading: authLoading } = useAuth();
   const { orgEventCode } = useParams();
 
   // 解析 orgEventCode
   const [orgCode, eventCode] = orgEventCode?.split('-') || ['', ''];
 
   const [formData, setFormData] = useState({
-    phoneNumber: '',
-    password: ''
+    phoneNumber: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -60,6 +59,62 @@ const UniversalLogin = () => {
   const [otpTimer, setOtpTimer] = useState(0);
   const [otpSessionId, setOtpSessionId] = useState('');
   const [eventMeta, setEventMeta] = useState(null);
+  const [manualStay, setManualStay] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  function getCachedSessionProfile() {
+    try {
+      const keys = [
+        'currentUser',
+        'eventManagerInfo',
+        'sellerManagerInfo',
+        'cashierInfo',
+        'merchantOwnerInfo',
+        'merchantAsistInfo',
+        'sellerInfo',
+        'customerInfo'
+      ];
+
+      for (const key of keys) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        const roles = Array.isArray(parsed?.roles) && parsed.roles.length > 0
+          ? parsed.roles
+          : (parsed?.selectedRole ? [parsed.selectedRole] : []);
+
+        if (roles.length > 0) {
+          return {
+            ...parsed,
+            roles,
+            organizationCode: parsed?.organizationCode || parsed?.orgCode,
+            eventCode: parsed?.eventCode,
+            orgEventCode: parsed?.orgEventCode || parsed?.combinedCode
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[UniversalLogin] 读取本地会话缓存失败:', e?.message || e);
+    }
+
+    return null;
+  }
+
+  function isSessionForCurrentOrgEvent(profile) {
+    if (!profile) return false;
+    if (!orgEventCode) return true;
+
+    const currentCode = String(orgEventCode).trim().toLowerCase();
+    const candidateCodes = [
+      profile?.orgEventCode,
+      (profile?.organizationCode && profile?.eventCode) ? `${profile.organizationCode}-${profile.eventCode}` : null,
+      (profile?.orgCode && profile?.eventCode) ? `${profile.orgCode}-${profile.eventCode}` : null
+    ]
+      .filter(Boolean)
+      .map(code => String(code).trim().toLowerCase());
+
+    return candidateCodes.includes(currentCode);
+  }
 
 
   // 检测设备类型
@@ -112,14 +167,32 @@ const UniversalLogin = () => {
     let cancelled = false;
 
     const run = async () => {
-      if (!(isAuthenticated && userProfile && userProfile.roles && userProfile.roles.length > 0)) return;
+      if (authLoading) return;
+
+      const cachedProfile = getCachedSessionProfile();
+      const matchedCachedProfile = isSessionForCurrentOrgEvent(cachedProfile) ? cachedProfile : null;
+      if (cachedProfile && !matchedCachedProfile) {
+        console.warn('[UniversalLogin] 偵測到其他活動的舊會話快取，已忽略', {
+          currentOrgEventCode: orgEventCode,
+          cachedOrgEventCode: cachedProfile?.orgEventCode
+        });
+      }
+
+      const effectiveProfile = (userProfile && userProfile.roles && userProfile.roles.length > 0)
+        ? userProfile
+        : matchedCachedProfile;
+
+      if (!(isAuthenticated && effectiveProfile && effectiveProfile.roles && effectiveProfile.roles.length > 0)) return;
 
       // ⭐ 新增：如果检测到需要设置密码，跳过自动跳转到 Dashboard
       // 优先检查 userData (来自当前登录会话)，其次检查 userProfile (来自 AuthContext/Firestore)
       // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要特殊处理 eventManager
-      const needsSetup = userData?.needsPasswordSetup || 
-                         userProfile?.basicInfo?.hasDefaultPassword || 
-                         userProfile?.basicInfo?.isFirstLogin;
+      const needsSetup =
+        userData?.needsPasswordSetup === true ||
+        userData?.isFirstLogin === true ||
+        userData?.hasTransactionPin === false ||
+        userProfile?.basicInfo?.isFirstLogin === true ||
+        userProfile?.basicInfo?.hasTransactionPin === false;
 
       if (needsSetup) {
         console.log('[UniversalLogin] 🔐 检测到需要设置密码，跳过自动跳转');
@@ -127,18 +200,18 @@ const UniversalLogin = () => {
       }
 
       const params = new URLSearchParams(window.location.search);
-      if (params.has('stay') || params.has('noRedirect')) {
+      if (manualStay || params.has('stay') || params.has('noRedirect')) {
         console.log('[UniversalLogin] 🧷 stay/noRedirect 已启用，跳过自动跳转');
         return;
       }
 
-      // ✅ 修复：使用本地逻辑根据设备类型决定跳转路径
-      const availableRoles = filterRolesByDevice(userProfile.roles);
-      
-      // 🚨 手机端限制检查：如果用户在手机上，但没有移动端角色（只有经理角色）
-      if (isMobile && availableRoles.length === 0) {
-        console.warn('[UniversalLogin] 📱 手机端检测到仅有经理角色，阻止跳转');
-        setError('管理后台仅支持桌面电脑访问，请使用电脑登录。');
+      // ✅ 按设备与角色决定跳转
+      const availableRoles = filterRolesByDevice(effectiveProfile.roles);
+
+      // 电脑端：若无可用桌面角色，则提示改用手机登录
+      if (!isMobile && availableRoles.length === 0) {
+        console.warn('[UniversalLogin] 💻 桌面端未匹配到可用角色，提示改用手机登录');
+        setError('请使用手机登录页面');
         return;
       }
 
@@ -148,11 +221,11 @@ const UniversalLogin = () => {
       
       // 尝试构建目标 orgEventCode
       let targetCode = orgEventCode;
-      if (!targetCode && userProfile.organizationCode && userProfile.eventCode) {
-         targetCode = `${userProfile.organizationCode}-${userProfile.eventCode}`;
+      if (!targetCode && effectiveProfile.organizationCode && effectiveProfile.eventCode) {
+        targetCode = `${effectiveProfile.organizationCode}-${effectiveProfile.eventCode}`;
       }
-      if (!targetCode && userProfile.orgEventCode) {
-         targetCode = userProfile.orgEventCode;
+      if (!targetCode && effectiveProfile.orgEventCode) {
+        targetCode = effectiveProfile.orgEventCode;
       }
 
       if (selectedRole && targetCode) {
@@ -162,17 +235,17 @@ const UniversalLogin = () => {
          else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
          else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
          else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
+         else if (selectedRole === 'auditor') navPath = `/auditor/${targetCode}/dashboard`; // 🆕
          
          // Mobile Roles
          else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
-         else if (selectedRole === 'merchant') navPath = `/merchant/${targetCode}/dashboard`;
-        // pointSeller 目前沿用 Seller Dashboard
-        else if (selectedRole === 'pointSeller') navPath = `/seller/${targetCode}/dashboard`;
+         else if (selectedRole === 'merchant' || selectedRole === 'merchantOwner' || selectedRole === 'merchantAsist') navPath = `/merchant/${targetCode}/dashboard`;
          else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
+         else if (selectedRole === 'pointSeller') navPath = `/pointseller/${targetCode}/dashboard`;
          
-         else navPath = getNavigationPath(userProfile);
+        else navPath = getNavigationPath(effectiveProfile);
       } else {
-         navPath = getNavigationPath(userProfile);
+        navPath = getNavigationPath(effectiveProfile);
       }
 
       const currentPath = window.location.pathname;
@@ -202,11 +275,11 @@ const UniversalLogin = () => {
 
       // ✅ 修复：确保 Legacy LocalStorage Keys 存在 (防止 EventManagerDashboard 报错)
       // 这里的 userProfile 来自 AuthContext，已经包含了 claims 信息
-      if (userProfile) {
+      if (effectiveProfile) {
         // 忽略设备限制，直接检查角色
-        const roles = userProfile.roles || [];
+        const roles = effectiveProfile.roles || [];
         const userInfoToSave = {
-          ...userProfile,
+          ...effectiveProfile,
           selectedRole: selectedRole || roles[0], // 使用选中的角色
           lastLogin: new Date().toISOString()
         };
@@ -235,14 +308,141 @@ const UniversalLogin = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, userProfile, getNavigationPath, navigate, isMobile, orgEventCode]);
+  }, [isAuthenticated, userProfile, authLoading, getNavigationPath, navigate, isMobile, orgEventCode, manualStay]);
   // 验证 orgEventCode 格式
   const isValidOrgEventCode = orgCode && eventCode;
+
+  // ⭐ 新增：已登录用户的渲染拦截 - 显示"重定向中..."而不是登录表单
+  const cachedSessionProfileRaw = getCachedSessionProfile();
+  const cachedSessionProfile = isSessionForCurrentOrgEvent(cachedSessionProfileRaw)
+    ? cachedSessionProfileRaw
+    : null;
+  const effectiveProfileForRender = (userProfile && userProfile.roles && userProfile.roles.length > 0)
+    ? userProfile
+    : cachedSessionProfile;
+  const isLoggedIn = isAuthenticated && effectiveProfileForRender && effectiveProfileForRender.roles && effectiveProfileForRender.roles.length > 0;
+  const needsPasswordSetup =
+    userData?.needsPasswordSetup === true ||
+    userData?.isFirstLogin === true ||
+    userData?.hasTransactionPin === false ||
+    userProfile?.basicInfo?.isFirstLogin === true ||
+    userProfile?.basicInfo?.hasTransactionPin === false;
+  
+  // 检查URL参数是否要求停留在登录页
+  const params = new URLSearchParams(window.location.search);
+  const shouldStay = manualStay || params.has('stay') || params.has('noRedirect');
+
+  const handleManualLogout = async () => {
+    try {
+      setLoggingOut(true);
+      setManualStay(true);
+
+      await signOut(auth);
+
+      const keysToClear = [
+        'currentUser',
+        'eventManagerInfo',
+        'eventManagerLogin',
+        'sellerManagerInfo',
+        'cashierInfo',
+        'merchantOwnerInfo',
+        'merchantAsistInfo',
+        'sellerInfo',
+        'customerInfo'
+      ];
+      keysToClear.forEach((key) => localStorage.removeItem(key));
+
+      navigate(`/login/${orgEventCode}?stay=1`, { replace: true });
+      window.mybazaarShowToast('已登出');
+    } catch (logoutError) {
+      console.error('[UniversalLogin] 手动登出失败:', logoutError);
+      setError('登出失败，请重试');
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  // 如果已登录且不需要设置密码且没有stay参数，显示重定向提示
+  if (isLoggedIn && !needsPasswordSetup && !shouldStay) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.loginCard}>
+          <div style={styles.header}>
+            {eventMeta?.logo && (
+              <img 
+                src={eventMeta.logo} 
+                alt="Logo" 
+                style={styles.logo}
+              />
+            )}
+            <h2 style={styles.title}>
+              {eventMeta?.eventName?.['zh-CN'] || eventMeta?.eventName?.['en-US'] || '加载中...'}
+            </h2>
+            <p style={styles.subtitle}>义卖会管理系统</p>
+          </div>
+          
+          <div style={{
+            textAlign: 'center',
+            padding: '2rem',
+            color: '#667eea'
+          }}>
+            <div style={{
+              fontSize: '3rem',
+              marginBottom: '1rem'
+            }}>
+              ⏳
+            </div>
+            <h3 style={{
+              fontSize: '1.25rem',
+              fontWeight: '600',
+              marginBottom: '0.5rem',
+              color: '#374151'
+            }}>
+              您已登录
+            </h3>
+            <p style={{
+              fontSize: '0.875rem',
+              color: '#6b7280',
+              marginBottom: '1rem'
+            }}>
+              正在跳转到您的工作台...
+            </p>
+            <div style={{
+              display: 'inline-block',
+              padding: '0.5rem 1rem',
+              background: '#f0f9ff',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              color: '#0369a1'
+            }}>
+              角色: {effectiveProfileForRender?.selectedRole || effectiveProfileForRender?.roles?.[0]}
+            </div>
+
+            <div style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={handleManualLogout}
+                disabled={loggingOut}
+                style={{
+                  ...styles.backToLoginButton,
+                  marginTop: 0,
+                  opacity: loggingOut ? 0.6 : 1,
+                  cursor: loggingOut ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {loggingOut ? '登出中...' : '登出并返回登录页'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /**
    * 根据角色和设备类型获取 Dashboard 路径
    */
-  const getRoleDashboardPath = (role, isMobile) => {
+  function getRoleDashboardPath(role, isMobile) {
     // Desktop 角色路由
     if (role === 'eventManager') {
       return `/event-manager/${orgEventCode}/dashboard`;
@@ -254,27 +454,28 @@ const UniversalLogin = () => {
       return `/customer-manager/${orgEventCode}/dashboard`;
     } else if (role === 'cashier') {
       return `/cashier/${orgEventCode}/dashboard`;
+    } else if (role === 'auditor') {
+      return `/auditor/${orgEventCode}/dashboard`; // 🆕 稽核人员 - 仅桌面端
     }
     // Mobile 角色路由
     else if (role === 'seller') {
       return `/seller/${orgEventCode}/dashboard`;
-    } else if (role === 'merchant') {
+    } else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
       return `/merchant/${orgEventCode}/dashboard`;
     } else if (role === 'pointSeller') {
-      // pointSeller 目前沿用 Seller Dashboard
-      return `/seller/${orgEventCode}/dashboard`;
+      return `/pointseller/${orgEventCode}/dashboard`;
     } else if (role === 'customer') {
       return `/customer/${orgEventCode}/dashboard`;
     } else {
       console.error('[UniversalLogin] 未知角色:', role);
       return '/';
     }
-  };
+  }
 
   /**
-   * 处理密码登录提交 - 第一步
+   * 处理手机号提交 - 直接发送OTP（无需密码）
    */
-  const handlePasswordSubmit = async (e) => {
+  const handlePhoneSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -283,117 +484,47 @@ const UniversalLogin = () => {
       return;
     }
 
+    // 验证手机号格式
+    if (!formData.phoneNumber || formData.phoneNumber.length < 9) {
+      setError('请输入有效的手机号码');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      console.log('[UniversalLogin] 密码验证请求:', {
+      console.log('[UniversalLogin] ✨ 纯OTP登录流程开始:', {
         orgCode,
         eventCode,
         phoneNumber: formData.phoneNumber
       });
 
-      const url = '/api/loginUniversalHttp';
-
-      const payload = {
-        orgCode: orgCode.toLowerCase(),
-        eventCode: eventCode,
-        phoneNumber: formData.phoneNumber,
-        password: formData.password
-      };
-
-      const startTime = Date.now();
-      const resp = await safeFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await resp.text();
-      let data = null;
-
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch (_) {
-        console.warn('[UniversalLogin] 非 JSON 响应, status:', resp.status);
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}: ${text?.substring(0, 200) || '非 JSON 响应'}`);
-        }
-      }
-
-      if (!resp.ok || !data?.success) {
-        const serverMsg = data?.error?.message;
-        throw new Error(serverMsg || `请求失败 (HTTP ${resp.status})`);
-      }
-
-      console.log('[UniversalLogin] 密码验证成功:', data, '耗时:', Date.now() - startTime, 'ms');
-
-      // 密码验证通过，保存临时信息并发送 OTP
-      const tempUserData = {
-        userId: data.userId,
-        organizationId: data.organizationId,
-        eventId: data.eventId,
-        orgCode: orgCode,
-        eventCode: eventCode,
-        orgEventCode: orgEventCode,
-        englishName: data.englishName,
-        chineseName: data.chineseName,
-        roles: Array.isArray(data.roles) ? data.roles : [],
-        managedDepartments: data.managedDepartments || [],
-        phoneNumber: formData.phoneNumber,
-        customToken: data.customToken,
-        roleSpecificData: data.roleSpecificData || {},
-        // ⭐ 新增：保存密码状态字段
-        needsPasswordSetup: data.needsPasswordSetup,
-        hasDefaultPassword: data.hasDefaultPassword,
-        isFirstLogin: data.isFirstLogin,
-        hasTransactionPin: data.hasTransactionPin
-      };
-
-      // ⭐ 添加调试日志
-      console.log('[UniversalLogin] 密码状态字段:', {
-        needsPasswordSetup: data.needsPasswordSetup,
-        hasDefaultPassword: data.hasDefaultPassword,
-        isFirstLogin: data.isFirstLogin,
-        hasTransactionPin: data.hasTransactionPin
-      });
-
-      setUserData(tempUserData);
-
-      // 发送 OTP
+      // ✅ 直接发送 OTP，无需先验证密码
       await sendOtp(formData.phoneNumber);
 
       // 切换到 OTP 输入界面
       setOtpStep(true);
       setOtp('');
 
+      console.log('[UniversalLogin] ✅ OTP已发送，等待用户输入验证码');
+
     } catch (error) {
       console.error('[UniversalLogin] 错误:', error);
-      const msg = error?.message || '登录失败，请重试';
-
-      if (/组织|活动|not[- ]?found/i.test(msg)) {
-        setError('找不到该组织或活动');
-      } else if (/密码|permission[- ]?denied/i.test(msg)) {
-        setError('手机号或密码错误');
-      } else if (/必填|invalid[- ]?argument/i.test(msg)) {
-        setError('请填写所有必填字段');
-      } else if (/角色/i.test(msg)) {
-        setError(msg);
-      } else {
-        setError(msg);
-      }
+      const msg = error?.message || '发送验证码失败，请重试';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   /**
-   * 发送 OTP 到手机
+   * 发送 OTP 到手机（纯OTP登录流程）
    */
   const sendOtp = async (phoneNumber) => {
     try {
       console.log('[UniversalLogin] 发送 OTP 到:', phoneNumber);
 
-      // ✅ 統一走 HTTP（safeFetch）以配合後端 onRequest + rewrites
+      // ✅ 使用 'login' scenario，让 verifyOtpHttp 执行完整的用户验证和登录流程
       const resp = await safeFetch('/api/sendOtpHttp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -401,8 +532,8 @@ const UniversalLogin = () => {
           phoneNumber: phoneNumber,
           orgCode: orgCode.toLowerCase(),
           eventCode: eventCode,
-          // ✅ 明確標記為 universalLogin（避免後端誤判為 login scenario 去查 users）
-          scenario: 'universalLogin'
+          // ✅ 使用 'login' scenario，让验证时进行用户查找和Custom Token生成
+          scenario: 'login'
         })
       });
 
@@ -415,7 +546,7 @@ const UniversalLogin = () => {
 
       console.log('[UniversalLogin] OTP 已发送');
 
-      // 保存 sessionId（後續用新方式驗證）
+      // 保存 sessionId
       if (data?.sessionId) {
         setOtpSessionId(String(data.sessionId));
       }
@@ -423,9 +554,9 @@ const UniversalLogin = () => {
       setOtpTimer(data.expiresIn || 300);
       startOtpTimer();
 
-      // 🔧 開發模式：若後端回傳 testOtp，直接預填並顯示提示
+      // 🔧 开发模式：若后端返回 testOtp，直接预填
       if (data?.devMode && data?.testOtp) {
-        console.log('[UniversalLogin] DEV 模式：自動填入測試 OTP', data.testOtp);
+        console.log('[UniversalLogin] DEV 模式：自动填入测试 OTP', data.testOtp);
         setOtpStep(true);
         setOtp(String(data.testOtp));
       }
@@ -456,63 +587,56 @@ const UniversalLogin = () => {
    * Desktop: 所有管理员角色 + 通用角色 (seller, customer, merchant)
    * Mobile: 只有通用角色 (seller, customer, merchant)
    */
-  const filterRolesByDevice = (roles) => {
+  function filterRolesByDevice(roles) {
     console.log('[UniversalLogin] filterRolesByDevice - 输入角色:', roles);
     console.log('[UniversalLogin] filterRolesByDevice - 设备类型:', isMobile ? 'Mobile' : 'Desktop');
 
     if (isMobile) {
-      // Mobile: 只支持手机角色（manager 一律不允许）
-      const phoneRoles = ['seller', 'pointSeller', 'customer'];
-      const filtered = (roles || []).filter(role => phoneRoles.includes(role));
+      // 手机端：pointSeller 可直接进 pointSellerDashboard；其余角色统一先进 customerDashboard
+      const hasPointSeller = (roles || []).includes('pointSeller');
+      const filtered = hasPointSeller ? ['pointSeller'] : ['customer'];
       console.log('[UniversalLogin] filterRolesByDevice - Mobile 过滤结果:', filtered);
       return filtered;
-    } else {
-      // Desktop: 支持所有管理员角色 + 通用角色
-      const desktopRoles = [
-        'eventManager',
-        'sellerManager',
-        'merchantManager',
-        'customerManager',
-        'cashier',
-        'seller',
-        'merchant',
-        'pointSeller',
-        'customer'
-      ];
-      const filtered = (roles || []).filter(role => desktopRoles.includes(role));
-      console.log('[UniversalLogin] filterRolesByDevice - Desktop 过滤结果:', filtered);
-      return filtered;
     }
-  };
+
+    // 电脑端：仅允许桌面角色（含 pointSeller）
+    const desktopRoles = [
+      'eventManager',
+      'sellerManager',
+      'merchantManager',
+      'customerManager',
+      'cashier',
+      'auditor',      // 🆕 稽核人员 - 仅桌面端
+      'pointSeller'
+    ];
+    const filtered = (roles || []).filter(role => desktopRoles.includes(role));
+    console.log('[UniversalLogin] filterRolesByDevice - Desktop 过滤结果:', filtered);
+    return filtered;
+  }
 
   /**
    * 获取优先级最高的角色
    */
-  const getPriorityRole = (roles) => {
+  function getPriorityRole(roles) {
     console.log('[UniversalLogin] getPriorityRole - 输入角色:', roles);
 
     if (isMobile) {
-      // 手机端优先级：seller > merchant > pointSeller > customer
-      const priority = ['seller', 'merchant', 'pointSeller', 'customer'];
-      for (const role of priority) {
-        if (roles.includes(role)) {
-          console.log('[UniversalLogin] getPriorityRole - Mobile 选中角色:', role);
-          return role;
-        }
-      }
-    } else {
-      const priority = ['eventManager', 'cashier', 'sellerManager', 'merchantManager', 'customerManager', 'seller', 'merchant', 'customer'];
-      for (const role of priority) {
-        if (roles.includes(role)) {
-          console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);
-          return role;
-        }
+      const role = roles.includes('pointSeller') ? 'pointSeller' : 'customer';
+      console.log('[UniversalLogin] getPriorityRole - Mobile 选中角色:', role);
+      return role;
+    }
+
+    const priority = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'pointSeller'];
+    for (const role of priority) {
+      if (roles.includes(role)) {
+        console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);
+        return role;
       }
     }
 
     console.warn('[UniversalLogin] getPriorityRole - 未找到匹配的角色');
     return null;
-  };
+  }
 
   /**
    * 验证 OTP - 第二步
@@ -562,61 +686,65 @@ const UniversalLogin = () => {
         throw new Error(data?.error?.message || `验证失败 (HTTP ${resp.status})`);
       }
 
-      console.log('[UniversalLogin] ✅ OTP 验证成功');
+      console.log('[UniversalLogin] ✅ OTP 验证成功，收到用户数据:', data);
 
-      // ========== 簡化：移除客戶端 Firestore 讀取（避免權限問題）========== 
-      // 首次登錄檢測應由後端在 verifyOtpHttp 回傳
-      // 目前先簡化邏輯，直接使用 verifyOtpHttp 回傳的信息
+      // ========== ✨ 纯OTP登录：直接使用 verifyOtpHttp 返回的完整数据 ==========
+      // verifyOtpHttp (scenario='login') 会返回完整的用户信息和 customToken
 
-      // 使用 verifyOtp 回傳的 customToken（優先）；向後相容使用第1步的 token
-      const customTokenFromVerify = data?.customToken;
-      const tokenToUse = customTokenFromVerify || userData?.customToken;
-
-      // 🔍 調試信息：記錄 token 來源和長度
-      console.log('[UniversalLogin] 🔐 Custom Token 詳情:', {
-        hasTokenFromVerify: !!customTokenFromVerify,
-        hasTokenFromUserData: !!userData?.customToken,
-        tokenLength: tokenToUse?.length || 0,
-        tokenPreview: tokenToUse ? `${tokenToUse.substring(0, 30)}...` : 'null',
-        currentDomain: window.location.hostname,
-        userAgent: navigator.userAgent.substring(0, 100)
-      });
-
-      if (!tokenToUse) {
+      // 验证返回数据的完整性
+      if (!data?.customToken) {
         throw new Error('登录票据缺失：未取得 Custom Token');
       }
 
-      // 🔍 嘗試登入並捕獲詳細錯誤
+      if (!data?.userId || !data?.roles || data.roles.length === 0) {
+        throw new Error('用户数据不完整，请联系管理员');
+      }
+
+      console.log('[UniversalLogin] 🔐 Custom Token 详情:', {
+        tokenLength: data.customToken.length,
+        tokenPreview: `${data.customToken.substring(0, 30)}...`,
+        userId: data.userId,
+        roles: data.roles
+      });
+
+      // 使用 customToken 登录 Firebase Auth
       try {
-        await signInWithCustomToken(auth, tokenToUse);
+        await signInWithCustomToken(auth, data.customToken);
         console.log('[UniversalLogin] ✅ Firebase Auth 登录成功');
 
-        // ⭐ 新增：检查是否需要设置密码
-        // data 来自 verifyOtp 的返回，userData 来自第一步密码验证
-        const needsPasswordSetup = data?.needsPasswordSetup || userData?.needsPasswordSetup || false;
+        // ⭐ 检查是否需要设置密码
+        const needsPasswordSetup =
+          data?.needsPasswordSetup === true ||
+          data?.isFirstLogin === true ||
+          data?.hasTransactionPin === false;
+
+        setUserData({
+          needsPasswordSetup,
+          hasDefaultPassword: data?.hasDefaultPassword === true,
+          isFirstLogin: data?.isFirstLogin === true,
+          hasTransactionPin: data?.hasTransactionPin === true
+        });
 
         console.log('[UniversalLogin] 密码设置状态检查:', {
           needsPasswordSetup,
-          hasDefaultPassword: data?.hasDefaultPassword || userData?.hasDefaultPassword,
-          isFirstLogin: data?.isFirstLogin || userData?.isFirstLogin,
-          hasTransactionPin: data?.hasTransactionPin || userData?.hasTransactionPin
+          hasDefaultPassword: data?.hasDefaultPassword,
+          isFirstLogin: data?.isFirstLogin,
+          hasTransactionPin: data?.hasTransactionPin
         });
 
         if (needsPasswordSetup) {
           // 构建用户信息（用于密码设置页面）
           const tempUserInfo = {
-            userId: data?.userId || userData.userId,
-            organizationId: data?.organizationId || userData.organizationId,
-            eventId: data?.eventId || userData.eventId,
+            userId: data.userId,
+            organizationId: data.organizationId,
+            eventId: data.eventId,
             orgCode,
             eventCode,
             orgEventCode,
-            englishName: data?.englishName || userData.englishName,
-            chineseName: data?.chineseName || userData.chineseName,
-            roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
-            phoneNumber: formData.phoneNumber,
-            // 保存原始密码（用于 changeLoginPassword 的旧密码验证）
-            oldPassword: formData.password
+            englishName: data.englishName,
+            chineseName: data.chineseName,
+            roles: data.roles,
+            phoneNumber: formData.phoneNumber
           };
 
           // 保存到 sessionStorage（防止刷新丢失）
@@ -658,27 +786,18 @@ const UniversalLogin = () => {
         throw authError;
       }
 
-      // 根據 verifyOtp 結果覆蓋/對齊使用者資料（若提供）
-      // 综合后端返回与第一步临时数据，优先使用 verifyOtp 返回的数据
-      const roleSpecificFromVerify = data?.roleSpecificData || {};
-      const roleSpecificFromTemp = userData?.roleSpecificData || {};
-
+      // 根據 verifyOtp 結果构建用户数据
       const verifiedUser = {
-        userId: data?.userId || userData.userId,
-        organizationId: data?.organizationId || userData.organizationId,
-        eventId: data?.eventId || userData.eventId,
-        englishName: data?.englishName || userData.englishName,
-        chineseName: data?.chineseName || userData.chineseName,
-        roles: Array.isArray(data?.roles) ? data.roles : (userData.roles || []),
-        // managedDepartments 可能直接在 data 中，或放在 roleSpecificData.sellerManager
-        managedDepartments:
-          data?.managedDepartments 
-            || (roleSpecificFromVerify?.sellerManager && roleSpecificFromVerify.sellerManager.managedDepartments) 
-            || userData?.managedDepartments 
-            || (roleSpecificFromTemp?.sellerManager && roleSpecificFromTemp.sellerManager.managedDepartments)
-            || [],
-        // 保留 roleSpecificData 以便后续 Dashboard 使用（避免被误判为空）
-        roleSpecificData: roleSpecificFromVerify || roleSpecificFromTemp || {},
+        userId: data.userId,
+        organizationId: data.organizationId,
+        eventId: data.eventId,
+        englishName: data.englishName,
+        chineseName: data.chineseName,
+        roles: data.roles,
+        managedDepartments: data.managedDepartments || [],
+        roleSpecificData: data.roleSpecificData || {},
+        department: data.department || '',
+        identityTag: data.identityTag || '',
         orgCode,
         eventCode,
         orgEventCode
@@ -761,7 +880,7 @@ const UniversalLogin = () => {
   /**
    * 根据角色跳转到对应的 Dashboard
    */
-  const handleRoleNavigation = (role, orgEventCode) => {
+  function handleRoleNavigation(role, orgEventCode) {
     console.log('[UniversalLogin] 准备跳转:', { role, orgEventCode });
 
     // Desktop 角色路由
@@ -779,15 +898,17 @@ const UniversalLogin = () => {
     // Mobile 角色路由
     else if (role === 'seller') {
       navigate(`/seller/${orgEventCode}/dashboard`);
-    } else if (role === 'merchant') {
+    } else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
       navigate(`/merchant/${orgEventCode}/dashboard`);
     } else if (role === 'customer') {
       navigate(`/customer/${orgEventCode}/dashboard`);
+    } else if (role === 'pointSeller') {
+      navigate(`/pointseller/${orgEventCode}/dashboard`);
     } else {
       console.error('[UniversalLogin] 未知角色:', role);
       setError('未知角色类型');
     }
-  };
+  }
 
   /**
    * 返回密码登录界面
@@ -938,7 +1059,7 @@ const UniversalLogin = () => {
         )}
 
         {/* 登录表单 */}
-        <form onSubmit={handlePasswordSubmit} style={styles.form}>
+        <form onSubmit={handlePhoneSubmit} style={styles.form}>
           <div style={styles.formGroup}>
             <label style={styles.label}>手机号 *</label>
             <input
@@ -950,20 +1071,22 @@ const UniversalLogin = () => {
               required
               disabled={!isValidOrgEventCode}
             />
-            <small style={styles.hint}>请您注册的马来西亚手机号</small>
+            <small style={styles.hint}>请输入您注册的马来西亚手机号</small>
           </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>密码 *</label>
-            <input
-              type="password"
-              style={styles.input}
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="••••••••"
-              required
-              disabled={!isValidOrgEventCode}
-            />
+          {/* ========== ✨ OTP登录说明 ========== */}
+          <div style={{
+            padding: '1rem',
+            background: '#f0f9ff',
+            borderRadius: '8px',
+            fontSize: '0.875rem',
+            color: '#0369a1',
+            border: '1px solid #bae6fd'
+          }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontWeight: '600' }}>🔐 验证码登录</p>
+            <p style={{ margin: 0 }}>
+              点击"获取验证码"后，我们将向您的手机发送6位验证码。请输入验证码完成登录。
+            </p>
           </div>
 
           {/* 错误提示 */}
@@ -983,7 +1106,7 @@ const UniversalLogin = () => {
             }}
             disabled={loading || !isValidOrgEventCode}
           >
-            {loading ? '登录中...' : '登录'}
+            {loading ? '发送中...' : '获取验证码'}
           </button>
 
           {/* ========== ✨ 新增：注册链接 ========== */}
@@ -1020,7 +1143,7 @@ const UniversalLogin = () => {
         {/* 帮助信息 */}
         <div style={styles.footer}>
           <p style={styles.helpText}>
-            忘记密码？请联系活动管理员
+            需要帮助？请联系活动管理员
           </p>
         </div>
       </div>
@@ -1192,4 +1315,3 @@ const styles = {
 };
 
 export default UniversalLogin;
-

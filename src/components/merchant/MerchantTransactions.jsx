@@ -559,6 +559,13 @@ const handleConfirmPayment = async (transactionId) => {
       });
 
       if (result.data.success) {
+        showNotification(
+          'completed',
+          '取消成功',
+          result.data.refundedAmount || null,
+          result.data.merchantName || merchant?.stallName,
+          result.data.eventName
+        );
         console.log('✅ 取消交易成功:', result.data);
       }
     } catch (error) {

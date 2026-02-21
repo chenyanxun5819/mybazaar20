@@ -302,7 +302,7 @@ exports.updateMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
           
           transaction.update(asistRef, {
             'merchantAsist.merchantId': merchantId,
-            'merchantAsist.stallName': updateData.stallName || currentData.stallName,
+            'merchantAsist.stallName': updates.stallName || merchantData.stallName,
             'updatedAt': now
           });
         }

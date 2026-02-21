@@ -207,6 +207,8 @@ const MerchantManagerDashboard = () => {
 
   // 可用的 merchantOwners 和 merchantAsists
   const [availableOwners, setAvailableOwners] = useState([]);
+  const [ownerDirectory, setOwnerDirectory] = useState([]);
+  const [asistDirectory, setAsistDirectory] = useState([]);
   const [availableAsists, setAvailableAsists] = useState([]);
 
   // 加载数据（使用 EventContext 已解析出的 Firestore 文档 ID）
@@ -300,6 +302,10 @@ const MerchantManagerDashboard = () => {
         }
       }
 
+      const allMerchantOwners = users.filter(user =>
+        user.roles?.includes('merchantOwner')
+      );
+
       // 筛选 merchantOwner（未被分配的）
       const owners = users.filter(user =>
         user.roles?.includes('merchantOwner') &&
@@ -324,6 +330,10 @@ const MerchantManagerDashboard = () => {
         !user.merchantAsist?.merchantId  // 👈 关键修复
       );
 
+      const allMerchantAsists = users.filter(user =>
+        user.roles?.includes('merchantAsist')
+      );
+
       // Debug 信息（可选）
       const excludedMerchantAsists = users
         .filter(u => Array.isArray(u.roles) && u.roles.includes('merchantAsist'))
@@ -337,6 +347,8 @@ const MerchantManagerDashboard = () => {
       console.groupEnd();
 
       setAvailableOwners(owners);
+      setOwnerDirectory(allMerchantOwners);
+      setAsistDirectory(allMerchantAsists);
       setAvailableAsists(asists);
 
     } catch (error) {
@@ -831,6 +843,8 @@ const MerchantManagerDashboard = () => {
           }}
           onSubmit={handleUpdateMerchant}
           availableOwners={availableOwners}
+          ownerDirectory={ownerDirectory}
+          asistDirectory={asistDirectory}
           availableAsists={availableAsists}
         />
       )}

@@ -338,11 +338,11 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     // ⭐ 新增：Step 8 - 检查密码状态
     console.log('[loginUniversalHttp] Step 8: 检查密码状态');
 
-    // 🔧 修复：只检查 hasDefaultPassword 和 isFirstLogin，不要检查 transactionPinHash
-    // 因为 transactionPinHash 在首次设置后就不会改变
+    // 🔧 修复：首次登录后仅要求设置交易密码（若尚未设置），不再强制更改登录密码
+    // 因此只在 isFirstLogin 或尚未设置 transactionPin 时视为需要设置
     const needsPasswordSetup =
-      userData.basicInfo?.hasDefaultPassword === true ||  // 仍是默认密码
-      userData.basicInfo?.isFirstLogin === true;          // 首次登录
+      userData.basicInfo?.isFirstLogin === true ||
+      !userData.basicInfo?.transactionPinHash;
 
     console.log('[loginUniversalHttp] 密码状态:', {
       hasDefaultPassword: userData.basicInfo?.hasDefaultPassword,

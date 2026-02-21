@@ -8,6 +8,7 @@ import './TransactionPinDialog.css';
 
 const TransactionPinDialog = ({ submission, onConfirm, onCancel }) => {
   const [pin, setPin] = useState('');
+  const [receiptNumber, setReceiptNumber] = useState('');
   const [confirmationNote, setConfirmationNote] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,9 +57,15 @@ const TransactionPinDialog = ({ submission, onConfirm, onCancel }) => {
       return;
     }
 
+    // 验证收据编号
+    if (!receiptNumber.trim()) {
+      setError('请输入收据编号');
+      return;
+    }
+
     try {
       setLoading(true);
-      await onConfirm(pin, confirmationNote);
+      await onConfirm(pin, receiptNumber.trim(), confirmationNote.trim());
     } catch (err) {
       setError(err.message || '确认失败，请重试');
       setLoading(false);
@@ -138,6 +145,27 @@ const TransactionPinDialog = ({ submission, onConfirm, onCancel }) => {
             {error && <p className="error-message">{error}</p>}
           </div>
 
+          {/* 收据编号输入 */}
+          <div className="receipt-input-section">
+            <label htmlFor="receiptNumber" className="receipt-label">
+              <span className="label-icon">🧾</span>
+              收据编号 <span className="required-mark">*</span>
+            </label>
+            <input
+              id="receiptNumber"
+              type="text"
+              value={receiptNumber}
+              onChange={(e) => setReceiptNumber(e.target.value)}
+              placeholder="例如：RCP-2025-001"
+              className="receipt-input"
+              disabled={loading}
+              maxLength={50}
+            />
+            <div className="input-hint">
+              请输入纸本收据上的编号，作为收款凭证
+            </div>
+          </div>
+
           {/* 确认备注 */}
           <div className="note-section">
             <label htmlFor="confirmationNote" className="note-label">
@@ -179,7 +207,7 @@ const TransactionPinDialog = ({ submission, onConfirm, onCancel }) => {
           <button 
             className="confirm-btn" 
             onClick={handleConfirm}
-            disabled={loading || pin.length !== 6}
+            disabled={loading || pin.length !== 6 || !receiptNumber.trim()}
           >
             {loading ? '确认中...' : '✅ 确认收款'}
           </button>

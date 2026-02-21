@@ -32,6 +32,7 @@ import PointOfSaleMobileIcon from '../../assets/point-of-sale-mobile.svg?react';
 import FreeIcon from '../../assets/free.svg?react';
 import ObjectsColumnIcon from '../../assets/objects-column.svg?react';
 import UsersMedicalIcon from '../../assets/users-medical (3).svg?react';
+import AuditorIcon from '../../assets/auditor.svg?react'; // 🆕 稽核人员图标
 
 // 🆕 角色配置
 const ROLE_CONFIG = {
@@ -42,7 +43,8 @@ const ROLE_CONFIG = {
   seller: { label: 'S', fullLabel: 'Seller', chineseLabel: '点数销售员', color: '#ec4899', icon: EmployeeManIcon, category: 'user' },
   merchantOwner: { label: 'MO', fullLabel: 'Merchant Owner', chineseLabel: '摊主', color: '#84cc16', icon: StoreBuyerIcon, category: 'user' },
   merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: SellerFourIcon, category: 'user' },
-  pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' }
+  pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' },
+  auditor: { label: 'AU', fullLabel: 'Auditor', chineseLabel: '稽核人员', color: '#6366f1', icon: AuditorIcon, category: 'manager' }
 };
 
 const STAT_ICONS = {
@@ -168,7 +170,8 @@ const EventManagerDashboard = () => {
     merchantOwner: false,
     merchantAsist: false,
     customer: false,
-    pointSeller: false
+    pointSeller: false,
+    auditor: false
   });
 
   // 🆕 Seller Manager 管理部门
@@ -241,7 +244,8 @@ const EventManagerDashboard = () => {
       merchantOwner: user.roles?.includes('merchantOwner') || false,
       merchantAsist: user.roles?.includes('merchantAsist') || false,
       customer: user.roles?.includes('customer') || false,
-      pointSeller: user.roles?.includes('pointSeller') || false
+      pointSeller: user.roles?.includes('pointSeller') || false,
+      auditor: user.roles?.includes('auditor') || false
     });
 
     // 🆕 初始化管理部门
@@ -284,7 +288,8 @@ const EventManagerDashboard = () => {
     const hasOtherManagerRoles = selectedRoles.sellerManager ||
       selectedRoles.merchantManager ||
       selectedRoles.customerManager ||
-      selectedRoles.cashier;
+      selectedRoles.cashier ||
+      selectedRoles.auditor;
 
     // 检查是否是当前用户在修改自己的角色
     const currentUserPhone = auth.currentUser?.phoneNumber?.replace(/^\+60/, '0') || '';
@@ -299,7 +304,7 @@ const EventManagerDashboard = () => {
 
     // 🚫 Event Manager 不能同时拥有其他 manager 角色
     if (hasEventManager && hasOtherManagerRoles) {
-      window.mybazaarShowToast('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier');
+      window.mybazaarShowToast('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier\n❌ Event Manager + Auditor');
       return;
     }
 
@@ -310,8 +315,55 @@ const EventManagerDashboard = () => {
       }
     }
 
+    // 🆕 Auditor 互斥验证：不能与其他 manager 角色共存
+    const auditorIncompatible = selectedRoles.sellerManager || selectedRoles.merchantManager ||
+      selectedRoles.customerManager || selectedRoles.cashier || selectedRoles.pointSeller;
+    if (selectedRoles.auditor && auditorIncompatible) {
+      window.mybazaarShowToast(
+        '稽核人员（Auditor）不能与以下角色共存：\n' +
+        '❌ Auditor + Seller Manager\n' +
+        '❌ Auditor + Merchant Manager\n' +
+        '❌ Auditor + Customer Manager\n' +
+        '❌ Auditor + Cashier\n' +
+        '❌ Auditor + Point Seller\n\n' +
+        '✅ Auditor 只能与 Seller / Customer 共用'
+      );
+      return;
+    }
+
     try {
       setIsSaving(true);
+
+      // 🔄 強制刷新 Token，確保 Custom Claims 是最新的
+      if (auth.currentUser) {
+        const idTokenResult = await auth.currentUser.getIdTokenResult(true);
+        const claims = idTokenResult.claims;
+        
+        // 🔍 調試：檢查 Claims 與路徑是否匹配
+        console.log('🔍 [DEBUG] Token Claims:', {
+          claimsOrgId: claims.organizationId,
+          claimsEventId: claims.eventId,
+          claimsUserId: claims.userId,
+          claimsRoles: claims.roles,
+          pathOrgId: organizationId,
+          pathEventId: eventId,
+          targetUserId: editingUser.id,
+          orgMatch: claims.organizationId === organizationId,
+          eventMatch: claims.eventId === eventId,
+          hasEventManagerRole: claims.roles?.includes('eventManager')
+        });
+        
+        // 🚨 如果不匹配，提前報錯
+        if (claims.organizationId !== organizationId) {
+          throw new Error(`Claims 不匹配: Token 中的 organizationId (${claims.organizationId}) 與路徑 (${organizationId}) 不一致。請重新登錄。`);
+        }
+        if (claims.eventId !== eventId) {
+          throw new Error(`Claims 不匹配: Token 中的 eventId (${claims.eventId}) 與路徑 (${eventId}) 不一致。請重新登錄。`);
+        }
+        if (!claims.roles?.includes('eventManager')) {
+          throw new Error(`權限不足: 您的 Token 中沒有 eventManager 角色。當前角色: ${JSON.stringify(claims.roles)}`);
+        }
+      }
 
       // Step 1: 更新基本信息和部门
       const userRef = doc(
@@ -363,6 +415,33 @@ const EventManagerDashboard = () => {
       await loadDashboardData();
     } catch (error) {
       console.error('❌ 更新用户失败:', error);
+
+      if (String(error?.message || '').includes('Claims 不匹配')) {
+        try {
+          const keysToClear = [
+            'currentUser',
+            'eventManagerInfo',
+            'eventManagerLogin',
+            'sellerManagerInfo',
+            'cashierInfo',
+            'merchantOwnerInfo',
+            'merchantAsistInfo',
+            'sellerInfo',
+            'customerInfo'
+          ];
+          keysToClear.forEach((key) => localStorage.removeItem(key));
+          await signOut(auth);
+        } catch (logoutError) {
+          console.warn('Claims 不匹配後自動登出失敗:', logoutError);
+        }
+
+        window.mybazaarShowToast('登入資訊已過期或切換活動，請重新登入後再試');
+        if (orgEventCode) {
+          navigate(`/login/${orgEventCode}?stay=1`, { replace: true });
+        }
+        return;
+      }
+
       window.mybazaarShowToast('更新失败: ' + error.message);
     } finally {
       setIsSaving(false);
@@ -1514,7 +1593,6 @@ const EventManagerDashboard = () => {
                         borderColor: selectedRoles[roleId] ? config.color : '#e5e7eb',
                         backgroundColor: selectedRoles[roleId] ? `${config.color}10` : 'white'
                       }}
-                      // ✅ 新代码（添加互斥逻辑）
                       onClick={() => {
                         const newRoles = {
                           ...selectedRoles,
@@ -1528,6 +1606,16 @@ const EventManagerDashboard = () => {
                           } else if (roleId === 'merchantAsist') {
                             newRoles.merchantOwner = false;
                           }
+                        }
+
+                        // 🆕 auditor 互斥：勾选 auditor → 清除所有不兼容的 manager 角色
+                        const auditorIncompatibleList = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
+                        if (roleId === 'auditor' && newRoles.auditor) {
+                          auditorIncompatibleList.forEach(r => { newRoles[r] = false; });
+                        }
+                        // 🆕 勾选不兼容角色 → 自动取消 auditor
+                        if (auditorIncompatibleList.includes(roleId) && newRoles[roleId]) {
+                          newRoles.auditor = false;
                         }
 
                         setSelectedRoles(newRoles);

@@ -218,6 +218,57 @@
   content: '⚠️';
 }
 
+/* 收据编号输入区 */
+.receipt-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.receipt-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.required-mark {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.receipt-input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-family: inherit;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.receipt-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.receipt-input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.input-hint {
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
+  margin-top: -4px;
+}
+
+
 /* 备注输入区 */
 .note-section {
   display: flex;

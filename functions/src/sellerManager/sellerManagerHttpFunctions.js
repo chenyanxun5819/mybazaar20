@@ -16,7 +16,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://mybazaar-c4881.web.app',
-  'https://mybazaar-c4881.firebaseapp.com'
+  'https://mybazaar-c4881.firebaseapp.com',
+  'https://system.mybazaar.my',
+  'https://demo.mybazaar.my'
 ];
 
 const corsHandler = cors({

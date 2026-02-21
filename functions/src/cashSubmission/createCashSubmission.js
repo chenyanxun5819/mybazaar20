@@ -15,7 +15,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
 // 导入共用的交易密码验证函数
-const { verifyTransactionPin } = require('../utils/verifyTransactionPin');
+const { verifyTransactionPin } = require('../../utils/verifyTransactionPin');
 
 exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
@@ -148,6 +148,7 @@ exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (requ
         submittedBy,
         submitterName,
         submitterRole,
+        submitterIdentityTag: userData.identityTag || null,  // 提交者身份标签 (teacher|student|staff|etc)
         
         // 接收者信息
         receivedBy: receivedBy || null,

@@ -190,53 +190,48 @@ async function updatePinVerificationStatus(userRef, success, currentAttempts = 0
 // ===========================================
 
 /**
- * ✨ 修正版：创建Customer账户
+ * ✨ 纯OTP注册版：创建Customer账户
  * 
  * @param {object} data
  * @param {string} data.organizationId - 组织ID
  * @param {string} data.eventId - 活动ID
  * @param {string} data.phoneNumber - 手机号（可为 012... 或 +60...；Firestore 统一存 0...）
  * @param {string} data.displayName - 显示名称（昵称）
- * @param {string} data.password - 登录密码
- * @param {string} data.transactionPin - 交易密码（6位数字）✨ 新增
+ * @param {string} data.transactionPin - 交易密码（6位数字）
  * @param {string} [data.email] - 邮箱（可选）
+ * 
+ * ⚠️ 注意：此版本不需要password，用户通过OTP验证身份后设置交易密码即可
  */
 exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) => {
-  const { data } = request;  // ← 关键！从 request.data 取数据
+  const { data } = request;
 
   try {
-    // ✨ 修正1：添加 transactionPin 参数
     const {
       organizationId,
       eventId,
       phoneNumber,
       displayName,
-      password,
-      transactionPin,  // ✨ 新增
+      transactionPin,
       email
     } = data;
 
-    // ✨ 增强日志：显示接收到的所有参数
-    console.log('[createCustomer] 📥 收到注册请求:', {
+    console.log('[createCustomer] 📥 收到注册请求（纯OTP模式）:', {
       organizationId: organizationId || 'MISSING',
       eventId: eventId || 'MISSING',
       phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 4)}***` : 'MISSING',
       displayName: displayName || 'MISSING',
-      hasPassword: !!password,
-      hasTransactionPin: !!transactionPin,  // ✨ 新增
+      hasTransactionPin: !!transactionPin,
       hasEmail: !!email,
     });
 
     // === 验证必填字段 ===
-    // ✨ 修正2：添加 transactionPin 验证
-    if (!organizationId || !eventId || !phoneNumber || !displayName || !password || !transactionPin) {
+    if (!organizationId || !eventId || !phoneNumber || !displayName || !transactionPin) {
       const missing = [];
       if (!organizationId) missing.push('organizationId');
       if (!eventId) missing.push('eventId');
       if (!phoneNumber) missing.push('phoneNumber');
       if (!displayName) missing.push('displayName');
-      if (!password) missing.push('password');
-      if (!transactionPin) missing.push('transactionPin');  // ✨ 新增
+      if (!transactionPin) missing.push('transactionPin');
 
       console.error('[createCustomer] ❌ 缺少必填字段:', missing.join(', '));
 
@@ -263,15 +258,7 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       );
     }
 
-    // === 验证登录密码长度 ===
-    if (password.length < 6) {
-      throw new HttpsError(
-        'invalid-argument',
-        '密码至少需要6个字符'
-      );
-    }
-
-    // ✨ 修正4：验证交易密码格式
+    // === 验证交易密码格式 ===
     if (!/^\d{6}$/.test(transactionPin)) {
       throw new HttpsError(
         'invalid-argument',
@@ -312,15 +299,11 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
 
     console.log('[createCustomer] ✅ 手机号可用，开始创建账户');
 
-    // === 生成密码哈希 ===
-    const passwordSalt = crypto.randomBytes(16).toString('hex');
-    const passwordHash = sha256(password + passwordSalt);
-
-    // ✨ 修正6：生成交易密码哈希（使用 bcrypt）
+    // === 生成交易密码哈希（使用 bcrypt）===
     const pinHashData = await hashPin(transactionPin);
     const pinHash = pinHashData.hash;
 
-    console.log('[createCustomer] 🔐 密码加密完成');
+    console.log('[createCustomer] 🔐 交易密码加密完成');
 
     // === 生成用户ID ===
     // === 生成 authUid ===
@@ -360,22 +343,18 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
         position: null
       },
 
-      // ✨ 修正7：基本信息（phoneNumber 统一存本地 0... 格式）
+      // ✨ 纯OTP模式：基本信息（phoneNumber 统一存本地 0... 格式）
       basicInfo: {
-        phoneNumber: parsedPhone.local0,  // ✅ 与 createUserByEventManagerHttp 对齐
+        phoneNumber: parsedPhone.local0,
         englishName: displayName,
         chineseName: displayName,
         email: email || null,
-        isPhoneVerified: false,
+        isPhoneVerified: true,  // ✅ 通过OTP验证注册，手机号已验证
 
-        // 登录密码
-        passwordHash: passwordHash,
-        passwordSalt: passwordSalt,
-        isFirstLogin: false,
-        hasDefaultPassword: false,
-        passwordLastChanged: admin.firestore.FieldValue.serverTimestamp(),
+        // ❌ 移除登录密码相关字段（纯OTP登录）
+        // 注：如需密码登录，可在首次登录后设置
 
-        // ✨ 修正8：交易密码（bcrypt 的 salt 已包含在 hash 中）
+        // ✨ 交易密码（bcrypt 的 salt 已包含在 hash 中）
         transactionPinHash: pinHash,
         pinFailedAttempts: 0,
         pinLockedUntil: null,
@@ -453,20 +432,22 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
     try {
       // 如果 Auth 中已存在该 UID，则跳过创建（用户可能在其他事件已注册）
       if (!existingAuthUser) {
+        // ✨ 纯OTP模式：生成随机密码（用户不会使用，仅用于Auth系统）
+        const randomPassword = crypto.randomBytes(32).toString('hex');
+
         await admin.auth().createUser({
           uid: userId,
           phoneNumber: parsedPhone.e164,  // ✅ Auth 使用 E.164
-          password: password,
+          password: randomPassword,  // ✅ 随机密码（用户通过OTP登录，不需要此密码）
           displayName: displayName
         });
 
-        console.log('[createCustomer] ✅ Firebase Auth 账户创建成功');
+        console.log('[createCustomer] ✅ Firebase Auth 账户创建成功（OTP登录模式）');
       } else {
         console.log('[createCustomer] ℹ️ Auth 账户已存在，跳过创建:', userId);
-        
+
         // 如果用户在 Auth 中已存在，但在本 Event 中是新增的，这是允许的
         // （用户可能在其他 Event 已注册）
-        // 只需更新 Auth 信息（可选）
       }
     } catch (authError) {
       const authErrorMsg = authError instanceof Error ? authError.message : String(authError);
@@ -485,7 +466,7 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
           '该手机号已被使用'
         );
       }
-      
+
       if (authError.code === 'auth/uid-already-exists') {
         throw new HttpsError(
           'already-exists',
@@ -515,18 +496,18 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
     // === ✅ 新增：设置 Custom Claims（支持多事件）===
     try {
       console.log('[createCustomer] 🔐 设置 Custom Claims...');
-      
+
       // 读取 event 文档获取 orgCode 和 eventCode
       const eventDoc = await db
         .collection('organizations').doc(organizationId)
         .collection('events').doc(eventId)
         .get();
-      
+
       if (eventDoc.exists) {
         const eventData = eventDoc.data();
         const orgCode = eventData.orgCode;
         const eventCode = eventData.eventCode;
-        
+
         if (orgCode && eventCode) {
           await updateUserCustomClaims(userId, orgCode, eventCode, 'add');
           console.log('[createCustomer] ✅ Custom Claims 设置成功');
@@ -705,140 +686,144 @@ exports.processCustomerPayment = onCall({ region: 'asia-southeast1' }, async (re
       );
     }
 
-// ============================================
-// 🔧 修复说明：processCustomerPayment
-// ============================================
-// 
-// 修改位置：customerFunctions.js 第 708-817 行
-// 
-// ⚠️ 重要：只需要修改这个部分，其他代码保持不变
-//
-// ============================================
+    // ============================================
+    // 🔧 修复说明：processCustomerPayment
+    // ============================================
+    // 
+    // 修改位置：customerFunctions.js 第 708-817 行
+    // 
+    // ⚠️ 重要：只需要修改这个部分，其他代码保持不变
+    //
+    // ============================================
 
-// === 第 708 行开始：使用Transaction执行付款 ===
-const result = await db.runTransaction(async (transaction) => {
-  // 重新读取Customer文档（确保数据最新）
-  const customerDocLatest = await transaction.get(customerRef);
-  const customerDataLatest = customerDocLatest.data();
-  const availablePoints = customerDataLatest.customer?.pointsAccount?.availablePoints || 0;
+    // === 第 708 行开始：使用Transaction执行付款 ===
+    const result = await db.runTransaction(async (transaction) => {
+      // 重新读取Customer文档（确保数据最新）
+      const customerDocLatest = await transaction.get(customerRef);
+      const customerDataLatest = customerDocLatest.data();
+      const availablePoints = customerDataLatest.customer?.pointsAccount?.availablePoints || 0;
 
-  // ⭐ 修改：检查余额（但不立即扣除）
-  if (availablePoints < amount) {
-    throw new HttpsError(
-      'failed-precondition',
-      `余额不足。当前余额：${availablePoints}点，需要：${amount}点`
-    );
-  }
+      // ⭐ 修改：检查余额（但不立即扣除）
+      if (availablePoints < amount) {
+        throw new HttpsError(
+          'failed-precondition',
+          `余额不足。当前余额：${availablePoints}点，需要：${amount}点`
+        );
+      }
 
-  // 读取Merchant文档
-  const merchantRef = db
-    .collection('organizations').doc(organizationId)
-    .collection('events').doc(eventId)
-    .collection('merchants').doc(merchantId);
+      // 读取Merchant文档
+      const merchantRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('merchants').doc(merchantId);
 
-  const merchantDoc = await transaction.get(merchantRef);
+      const merchantDoc = await transaction.get(merchantRef);
 
-  if (!merchantDoc.exists) {
-    throw new HttpsError('not-found', '商家不存在');
-  }
+      if (!merchantDoc.exists) {
+        throw new HttpsError('not-found', '商家不存在');
+      }
 
-  const merchantData = merchantDoc.data();
+      const merchantData = merchantDoc.data();
 
-  // 检查商家是否营业
-  if (!merchantData.operationStatus?.isActive) {
-    throw new HttpsError('failed-precondition', '商家暂停营业');
-  }
+      // 检查商家是否营业
+      if (!merchantData.operationStatus?.isActive) {
+        throw new HttpsError('failed-precondition', '商家暂停营业');
+      }
 
-  // ⭐ 修改（2026-01-23）：立即扣除 Customer 点数
-  // 改为实时扣除模式，Customer 支付时立即扣除，不等待 Merchant 确认
-  transaction.update(customerRef, {
-    'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
-    'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
-    'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
-    'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
-    'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
-  });
+      // ⭐ 修改（2026-01-23）：立即扣除 Customer 点数
+      // 改为实时扣除模式，Customer 支付时立即扣除，不等待 Merchant 确认
+      transaction.update(customerRef, {
+        'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-amount),
+        'customer.pointsAccount.totalSpent': admin.firestore.FieldValue.increment(amount),
+        'customer.stats.transactionCount': admin.firestore.FieldValue.increment(1),
+        'customer.stats.merchantPaymentCount': admin.firestore.FieldValue.increment(1),
+        'customer.stats.lastActivityAt': admin.firestore.FieldValue.serverTimestamp()
+      });
 
-  // ⭐ 修改（2026-01-23）：立即增加 Merchant 收入
-  // Customer 支付时立即增加收入（不等待确认）
-  transaction.update(merchantRef, {
-    'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
-    'revenueStats.todayRevenue': admin.firestore.FieldValue.increment(amount),
-    'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
-    'revenueStats.todayTransactionCount': admin.firestore.FieldValue.increment(1),
-    'revenueStats.lastTransactionAt': admin.firestore.FieldValue.serverTimestamp()
-  });
+      // ⭐ 修改（2026-01-23）：立即增加 Merchant 收入
+      // Customer 支付时立即增加收入（不等待确认）
+      // ========================================
+      // ⭐ 修改后（替换为以下代码）
+      // ========================================
+      transaction.update(merchantRef, {
+        'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
+        'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
+        'dailyRevenue.today': admin.firestore.FieldValue.increment(amount),                     // ⭐ 修正字段路径
+        'dailyRevenue.todayTransactionCount': admin.firestore.FieldValue.increment(1),          // ⭐ 修正字段路径
+        'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
 
-  // 创建交易记录
-  const transactionId = db
-    .collection('organizations').doc(organizationId)
-    .collection('events').doc(eventId)
-    .collection('transactions').doc().id;
 
-  const transactionData = {
-    transactionId,
-    eventId,
-    organizationId,
-    transactionType: 'customer_to_merchant',
+      // 创建交易记录
+      const transactionId = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('transactions').doc().id;
 
-    // 交易双方
-    customerId,
-    customerPhone: customerDataLatest.basicInfo?.phoneNumber || '',
-    customerName: customerDataLatest.basicInfo?.chineseName || customerDataLatest.basicInfo?.englishName || '',
-    merchantId,
-    merchantName: merchantData.stallName || '',
+      const transactionData = {
+        transactionId,
+        eventId,
+        organizationId,
+        transactionType: 'customer_to_merchant',
 
-    // 金额和状态
-    amount,
-    status: 'pending',  // ⭐ 修改：改为 pending 状态
-    paymentMethod: 'POINTS',
+        // 交易双方
+        customerId,
+        customerPhone: customerDataLatest.basicInfo?.phoneNumber || '',
+        customerName: customerDataLatest.basicInfo?.chineseName || customerDataLatest.basicInfo?.englishName || '',
+        merchantId,
+        merchantName: merchantData.stallName || '',
 
-    // ✨ 验证方式标记
-    verificationMethod: 'TRANSACTION_PIN',
-    pinVerified: true,
+        // 金额和状态
+        amount,
+        status: 'pending',  // ⭐ 修改：改为 pending 状态
+        paymentMethod: 'POINTS',
 
-    // 时间戳
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        // ✨ 验证方式标记
+        verificationMethod: 'TRANSACTION_PIN',
+        pinVerified: true,
 
-    // 元数据
-    metadata: {
-      deviceInfo: context.rawRequest?.headers?.['user-agent'] || '',
-      ipAddress: context.rawRequest?.ip || ''
-    }
-  };
+        // 时间戳
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
 
-  const transactionRef = db
-    .collection('organizations').doc(organizationId)
-    .collection('events').doc(eventId)
-    .collection('transactions').doc(transactionId);
+        // 元数据
+        metadata: {
+          deviceInfo: context.rawRequest?.headers?.['user-agent'] || '',
+          ipAddress: context.rawRequest?.ip || ''
+        }
+      };
 
-  transaction.set(transactionRef, transactionData);
+      const transactionRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId)
+        .collection('transactions').doc(transactionId);
 
-  return {
-    transactionId,
-    remainingBalance: availablePoints  // ⭐ 修改：余额暂时不变
-  };
-});
+      transaction.set(transactionRef, transactionData);
 
-console.log('[processCustomerPayment] ✅ 付款请求已创建（待商家确认）:', result);
+      return {
+        transactionId,
+        remainingBalance: availablePoints  // ⭐ 修改：余额暂时不变
+      };
+    });
 
-return {
-  success: true,
-  transactionId: result.transactionId,
-  remainingBalance: result.remainingBalance - amount,  // ⭐ 修改：扣除後的余額
-  message: '支付成功，等待商家确认'  // ⭐ 修改消息
-};
+    console.log('[processCustomerPayment] ✅ 付款请求已创建（待商家确认）:', result);
 
-// ============================================
-// 📝 修改总结
-// ============================================
-//
-// 1. 第 789 行：status: 'completed' → status: 'pending'
-// 2. 注释掉第 743-749 行：不立即扣除 Customer 点数
-// 3. 注释掉第 760-766 行：不立即增加 Merchant 收入
-// 4. 修改返回消息：'付款成功' → '付款请求已发送，等待商家确认'
-//
-// ============================================
+    return {
+      success: true,
+      transactionId: result.transactionId,
+      remainingBalance: result.remainingBalance - amount,  // ⭐ 修改：扣除後的余額
+      message: '支付成功，等待商家确认'  // ⭐ 修改消息
+    };
+
+    // ============================================
+    // 📝 修改总结
+    // ============================================
+    //
+    // 1. 第 789 行：status: 'completed' → status: 'pending'
+    // 2. 注释掉第 743-749 行：不立即扣除 Customer 点数
+    // 3. 注释掉第 760-766 行：不立即增加 Merchant 收入
+    // 4. 修改返回消息：'付款成功' → '付款请求已发送，等待商家确认'
+    //
+    // ============================================
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

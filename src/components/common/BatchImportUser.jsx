@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { db } from '../../config/firebase';
 import { getAuth } from 'firebase/auth';
-import { collection, doc, setDoc, serverTimestamp, updateDoc, increment, getDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { safeFetch } from '../../services/safeFetch';
 
@@ -348,19 +346,6 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const orgDoc = await getDoc(doc(db, 'organizations', organizationId));
-      const eventDoc = await getDoc(doc(db, 'organizations', organizationId, 'events', eventId));
-      
-      const orgCode = orgDoc.exists() ? (orgDoc.data().orgCode || orgDoc.data().organizationCode || organizationId) : organizationId;
-      const eventCode = eventDoc.exists() ? (eventDoc.data().eventCode || eventDoc.data().code || eventId) : eventId;
-      
-      let defaultPassword = `${orgCode}${eventCode}`;
-      if (defaultPassword.length < 8 || !(/[a-zA-Z]/.test(defaultPassword) && /\d/.test(defaultPassword))) {
-        defaultPassword = `${defaultPassword}Ab12`;
-      }
-
-      console.log('[BatchImportUser] 默认密码:', defaultPassword);
-
       const response = await safeFetch('/api/batchImportUsersHttp', {
         method: 'POST',
         headers: {
@@ -370,12 +355,12 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         body: JSON.stringify({
           organizationId,
           eventId,
+          skipAuth: true,
           users: previewData.map(user => ({
             englishName: user.englishName,
             chineseName: user.chineseName || '',
             identityId: user.identityId || '',
             phoneNumber: user.phoneNumber,
-            password: defaultPassword,
             department: user.department,
             email: user.email || '',
             identityTag: user.identityTag,
@@ -385,8 +370,17 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '导入失败');
+        const errorText = await response.text();
+        let errorMessage = `导入失败（HTTP ${response.status}）`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          if (response.status === 502) {
+            errorMessage = '服务器处理超时或异常（502），请稍后重试';
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();

@@ -117,17 +117,61 @@
 
 /* 響應式設計 */
 @media (max-width: 480px) {
+  .dashboard-header-shared {
+    padding: 0.75rem 0.9rem;
+  }
+
   .dashboard-header-content {
     max-width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    min-height: 60px;
+    gap: 0.5rem;
+  }
+
+  .dashboard-header-left {
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .dashboard-header-logo {
+    height: 52px;
+  }
+
+  .dashboard-header-text {
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
   }
 
   .dashboard-header-title {
-    font-size: 0.9rem;
+    font-size: 1rem;
+    line-height: 1.15;
+  }
+
+  .dashboard-header-subtitle {
+    font-size: 0.78rem;
+    line-height: 1.2;
   }
 
   .dashboard-header-user {
-    display: none; /* 在小螢幕上隱藏用戶電話 */
+    display: block;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  .dashboard-header-right {
+    gap: 0.25rem;
+    align-self: flex-start;
+  }
+
+  .dashboard-header-action-btn,
+  .dashboard-header-logout-btn {
+    padding: 0.4rem;
   }
 }
 
