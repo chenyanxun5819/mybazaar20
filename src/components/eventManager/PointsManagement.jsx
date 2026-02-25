@@ -407,33 +407,57 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const baseTimestamp = Date.now();
 
       targetUsers.forEach((user, index) => {
-        let roleType = null;
-        if (user.roles?.includes('seller')) roleType = 'seller';
-        else if (user.roles?.includes('customer')) roleType = 'customer';
+        // 分配点数只能给 seller
+        if (!user.roles?.includes('seller')) return;
 
-        if (roleType) {
-          const timestampKey = (baseTimestamp + index).toString();
-          const transaction = {
-            type: 'allocation',
-            amount: points,
-            timestamp: serverTimestamp(),
-            allocatedBy: 'eventManager',
-            note: batchNote || `批量分配 - ${selectedTags}`
-          };
+        const timestampKey = (baseTimestamp + index).toString();
+        const transaction = {
+          type: 'allocation',
+          amount: points,
+          timestamp: serverTimestamp(),
+          allocatedBy: 'eventManager',
+          note: batchNote || `批量分配 - ${selectedTags}`
+        };
 
-          const userRef = doc(
-            db,
-            'organizations', organizationId,
-            'events', eventId,
-            'users', user.id
-          );
+        const userRef = doc(
+          db,
+          'organizations', organizationId,
+          'events', eventId,
+          'users', user.id
+        );
 
-          batch.update(userRef, {
-            [`${roleType}.availablePoints`]: increment(points),
-            [`${roleType}.transactions.${timestampKey}`]: transaction,
-            'accountStatus.lastUpdated': serverTimestamp()
-          });
-        }
+        batch.update(userRef, {
+          'seller.availablePoints': increment(points),
+          [`seller.transactions.${timestampKey}`]: transaction,
+          'accountStatus.lastUpdated': serverTimestamp()
+        });
+      });
+
+      // 计算实际被分配的 seller 数量
+      const actualTargetCount = targetUsers.filter(u => u.roles?.includes('seller')).length;
+
+      if (actualTargetCount === 0) {
+        window.mybazaarShowToast('选定用户中没有 seller 角色，无法分配点数');
+        return;
+      }
+
+      // 更新 EventManager 个人统计
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const emRef = doc(db, 'organizations', organizationId, 'events', eventId, 'users', currentUser.uid);
+        batch.update(emRef, {
+          'eventManager.totalAllocations': increment(1),
+          'eventManager.totalPointsAllocated': increment(points * actualTargetCount),
+          'eventManager.lastAllocatedAt': serverTimestamp()
+        });
+      }
+
+      // 更新 Event 层级 roleStats
+      const eventDocRef = doc(db, 'organizations', organizationId, 'events', eventId);
+      batch.update(eventDocRef, {
+        'roleStats.eventManagers.totalAllocations': increment(1),
+        'roleStats.eventManagers.totalPointsAllocated': increment(points * actualTargetCount)
       });
 
       await batch.commit();
@@ -465,7 +489,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       totalPointsSold += user.merchant.totalPointsSold || 0;
     }
     if (user.customer) {
-      availablePoints += user.customer.availablePoints || 0;
+      availablePoints += user.customer.pointsAccount?.availablePoints || 0;
     }
 
     return { availablePoints, totalPointsSold };

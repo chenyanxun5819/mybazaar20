@@ -1,6 +1,8 @@
 import React from 'react';
 import { useSellerStats } from '../hooks/useSellerStats';
 import { useAuth } from '../../../contexts/AuthContext';
+import StockForSellIcon from '../../../assets/stockForSell.svg?react';
+import HandHoldingUsdIcon from '../../../assets/hand-holding-usd.svg?react';
 
 function PointsOverview() {
   const { stats, loading, error } = useSellerStats();
@@ -56,7 +58,7 @@ function PointsOverview() {
     <div className="points-overview">
       {/* 点数卡片 */}
       <div className="card points-card">
-        <h2 className="card-title">💰 我的点数</h2>
+        <h2 className="card-title"><StockForSellIcon className="card-icon" /> 我的点数</h2>
         <div className="balance-display">
           <span className="balance-amount">{stats.availablePoints || 0}</span>
           <span className="balance-unit">点</span>
@@ -80,7 +82,7 @@ function PointsOverview() {
 
       {/* 现金卡片 */}
       <div className="card cash-card">
-        <h2 className="card-title">💵 现金状态</h2>
+        <h2 className="card-title"><HandHoldingUsdIcon className="card-icon" /> 现金状态</h2>
         
         <div className="cash-summary">
           <div className="cash-item highlight">
@@ -89,7 +91,7 @@ function PointsOverview() {
             {/* 🔧 根据用户类型显示不同提示 */}
             <small className="cash-hint">
               {isStudent 
-                ? '待上交给 Seller Manager' 
+                ? '待上交给班导师' 
                 : '待上交现金'
               }
             </small>

@@ -5,11 +5,11 @@ import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 導入 AuthContext
 import { useEvent } from '../../contexts/EventContext'; // 🆕 導入 EventContext
-import AddUser from '../../components/common/AddUser'; // 🆕 通用组件
-import BatchImportUser from '../../components/common/BatchImportUser'; // 🆕 批量导入
-import UserList from '../../components/common/UserList';
-import PointsManagement from '../../components/common/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
-import DepartmentManagement from '../../components/common/DepartmentManagement'; // 部门管理
+import AddUser from '../../components/eventManager/AddUser'; // 🆕 通用组件
+import BatchImportUser from '../../components/eventManager/BatchImportUser'; // 🆕 批量导入
+import UserList from '../../components/eventManager/UserList';
+import PointsManagement from '../../components/eventManager/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
+import DepartmentManagement from '../../components/eventManager/DepartmentManagement'; // 部门管理
 import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
 import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
 import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
@@ -54,7 +54,8 @@ const STAT_ICONS = {
   totalSellers: EmployeeManIcon,
   totalMerchants: StoreBuyerIcon,
   totalCustomers: UserBagIcon,
-  totalAllocatedPoints: PosBillIcon
+  totalAllocatedPoints: PosBillIcon,
+  totalGrantedPoints: FreeIcon
 };
 
 const renderIcon = (icon, { alt, size = 20, color, style } = {}) => {
@@ -128,7 +129,8 @@ const EventManagerDashboard = () => {
     totalSellers: 0,
     totalMerchants: 0,
     totalCustomers: 0,
-    totalAllocatedPoints: 0  // 🆕 新增
+    totalAllocatedPoints: 0,  // 分配给 seller 的点数总额
+    totalGrantedPoints: 0     // 赠送给 customer 的点数总额
   });
   const [showUserList, setShowUserList] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false); // 🆕 点数管理
@@ -650,31 +652,29 @@ const EventManagerDashboard = () => {
             totalSellers: 0,
             totalMerchants: 0,
             totalCustomers: 0,
-            totalAllocatedPoints: 0
+            totalAllocatedPoints: 0,
+            totalGrantedPoints: 0
           };
 
           const userList = [];
-          let totalAllocated = 0;
 
           usersSnapshot.forEach(doc => {
             const userData = doc.data();
             userList.push({ id: doc.id, ...userData });
 
-            if (userData.roles?.includes('eventManager')) stats.totalEventManagers++;
+            if (userData.roles?.includes('eventManager')) {
+              stats.totalEventManagers++;
+              // 直接从 eventManager 统计字段读取，权威数据
+              stats.totalAllocatedPoints = userData.eventManager?.totalPointsAllocated || 0;
+              stats.totalGrantedPoints = userData.eventManager?.totalPointsGranted || 0;
+            }
             if (userData.roles?.includes('cashier')) stats.totalCashiers++;
             if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
             if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
             if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
             if (userData.roles?.includes('seller')) stats.totalSellers++;
             if (userData.roles?.includes('customer')) stats.totalCustomers++;
-
-            if (userData.seller?.availablePoints) totalAllocated += userData.seller.availablePoints;
-            if (userData.customer?.availablePoints) totalAllocated += userData.customer.availablePoints;
-            if (userData.seller?.totalPointsSold) totalAllocated += userData.seller.totalPointsSold;
-            if (userData.merchant?.totalPointsSold) totalAllocated += userData.merchant.totalPointsSold;
           });
-
-          stats.totalAllocatedPoints = totalAllocated;
           setStatistics(stats);
           setUsers(userList);
         }
@@ -887,6 +887,12 @@ const EventManagerDashboard = () => {
           value={statistics.totalAllocatedPoints.toLocaleString()}
           icon={STAT_ICONS.totalAllocatedPoints}
           color="#10b981"
+        />
+        <StatCard
+          title="已赠送点数"
+          value={statistics.totalGrantedPoints.toLocaleString()}
+          icon={STAT_ICONS.totalGrantedPoints}
+          color="#f59e0b"
         />
       </div>
 

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db } from '../../config/firebase';
+import { db, auth } from '../../config/firebase';
 import {
   doc, getDoc, collection, getDocs, query, where, orderBy
 } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import DashboardHeader from '../../components/common/DashboardHeader';
 import DashboardFooter from '../../components/common/DashboardFooter';
@@ -317,6 +318,8 @@ const AuditorDashboard = () => {
         smStatsSnap,
         deptStatsSnap,
         cashSubSnap,
+        emAllocSnap,
+        emGrantSnap,
       ] = await Promise.all([
         getDocs(collection(db, ...basePath, 'users')),
         getDocs(collection(db, ...basePath, 'merchants')),
@@ -326,6 +329,17 @@ const AuditorDashboard = () => {
           collection(db, ...basePath, 'cashSubmissions'),
           orderBy('submittedAt', 'desc')
         )),
+        // EM 发放点数给 Seller（allocation 类型，fromRole = eventManager）
+        getDocs(query(
+          collection(db, ...basePath, 'transactions'),
+          where('transactionType', '==', 'allocation'),
+          where('fromRole', '==', 'eventManager')
+        )),
+        // EM 赠送点数给 Customer（free_grant 类型）
+        getDocs(query(
+          collection(db, ...basePath, 'transactions'),
+          where('transactionType', '==', 'free_grant')
+        )),
       ]);
 
       const users        = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -334,8 +348,15 @@ const AuditorDashboard = () => {
       const deptStats    = deptStatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const cashSubs     = cashSubSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+      // EM 发放点数：汇总 amount
+      const emTotalAllocated = emAllocSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
+      const emAllocCount     = emAllocSnap.size;
+      // EM 赠送点数：汇总 amount
+      const emTotalGranted   = emGrantSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
+      const emGrantCount     = emGrantSnap.size;
+
       // ── 处理各模块数据 ──
-      buildOverview(event, users);
+      buildOverview(event, users, { emTotalAllocated, emAllocCount, emTotalGranted, emGrantCount });
       buildDeptModule(users, smStats, deptStats);
       buildMerchantModule(merchants);
       buildPointSellerModule(users, event);
@@ -359,7 +380,7 @@ const AuditorDashboard = () => {
   // ────────────────────────────────────────────────────────
 
   // ── 1. 活动概览 ──
-  const buildOverview = (event, users) => {
+  const buildOverview = (event, users, emStats = {}) => {
     const rs  = event.roleStats         || {};
     const gps = event.globalPointsStats  || {};
     const fs  = event.financeSummary    || {};
@@ -482,6 +503,12 @@ const AuditorDashboard = () => {
 
       // 部门绩效
       topDepts, lowestDept, totalDepts,
+
+      // EM 发放与赠送（来自 transactions 集合实时汇总）
+      emTotalAllocated: emStats.emTotalAllocated ?? 0,
+      emAllocCount:     emStats.emAllocCount     ?? 0,
+      emTotalGranted:   emStats.emTotalGranted   ?? 0,
+      emGrantCount:     emStats.emGrantCount      ?? 0,
     });
   };
 
@@ -687,15 +714,17 @@ const AuditorDashboard = () => {
           },
           {
             name: '点数流通',
-            headers: ['项目', '数值'],
+            headers: ['项目', '数值', '备注'],
             rows: [
-              ['总分配点数',       od.totalAllocated],
-              ['已售出点数（Seller→Customer）', od.totalSold],
-              ['已消费点数（Customer→Merchant）', od.totalSpent],
-              ['点数卡发行点数',   od.pointsFromCards],
-              ['系统剩余点数',     od.remainingSystem],
-              ['当前流通点数',     od.currentCirculation],
-              ['累计销售额 RM',    fmt(od.totalRevenue)],
+              ['总分配点数',                    od.totalAllocated,   ''],
+              ['EM 直接发放给 Seller',          od.emTotalAllocated, `共 ${od.emAllocCount} 次`],
+              ['EM 赠送给 Customer（free_grant）', od.emTotalGranted,'共 ${od.emGrantCount} 次'],
+              ['已售出点数（Seller→Customer）', od.totalSold,        ''],
+              ['已消费点数（Customer→商家）',   od.totalSpent,       ''],
+              ['点数卡发行点数',                od.pointsFromCards,  `共 ${od.cardsIssued} 张`],
+              ['系统剩余点数',                  od.remainingSystem,  ''],
+              ['当前流通点数',                  od.currentCirculation,''],
+              ['累计销售额 RM',                 fmt(od.totalRevenue), ''],
             ]
           },
           {
@@ -838,7 +867,28 @@ const AuditorDashboard = () => {
     }
   };
 
-  const handleLogout  = () => navigate(`/login/${orgEventCode}`);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      localStorage.removeItem('auditorInfo');
+      localStorage.removeItem('auditorLogin');
+      
+      // 优先使用 useParams 中的 orgEventCode，如果无效则从 eventData 构建
+      const fallbackOrg = eventData?.organizationCode || '';
+      const fallbackEvt = eventData?.eventCode || '';
+      const targetRoute = orgEventCode || `${fallbackOrg}-${fallbackEvt}`;
+      
+      if (targetRoute && targetRoute !== '-') {
+        navigate(`/login/${targetRoute}`);
+      } else {
+        // 如果都无效，返回通用登录页
+        navigate('/platform/login');
+      }
+    } catch (error) {
+      console.error('登出失败:', error);
+      window.mybazaarShowToast?.('登出失败，请重试');
+    }
+  };
   const handleRefresh = () => loadAll();
 
   // ────────────────────────────────────────────────────────
@@ -977,10 +1027,12 @@ const AuditorDashboard = () => {
                 点数流向
               </div>
               {[
-                { label: '① 总分配点数',                value: od.totalAllocated,  color: '#6366f1', max: od.totalAllocated },
-                { label: '② 已售出（Seller → Customer）', value: od.totalSold,       color: '#10b981', max: od.totalAllocated },
-                { label: '③ 已消费（Customer → 商家）',  value: od.totalSpent,      color: '#8b5cf6', max: od.totalAllocated },
-                { label: '④ 点数卡发行',                value: od.pointsFromCards, color: '#f59e0b', max: od.totalAllocated },
+                { label: '① 总分配点数',                 value: od.totalAllocated,    color: '#6366f1', max: od.totalAllocated },
+                { label: '② EM直接发放（→ Seller）',     value: od.emTotalAllocated,  color: '#a855f7', max: od.totalAllocated },
+                { label: '③ EM赠送（→ Customer）',       value: od.emTotalGranted,    color: '#f43f5e', max: od.totalAllocated },
+                { label: '④ 已售出（Seller → Customer）', value: od.totalSold,         color: '#10b981', max: od.totalAllocated },
+                { label: '⑤ 已消费（Customer → 商家）',  value: od.totalSpent,        color: '#8b5cf6', max: od.totalAllocated },
+                { label: '⑥ 点数卡发行',                 value: od.pointsFromCards,   color: '#f59e0b', max: od.totalAllocated },
               ].map((item, i) => (
                 <div key={i} style={{ marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1001,6 +1053,11 @@ const AuditorDashboard = () => {
               </div>
               <Row label="系统剩余点数"   value={fmtInt(od.remainingSystem)}    bold />
               <Row label="当前流通点数"   value={fmtInt(od.currentCirculation)} />
+              <Divider />
+              <Row label="EM 直接发放"   value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
+              <Row label="发放次数"       value={`${od.emAllocCount} 次`} />
+              <Row label="EM 赠送点数"   value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
+              <Row label="赠送次数"       value={`${od.emGrantCount} 次`} />
               <Divider />
               <Row label="累计销售额"     value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
               <Row label="发行卡数"       value={`${fmtInt(od.cardsIssued)} 张`} />

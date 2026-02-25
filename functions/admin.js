@@ -2972,8 +2972,8 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
       if (!organizationId || !eventId || !userId || !roleType || !amount) {
         return res.status(400).json({ error: '缺少必要參數' });
       }
-      if (!['seller', 'customer'].includes(roleType)) {
-        return res.status(400).json({ error: 'roleType 不正確' });
+      if (roleType !== 'seller') {
+        return res.status(400).json({ error: 'roleType 必須為 seller（分配点数只能给 seller）' });
       }
       const points = Number(amount);
       if (!Number.isFinite(points) || points <= 0) {
@@ -3029,11 +3029,32 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
         note: note || '点数分配'
       };
 
-      await userRef.update({
-        [`${roleType}.availablePoints`]: admin.firestore.FieldValue.increment(points),
-        [`${roleType}.transactions.${tsKey}`]: tx,
+      // 取得 caller（Event Manager）的 user ref
+      const callerRef = eventRef.collection('users').doc(callerUid);
+
+      const batch = db.batch();
+
+      // 更新 seller.availablePoints
+      batch.update(userRef, {
+        'seller.availablePoints': admin.firestore.FieldValue.increment(points),
+        [`seller.transactions.${tsKey}`]: tx,
         'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
       });
+
+      // 更新 EventManager 个人统计
+      batch.update(callerRef, {
+        'eventManager.totalAllocations': admin.firestore.FieldValue.increment(1),
+        'eventManager.totalPointsAllocated': admin.firestore.FieldValue.increment(points),
+        'eventManager.lastAllocatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 更新 Event 层级 roleStats
+      batch.update(eventRef, {
+        'roleStats.eventManagers.totalAllocations': admin.firestore.FieldValue.increment(1),
+        'roleStats.eventManagers.totalPointsAllocated': admin.firestore.FieldValue.increment(points)
+      });
+
+      await batch.commit();
 
       return res.status(200).json({ success: true, userId, roleType, amount: points });
     } catch (error) {
@@ -3385,13 +3406,26 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           totalPointsSold: 0,
           transactions: {}
         },
-        // 初始化 customer 账户
+        // 初始化 customer 账户（正确路径：customer.pointsAccount）
         customer: {
-          availablePoints: 0,
-          totalPointsSpent: 0,
+          pointsAccount: {
+            availablePoints: 0,
+            reservedPoints: 0,
+            totalReceived: 0,
+            totalSpent: 0,
+            totalTransferredOut: 0,
+            totalTransferredIn: 0
+          },
           transactions: {}
         },
         eventManager: {
+          // 点数操作统计
+          totalAllocations: 0,
+          totalPointsAllocated: 0,
+          totalGrants: 0,
+          totalPointsGranted: 0,
+          lastAllocatedAt: null,
+          lastGrantedAt: null,
           permissions: {
             canManageUsers: true,
             canManageRoles: true,
@@ -3401,7 +3435,6 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
             canModifyEventSettings: true
           },
           restrictions: {
-            cannotAllocatePoints: true,
             cannotModifyOwnRoles: true,
             cannotDeleteSelf: true,
             cannotHoldOtherManagerRoles: true
@@ -3442,6 +3475,10 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           position: eventManagerInfo.position || '活动负责人'
         },
         'roleStats.eventManagers.count': 1,
+        'roleStats.eventManagers.totalAllocations': 0,
+        'roleStats.eventManagers.totalPointsAllocated': 0,
+        'roleStats.eventManagers.totalGrants': 0,
+        'roleStats.eventManagers.totalPointsGranted': 0,
         'statistics.totalUsers': admin.firestore.FieldValue.increment(1)
       });
 

@@ -260,11 +260,7 @@
               "roleStats": {
                 "description": "各角色统计信息",
                 "eventManagers": {
-                  "count": "number (Event Manager 数量，固定为1)",
-                  "totalAllocations": "number (累计分配次数，分配给 seller 的操作次数)",
-                  "totalPointsAllocated": "number (累计分配给 seller 的点数总额)",
-                  "totalGrants": "number (累计赠送次数，直接赠送给 customer 的操作次数)",
-                  "totalPointsGranted": "number (累计赠送给 customer 的点数总额)"
+                  "count": "number (Event Manager 数量，固定为1)"
                 },
                 "sellerManagers": {
                   "count": "number (Seller Manager 数量)",
@@ -582,13 +578,6 @@
                   },
                   "eventManager": {
                     "description": "Event Manager 角色专用数据",
-                    "// === 点数操作统计 ===": "",
-                    "totalAllocations": "number (累计分配次数，分配给 seller 的操作次数)",
-                    "totalPointsAllocated": "number (累计分配给 seller 的点数总额)",
-                    "totalGrants": "number (累计赠送次数，直接赠送给 customer 的操作次数)",
-                    "totalPointsGranted": "number (累计赠送给 customer 的点数总额)",
-                    "lastAllocatedAt": "timestamp (最后一次分配点数时间)",
-                    "lastGrantedAt": "timestamp (最后一次赠送点数时间)",
                     "permissions": {
                       "canManageUsers": "boolean (可以创建、编辑、删除用户)",
                       "canManageRoles": "boolean (可以分配角色给用户)",
@@ -598,6 +587,7 @@
                       "canModifyEventSettings": "boolean (可以修改活动设置)"
                     },
                     "restrictions": {
+                      "cannotAllocatePoints": "boolean (可以赠送点数，但不能通过常规分配机制分配)",
                       "cannotModifyOwnRoles": "boolean (不能修改自己的角色)",
                       "cannotDeleteSelf": "boolean (不能删除自己)",
                       "cannotHoldOtherRoles": "boolean (不能兼任其他角色)"
@@ -608,7 +598,7 @@
                       "canMonitorAllTransactions": "boolean (可以查看所有交易记录)",
                       "canViewAllStats": "boolean (可以查看所有统计数据)"
                     },
-                    "notes": "Event Manager 可执行两种点数操作：(1) 分配给 seller → seller.availablePoints，seller 需售出给 customer；(2) 赠送给 customer → customer.pointsAccount.availablePoints，可直接消费。两种操作独立计算。"
+                    "notes": "Event Manager 主要为监控角色，可以赠送点数给Customer但不参与常规点数分配和现金流；与 Cashier 形成制衡；每个 Event 只有一个 Event Manager"
                   },
                   "sellerManager": {
                     "description": "Seller Manager 角色专用数据",

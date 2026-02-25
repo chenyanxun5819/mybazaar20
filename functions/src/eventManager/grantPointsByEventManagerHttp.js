@@ -186,6 +186,21 @@ exports.grantPointsByEventManagerHttp = onRequest(
           _transactionCount++;
         }
 
+        // 更新 EventManager 个人赠送统计
+        const callerRef = db.doc(`organizations/${organizationId}/events/${eventId}/users/${callerUid}`);
+        batch.update(callerRef, {
+          'eventManager.totalGrants': admin.firestore.FieldValue.increment(1),
+          'eventManager.totalPointsGranted': admin.firestore.FieldValue.increment(points * grantedUserIds.length),
+          'eventManager.lastGrantedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 更新 Event 层级 roleStats
+        const eventRef = db.doc(`organizations/${organizationId}/events/${eventId}`);
+        batch.update(eventRef, {
+          'roleStats.eventManagers.totalGrants': admin.firestore.FieldValue.increment(1),
+          'roleStats.eventManagers.totalPointsGranted': admin.firestore.FieldValue.increment(points * grantedUserIds.length)
+        });
+
         // 8. 提交批量操作
         await batch.commit();
 

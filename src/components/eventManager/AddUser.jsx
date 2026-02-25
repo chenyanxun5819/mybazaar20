@@ -115,57 +115,63 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     const allRoles = {
       sellerManager: {
         value: 'sellerManager',
-        label: 'Seller Manager',
-        description: '销售管理员 - 管理销售团队和资本分配',
+        label: '班导师',
+        description: '班导师 - 管理学生销售员和点数分配',
         icon: '💰'
       },
       merchantManager: {
         value: 'merchantManager',
-        label: 'Merchant Manager',
+        label: '商家管理员',
         description: '商家管理员 - 管理商家和 QR Code',
         icon: '🏪'
       },
       customerManager: {
         value: 'customerManager',
-        label: 'Customer Manager',
+        label: '顾客管理员',
         description: '顾客管理员 - 义卖会当日销售',
         icon: '🎫'
       },
       cashier: {
         value: 'cashier',
-        label: 'Cashier',
+        label: '收银员',
         description: '收银员 - 管理现金流和财务报表',
         icon: '💵'
       },
       seller: {
         value: 'seller',
-        label: 'Seller',
-        description: '销售员 - 销售固本给顾客',
+        label: '点数销售员',
+        description: '点数销售员 - 销售固本给顾客',
         icon: '💳'
       },
       merchantOwner: {
         value: 'merchantOwner',
-        label: 'Merchant Owner',
+        label: '商家摊主',
         description: '商家摊主 - 管理摊位和助理',
         icon: '🏬'
       },
       merchantAsist: {
         value: 'merchantAsist',
-        label: 'Merchant Assistant',
-        description: '商家助理 - 协助摊主收款',
+        label: '摊位助手',
+        description: '摊位助手 - 协助摊主收款',
         icon: '🏪'
       },
       customer: {
         value: 'customer',
-        label: 'Customer',
-        description: '顾客 - 购买和使用固本',
+        label: '消费者',
+        description: '消费者 - 购买和使用固本',
         icon: '👤'
       },
       pointSeller: {
         value: 'pointSeller',
-        label: 'Point Seller',
-        description: '点数销售员 - 为老人和小孩销售点数卡',
+        label: '点数直售员',
+        description: '点数直售员 - 为老人和小孩销售点数卡',
         icon: '🎟️'
+      },
+      auditor: {
+        value: 'auditor',
+        label: '稽核人员',
+        description: '稽核人员 - 只读查阅活动全部财务数据，不可修改',
+        icon: '🔍'
       }
     };
 
