@@ -11,6 +11,13 @@
   z-index: 40;
 }
 
+.dashboard-header-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
 .dashboard-header-content {
   max-width: 600px;
   margin: 0 auto;

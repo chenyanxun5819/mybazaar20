@@ -318,8 +318,6 @@ const AuditorDashboard = () => {
         smStatsSnap,
         deptStatsSnap,
         cashSubSnap,
-        emAllocSnap,
-        emGrantSnap,
       ] = await Promise.all([
         getDocs(collection(db, ...basePath, 'users')),
         getDocs(collection(db, ...basePath, 'merchants')),
@@ -329,17 +327,6 @@ const AuditorDashboard = () => {
           collection(db, ...basePath, 'cashSubmissions'),
           orderBy('submittedAt', 'desc')
         )),
-        // EM 发放点数给 Seller（allocation 类型，fromRole = eventManager）
-        getDocs(query(
-          collection(db, ...basePath, 'transactions'),
-          where('transactionType', '==', 'allocation'),
-          where('fromRole', '==', 'eventManager')
-        )),
-        // EM 赠送点数给 Customer（free_grant 类型）
-        getDocs(query(
-          collection(db, ...basePath, 'transactions'),
-          where('transactionType', '==', 'free_grant')
-        )),
       ]);
 
       const users        = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -348,12 +335,12 @@ const AuditorDashboard = () => {
       const deptStats    = deptStatsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const cashSubs     = cashSubSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // EM 发放点数：汇总 amount
-      const emTotalAllocated = emAllocSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
-      const emAllocCount     = emAllocSnap.size;
-      // EM 赠送点数：汇总 amount
-      const emTotalGranted   = emGrantSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
-      const emGrantCount     = emGrantSnap.size;
+      // EM 发放与赠送（来自 eventManager 用户的数据）
+      const emUser = users.find(u => u.roles?.includes('eventManager'));
+      const emTotalAllocated = emUser?.eventManager?.totalPointsAllocated ?? 0;
+      const emAllocCount     = emUser?.eventManager?.totalAllocations ?? 0;
+      const emTotalGranted   = emUser?.eventManager?.totalPointsGranted ?? 0;
+      const emGrantCount     = emUser?.eventManager?.totalGrants ?? 0;
 
       // ── 处理各模块数据 ──
       buildOverview(event, users, { emTotalAllocated, emAllocCount, emTotalGranted, emGrantCount });
@@ -395,10 +382,24 @@ const AuditorDashboard = () => {
     // ── 点数流通 ──
     const pts = fs.points || {};
     const totalAllocated   = gps.totalAllocated   ?? pts.totalAllocated   ?? 0;
-    const totalSold        = gps.totalSold         ?? pts.totalSold         ?? 0;
-    const totalSpent       = pts.totalSpent                                 ?? 0;
-    const totalFromCards   = pts.totalFromPointCards                        ?? 0;
-    const remainingSystem  = pts.remainingInSystem ?? (totalAllocated - totalSold) ?? 0;
+
+    // ⭐ 修正（2026-02-27）：优先从 financeSummary.points.totalSold / globalPointsStats 取值
+    // Copilot 错误：原代码仅通过遍历 seller 用户计算，会因数据不一致产生偏差
+    const totalSold = pts.totalSold ?? gps.totalSold ??
+      users.filter(u => u.roles?.includes('seller')).reduce((sum, seller) => {
+        return sum + (seller.pointsStats?.totalSold ?? seller.seller?.totalPointsSold ?? 0);
+      }, 0);
+
+    const totalSpent     = pts.totalSpent          ?? 0;
+    const totalFromCards = pts.totalFromPointCards ?? 0;
+
+    // ⭐ 修正（2026-02-27）：开放式点数分配系统，不存在"有限总量"的概念
+    // Copilot 错误：使用 (totalAllocated - totalSold) 作为回退值，该公式混淆了
+    //   "Seller 持有未售点数" 与 "系统剩余点数" 的含义，不适用于开放式系统
+    // 正确做法：仅使用 Firestore 维护的 remainingInSystem，无值则显示 0
+    const remainingSystem    = pts.remainingInSystem ?? 0;
+    // 单独计算 Seller 持有点数（已分配但尚未售出），用于流通漏斗显示
+    const sellerHeldPoints   = totalAllocated - totalSold;
 
     // ── 现金来源分解 ──
     const cash = fs.cash || {};
@@ -480,6 +481,7 @@ const AuditorDashboard = () => {
       // 点数流通
       totalAllocated, totalSold, totalSpent, totalFromCards,
       remainingSystem,
+      sellerHeldPoints,    // ⭐ 新增：Seller 持有但尚未售出的点数
       currentCirculation: gps.currentCirculation ?? 0,
       totalRevenue: gps.totalRevenue ?? totalSold,
 
@@ -716,15 +718,15 @@ const AuditorDashboard = () => {
             name: '点数流通',
             headers: ['项目', '数值', '备注'],
             rows: [
-              ['总分配点数',                    od.totalAllocated,   ''],
-              ['EM 直接发放给 Seller',          od.emTotalAllocated, `共 ${od.emAllocCount} 次`],
-              ['EM 赠送给 Customer（free_grant）', od.emTotalGranted,'共 ${od.emGrantCount} 次'],
-              ['已售出点数（Seller→Customer）', od.totalSold,        ''],
-              ['已消费点数（Customer→商家）',   od.totalSpent,       ''],
-              ['点数卡发行点数',                od.pointsFromCards,  `共 ${od.cardsIssued} 张`],
-              ['系统剩余点数',                  od.remainingSystem,  ''],
-              ['当前流通点数',                  od.currentCirculation,''],
-              ['累计销售额 RM',                 fmt(od.totalRevenue), ''],
+              ['总分配点数（EM已分配）',             od.totalAllocated,   ''],
+              ['EM 直接发放给 Seller',               od.emTotalAllocated, `共 ${od.emAllocCount} 次`],
+              ['EM 赠送给 Customer（free_grant）',   od.emTotalGranted,   `共 ${od.emGrantCount} 次`],
+              ['已售出点数（Seller→Customer）',       od.totalSold,        ''],
+              ['Seller 持有点数（已分配未售出）',     od.sellerHeldPoints, '= 总分配 - 已售出'],
+              ['已消费点数（Customer→商家）',         od.totalSpent,       '实时更新'],
+              ['点数卡发行点数',                     od.pointsFromCards,  `共 ${od.cardsIssued} 张`],
+              ['当前流通点数',                       od.currentCirculation,''],
+              ['累计销售额 RM',                      fmt(od.totalRevenue), ''],
             ]
           },
           {
@@ -1026,13 +1028,21 @@ const AuditorDashboard = () => {
               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 点数流向
               </div>
+              {/* ⭐ 修正（2026-02-27）：开放式系统，progress bar 以各步骤最大值为参考
+                  不能全部用 totalAllocated 作 max，会造成误解  */}
               {[
-                { label: '① 总分配点数',                 value: od.totalAllocated,    color: '#6366f1', max: od.totalAllocated },
-                { label: '② EM直接发放（→ Seller）',     value: od.emTotalAllocated,  color: '#a855f7', max: od.totalAllocated },
-                { label: '③ EM赠送（→ Customer）',       value: od.emTotalGranted,    color: '#f43f5e', max: od.totalAllocated },
-                { label: '④ 已售出（Seller → Customer）', value: od.totalSold,         color: '#10b981', max: od.totalAllocated },
-                { label: '⑤ 已消费（Customer → 商家）',  value: od.totalSpent,        color: '#8b5cf6', max: od.totalAllocated },
-                { label: '⑥ 点数卡发行',                 value: od.pointsFromCards,   color: '#f59e0b', max: od.totalAllocated },
+                { label: '① EM 已分配（→ Seller）',         value: od.totalAllocated,    color: '#6366f1',
+                  max: od.totalAllocated, note: `直接发放 ${fmtInt(od.emTotalAllocated)} 点（共 ${od.emAllocCount} 次）` },
+                { label: '② Seller 已持有（未售）',          value: od.sellerHeldPoints,  color: '#a855f7',
+                  max: od.totalAllocated, note: '= 总分配 - 已售出' },
+                { label: '③ EM 赠送（→ Customer）',          value: od.emTotalGranted,    color: '#f43f5e',
+                  max: od.totalAllocated, note: `共 ${od.emGrantCount} 次` },
+                { label: '④ 已售出（Seller → Customer）',    value: od.totalSold,         color: '#10b981',
+                  max: od.totalAllocated, note: '' },
+                { label: '⑤ 已消费（Customer → 商家）',      value: od.totalSpent,        color: '#8b5cf6',
+                  max: Math.max(od.totalSold, od.totalSpent, 1), note: '实时更新' },
+                { label: '⑥ 点数卡发行',                     value: od.pointsFromCards,   color: '#f59e0b',
+                  max: od.totalAllocated, note: `共 ${od.cardsIssued} 张` },
               ].map((item, i) => (
                 <div key={i} style={{ marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1041,27 +1051,27 @@ const AuditorDashboard = () => {
                       {fmtInt(item.value)}
                     </span>
                   </div>
+                  {item.note && (
+                    <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: '0.2rem' }}>{item.note}</div>
+                  )}
                   <ProgressBar value={item.value} max={item.max} color={item.color} />
                 </div>
               ))}
             </div>
 
-            {/* 右：余额状况 */}
+            {/* 右：EM 点数操作与销售汇总 */}
             <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '1rem' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                余额状况
-              </div>
-              <Row label="系统剩余点数"   value={fmtInt(od.remainingSystem)}    bold />
-              <Row label="当前流通点数"   value={fmtInt(od.currentCirculation)} />
+              <Row label="EM 直接发放"         value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
+              <Row label="发放次数"             value={`${od.emAllocCount} 次`} />
+              <Row label="EM 赠送点数"         value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
+              <Row label="赠送次数"             value={`${od.emGrantCount} 次`} />
               <Divider />
-              <Row label="EM 直接发放"   value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
-              <Row label="发放次数"       value={`${od.emAllocCount} 次`} />
-              <Row label="EM 赠送点数"   value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
-              <Row label="赠送次数"       value={`${od.emGrantCount} 次`} />
+              <Row label="Seller 持有（未售）" value={`${fmtInt(od.sellerHeldPoints)} 点`} valueColor="#a855f7" />
+              <Row label="Customer 已消费"     value={`${fmtInt(od.totalSpent)} 点`}        valueColor="#8b5cf6" bold />
               <Divider />
-              <Row label="累计销售额"     value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
-              <Row label="发行卡数"       value={`${fmtInt(od.cardsIssued)} 张`} />
-              <Row label="点数卡发行点数" value={fmtInt(od.pointsFromCards)} />
+              <Row label="累计销售额"           value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
+              <Row label="发行卡数"             value={`${fmtInt(od.cardsIssued)} 张`} />
+              <Row label="点数卡发行点数"       value={fmtInt(od.pointsFromCards)} />
             </div>
           </div>
         </ModuleCard>

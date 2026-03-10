@@ -120,6 +120,18 @@ exports.sellerDirectSale = onCall({ region: 'asia-southeast1' }, async (request)
         updatedAt: now
       });
 
+      // ⭐ 新增（2026-02-27）：更新 Event 层级全局统计
+      // Seller 销售给 Customer = 已售出，计入 totalSold
+      const eventRef = db
+        .collection('organizations').doc(orgId)
+        .collection('events').doc(eventId);
+
+      transaction.update(eventRef, {
+        'globalPointsStats.totalSold':     admin.firestore.FieldValue.increment(amount),
+        'globalPointsStats.lastUpdated':   admin.firestore.FieldValue.serverTimestamp(),
+        'financeSummary.points.totalSold': admin.firestore.FieldValue.increment(amount)
+      });
+
       return {
         transactionId,
         amount,

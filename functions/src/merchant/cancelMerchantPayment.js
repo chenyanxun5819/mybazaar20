@@ -225,11 +225,23 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
         // ✅ 减少总收入
         'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(-amount),
         'revenueStats.transactionCount': admin.firestore.FieldValue.increment(-1),
-        // ⭐ 修正字段路径：dailyRevenue.today（不是 revenueStats.todayRevenue）
         'dailyRevenue.today': admin.firestore.FieldValue.increment(-amount),
         'dailyRevenue.todayTransactionCount': admin.firestore.FieldValue.increment(-1),
-        // ✅ 更新时间戳
         'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // ========================================
+      // ⭐ 新增（2026-02-27）：回滚 Event 层级汇总统计
+      // 与 processCustomerPayment 的增量操作完全对称
+      // ========================================
+      const eventRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId);
+
+      transaction.update(eventRef, {
+        'financeSummary.points.totalSpent': admin.firestore.FieldValue.increment(-amount),
+        'roleStats.customers.totalSpent':   admin.firestore.FieldValue.increment(-amount),
+        'roleStats.merchants.totalRevenue': admin.firestore.FieldValue.increment(-amount),
       });
 
       // ========================================

@@ -2050,7 +2050,8 @@ const styles = {
   formLabel: {
     fontSize: '0.875rem',
     fontWeight: '600',
-    color: '#374151'
+    color: '#374151',
+    textAlign: 'left'
   },
   formInput: {
     padding: '0.75rem',

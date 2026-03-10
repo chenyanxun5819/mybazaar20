@@ -51,6 +51,14 @@ exports.onSellerManagerAllocation = onDocumentCreated(
 
     try {
       // ========== 第1步: 读取必要的配置和数据 ==========
+
+      // ⭐ 读取 allocationType（2026-02-27）
+      // personal = SM 直销，即时收现金，HTTP 函数已写入 customer 点数
+      // （inventory 类型已废弃，触发器只需处理 personal）
+      const allocationType = allocation.allocationType || 'personal';
+
+      logger.info('[onSellerManagerAllocation] allocationType:', allocationType);
+
       const eventRef = db.doc(`organizations/${orgId}/events/${eventId}`);
       const eventDoc = await eventRef.get();
       
@@ -62,16 +70,13 @@ exports.onSellerManagerAllocation = onDocumentCreated(
       const eventData = eventDoc.data();
       const maxPerAllocation = eventData.pointAllocationRules?.sellerManager?.maxPerAllocation || 100;
 
-      // 验证分配额度
       if (allocation.points > maxPerAllocation) {
         logger.warn('[onSellerManagerAllocation] 超出单次分配限额', {
-          points: allocation.points,
-          maxPerAllocation
+          points: allocation.points, maxPerAllocation
         });
-        // 不阻止分配，但记录警告
       }
 
-      // ========== 第2步: 更新接收者的点数和统计 ==========
+      // ========== 第2步: 接收者点数（仅 inventory 类型需要更新，personal 已由 HTTP 函数处理）==========
       const recipientRef = db.doc(
         `organizations/${orgId}/events/${eventId}/users/${allocation.recipientId}`
       );
@@ -85,61 +90,59 @@ exports.onSellerManagerAllocation = onDocumentCreated(
       }
 
       const recipientData = recipientDoc.data();
-      const recipientDept = recipientData.department || recipientData.basicInfo?.department || 'unknown';
+      const recipientDept = recipientData.identityInfo?.department ||
+        recipientData.department || recipientData.basicInfo?.department || 'unknown';
 
-      // 创建交易记录（使用时间戳作为键）
-      const timestampKey = Date.now().toString();
-      const transactionRecord = {
-        type: 'allocation',
-        amount: allocation.points,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        allocatedBy: 'sellerManager',
-        allocatedByUserId: smId,
-        allocatedByName: allocation.allocatedByName || 'Seller Manager',
-        allocatedByRole: 'sellerManager',
-        note: allocation.notes || 'Seller Manager 分配',
-        allocationDocId: allocId
-      };
+      // ⭐ 修正（2026-02-27）：
+      // inventory 类型（已废弃，保留兼容）：写 seller.availablePoints
+      // personal 类型（SM 直销）：HTTP 函数已写 customer 点数，触发器不重复写
+      if (allocationType === 'inventory') {
+        const timestampKey = Date.now().toString();
+        await recipientRef.update({
+          'seller.availablePoints': admin.firestore.FieldValue.increment(allocation.points),
+          [`seller.transactions.${timestampKey}`]: {
+            type:              'allocation',
+            amount:            allocation.points,
+            timestamp:         admin.firestore.FieldValue.serverTimestamp(),
+            allocatedBy:       'sellerManager',
+            allocatedByUserId: smId,
+            allocatedByName:   allocation.allocatedByName || 'Seller Manager',
+            allocatedByRole:   'sellerManager',
+            note:              allocation.notes || 'Seller Manager 库存分配',
+            allocationDocId:   allocId
+          },
+          'pointsStats.totalReceived':              admin.firestore.FieldValue.increment(allocation.points),
+          'pointsStats.receivedFromSellerManager':  admin.firestore.FieldValue.increment(allocation.points),
+          'pointsStats.currentBalance':             admin.firestore.FieldValue.increment(allocation.points),
+          'accountStatus.lastUpdated':              admin.firestore.FieldValue.serverTimestamp()
+        });
+        logger.info('[onSellerManagerAllocation] ✅ inventory: 更新 seller.availablePoints', {
+          recipientId: allocation.recipientId, points: allocation.points
+        });
+      } else {
+        // personal：HTTP 函数已完成 customer 点数写入，此处仅记录日志
+        logger.info('[onSellerManagerAllocation] personal: customer 点数已由 HTTP 函数写入，触发器跳过', {
+          recipientId: allocation.recipientId, points: allocation.points
+        });
+      }
 
-      // 更新接收者数据
-      await recipientRef.update({
-        // 更新可用点数
-        'seller.availablePoints': admin.firestore.FieldValue.increment(allocation.points),
-        
-        // 添加交易记录
-        [`seller.transactions.${timestampKey}`]: transactionRecord,
-        
-        // 更新 pointsStats
-        'pointsStats.totalReceived': admin.firestore.FieldValue.increment(allocation.points),
-        'pointsStats.receivedFromSellerManager': admin.firestore.FieldValue.increment(allocation.points),
-        'pointsStats.currentBalance': admin.firestore.FieldValue.increment(allocation.points),
-        
-        // 更新账户状态
-        'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      logger.info('[onSellerManagerAllocation] ✅ 成功更新接收者点数', {
-        recipientId: allocation.recipientId,
-        points: allocation.points,
-        department: recipientDept
-      });
-
-      // ========== 第3步: 使用批处理更新统计数据 ==========
+      // ========== 第3步: 批处理更新统计数据 ==========
       const batch = db.batch();
 
       // 3.1 更新 departmentStats
       const deptStatsRef = db.doc(
         `organizations/${orgId}/events/${eventId}/departmentStats/${recipientDept}`
       );
-      
+
+      // departmentStats 记录不论哪种类型都更新（反映该部门产生的点数流动）
       batch.set(deptStatsRef, {
         departmentCode: recipientDept,
         managedBy: admin.firestore.FieldValue.arrayUnion(smId),
-        'pointsStats.totalReceived': admin.firestore.FieldValue.increment(allocation.points),
-        'pointsStats.currentBalance': admin.firestore.FieldValue.increment(allocation.points),
-        'allocationStats.totalAllocations': admin.firestore.FieldValue.increment(1),
-        'allocationStats.bySellerManager.count': admin.firestore.FieldValue.increment(1),
-        'allocationStats.bySellerManager.totalPoints': admin.firestore.FieldValue.increment(allocation.points),
+        'pointsStats.totalReceived':                       admin.firestore.FieldValue.increment(allocation.points),
+        'pointsStats.currentBalance':                      admin.firestore.FieldValue.increment(allocation.points),
+        'allocationStats.totalAllocations':                admin.firestore.FieldValue.increment(1),
+        'allocationStats.bySellerManager.count':           admin.firestore.FieldValue.increment(1),
+        'allocationStats.bySellerManager.totalPoints':     admin.firestore.FieldValue.increment(allocation.points),
         lastUpdated: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
 
@@ -147,33 +150,42 @@ exports.onSellerManagerAllocation = onDocumentCreated(
       const smStatsRef = db.doc(
         `organizations/${orgId}/events/${eventId}/sellerManagerStats/${smId}`
       );
-      
+
       batch.set(smStatsRef, {
         sellerManagerId: smId,
-        'allocationStats.totalAllocations': admin.firestore.FieldValue.increment(1),
-        'allocationStats.totalPointsAllocated': admin.firestore.FieldValue.increment(allocation.points),
-        'allocationStats.lastAllocationAt': admin.firestore.FieldValue.serverTimestamp(),
-        'managedUsersStats.totalUsers': recipientData.managedBy?.includes(smId) ? 
-          admin.firestore.FieldValue.increment(0) : 
-          admin.firestore.FieldValue.increment(1),
+        'allocationStats.totalAllocations':       admin.firestore.FieldValue.increment(1),
+        'allocationStats.totalPointsAllocated':   admin.firestore.FieldValue.increment(allocation.points),
+        'allocationStats.lastAllocationAt':       admin.firestore.FieldValue.serverTimestamp(),
         lastUpdated: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
 
-      // 3.3 更新 Event.globalPointsStats
-      batch.update(eventRef, {
-        'globalPointsStats.totalAllocated': admin.firestore.FieldValue.increment(allocation.points),
-        'globalPointsStats.currentCirculation': admin.firestore.FieldValue.increment(allocation.points),
-        'globalPointsStats.lastUpdated': admin.firestore.FieldValue.serverTimestamp(),
-        
-        // 更新角色统计
-        'roleStats.sellerManagers.totalAllocations': admin.firestore.FieldValue.increment(1),
-        'roleStats.sellerManagers.totalPointsAllocated': admin.firestore.FieldValue.increment(allocation.points)
-      });
+      // 3.3 ⭐ 更新 Event 层级统计（2026-02-27 修正）
+      // personal（直销）= 已售出 → totalSold（现金已即时收取）
+      // inventory（库存）= 已分配 → totalAllocated（已废弃，保留兼容）
+      if (allocationType === 'personal') {
+        // HTTP 函数已更新 globalPointsStats.totalSold 和 financeSummary.points.totalSold
+        // 触发器不重复写，避免双重计数
+        // 仅更新 roleStats 里的 SM 统计（HTTP 函数未写这部分）
+        batch.update(eventRef, {
+          'roleStats.sellerManagers.totalAllocations':      admin.firestore.FieldValue.increment(1),
+          'roleStats.sellerManagers.totalPointsAllocated':  admin.firestore.FieldValue.increment(allocation.points),
+          'globalPointsStats.lastUpdated':                  admin.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        // inventory 兼容路径（已废弃）
+        batch.update(eventRef, {
+          'globalPointsStats.totalAllocated':              admin.firestore.FieldValue.increment(allocation.points),
+          'globalPointsStats.currentCirculation':          admin.firestore.FieldValue.increment(allocation.points),
+          'globalPointsStats.lastUpdated':                 admin.firestore.FieldValue.serverTimestamp(),
+          'roleStats.sellerManagers.totalAllocations':     admin.firestore.FieldValue.increment(1),
+          'roleStats.sellerManagers.totalPointsAllocated': admin.firestore.FieldValue.increment(allocation.points)
+        });
+      }
 
       // 3.4 提交批处理
       await batch.commit();
 
-      logger.info('[onSellerManagerAllocation] ✅ 成功更新所有统计数据');
+      logger.info('[onSellerManagerAllocation] ✅ 成功更新所有统计数据', { allocationType });
 
       // ========== 第4步: 异步触发收款警示检查 ==========
       // 注意：这里不等待，让它异步执行

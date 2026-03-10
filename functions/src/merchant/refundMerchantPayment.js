@@ -146,7 +146,7 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
 
     await db.runTransaction(async (transaction) => {
       // 10.1 退回 Customer 点数
-      // ⭐ 修复：改为 customer.pointsAccount.availablePoints（匹配 confirmMerchantPayment）
+      // ⭐ 修復：使用正確的字段路徑
       const newCustomerBalance = (customerData.customer?.pointsAccount?.availablePoints || 0) + amount;
       const newCustomerTotalSpent = Math.max(0, (customerData.customer?.pointsAccount?.totalSpent || 0) - amount);
 
@@ -192,6 +192,18 @@ exports.refundMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
         ...ownerUpdate,
         ...asistUpdate,
         'activityData.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // ⭐ 新增（2026-02-27）：回滚 Event 层级汇总统计
+      // 与 processCustomerPayment 的增量操作完全对称
+      const eventRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId);
+
+      transaction.update(eventRef, {
+        'financeSummary.points.totalSpent': admin.firestore.FieldValue.increment(-amount),
+        'roleStats.customers.totalSpent':   admin.firestore.FieldValue.increment(-amount),
+        'roleStats.merchants.totalRevenue': admin.firestore.FieldValue.increment(-amount),
       });
 
       // 10.4 更新交易状态

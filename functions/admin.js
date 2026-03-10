@@ -912,7 +912,19 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 验证角色是否有效
-      const validRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'seller', 'merchant', 'customer', 'pointSeller'];
+        const validRoles = [
+          'sellerManager',
+          'merchantManager',
+          'customerManager',
+          'cashier',
+          'auditor',
+          'seller',
+          'merchant',
+          'merchantOwner',
+          'merchantAsist',
+          'customer',
+          'pointSeller'
+        ];
       const invalidRoles = roles.filter(role => !validRoles.includes(role));
       if (invalidRoles.length > 0) {
         res.status(400).json({ error: `无效的角色: ${invalidRoles.join(', ')}` });
@@ -1093,6 +1105,41 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
         };
       }
 
+      if (roles.includes('merchantOwner')) {
+        userDoc.merchantOwner = {
+          merchantId: null,
+          merchantCode: null,
+          stallName: null,
+          assignedAt: null,
+          assignedBy: null,
+          statistics: {
+            totalCollected: 0,
+            transactionCount: 0,
+            lastCollectionAt: null,
+            todayCollected: 0,
+            todayTransactionCount: 0
+          }
+        };
+      }
+
+      if (roles.includes('merchantAsist')) {
+        userDoc.merchantAsist = {
+          merchantId: null,
+          merchantCode: null,
+          stallName: null,
+          merchantOwnerId: null,
+          assignedAt: null,
+          assignedBy: null,
+          statistics: {
+            totalCollected: 0,
+            transactionCount: 0,
+            lastCollectionAt: null,
+            todayCollected: 0,
+            todayTransactionCount: 0
+          }
+        };
+      }
+
       if (roles.includes('customer')) {
         userDoc.customer = {
           customerId: `CS${Date.now()}`,
@@ -1164,6 +1211,12 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
       if (roles.includes('merchantManager')) {
         updateData['statistics.totalMerchantManagers'] = admin.firestore.FieldValue.increment(1);
+      }
+      if (roles.includes('merchantOwner')) {
+        updateData['statistics.totalMerchantOwners'] = admin.firestore.FieldValue.increment(1);
+      }
+      if (roles.includes('merchantAsist')) {
+        updateData['statistics.totalMerchantAsists'] = admin.firestore.FieldValue.increment(1);
       }
       if (roles.includes('customerManager')) {
         updateData['statistics.totalCustomerManagers'] = admin.firestore.FieldValue.increment(1);
@@ -3048,10 +3101,15 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
         'eventManager.lastAllocatedAt': admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // 更新 Event 层级 roleStats
+      // 更新 Event 层级 roleStats + globalPointsStats
+      // ⭐ 新增（2026-02-27）：EM 每次分配必须同步写入 globalPointsStats.totalAllocated
+      // 原先此处缺失，导致该字段只含 SM 触发器写入的量，EM 分配量完全丢失
       batch.update(eventRef, {
-        'roleStats.eventManagers.totalAllocations': admin.firestore.FieldValue.increment(1),
-        'roleStats.eventManagers.totalPointsAllocated': admin.firestore.FieldValue.increment(points)
+        'roleStats.eventManagers.totalAllocations':      admin.firestore.FieldValue.increment(1),
+        'roleStats.eventManagers.totalPointsAllocated':  admin.firestore.FieldValue.increment(points),
+        'globalPointsStats.totalAllocated':              admin.firestore.FieldValue.increment(points),
+        'globalPointsStats.currentCirculation':          admin.firestore.FieldValue.increment(points),
+        'globalPointsStats.lastUpdated':                 admin.firestore.FieldValue.serverTimestamp()
       });
 
       await batch.commit();

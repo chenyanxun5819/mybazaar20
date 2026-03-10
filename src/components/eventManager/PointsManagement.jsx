@@ -258,10 +258,9 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       let roleType = null;
       if (selectedUser.roles?.includes('seller')) roleType = 'seller';
-      else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
-        window.mybazaarShowToast('用户没有可分配点数的角色');
+        window.mybazaarShowToast('点数分配仅支持 Seller 用户');
         return;
       }
 
@@ -286,6 +285,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.error || '分配失败');
+      if (!data?.success) throw new Error(data?.error || '分配失败：响应异常（未返回 success）');
 
       window.mybazaarShowToast(`成功分配 ${points.toLocaleString()} 点数！`);
       setShowPointsModal(false);
@@ -347,6 +347,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.error || '回收失败');
+      if (!data?.success) throw new Error(data?.error || '回收失败：响应异常（未返回 success）');
 
       window.mybazaarShowToast(`成功回收 ${points.toLocaleString()} 点数！`);
       setShowRecallModal(false);

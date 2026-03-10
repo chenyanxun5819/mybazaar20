@@ -742,15 +742,26 @@ exports.processCustomerPayment = onCall({ region: 'asia-southeast1' }, async (re
 
       // ⭐ 修改（2026-01-23）：立即增加 Merchant 收入
       // Customer 支付时立即增加收入（不等待确认）
-      // ========================================
-      // ⭐ 修改后（替换为以下代码）
-      // ========================================
       transaction.update(merchantRef, {
         'revenueStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
         'revenueStats.transactionCount': admin.firestore.FieldValue.increment(1),
-        'dailyRevenue.today': admin.firestore.FieldValue.increment(amount),                     // ⭐ 修正字段路径
-        'dailyRevenue.todayTransactionCount': admin.firestore.FieldValue.increment(1),          // ⭐ 修正字段路径
+        'dailyRevenue.today': admin.firestore.FieldValue.increment(amount),
+        'dailyRevenue.todayTransactionCount': admin.firestore.FieldValue.increment(1),
         'metadata.updatedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // ⭐ 新增（2026-02-27）：同步更新 Event 层级汇总统计
+      // financeSummary.points.totalSpent  ← Customer 在商家消费的累计点数
+      // roleStats.customers.totalSpent    ← Customer 角色汇总
+      // roleStats.merchants.totalRevenue  ← Merchant 角色汇总（与 merchant.revenueStats 保持一致）
+      const eventRef = db
+        .collection('organizations').doc(organizationId)
+        .collection('events').doc(eventId);
+
+      transaction.update(eventRef, {
+        'financeSummary.points.totalSpent':   admin.firestore.FieldValue.increment(amount),
+        'roleStats.customers.totalSpent':     admin.firestore.FieldValue.increment(amount),
+        'roleStats.merchants.totalRevenue':   admin.firestore.FieldValue.increment(amount),
       });
 
 

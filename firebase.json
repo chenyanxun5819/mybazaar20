@@ -134,6 +134,14 @@
         "function": "grantPointsByEventManagerHttp"
       },
       {
+        "source": "/api/allocatePointsHttp",
+        "function": "allocatePointsHttp"
+      },
+      {
+        "source": "/api/recallPointsHttp",
+        "function": "recallPointsHttp"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

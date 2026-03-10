@@ -4,6 +4,13 @@
     "version": "2026-02-15-v11",
     "lastUpdated": "2026-02-15",
     "architectureChanges": {
+      "version_2026-03-09-v13": [
+        "🏪 merchants 集合新增 merchantCode 字段（业务编号，格式 M001~M999，按活动内流水序号）",
+        "🔢 events.roleStats.merchants 新增 lastMerchantSeq 字段（流水序号计数器，只增不减）",
+        "🚫 禁止物理删除 merchant，改为软删除（metadata.isDeleted / deletedAt / deletedBy / deleteReason）",
+        "📊 roleStats.merchants.count 语义明确为当前有效摊位数（软删除时 -1），与 lastMerchantSeq 职责分离",
+        "💰 计费逻辑基于 count 字段（有效摊位），不依赖 lastMerchantSeq"
+      ],
       "version_2026-02-19-v12": [
         "👤 新增 auditor（稽核人员）角色",
         "✅ users.roles 新增 'auditor' 角色值",
@@ -283,7 +290,8 @@
                   "totalRevenue": "number (累计销售额)",
                   "withAsistsCount": "number (配有助理的商家数)",
                   "totalAsistsCount": "number (所有助理总数)",
-                  "averageAsistsPerMerchant": "number (平均每个商家的助理数)"
+                  "averageAsistsPerMerchant": "number (平均每个商家的助理数)",
+                  "lastMerchantSeq": "number (最新流水序号，只增不减，用于生成下一个 merchantCode，默认 0)"
                 },
                 "merchantManagers": {
                   "count": "number (MerchantManager 数量，通常为1)",
@@ -956,7 +964,8 @@
                     "description": "商家（攤位）資訊",
                     "level": "Event",
                     "documentStructure": {
-                      "merchantId": "string (自動生成的文檔ID)",
+                      "merchantId": "string (自動生成的文檔ID，Firestore路径用)",
+                      "merchantCode": "string (业务编号，格式 'M001'~'M999'，按活动内流水序号生成，显示和计费用)",
                       "merchantOwnerId": "string (商家拥有者 userId，唯一，来自 users 集合中 role=merchantOwner 的用户)",
                       "merchantAsists": [
                         "string (助理 userId 数组，最多5人，来自 users 集合中 role=merchantAsist 的用户)"
@@ -1002,7 +1011,11 @@
                         "createdAt": "timestamp (創建時間)",
                         "updatedAt": "timestamp (最後更新時間)",
                         "createdBy": "string (創建者 UID，通常是 merchantManager)",
-                        "lastUpdatedBy": "string (最後更新者 UID)"
+                        "lastUpdatedBy": "string (最後更新者 UID)",
+                        "isDeleted": "boolean (软删除标记，禁止物理删除，默认 false)",
+                        "deletedAt": "timestamp (停用时间，可选)",
+                        "deletedBy": "string (停用操作者 UID，可选)",
+                        "deleteReason": "string (停用原因，可选，如 '摊位取消参与')"
                       }
                     },
                     "indexes": [

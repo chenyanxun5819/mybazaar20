@@ -1,8 +1,10 @@
 /**
  * Seller Manager HTTP Functions
  * 提供前端可调用的HTTP端点
- * 
- * @version 2026-01-12 v3.1 (修复 Firestore 错误)
+ *
+ * @version 2026-02-27 v4.0
+ * - 删除 inventory 类型（SM 只做直销，即时收现金）
+ * - SM 直销计入 globalPointsStats.totalSold / financeSummary.points.totalSold
  * @region asia-southeast1
  */
 
@@ -29,18 +31,19 @@ const corsHandler = cors({
 });
 
 // ============================================================================
-// HTTP Function: allocatePointsBySellerManager (销售点数 - 收现金)
+// HTTP Function: allocatePointsBySellerManager (SM 直销 - 即时收现金)
 // ============================================================================
 
 /**
- * Seller Manager 销售点数给 Seller
- * 
- * - Seller 付现金购买点数
- * - 更新 customer.pointsAccount.availablePoints
- * - 记录现金收入到 sellerManager.cashStats
- * 
- * @version 3.1
- * @date 2026-01-12
+ * Seller Manager 直销点数给 Customer（即时收现金）
+ *
+ * 业务逻辑：
+ * - SM 旗下 Seller 已售完 EM 分配的点数，有余裕可加值
+ * - SM 收取等值现金，点数直接进入 customer.pointsAccount.availablePoints
+ * - 计入 totalSold（非 totalAllocated），因为现金已即时收取
+ *
+ * @version 4.0
+ * @date 2026-02-27
  */
 exports.allocatePointsBySellerManagerHttp = onRequest(
   {
@@ -85,28 +88,19 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
 
         const sellerManagerId = decodedToken.uid;
 
-        // 提取请求参数
-        const { 
-          organizationId, 
-          eventId, 
-          recipientId, 
-          points, 
-          allocationType,  // 'personal' 或 'inventory'
-          notes 
+        // 提取请求参数（已删除 allocationType，SM 只做直销）
+        const {
+          organizationId,
+          eventId,
+          recipientId,
+          points,
+          notes
         } = req.body;
 
         // 验证必填字段
         if (!organizationId || !eventId || !recipientId || !points) {
           return res.status(400).json({
             error: { code: 'invalid-argument', message: '缺少必填字段' }
-          });
-        }
-
-        // 验证分配类型（如果未提供，默认为 personal）
-        const finalAllocationType = allocationType || 'personal';
-        if (!['inventory', 'personal'].includes(finalAllocationType)) {
-          return res.status(400).json({
-            error: { code: 'invalid-argument', message: '无效的分配类型' }
           });
         }
 
@@ -117,11 +111,8 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
           });
         }
 
-        logger.info(`[${requestId}] 验证通过，开始分配`, {
-          sellerManagerId,
-          recipientId,
-          points,
-          allocationType: finalAllocationType
+        logger.info(`[${requestId}] 验证通过，开始直销`, {
+          sellerManagerId, recipientId, points
         });
 
         // ========== 第1步: 验证 Seller Manager 身份和权限 ==========
@@ -136,9 +127,7 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
         }
 
         const smData = smDoc.data();
-        const roles = smData.roles || [];
-
-        if (!roles.includes('sellerManager')) {
+        if (!smData.roles?.includes('sellerManager')) {
           return res.status(403).json({
             error: { code: 'permission-denied', message: '您没有 Seller Manager 权限' }
           });
@@ -156,8 +145,7 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
 
         const recipientData = recipientDoc.data();
         const recipientDept = recipientData.identityInfo?.department ||
-          recipientData.department ||
-          recipientData.basicInfo?.department;
+          recipientData.department || recipientData.basicInfo?.department;
         const managedDepartments = smData.sellerManager?.managedDepartments ||
           smData.managedDepartments || [];
 
@@ -180,231 +168,154 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
         const eventData = eventDoc.data();
         const maxPerAllocation = eventData.pointAllocationRules?.sellerManager?.maxPerAllocation || 100;
 
-        // 验证分配限额
         if (points > maxPerAllocation) {
           return res.status(400).json({
             error: {
               code: 'invalid-argument',
-              message: `超出单次分配限额（最多 ${maxPerAllocation} 点）`
+              message: `超出单次销售限额（最多 ${maxPerAllocation} 点）`
             }
           });
         }
 
-        // ========== 第4步: 使用事务执行分配 ==========
+        // ========== 第4步: 使用事务执行直销 ==========
         const result = await db.runTransaction(async (transaction) => {
-          // 4.1 重新读取最新数据
-          const smDocInTx = await transaction.get(smRef);
+          const smDocInTx        = await transaction.get(smRef);
           const recipientDocInTx = await transaction.get(recipientRef);
+          const eventDocInTx     = await transaction.get(eventRef);
 
-          if (!smDocInTx.exists || !recipientDocInTx.exists) {
-            throw new Error('用户数据已被删除');
+          if (!smDocInTx.exists || !recipientDocInTx.exists || !eventDocInTx.exists) {
+            throw new Error('数据已被删除，请刷新后重试');
           }
 
-          const smDataInTx = smDocInTx.data();
+          const smDataInTx        = smDocInTx.data();
           const recipientDataInTx = recipientDocInTx.data();
 
-          // 4.2 获取当前余额（根据类型）
-          let currentBalance;
-          if (finalAllocationType === 'inventory') {
-            currentBalance = recipientDataInTx.seller?.availablePoints || 0;
-          } else {
-            currentBalance = recipientDataInTx.customer?.pointsAccount?.availablePoints || 0;
+          if (!recipientDataInTx.roles?.includes('customer')) {
+            throw new Error('接收者没有 customer 角色');
           }
 
-          // 4.3 创建分配记录
-          const allocationRef = smRef.collection('pointAllocations').doc();
-          const allocationId = allocationRef.id;
+          const currentBalance = recipientDataInTx.customer?.pointsAccount?.availablePoints || 0;
           const now = admin.firestore.FieldValue.serverTimestamp();
 
-          const allocationData = {
-            allocationId: allocationId,
-            fromUserId: sellerManagerId,
-            toUserId: recipientId,
-            toDepartment: recipientDept,
-            points: points,
-            allocationType: finalAllocationType,
-            reason: notes || (finalAllocationType === 'inventory' ? '分配销售库存' : '购买消费点数'),
-            allocatedAt: now,
-            status: 'completed',
-            
-            // 接收者快照
-            recipientSnapshot: {
-              recipientName: recipientDataInTx.basicInfo?.chineseName || 
-                            recipientDataInTx.basicInfo?.englishName || 'N/A',
-              recipientDepartment: recipientDept,
-              beforeBalance: currentBalance,
-              afterBalance: currentBalance + points
-            }
-          };
+          // 4.2 创建 pointAllocations 子集合记录
+          // ⚠️ 触发 onSellerManagerAllocation，触发器已修正为读取 allocationType
+          //    personal 类型：触发器不重复写 customer 点数，只更新统计汇总
+          const allocationRef = smRef.collection('pointAllocations').doc();
+          const allocationId  = allocationRef.id;
 
-          // 只有 personal 类型才记录现金
-          if (finalAllocationType === 'personal') {
-            allocationData.cashReceived = points;
-            allocationData.cashReceivedAt = now;
-            allocationData.cashRecordedInSubmission = false;
-          }
-
-          transaction.set(allocationRef, allocationData);
-
-          // 4.3.1 写入 transactions（仅 personal=收现金 购买消费点数）
-          // 说明：目前前端 SellerManager 的“直接销售”走 HTTP 端点 /api/allocatePointsBySellerManager
-          // 若不写入 transactions，Firestore 的 transactions 集合将看不到 SellerManager 的销售记录。
-          let transactionId = null;
-          if (finalAllocationType === 'personal') {
-            transactionId = `SM2C_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const txRef = db.doc(
-              `organizations/${organizationId}/events/${eventId}/transactions/${transactionId}`
-            );
-
-            const txData = {
-              transactionId,
-
-              // 兼容旧读取逻辑
-              type: 'sellerManager_to_customer',
-              // 对齐 firestore最新架構.json: transactions.transactionType
-              transactionType: 'sellerManager_to_customer',
-
-              organizationId,
-              eventId,
-
-              // Seller Manager 信息
-              sellerId: sellerManagerId,
-              sellerName:
-                smDataInTx.basicInfo?.chineseName ||
-                smDataInTx.basicInfo?.englishName ||
-                'Seller Manager',
-              sellerRole: 'sellerManager',
-              sellerDepartment: recipientDept,
-
-              // Customer 信息（Seller 购买消费点数时，身份是 customer）
-              customerId: recipientId,
-              customerName:
-                recipientDataInTx.basicInfo?.chineseName ||
-                recipientDataInTx.basicInfo?.englishName ||
-                'Customer',
-              customerDepartment: recipientDept,
-
-              // 交易信息
-              amount: points,
-              points: points,
-              note: notes || '',
-
-              // 余额快照
-              sellerBalanceBefore: 0,
-              sellerBalanceAfter: 0,
-              customerBalanceBefore: currentBalance,
-              customerBalanceAfter: currentBalance + points,
-
-              timestamp: now,
-              status: 'completed',
-
-              metadata: {
-                createdAt: now,
-                source: 'allocatePointsBySellerManagerHttp',
-                allocationId,
-                allocationType: finalAllocationType
-              }
-            };
-
-            transaction.set(txRef, txData);
-          }
-
-          logger.info(`[${requestId}] 创建分配记录`, {
+          transaction.set(allocationRef, {
             allocationId,
+            fromUserId:     sellerManagerId,
+            toUserId:       recipientId,
+            toDepartment:   recipientDept,
             points,
-            allocationType: finalAllocationType,
-            cashReceived: finalAllocationType === 'personal' ? points : 0
+            allocationType: 'personal',
+            reason:         notes || '直销消费点数（即时收现金）',
+            allocatedAt:    now,
+            status:         'completed',
+            cashReceived:   points,
+            cashReceivedAt: now,
+            cashRecordedInSubmission: false,
+            recipientSnapshot: {
+              recipientName:       recipientDataInTx.basicInfo?.chineseName ||
+                                   recipientDataInTx.basicInfo?.englishName || 'N/A',
+              recipientDepartment: recipientDept,
+              beforeBalance:       currentBalance,
+              afterBalance:        currentBalance + points
+            }
           });
 
-          // 4.4 更新接收者的点数（根据类型）
-          if (finalAllocationType === 'inventory') {
-            // 免费分配销售库存
-            transaction.update(recipientRef, {
-              'seller.availablePoints': admin.firestore.FieldValue.increment(points),
-              'seller.totalReceived': admin.firestore.FieldValue.increment(points),
-              updatedAt: now
-            });
+          // 4.3 写入 transactions 集合（供 Auditor / 财务查阅）
+          const transactionId = `SM2C_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const txRef = db.doc(
+            `organizations/${organizationId}/events/${eventId}/transactions/${transactionId}`
+          );
 
-            logger.info(`[${requestId}] 更新销售库存`, {
-              recipientId,
-              pointsAdded: points
-            });
-
-          } else {
-            // 付费购买消费点数
-            transaction.update(recipientRef, {
-              'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(points),
-              'customer.pointsAccount.totalReceived': admin.firestore.FieldValue.increment(points),
-              updatedAt: now
-            });
-
-            logger.info(`[${requestId}] 更新消费余额`, {
-              recipientId,
-              pointsAdded: points
-            });
-          }
-
-          // 4.5 更新 Seller Manager 统计
-          const smUpdates = {
-            'sellerManager.totalAllocations': admin.firestore.FieldValue.increment(1),
-            'sellerManager.totalPointsAllocated': admin.firestore.FieldValue.increment(points),
-            'sellerManager.lastAllocationAt': now,
-            updatedAt: now
-          };
-
-          // ✅ 只有 personal 类型才更新现金统计
-          if (finalAllocationType === 'personal') {
-            // ✅ 修复：直接更新子字段，不设置整个对象
-            // Firestore 会自动创建父对象
-            
-            const currentCashSources = smDataInTx.sellerManager?.cashStats?.cashSources;
-            
-            // 更新现金手上
-            smUpdates['sellerManager.cashStats.cashOnHand'] = admin.firestore.FieldValue.increment(points);
-            
-            // 更新购点收入
-            smUpdates['sellerManager.cashStats.cashSources.fromPointPurchase'] = admin.firestore.FieldValue.increment(points);
-            
-            // ✅ 只在第一次时初始化 fromPointSales（如果需要）
-            if (!currentCashSources || currentCashSources.fromPointSales === undefined) {
-              const currentCashOnHand = smDataInTx.sellerManager?.cashStats?.cashOnHand || 0;
-              // 使用单独的字段路径，不会冲突
-              smUpdates['sellerManager.cashStats.cashSources.fromPointSales'] = currentCashOnHand;
+          transaction.set(txRef, {
+            transactionId,
+            type:            'sellerManager_to_customer',
+            transactionType: 'sellerManager_to_customer',
+            organizationId,
+            eventId,
+            sellerId:         sellerManagerId,
+            sellerName:       smDataInTx.basicInfo?.chineseName ||
+                              smDataInTx.basicInfo?.englishName || 'Seller Manager',
+            sellerRole:       'sellerManager',
+            sellerDepartment: recipientDept,
+            customerId:         recipientId,
+            customerName:       recipientDataInTx.basicInfo?.chineseName ||
+                                recipientDataInTx.basicInfo?.englishName || 'Customer',
+            customerDepartment: recipientDept,
+            amount:  points,
+            points:  points,
+            note:    notes || '',
+            sellerBalanceBefore:   0,
+            sellerBalanceAfter:    0,
+            customerBalanceBefore: currentBalance,
+            customerBalanceAfter:  currentBalance + points,
+            timestamp: now,
+            status:    'completed',
+            metadata: {
+              createdAt:      now,
+              source:         'allocatePointsBySellerManagerHttp',
+              allocationId,
+              allocationType: 'personal'
             }
+          });
 
-            logger.info(`[${requestId}] ✅ 更新 SM 现金统计`, {
-              cashReceived: points
-            });
-          }
+          // 4.4 更新 Customer 消费点数
+          transaction.update(recipientRef, {
+            'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(points),
+            'customer.pointsAccount.totalReceived':   admin.firestore.FieldValue.increment(points),
+            'customer.pointsAccount.lastTransactionAt': now,
+            updatedAt: now
+          });
 
-          transaction.update(smRef, smUpdates);
+          // 4.5 更新 Seller Manager 现金统计
+          transaction.update(smRef, {
+            'sellerManager.cashStats.cashOnHand':                    admin.firestore.FieldValue.increment(points),
+            'sellerManager.cashStats.cashSources.fromPointPurchase': admin.firestore.FieldValue.increment(points),
+            'sellerManager.totalAllocations':                        admin.firestore.FieldValue.increment(1),
+            'sellerManager.totalPointsAllocated':                    admin.firestore.FieldValue.increment(points),
+            'sellerManager.lastAllocationAt':                        now,
+            updatedAt: now
+          });
+
+          // 4.6 ⭐ 新增（2026-02-27）：更新 Event 层级全局统计
+          // SM 直销 = 即时收现金，属于"已售出"，计入 totalSold（不是 totalAllocated）
+          transaction.update(eventRef, {
+            'globalPointsStats.totalSold':                    admin.firestore.FieldValue.increment(points),
+            'globalPointsStats.lastUpdated':                  admin.firestore.FieldValue.serverTimestamp(),
+            'financeSummary.points.totalSold':                admin.firestore.FieldValue.increment(points),
+            'roleStats.sellerManagers.totalDirectSales':      admin.firestore.FieldValue.increment(1),
+            'roleStats.sellerManagers.totalPointsDirectSold': admin.firestore.FieldValue.increment(points)
+          });
+
+          logger.info(`[${requestId}] ✅ 事务完成`, { allocationId, transactionId, points });
 
           return {
-            success: true,
-            allocationId: allocationId,
+            success:      true,
+            allocationId,
             transactionId,
-            points: points,
-            allocationType: finalAllocationType,
-            cashReceived: finalAllocationType === 'personal' ? points : 0,
-            recipientId: recipientId,
-            recipientName: recipientDataInTx.basicInfo?.chineseName,
-            newBalance: currentBalance + points
+            points,
+            recipientId,
+            recipientName:  recipientDataInTx.basicInfo?.chineseName,
+            newBalance:     currentBalance + points,
+            cashReceived:   points
           };
         });
 
-        logger.info(`[${requestId}] ✅ 分配成功`, result);
-
+        logger.info(`[${requestId}] ✅ 直销成功`, result);
         return res.status(200).json(result);
 
       } catch (error) {
-        logger.error(`[${requestId}] ❌ 分配失败`, {
+        logger.error(`[${requestId}] ❌ 直销失败`, {
           error: error.message,
           stack: error.stack
         });
-
         return res.status(500).json({
           error: {
-            code: 'internal',
+            code:    'internal',
             message: error.message || '服务器内部错误，请稍后重试'
           }
         });

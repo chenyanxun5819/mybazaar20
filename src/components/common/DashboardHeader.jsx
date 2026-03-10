@@ -35,13 +35,14 @@ const DashboardHeader = ({
   showRoleSwitcher = false,  // 是否顯示角色切換器
   showRefreshButton = false, // 是否顯示重新整理按鈕
   customActions,     // 自訂操作按鈕陣列（可選）
+  fixed = false,
 }) => {
   const [logoutHover, setLogoutHover] = useState(false);
   const resolvedUserName = userName || userInfo?.basicInfo?.chineseName || userInfo?.basicInfo?.englishName || '';
   const resolvedUserPhone = userPhone || userInfo?.basicInfo?.phoneNumber || userInfo?.phoneNumber || '';
 
   return (
-    <header className="dashboard-header-shared">
+    <header className={`dashboard-header-shared ${fixed ? 'dashboard-header-fixed' : ''}`}>
       <div className="dashboard-header-content">
         {/* 左側：Logo + Title + Subtitle + User Info */}
         <div className="dashboard-header-left">
