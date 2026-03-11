@@ -3,7 +3,7 @@ const functions = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
   defineBoolean,
-  defineJsonSecret,
+  defineSecret,
   defineString,
 } = require('firebase-functions/params');
 const crypto = require('crypto');
@@ -23,7 +23,9 @@ function parseBooleanEnv(value, defaultValue = false) {
   return defaultValue;
 }
 
-const SMS_SECRETS = defineJsonSecret('SMS_SECRETS');
+const SMS_SECRETS = defineSecret('SMS_SECRETS');
+const API_KEY_360_SECRET = defineSecret('API_KEY_360');
+const API_SECRET_360_SECRET = defineSecret('API_SECRET_360');
 const USE_DEV_OTP_PARAM = defineBoolean('USE_DEV_OTP');
 const DEV_OTP_CODE_PARAM = defineString('DEV_OTP_CODE', { default: '223344' });
 const SMS_PROVIDER_PARAM = defineString('SMS_PROVIDER', { default: '' });
@@ -47,18 +49,44 @@ function readParamValue(param, fallbackValue) {
   }
 }
 
+function parseSmsSecrets(rawValue, sourceLabel) {
+  if (!rawValue) return {};
+
+  if (typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+    return rawValue;
+  }
+
+  if (typeof rawValue !== 'string') {
+    console.warn(`[SMS Config] ⚠️ ${sourceLabel} 不是有效的字串或对象`);
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch (error) {
+    console.warn(`[SMS Config] ⚠️ 無法解析 ${sourceLabel}，本次將回退到其他來源`);
+    return {};
+  }
+}
+
 function getSmsSecrets() {
+  const directApiKey = String(readParamValue(API_KEY_360_SECRET, process.env.API_KEY_360 || '') || '').trim();
+  const directApiSecret = String(readParamValue(API_SECRET_360_SECRET, process.env.API_SECRET_360 || '') || '').trim();
+
+  if (directApiKey && directApiSecret) {
+    return {
+      apiKey360: directApiKey,
+      apiSecret360: directApiSecret,
+    };
+  }
+
   let parsedSecrets = {};
 
   try {
-    parsedSecrets = SMS_SECRETS.value() || {};
+    parsedSecrets = parseSmsSecrets(SMS_SECRETS.value(), 'SMS_SECRETS secret');
   } catch (error) {
     if (process.env.SMS_SECRETS) {
-      try {
-        parsedSecrets = JSON.parse(process.env.SMS_SECRETS);
-      } catch (parseError) {
-        console.warn('[SMS Config] ⚠️ 無法解析 SMS_SECRETS，本次將回退到其他來源');
-      }
+      parsedSecrets = parseSmsSecrets(process.env.SMS_SECRETS, 'process.env.SMS_SECRETS');
     }
   }
 
@@ -300,7 +328,7 @@ function shouldBypassSms(phoneNumber, settings) {
  * 1. 登录场景（UniversalLogin）- 参数：{ phoneNumber, orgCode, eventCode, loginType }
  * 2. 付款场景（CustomerPayment）- 参数：{ phoneNumber, userId, scenario, scenarioData }
  */
-exports.sendOtpHttp = onRequest({ secrets: [SMS_SECRETS] }, async (req, res) => {
+exports.sendOtpHttp = onRequest({ secrets: [SMS_SECRETS, API_KEY_360_SECRET, API_SECRET_360_SECRET] }, async (req, res) => {
   // CORS 與方法檢查
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
