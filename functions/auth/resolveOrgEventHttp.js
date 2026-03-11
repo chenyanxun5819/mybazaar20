@@ -6,7 +6,7 @@ const admin = require('firebase-admin');
  *
  * @route POST /api/resolveOrgEventHttp
  * @body { orgCode: string, eventCode: string }
- * @returns { success: true, organizationId, eventId }
+ * @returns { success: true, organizationId, eventId, organization, event }
  */
 exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -34,6 +34,25 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
 
   try {
     const db = admin.firestore();
+    const buildPublicPayload = (organizationId, eventId, orgData, eventData) => ({
+      success: true,
+      organizationId,
+      eventId,
+      organization: {
+        id: organizationId,
+        orgCode: orgData?.orgCode || orgCodeLower,
+        orgName: orgData?.orgName || null
+      },
+      event: {
+        id: eventId,
+        eventCode: eventData?.eventCode || eventCodeStr,
+        eventName: eventData?.eventName || null,
+        logoUrl: eventData?.logoUrl || '',
+        erudaSettings: {
+          enabled: eventData?.erudaSettings?.enabled === true
+        }
+      }
+    });
 
     const orgSnapshot = await db
       .collection('organizations')
@@ -53,11 +72,9 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
           .get();
 
         if (evtByIdSnap.exists) {
-          return res.status(200).json({
-            success: true,
-            organizationId: orgCodeRaw,
-            eventId: eventCodeStr
-          });
+          return res.status(200).json(
+            buildPublicPayload(orgCodeRaw, eventCodeStr, orgByIdSnap.data(), evtByIdSnap.data())
+          );
         }
 
         return res.status(404).json({
@@ -72,6 +89,7 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
 
     const orgDoc = orgSnapshot.docs[0];
     const organizationId = orgDoc.id;
+    const orgData = orgDoc.data();
 
     const eventSnapshot = await db
       .collection('organizations')
@@ -91,11 +109,9 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
         .get();
 
       if (evtByIdSnap.exists) {
-        return res.status(200).json({
-          success: true,
-          organizationId,
-          eventId: eventCodeStr
-        });
+        return res.status(200).json(
+          buildPublicPayload(organizationId, eventCodeStr, orgData, evtByIdSnap.data())
+        );
       }
 
       return res.status(404).json({
@@ -105,12 +121,11 @@ exports.resolveOrgEventHttp = functions.https.onRequest(async (req, res) => {
 
     const eventDoc = eventSnapshot.docs[0];
     const eventId = eventDoc.id;
+    const eventData = eventDoc.data();
 
-    return res.status(200).json({
-      success: true,
-      organizationId,
-      eventId
-    });
+    return res.status(200).json(
+      buildPublicPayload(organizationId, eventId, orgData, eventData)
+    );
   } catch (err) {
     console.error('[resolveOrgEventHttp] 错误:', err);
     return res.status(500).json({

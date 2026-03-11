@@ -1,9 +1,14 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-02-15-v11",
-    "lastUpdated": "2026-02-15",
+    "version": "2026-03-11-v14",
+    "lastUpdated": "2026-03-11",
     "architectureChanges": {
+      "version_2026-03-11-v14": [
+        "🔧 Events 新增 erudaSettings 配置字段（前端调试工具控制）",
+        "🛠️ Platform Admin 可为每个 Event 独立启用/禁用 Eruda 调试面板",
+        "📱 包含 enabled, enabledAt, enabledBy, disabledAt, disabledBy 字段"
+      ],
       "version_2026-03-09-v13": [
         "🏪 merchants 集合新增 merchantCode 字段（业务编号，格式 M001~M999，按活动内流水序号）",
         "🔢 events.roleStats.merchants 新增 lastMerchantSeq 字段（流水序号计数器，只增不减）",
@@ -243,6 +248,14 @@
                 "enabledBy": "string (Platform Admin UID，可选)",
                 "provider": "string (SMS提供商，默认'360')",
                 "notes": "当 enabled=false 时使用固定OTP: 223344；enabled=true 时发送真实360短信"
+              },
+              "erudaSettings": {
+                "enabled": "boolean (是否启用 Eruda 调试面板，默认false)",
+                "enabledAt": "timestamp (启用时间，可选)",
+                "enabledBy": "string (Platform Admin UID，可选)",
+                "disabledAt": "timestamp (禁用时间，可选)",
+                "disabledBy": "string (Platform Admin UID，可选)",
+                "notes": "Eruda 是前端调试工具，用于生产环境问题诊断，可由 Platform Admin 按活动级别控制显示"
               },
               "eventManager": {
                 "description": "活动负责人基本联络信息（从 users 集合复制）",

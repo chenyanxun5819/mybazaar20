@@ -364,6 +364,22 @@ exports.updateEventDetailsHttp = onRequest(
           });
         }
 
+        // ========== ✨ 新增：更新 Eruda 设置 ==========
+        if (typeof updates.erudaEnabled === 'boolean') {
+          updateData['erudaSettings.enabled'] = updates.erudaEnabled;
+          if (updates.erudaEnabled) {
+            updateData['erudaSettings.enabledAt'] = admin.firestore.FieldValue.serverTimestamp();
+            updateData['erudaSettings.enabledBy'] = callerUid;
+          } else {
+            updateData['erudaSettings.disabledAt'] = admin.firestore.FieldValue.serverTimestamp();
+            updateData['erudaSettings.disabledBy'] = callerUid;
+          }
+
+          console.log('[updateEventDetailsHttp] 更新 Eruda 设置:', {
+            enabled: updates.erudaEnabled
+          });
+        }
+
         // ========== 步驟 6: 執行更新 ==========
         await eventRef.update(updateData);
 

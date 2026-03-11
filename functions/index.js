@@ -1,3 +1,4 @@
+require('./loadEnv');
 const functions = require('firebase-functions');
 // removed unused onDocumentCreated import (not used in this file)
 const { setGlobalOptions } = require('firebase-functions/v2');

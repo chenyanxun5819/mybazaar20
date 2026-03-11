@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../services/safeFetch';
+import { syncErudaVisibility } from '../utils/eruda';
 
 const EventContext = createContext();
 
@@ -71,6 +72,15 @@ export const EventProvider = ({ children }) => {
       link.href = logoUrl;
     }
   }, [event]);
+
+  useEffect(() => {
+    const enabled = Boolean(event?.erudaSettings?.enabled);
+    syncErudaVisibility(enabled);
+
+    return () => {
+      syncErudaVisibility(false);
+    };
+  }, [event?.erudaSettings?.enabled]);
 
   const parseUrlAndLoadData = async () => {
     try {
@@ -241,8 +251,17 @@ export const EventProvider = ({ children }) => {
         setOrganizationId(orgId);
         setEventId(evtId);
         // 最小化对象，避免未登入时被 Firestore rules 卡住
-        setOrganization({ id: orgId, orgCode: String(orgCode || '').trim().toLowerCase() });
-        setEvent({ id: evtId, eventCode: String(eventCode || '').trim() });
+        setOrganization(json.organization || { id: orgId, orgCode: String(orgCode || '').trim().toLowerCase() });
+        setEvent(json.event || { id: evtId, eventCode: String(eventCode || '').trim() });
+
+        if (json.organization?.orgCode) {
+          resolvedOrgCode = json.organization.orgCode;
+          setOrgCode(json.organization.orgCode);
+        }
+        if (json.event?.eventCode) {
+          resolvedEventCode = json.event.eventCode;
+          setEventCode(json.event.eventCode);
+        }
 
         console.log('[EventContext] ✅ 透过 HTTP 解析成功:', { orgId, evtId });
       };

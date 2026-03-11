@@ -5,6 +5,8 @@ const { onRequest } = require('firebase-functions/v2/https');
 const crypto = require('crypto');
 const cors = require('cors');
 
+const DEFAULT_SMS_PROVIDER = String(process.env.SMS_PROVIDER || 'disabled').trim().toLowerCase() || 'disabled';
+
 // 配置允許的來源
 const allowedOrigins = [
   'http://localhost:5173',
@@ -467,7 +469,7 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
       enabled: true,
       expirySeconds: 300,
       maxAttempts: 5,
-      provider: 'twilio'
+      provider: DEFAULT_SMS_PROVIDER
     },
     pin: {
       minLength: 6,

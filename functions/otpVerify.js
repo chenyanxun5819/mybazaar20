@@ -1,31 +1,115 @@
+require('./loadEnv');
 const functions = require('firebase-functions');
+const { onRequest } = require('firebase-functions/v2/https');
+const {
+  defineBoolean,
+  defineJsonSecret,
+  defineString,
+} = require('firebase-functions/params');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
 const https = require('https');
-require('dotenv').config();
 
 // ===========================================
 // 🔧 开发模式配置
 // ===========================================
-const USE_DEV_OTP = process.env.USE_DEV_OTP === 'true' || true;
-const DEV_OTP_CODE = '223344';
 
-console.log('[SMS Config] USE_DEV_OTP:', USE_DEV_OTP);
-if (USE_DEV_OTP) {
-  console.log('[SMS Config] 🔧 开发模式：使用固定 OTP', DEV_OTP_CODE);
+function parseBooleanEnv(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
 }
 
-// 360 配置
-const SMS_PROVIDER = process.env.SMS_PROVIDER || '360';
-const API_KEY_360 = process.env.API_KEY_360 || 'GELe3DQa69';
-const API_SECRET_360 = process.env.API_SECRET_360 || 'P5k4ukqYOmE2ULjjCZGQc5Mvzh7OFZLw7sY8zjUc';
+const SMS_SECRETS = defineJsonSecret('SMS_SECRETS');
+const USE_DEV_OTP_PARAM = defineBoolean('USE_DEV_OTP');
+const DEV_OTP_CODE_PARAM = defineString('DEV_OTP_CODE', { default: '223344' });
+const SMS_PROVIDER_PARAM = defineString('SMS_PROVIDER', { default: '' });
+const API_BASE_URL_360_PARAM = defineString('API_BASE_URL_360', {
+  default: 'https://sms.360.my/gw/bulk360/v3_0/send.php',
+});
 
-// Infobip 配置（备用）
-const INFOBIP_API_KEY = process.env.INFOBIP_API_KEY || '6af983e84d2cd133e4afef095c5dd90e-b6ad3de7-5278-416d-916c-8bcb684a234a';
-const INFOBIP_API_BASE_URL = process.env.INFOBIP_API_BASE_URL || '51w5lj.api.infobip.com';
-const INFOBIP_SENDER_NUMBER = process.env.INFOBIP_SENDER_NUMBER || 'MyBazaar';
+function resolveSmsProvider(explicitProvider, runtimeConfig) {
+  const normalizedProvider = String(explicitProvider || '').trim().toLowerCase();
+  if (normalizedProvider) return normalizedProvider;
+  if (runtimeConfig.apiKey360 && runtimeConfig.apiSecret360) return '360';
+  return 'disabled';
+}
 
-console.log('[SMS Config] SMS_PROVIDER:', SMS_PROVIDER);
+function readParamValue(param, fallbackValue) {
+  try {
+    const value = param.value();
+    return value === undefined ? fallbackValue : value;
+  } catch (error) {
+    return fallbackValue;
+  }
+}
+
+function getSmsSecrets() {
+  let parsedSecrets = {};
+
+  try {
+    parsedSecrets = SMS_SECRETS.value() || {};
+  } catch (error) {
+    if (process.env.SMS_SECRETS) {
+      try {
+        parsedSecrets = JSON.parse(process.env.SMS_SECRETS);
+      } catch (parseError) {
+        console.warn('[SMS Config] ⚠️ 無法解析 SMS_SECRETS，本次將回退到其他來源');
+      }
+    }
+  }
+
+  return {
+    apiKey360: String(parsedSecrets.API_KEY_360 || process.env.API_KEY_360 || '').trim(),
+    apiSecret360: String(parsedSecrets.API_SECRET_360 || process.env.API_SECRET_360 || '').trim(),
+  };
+}
+
+function getRuntimeSmsConfig() {
+  const secrets = getSmsSecrets();
+  const useDevOtp = parseBooleanEnv(
+    readParamValue(USE_DEV_OTP_PARAM, process.env.USE_DEV_OTP),
+    false
+  );
+  const rawDevOtpCode = String(
+    readParamValue(DEV_OTP_CODE_PARAM, process.env.DEV_OTP_CODE || '223344') || '223344'
+  ).trim();
+
+  const runtimeConfig = {
+    useDevOtp,
+    devOtpCode: /^\d{6}$/.test(rawDevOtpCode) ? rawDevOtpCode : '223344',
+    apiKey360: secrets.apiKey360,
+    apiSecret360: secrets.apiSecret360,
+    apiBaseUrl360: String(
+      readParamValue(
+        API_BASE_URL_360_PARAM,
+        process.env.API_BASE_URL_360 || 'https://sms.360.my/gw/bulk360/v3_0/send.php'
+      ) || 'https://sms.360.my/gw/bulk360/v3_0/send.php'
+    ).trim(),
+  };
+
+  runtimeConfig.smsProvider = resolveSmsProvider(
+    readParamValue(SMS_PROVIDER_PARAM, process.env.SMS_PROVIDER || ''),
+    runtimeConfig
+  );
+
+  return runtimeConfig;
+}
+
+function logRuntimeSmsConfig(runtimeConfig) {
+  console.log('[SMS Config] USE_DEV_OTP:', runtimeConfig.useDevOtp);
+  if (runtimeConfig.useDevOtp) {
+    console.warn('[SMS Config] 🔧 开发模式已开启：OTP 将不会透过真实短信发送');
+  }
+
+  console.log('[SMS Config] SMS_PROVIDER:', runtimeConfig.smsProvider);
+  if (!runtimeConfig.useDevOtp && runtimeConfig.smsProvider === 'disabled') {
+    console.warn('[SMS Config] ⚠️ 未配置可用的 SMS 提供商，真实 OTP 短信将无法发送');
+  }
+}
 
 // ===========================================
 // 🔧 读取 Platform Settings
@@ -54,9 +138,14 @@ async function getPlatformSettings() {
 /**
  * 使用 360 API 发送 SMS
  */
-function sendSmsVia360(phoneNumber, message) {
+function sendSmsVia360(phoneNumber, message, runtimeConfig) {
   return new Promise((resolve, reject) => {
     try {
+      if (!runtimeConfig.apiKey360 || !runtimeConfig.apiSecret360) {
+        reject(new Error('缺少 360 SMS 配置，请设置 API_KEY_360 与 API_SECRET_360'));
+        return;
+      }
+
       let msisdn = String(phoneNumber || '').replace(/[^\d+]/g, '');
       if (msisdn.startsWith('+')) msisdn = msisdn.slice(1);
       if (msisdn.startsWith('0')) {
@@ -68,8 +157,8 @@ function sendSmsVia360(phoneNumber, message) {
       }
 
       const queryParams = new URLSearchParams({
-        user: API_KEY_360,
-        pass: API_SECRET_360,
+        user: runtimeConfig.apiKey360,
+        pass: runtimeConfig.apiSecret360,
         to: msisdn,
         text: message,
         detail: '1'
@@ -77,10 +166,11 @@ function sendSmsVia360(phoneNumber, message) {
 
       const bodyStr = queryParams.toString();
 
+      const endpoint = new URL(runtimeConfig.apiBaseUrl360);
       const options = {
-        hostname: 'sms.360.my',
+        hostname: endpoint.hostname,
         port: 443,
-        path: '/gw/bulk360/v3_0/send.php',
+        path: endpoint.pathname || '/gw/bulk360/v3_0/send.php',
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -120,56 +210,7 @@ function sendSmsVia360(phoneNumber, message) {
   });
 }
 
-/**
- * 使用 HTTPS 发送 SMS（基于 Infobip API）
- */
-function sendSmsViaHttps(phoneNumber, message) {
-  return new Promise((resolve, reject) => {
-    try {
-      const requestBody = JSON.stringify({
-        messages: [{
-          destinations: [{ to: phoneNumber.replace(/\s+/g, '') }],
-          from: INFOBIP_SENDER_NUMBER.replace(/\s+/g, ''),
-          text: message
-        }]
-      });
 
-      const options = {
-        hostname: INFOBIP_API_BASE_URL,
-        port: 443,
-        path: '/sms/2/text/advanced',
-        method: 'POST',
-        headers: {
-          'Authorization': `App ${INFOBIP_API_KEY}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(requestBody)
-        }
-      };
-
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          if (res.statusCode === 200 || res.statusCode === 201) {
-            try {
-              resolve(JSON.parse(data));
-            } catch (e) {
-              reject(new Error(`Failed to parse Infobip response: ${data}`));
-            }
-          } else {
-            reject(new Error(`Infobip error (${res.statusCode}): ${data}`));
-          }
-        });
-      });
-
-      req.on('error', (error) => { reject(error); });
-      req.write(requestBody);
-      req.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
 
 // ===========================================
 // 🔐 OTP 工具函数
@@ -180,11 +221,16 @@ function sendSmsViaHttps(phoneNumber, message) {
  * @param {object} settings - Platform设置
  * @param {object} eventSettings - Event级别的OTP设置（优先级高于Platform设置）
  */
-function generateOtpCode(settings = null, eventSettings = null) {
+function generateOtpCode(settings = null, eventSettings = null, runtimeConfig = {}) {
+  if (runtimeConfig.useDevOtp) {
+    console.log('[generateOtpCode] 🔧 环境变量：返回固定 OTP');
+    return runtimeConfig.devOtpCode;
+  }
+
   // ✅ 优先检查 Event 级别的设置
   if (eventSettings && eventSettings.enabled === false) {
     console.log('[generateOtpCode] 🔧 Event设置：使用开发OTP (Event未启用真实OTP)');
-    return DEV_OTP_CODE;
+    return runtimeConfig.devOtpCode || '223344';
   }
   
   if (eventSettings && eventSettings.enabled === true) {
@@ -195,12 +241,7 @@ function generateOtpCode(settings = null, eventSettings = null) {
   // 如果没有Event设置，回退到Platform设置
   if (settings && settings.otp && settings.otp.devMode && settings.otp.devMode.enabled) {
     console.log('[generateOtpCode] 🔧 Platform设置：返回固定 OTP');
-    return settings.otp.devMode.fixedCode || DEV_OTP_CODE;
-  }
-
-  if (USE_DEV_OTP) {
-    console.log('[generateOtpCode] 🔧 环境变量：返回固定 OTP');
-    return DEV_OTP_CODE;
+    return settings.otp.devMode.fixedCode || runtimeConfig.devOtpCode || '223344';
   }
 
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -259,7 +300,7 @@ function shouldBypassSms(phoneNumber, settings) {
  * 1. 登录场景（UniversalLogin）- 参数：{ phoneNumber, orgCode, eventCode, loginType }
  * 2. 付款场景（CustomerPayment）- 参数：{ phoneNumber, userId, scenario, scenarioData }
  */
-exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
+exports.sendOtpHttp = onRequest({ secrets: [SMS_SECRETS] }, async (req, res) => {
   // CORS 與方法檢查
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -271,6 +312,9 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
   }
 
   console.log('[sendOtpHttp] ========== 开始处理 ==========');
+  const runtimeConfig = getRuntimeSmsConfig();
+  logRuntimeSmsConfig(runtimeConfig);
+  const { useDevOtp, devOtpCode, smsProvider } = runtimeConfig;
 
   // 標準 HTTP 請求：直接從 req.body 讀取
   const requestData = req.body || {};
@@ -365,12 +409,12 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 
     // ========== 步驟3: 生成 OTP Code（优先使用Event设置）==========
     console.log('[sendOtpHttp] 调用 generateOtpCode...');
-    const otpCode = generateOtpCode(settings, eventOtpSettings);
-    console.log('[sendOtpHttp] OTP Code:', otpCode);
+    const otpCode = generateOtpCode(settings, eventOtpSettings, runtimeConfig);
+    console.log('[sendOtpHttp] OTP Code generated');
     
     // ========== 步驟4: 决定是否发送真实SMS ==========
     // 如果Event明确启用了真实OTP，则发送真实短信
-    const shouldSendRealSms = eventOtpSettings?.enabled === true;
+    const shouldSendRealSms = eventOtpSettings?.enabled === true && !useDevOtp;
     console.log('[sendOtpHttp] 是否发送真实SMS:', shouldSendRealSms);
 
     // 生成 session ID
@@ -396,7 +440,7 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
       expiresAt,
       status: 'pending',
       attempts: 0,
-      devMode: USE_DEV_OTP || (settings?.otp?.devMode?.enabled === true),
+      devMode: useDevOtp || eventOtpSettings?.enabled === false || (settings?.otp?.devMode?.enabled === true),
       // ✅ 保存 orgCode 和 eventCode（用于登录场景的验证）
       orgCode: orgCode || '',
       eventCode: eventCode || ''
@@ -412,9 +456,9 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
 
     if (bypassSms) {
       console.log('[sendOtpHttp] ⚠️ 测试号码，跳过 SMS 发送');
-    } else if (!shouldSendRealSms && USE_DEV_OTP) {
+    } else if (!shouldSendRealSms && useDevOtp) {
       // 🔧 开发模式 OR Event未启用真实OTP：不发送真实 SMS
-      console.log('[sendOtpHttp] 🔧 开发模式 OR Event未启用真实OTP：跳过实际 SMS 发送，使用固定 OTP:', DEV_OTP_CODE);
+      console.log('[sendOtpHttp] 🔧 开发模式 OR Event未启用真实OTP：跳过实际 SMS 发送，使用固定 OTP:', devOtpCode);
     } else if (shouldSendRealSms) {
       // ✅ Event启用了真实OTP：发送真实 SMS
       console.log('[sendOtpHttp] 📱 Event已启用真实OTP：发送真实短信');
@@ -433,22 +477,26 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
         smsMessage = `您的MyBazaar验证码是：${otpCode}。有效期${expiryMinutes}分钟。`;
       }
 
-      console.log('[sendOtpHttp] SMS 消息:', smsMessage);
+      console.log('[sendOtpHttp] SMS 消息模板已准备');
 
       // 发送 SMS
       try {
         console.log('[sendOtpHttp] 开始发送 SMS...');
 
-        if (SMS_PROVIDER === '360') {
+        if (smsProvider === 'disabled') {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            '未配置可用的 SMS 提供商，请先设置 Firebase params / Secret Manager'
+          );
+        }
+
+        if (smsProvider === '360') {
           console.log('[sendOtpHttp] 使用 360 API');
-          const result = await sendSmsVia360(phoneNumber, smsMessage);
+          const result = await sendSmsVia360(phoneNumber, smsMessage, runtimeConfig);
           console.log('[sendOtpHttp] ✅ SMS 发送成功（360）:', result);
-        } else if (SMS_PROVIDER === 'infobip') {
-          console.log('[sendOtpHttp] 使用 Infobip API');
-          const result = await sendSmsViaHttps(phoneNumber, smsMessage);
-          console.log('[sendOtpHttp] ✅ SMS 发送成功（Infobip）:', result);
+
         } else {
-          console.warn('[sendOtpHttp] ⚠️ 未知的 SMS_PROVIDER:', SMS_PROVIDER);
+          console.warn('[sendOtpHttp] ⚠️ 未知的 SMS_PROVIDER:', smsProvider);
         }
       } catch (smsError) {
         console.error('[sendOtpHttp] ⚠️ SMS 发送失败:', smsError);
@@ -488,12 +536,15 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
     };
 
     // 开发模式：返回 OTP 供测试
-    if (USE_DEV_OTP || bypassSms) {
+    if (useDevOtp || bypassSms || !shouldSendRealSms) {
       response.testOtp = otpCode;
       response.devMode = true;
     }
 
-    console.log('[sendOtpHttp] Response:', response);
+    console.log('[sendOtpHttp] Response:', {
+      ...response,
+      testOtp: response.testOtp ? '[hidden]' : undefined
+    });
     return res.status(200).json(response);
 
   } catch (error) {
@@ -552,7 +603,7 @@ exports.sendOtpHttp = functions.https.onRequest(async (req, res) => {
  * POST /api/verifyOtpHttp
  * { phoneNumber: "+60123456789", otp: "223344", orgCode: "chhs", eventCode: "ban" }
  */
-exports.verifyOtpHttp = functions.https.onRequest(async (req, res) => {
+exports.verifyOtpHttp = onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');

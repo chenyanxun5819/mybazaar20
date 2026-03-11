@@ -21,6 +21,12 @@
 const admin = require('firebase-admin');
 const path = require('path');
 const fs = require('fs');
+require('./loadEnv');
+
+const DEFAULT_DEV_OTP_CODE = /^\d{6}$/.test(String(process.env.DEV_OTP_CODE || ''))
+  ? String(process.env.DEV_OTP_CODE)
+  : '223344';
+const DEFAULT_SMS_PROVIDER = String(process.env.SMS_PROVIDER || 'disabled').trim().toLowerCase() || 'disabled';
 
 // ========================================
 // 初始化 Firebase Admin
@@ -108,7 +114,7 @@ const platformSettings = {
     enabled: false,  // ⚠️ 初始关闭，后续由Platform Admin开启
     
     // SMS 提供商
-    provider: '360sms',  // '360sms' | 'twilio' | 'firebase'
+    provider: DEFAULT_SMS_PROVIDER,
     
     // OTP 有效期（分钟）
     validityMinutes: 5,
@@ -118,16 +124,17 @@ const platformSettings = {
     
     // 360 SMS 配置
     smsConfig: {
-      apiKey: 'GELe3DQa69',
-      apiSecret: 'P5k4ukqYOmE2ULjjCZGQc5Mvzh7OFZLw7sY8zjUc',
-      baseUrl: 'https://sms.360.my/gw/bulk360/v3_0/send.php',
-      sender: 'MyBazaar'
+      apiKey: '',
+      apiSecret: '',
+      baseUrl: process.env.API_BASE_URL_360 || 'https://sms.360.my/gw/bulk360/v3_0/send.php',
+      sender: process.env.SMS_SENDER_360 || 'MyBazaar',
+      managedInSecretManager: true
     },
     
     // 开发模式配置
     devMode: {
-      enabled: true,  // ⚠️ 开发模式默认开启
-      fixedCode: '223344',  // 固定验证码
+      enabled: false,
+      fixedCode: DEFAULT_DEV_OTP_CODE,
       bypassForTestNumbers: [
         '+60123456789',  // 测试号码列表
         '+60198765432'
@@ -399,7 +406,7 @@ async function initializePlatformSettings() {
     console.log('🎯 下一步：');
     console.log('   1. ✅ 配置已创建，所有OTP开关默认关闭');
     console.log('   2. 📝 开始开发Customer功能（OTP逻辑已内置）');
-    console.log('   3. 🔧 测试时使用固定验证码：223344');
+    console.log(`   3. 🔧 测试时可启用开发模式固定验证码：${DEFAULT_DEV_OTP_CODE}`);
     console.log('   4. 🎛️  未来在Platform Admin界面开启需要的OTP场景');
     console.log('');
     console.log('========================================');

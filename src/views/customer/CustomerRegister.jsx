@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../config/firebase';
+import { auth, functions } from '../../config/firebase';
 import safeFetch from '../../services/safeFetch';
 import OTPInput from '../../components/OTPInput';
+import { syncErudaVisibility } from '../../utils/eruda';
 
 /**
  * Customer注册页面（纯OTP版本）
@@ -28,6 +30,7 @@ const CustomerRegister = () => {
     organizationId: null,
     eventId: null
   });
+  const [eventMeta, setEventMeta] = useState(null);
 
   useEffect(() => {
     const run = async () => {
@@ -75,6 +78,7 @@ const CustomerRegister = () => {
           organizationId: data.organizationId,
           eventId: data.eventId
         });
+        setEventMeta(data.event || null);
       } catch (e) {
         setResolvedIds({
           loading: false,
@@ -87,6 +91,14 @@ const CustomerRegister = () => {
 
     run();
   }, [orgCode, eventCode]);
+
+  useEffect(() => {
+    syncErudaVisibility(Boolean(eventMeta?.erudaSettings?.enabled));
+
+    return () => {
+      syncErudaVisibility(false);
+    };
+  }, [eventMeta?.erudaSettings?.enabled]);
 
   // 表单数据
   const [formData, setFormData] = useState({
@@ -470,11 +482,12 @@ const CustomerRegister = () => {
 
     try {
       const createCustomer = httpsCallable(functions, 'createCustomer');
+      const normalizedPhoneNumber = formatPhoneNumber(formData.phoneNumber);
 
       const result = await createCustomer({
         organizationId: resolvedIds.organizationId,
         eventId: resolvedIds.eventId,
-        phoneNumber: formatPhoneNumber(formData.phoneNumber),
+        phoneNumber: normalizedPhoneNumber,
         displayName: formData.displayName.trim(),
         transactionPin: formData.transactionPin,
         email: formData.email.trim() || null
@@ -482,11 +495,48 @@ const CustomerRegister = () => {
 
       console.log('[CustomerRegister] 注册成功:', result.data);
 
-      window.mybazaarShowToast('✅ 注册成功！即将跳转到登录页面');
-      
-      setTimeout(() => {
-        navigate(`/login/${orgEventCode}`);
-      }, 1500);
+      const resultData = result?.data || {};
+
+      try {
+        if (!resultData.customToken) {
+          throw new Error('未收到自动登录凭证');
+        }
+
+        await signInWithCustomToken(auth, resultData.customToken);
+        await auth.currentUser?.getIdToken(true);
+
+        const customerSession = {
+          userId: resultData.userId,
+          organizationId: resolvedIds.organizationId,
+          eventId: resolvedIds.eventId,
+          roles: ['customer'],
+          selectedRole: 'customer',
+          englishName: formData.displayName.trim(),
+          chineseName: formData.displayName.trim(),
+          phoneNumber: normalizedPhoneNumber,
+          identityTag: 'external',
+          orgCode,
+          eventCode,
+          orgEventCode,
+          lastLogin: new Date().toISOString()
+        };
+
+        localStorage.setItem('currentUser', JSON.stringify(customerSession));
+        localStorage.setItem('customerInfo', JSON.stringify(customerSession));
+
+        window.mybazaarShowToast('✅ 注册成功！正在进入顾客主页');
+
+        setTimeout(() => {
+          navigate(`/customer/${orgEventCode}/dashboard`, { replace: true });
+        }, 800);
+      } catch (autoLoginError) {
+        console.error('[CustomerRegister] 自动登录失败:', autoLoginError);
+        window.mybazaarShowToast('✅ 注册成功，但自动登录失败，请重新登录');
+
+        setTimeout(() => {
+          navigate(`/login/${orgEventCode}`, { replace: true });
+        }, 1500);
+      }
 
     } catch (error) {
       console.error('[CustomerRegister] 注册失败:', error);
@@ -685,20 +735,22 @@ const CustomerRegister = () => {
               </p>
             </div>
 
-            <OTPInput
-              value={otp}
-              onChange={(otpCode) => {
-                console.log('[CustomerRegister] OTPInput onChange:', otpCode);
-                setOtp(otpCode);
-              }}
-              onComplete={(otpCode) => {
-                console.log('[CustomerRegister] OTPInput onComplete 回调:', otpCode);
-                setOtp(otpCode);
-              }}
-              onResend={handleResendOtp}
-              expiresIn={otpTimer}
-              loading={otpLoading}
-            />
+            <div style={styles.otpContainer}>
+              <OTPInput
+                value={otp}
+                onChange={(otpCode) => {
+                  console.log('[CustomerRegister] OTPInput onChange:', otpCode);
+                  setOtp(otpCode);
+                }}
+                onComplete={(otpCode) => {
+                  console.log('[CustomerRegister] OTPInput onComplete 回调:', otpCode);
+                  setOtp(otpCode);
+                }}
+                onResend={handleResendOtp}
+                expiresIn={otpTimer}
+                loading={otpLoading}
+              />
+            </div>
 
             {otpTimer > 0 && (
               <p style={styles.timerText}>
@@ -980,6 +1032,13 @@ const styles = {
     backgroundColor: '#f0f9ff',
     borderRadius: '8px',
     marginBottom: '0.5rem'
+  },
+  otpContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: 'scale(0.75)',
+    transformOrigin: 'center top'
   },
   otpTitle: {
     margin: '0 0 0.5rem 0',

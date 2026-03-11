@@ -1178,6 +1178,85 @@ const EventCard = ({ event, organization, onReload }) => {
         </div>
       </div>
 
+      {/* ========== ✨ 新增：Eruda 设置 ========== */}
+      <div style={styles.erudaSettingsSection}>
+        <div style={styles.erudaSettingsHeader}>
+          <span style={styles.dateLabel}>🛠️ Eruda 设置：</span>
+        </div>
+        <div style={styles.erudaSettingsContent}>
+          <label style={styles.erudaSwitchLabel}>
+            <input
+              type="checkbox"
+              checked={event.erudaSettings?.enabled || false}
+              onChange={async (e) => {
+                const newEnabled = e.target.checked;
+                console.log('[Eruda Switch] 开关切换:', { newEnabled, currentUser: !!auth.currentUser });
+
+                if (confirm(
+                  newEnabled
+                    ? '✅ 确定要显示 Eruda 吗？\n\n启用后，此活动相关页面将显示 Eruda 调试面板。'
+                    : '⚠️ 确定要关闭 Eruda 吗？\n\n关闭后，此活动相关页面将不再显示 Eruda 调试面板。'
+                )) {
+                  try {
+                    if (!auth.currentUser) {
+                      throw new Error('用户未登录，请重新登录');
+                    }
+
+                    const idToken = await auth.currentUser.getIdToken();
+                    console.log('[Eruda Switch] 调用 updateEventDetails...');
+
+                    await updateEventDetails(organization.id, event.id, {
+                      erudaEnabled: newEnabled
+                    }, idToken);
+
+                    console.log('[Eruda Switch] ✅ 更新成功，等待 Firestore 同步...');
+
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    window.mybazaarShowToast(
+                      newEnabled
+                        ? '✅ 已启用 Eruda 调试面板'
+                        : '✅ 已关闭 Eruda 调试面板'
+                    );
+
+                    console.log('[Eruda Switch] 开始重新加载数据...');
+                    onReload();
+                  } catch (error) {
+                    console.error('[Eruda Switch] ❌ 更新失败:', error);
+                    window.mybazaarShowToast('更新失败：' + error.message);
+                  }
+                }
+              }}
+              style={styles.erudaCheckbox}
+            />
+            <span style={styles.erudaSwitchText}>
+              显示 Eruda
+            </span>
+          </label>
+
+          <div style={{
+            ...styles.erudaStatusBadge,
+            ...(event.erudaSettings?.enabled ? styles.erudaStatusEnabled : styles.erudaStatusDisabled)
+          }}>
+            {event.erudaSettings?.enabled
+              ? '✅ 当前状态：显示 Eruda'
+              : '🚫 当前状态：不显示 Eruda'}
+          </div>
+
+          <div style={styles.erudaHint}>
+            {event.erudaSettings?.enabled
+              ? '🧪 此活动相关页面将显示 Eruda 调试工具，方便排查问题'
+              : '🙈 此活动相关页面不会显示 Eruda 调试工具'}
+          </div>
+
+          {event.erudaSettings?.enabled && event.erudaSettings?.enabledAt && (
+            <div style={styles.erudaMeta}>
+              启用时间：{new Date(event.erudaSettings.enabledAt.toDate()).toLocaleString('zh-CN')}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 操作按钮 */}
       <div style={styles.actionButtons}>
         {/* 删除按钮 */}
@@ -3123,6 +3202,69 @@ const styles = {
   otpMeta: {
     fontSize: '0.75rem',
     color: '#64748b',
+    marginLeft: '2rem',
+    marginTop: '0.25rem'
+  },
+  erudaSettingsSection: {
+    background: '#faf5ff',
+    border: '2px solid #d8b4fe',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '1rem'
+  },
+  erudaSettingsHeader: {
+    marginBottom: '0.75rem'
+  },
+  erudaSettingsContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem'
+  },
+  erudaSwitchLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    cursor: 'pointer',
+    userSelect: 'none'
+  },
+  erudaCheckbox: {
+    width: '20px',
+    height: '20px',
+    cursor: 'pointer'
+  },
+  erudaSwitchText: {
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    color: '#6b21a8'
+  },
+  erudaStatusBadge: {
+    padding: '0.75rem 1rem',
+    borderRadius: '6px',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginLeft: '2rem',
+    marginTop: '0.5rem',
+    marginBottom: '0.5rem'
+  },
+  erudaStatusEnabled: {
+    background: '#ede9fe',
+    color: '#5b21b6',
+    border: '1px solid #c4b5fd'
+  },
+  erudaStatusDisabled: {
+    background: '#f3f4f6',
+    color: '#4b5563',
+    border: '1px solid #d1d5db'
+  },
+  erudaHint: {
+    fontSize: '0.85rem',
+    color: '#7c3aed',
+    fontStyle: 'italic',
+    marginLeft: '2rem'
+  },
+  erudaMeta: {
+    fontSize: '0.75rem',
+    color: '#7c3aed',
     marginLeft: '2rem',
     marginTop: '0.25rem'
   }
