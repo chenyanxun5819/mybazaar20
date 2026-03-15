@@ -7,6 +7,7 @@ import './index.css';
 import './utils/toast';
 // 調試：確保 antd 樣式已載入（Modal/Table/Card 必須）
 import 'antd/dist/reset.css';
+import { checkAndInitErudaFromStorage } from './utils/eruda';
 
 // 全域：忽略由 AbortError 引起的未處理 promise 拒絕，減少控制台雜訊
 if (typeof window !== 'undefined') {
@@ -247,6 +248,9 @@ if (typeof window !== 'undefined') {
     }, true);
   }
 }
+
+// ✅ 刷新页面时从 localStorage 恢复 Eruda 状态
+checkAndInitErudaFromStorage();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

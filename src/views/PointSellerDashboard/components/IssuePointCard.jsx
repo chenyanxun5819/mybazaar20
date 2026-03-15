@@ -23,7 +23,7 @@ class ESCPOSPrinter {
   constructor() {
     this.device = null;
     this.characteristic = null;
-    this.maxChunkSize = 20; // P300 蓝牙分包大小
+    this.maxChunkSize = 10; // ⭐ 改进：从 20 改为 10 bytes，避免缓冲溢出
   }
 
   // ESC/POS 控制指令
@@ -45,74 +45,243 @@ class ESCPOSPrinter {
     try {
       console.log('[Bluetooth] 正在搜索打印机...');
 
-      // 请求蓝牙设备
+      // ⭐ 改进：检查 HTTPS/localhost 环境
+      const isSecureContext = window.isSecureContext;
+      if (!isSecureContext) {
+        throw new Error('需要 HTTPS 安全连接或 localhost 才能使用蓝牙功能');
+      }
+
+      console.log('[Bluetooth] 正在请求蓝牙设备...');
+
+      // ⭐ 改进：支持更多的打印机型号和服务UUID
       this.device = await navigator.bluetooth.requestDevice({
         filters: [
           { namePrefix: 'XP' },
           { namePrefix: 'MTP' },
+          { namePrefix: 'P300' },
+          { namePrefix: 'P-' },
           { namePrefix: 'BlueTooth Printer' },
-          { namePrefix: 'Printer' }
+          { namePrefix: 'Printer' },
+          { namePrefix: 'POS' },
+          { namePrefix: 'ESC' }
         ],
-        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+        optionalServices: [
+          '000018f0-0000-1000-8000-00805f9b34fb',
+          '0000ffe0-0000-1000-8000-00805f9b34fb',
+          '0000fff0-0000-1000-8000-00805f9b34fb',
+          '0000180a-0000-1000-8000-00805f9b34fb',
+          // ⭐ 新增常見打印機 UUID
+          '00001800-0000-1000-8000-00805f9b34fb',
+          '00001801-0000-1000-8000-00805f9b34fb',
+          '0000ff00-0000-1000-8000-00805f9b34fb',
+          '0000ae00-0000-1000-8000-00805f9b34fb',
+          '0000af00-0000-1000-8000-00805f9b34fb',
+          '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip ISSC
+          'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // 某些雜牌機
+          '000018f0-0000-1000-8000-00805f9b34fb',
+        ]
       });
 
       console.log('[Bluetooth] 找到设备:', this.device.name);
+      console.log('[Bluetooth] 设备状态:', {
+        name: this.device.name,
+        id: this.device.id,
+        connected: this.device.gatt?.connected || false
+      });
 
-      // 连接到 GATT 服务器
-      const server = await this.device.gatt.connect();
-      console.log('[Bluetooth] 已连接到 GATT 服务器');
+      // 带重试机制的 GATT 连接
+      let server = null;
+      let connectAttempts = 0;
+      const maxAttempts = 3;
+      const connectRetryDelay = 1000;
 
-      // 获取打印服务
-      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      while (connectAttempts < maxAttempts && !server) {
+        try {
+          connectAttempts++;
+          console.log(`[Bluetooth] GATT 连接尝试 ${connectAttempts}/${maxAttempts}...`);
+          server = await this.device.gatt.connect();
+          console.log('[Bluetooth] ✅ 已连接到 GATT 服务器');
+          break;
+        } catch (connectError) {
+          console.error(`[Bluetooth] GATT 连接失败 (尝试 ${connectAttempts}):`, connectError?.message);
 
-      // 选择可写特征
+          if (connectAttempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, connectRetryDelay));
+          } else {
+            const hint = connectError?.name === 'NetworkError'
+              ? '\n💡 提示: NetworkError 表示蓝牙连接层失败，可能原因：\n  • 打印机被其他设备占用\n  • 打印机需要重启\n  • 系统蓝牙设置中需要删除并重新配对此设备'
+              : '';
+            throw new Error(`无法连接到蓝牙设备（尝试 ${maxAttempts} 次）${hint}\n\n错误: ${connectError?.message}`);
+          }
+        }
+      }
+
+      // ⭐ 替換原來的 service 獲取邏輯
+      let service = null;
+      let allServices = [];
+
+      try {
+        // 嘗試枚舉所有服務（不指定 UUID）
+        allServices = await server.getPrimaryServices();
+        console.log('[Bluetooth] 打印機所有服務:', allServices.map(s => s.uuid));
+      } catch (e) {
+        console.warn('[Bluetooth] getPrimaryServices() 失敗，改用逐個嘗試:', e.message);
+      }
+
+      if (allServices.length > 0) {
+        // 優先找常見打印服務 UUID
+        const preferredServices = [
+          '000018f0',  // ← ESC/POS 標準打印通道（你的打印機確認有）
+          '0000ff00',  // ← 備選
+          'ffe0',
+          'fff0',
+          'ae00',
+          'af00',
+          'e7810a71',  // ← 雜牌通道，排後面
+          '49535343',  // ← ISSC，排最後
+        ];
+
+        // 先找優先 UUID
+        service = allServices.find(s =>
+          preferredServices.some(p => s.uuid.includes(p))
+        );
+
+        // 找不到就取第一個
+        if (!service) {
+          service = allServices[0];
+          console.warn('[Bluetooth] 未找到優先服務，使用第一個:', service.uuid);
+        }
+
+        console.log('[Bluetooth] ✅ 選用服務:', service.uuid);
+
+      } else {
+        // fallback：逐個嘗試固定 UUID
+        const serviceUUIDs = [
+          '000018f0-0000-1000-8000-00805f9b34fb',
+          '0000ffe0-0000-1000-8000-00805f9b34fb',
+          '0000fff0-0000-1000-8000-00805f9b34fb',
+          '0000ff00-0000-1000-8000-00805f9b34fb',
+          '0000ae00-0000-1000-8000-00805f9b34fb',
+        ];
+
+        for (const uuid of serviceUUIDs) {
+          try {
+            service = await server.getPrimaryService(uuid);
+            console.log(`[Bluetooth] ✅ 成功獲取服務 ${uuid}`);
+            break;
+          } catch (e) {
+            console.log(`[Bluetooth] ❌ 服務 ${uuid} 不可用`);
+          }
+        }
+      }
+
+      if (!service) {
+        // 列出調試信息
+        throw new Error(
+          `找不到兼容的蓝牙服务。\n` +
+          `已发现服务数: ${allServices.length}\n` +
+          `服务列表: ${allServices.map(s => s.uuid).join(', ') || '无'}`
+        );
+      }
+
+      // 选择最像打印数据通道的特征。很多热敏机即使 write 成功，也可能写到非打印通道。
       const characteristics = await service.getCharacteristics();
-      const writableCharacteristic = characteristics.find(
-        (c) => c.properties?.writeWithoutResponse || c.properties?.write
-      );
+      console.log('[Bluetooth] 找到特征列表:', characteristics.map((c) => ({
+        uuid: c.uuid,
+        write: !!c.properties?.write,
+        writeWithoutResponse: !!c.properties?.writeWithoutResponse,
+        notify: !!c.properties?.notify,
+        indicate: !!c.properties?.indicate,
+      })));
+      // ⭐ 加入 2af1（18f0 服務的標準打印特徵）和 ff02
+      const preferredUuidPatterns = [
+        '2af1',   // ← 新增，18f0 服務標準打印通道
+        'ff02',   // ← 新增，ff00 服務打印通道
+        'ffe1', 'ffe2', 'fff1', 'fff2', 'ae01', 'ae02',
+      ];
+
+      const pickCharacteristic = (predicate) => characteristics.find((c) => {
+        if (!predicate(c)) return false;
+        return preferredUuidPatterns.some((pattern) => c.uuid.toLowerCase().includes(pattern));
+      });
+
+      let writableCharacteristic =
+        pickCharacteristic((c) => c.properties?.writeWithoutResponse) ||
+        pickCharacteristic((c) => c.properties?.write) ||
+        characteristics.find((c) => c.properties?.writeWithoutResponse) ||
+        characteristics.find((c) => c.properties?.write);
 
       if (!writableCharacteristic) {
-        throw new Error('找不到可写入的蓝牙特征');
+        const charList = characteristics.map(c => `${c.uuid}: ${JSON.stringify(c.properties)}`).join('; ');
+        throw new Error(`找不到可写特征。可用特征: ${charList}`);
       }
+
+      console.log(`[Bluetooth] 选择特征: ${writableCharacteristic.uuid}, write: ${writableCharacteristic.properties?.write}, writeWithoutResponse: ${writableCharacteristic.properties?.writeWithoutResponse}`);
 
       this.characteristic = writableCharacteristic;
 
       console.log('[Bluetooth] 打印机已就绪');
       return true;
     } catch (error) {
-      console.error('[Bluetooth] 连接失败:', error);
-      throw new Error('无法连接到蓝牙打印机: ' + error.message);
+      const errorName = error?.name || 'Unknown';
+      const errorMsg = error?.message || String(error);
+      console.error('[Bluetooth] 连接失败:', `Name: ${errorName}, Message: ${errorMsg}`);
+      console.error('[Bluetooth] 完整错误对象:', error);
+      throw error;
     }
   }
 
   // 发送数据到打印机（分块发送，XP-P300 优化）
+  // 發送數據到打印機
   async send(data) {
     if (!this.characteristic) {
-      throw new Error('打印机未连接');
+      throw new Error('打印機未連接');
     }
 
     try {
       const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-      // 分块发送（每次最多 20 bytes）
-      for (let offset = 0; offset < buffer.length; offset += this.maxChunkSize) {
-        const chunk = buffer.slice(offset, offset + this.maxChunkSize);
+      // ⭐ XP-58 使用 writeValueWithoutResponse（串流模式）
+      // writeValue (ATT_WRITE_REQUEST) 會逐包等待 ACK，導致 ESC/POS 指令被截斷
+      const useWithoutResponse =
+        this.characteristic.properties?.writeWithoutResponse;
 
-        if (this.characteristic.properties.writeWithoutResponse) {
-          await this.characteristic.writeValueWithoutResponse(chunk);
-        } else {
-          await this.characteristic.writeValue(chunk);
+      // ⭐ chunk size 提升到 100 bytes（10 bytes 太小，指令容易跨包被截斷）
+      const chunkSize = useWithoutResponse ? 100 : 20;
+      const totalChunks = Math.ceil(buffer.length / chunkSize);
+      let sentChunks = 0;
+
+      for (let offset = 0; offset < buffer.length; offset += chunkSize) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        sentChunks++;
+
+        try {
+          if (useWithoutResponse) {
+            // ⭐ 串流模式：不等回應，直接發下一包
+            await this.characteristic.writeValueWithoutResponse(chunk);
+            // 50ms 給打印機處理緩衝（比 writeValue 快但需要適當間隔）
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          } else {
+            // fallback：有回應確認模式
+            await this.characteristic.writeValue(chunk);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          }
+
+        } catch (chunkError) {
+          console.error(`[Bluetooth] chunk ${sentChunks}/${totalChunks}:`, chunkError?.message);
+          if (chunkError?.message?.includes('GATT')) {
+            throw new Error(`蓝牙第${sentChunks}个分包时断开，请重启打印机`);
+          }
+          throw chunkError;
         }
-
-        // 轻微延迟，避免打印机缓冲溢出（XP-P300 需要）
-        await new Promise((resolve) => setTimeout(resolve, 15));
       }
+
+      console.log(`[Bluetooth] 数据完成: ${buffer.length}bytes`);
     } catch (error) {
       console.error('[Bluetooth] 发送失败:', error);
       throw error;
     }
   }
-
   // 打印文本
   async printText(text) {
     const encoder = new TextEncoder();
@@ -120,118 +289,58 @@ class ESCPOSPrinter {
     await this.send(data);
   }
 
-  // ⭐ 核心修复：打印 QR Code 图片（XP-P300 专用）
-  async printQRCodeImage(qrImageDataUrl, targetWidthPx = 288) {
-    if (!qrImageDataUrl) {
-      console.error('[QR Code] 缺少图片数据');
-      return; // 不抛错，继续打印其他内容
+  // 使用打印机原生 ESC/POS QR 指令，避免通过蓝牙发送大位图导致 GATT 断线
+  async printQRCode(qrData) {
+    if (!qrData) {
+      throw new Error('缺少 QR Code 数据');
+    }
+
+    const encoder = new TextEncoder();
+    const payload = encoder.encode(qrData);
+
+    if (payload.length > 7089) {
+      throw new Error('QR Code 数据过长，无法使用打印机原生模式打印');
     }
 
     try {
-      console.log('[QR Code] 开始处理图片...');
+      console.log('[QR Code] 使用 ESC/POS 原生 QR 指令打印...');
+      console.log('[QR Code] 数据长度:', payload.length, 'bytes');
 
-      // 确保 QR 图像居中打印（避免受到前一个 ALIGN_LEFT 影响）
       await this.send(ESCPOSPrinter.CMD.ALIGN_CENTER);
 
-      // 1. 加载图片
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // 选择 QR model 2
+      await this.send(new Uint8Array([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]));
 
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = () => reject(new Error('图片加载失败'));
-        img.src = qrImageDataUrl;
-      });
+      // 模块大小 4（通用值，58mm 热敏纸安全范围内）
+      await this.send(new Uint8Array([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x04]));
 
-      console.log('[QR Code] 图片已加载，尺寸:', img.width, 'x', img.height);
+      // 容错等级 M
+      await this.send(new Uint8Array([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]));
 
-      // 2. 创建 Canvas 并转换为黑白位图
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      // 存储 QR 数据
+      const storeLength = payload.length + 3;
+      const pL = storeLength & 0xFF;
+      const pH = (storeLength >> 8) & 0xFF;
+      const storeCommand = new Uint8Array(8 + payload.length);
+      storeCommand.set([0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30], 0);
+      storeCommand.set(payload, 8);
+      await this.send(storeCommand);
 
-      if (!ctx) {
-        throw new Error('无法创建 Canvas');
-      }
+      // 打印已存储的 QR
+      await this.send(new Uint8Array([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]));
+      await this.printText('\n');
 
-      // 缩放到目标宽度
-      const scale = targetWidthPx / img.width;
-      const targetHeightPx = Math.max(1, Math.round(img.height * scale));
-
-      canvas.width = targetWidthPx;
-      canvas.height = targetHeightPx;
-
-      // 绘制图片（关闭平滑以保持 QR Code 清晰）
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, targetWidthPx, targetHeightPx);
-
-      // 3. 获取像素数据并转换为单色位图
-      const imageData = ctx.getImageData(0, 0, targetWidthPx, targetHeightPx);
-      const pixels = imageData.data;
-
-      const widthBytes = Math.ceil(targetWidthPx / 8);
-      const bitmap = new Uint8Array(widthBytes * targetHeightPx);
-
-      console.log('[QR Code] 位图尺寸:', widthBytes, 'x', targetHeightPx, '=', bitmap.length, 'bytes');
-
-      // 转换为位图（8个像素打包成1个字节）
-      for (let y = 0; y < targetHeightPx; y++) {
-        for (let xByte = 0; xByte < widthBytes; xByte++) {
-          let byte = 0;
-
-          for (let bit = 0; bit < 8; bit++) {
-            const x = xByte * 8 + bit;
-            if (x >= targetWidthPx) continue;
-
-            const idx = (y * targetWidthPx + x) * 4;
-            const r = pixels[idx];
-            const g = pixels[idx + 1];
-            const b = pixels[idx + 2];
-            const a = pixels[idx + 3];
-
-            // 亮度计算（透明=白色，亮度<128=黑色）
-            const luminance = a === 0 ? 255 : Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-            const isBlack = luminance < 128;
-
-            if (isBlack) {
-              byte |= (0x80 >> bit); // 黑色像素设为1
-            }
-          }
-
-          bitmap[y * widthBytes + xByte] = byte;
-        }
-      }
-
-      // 4. 发送 ESC/POS 光栅位图指令（GS v 0）
-      const xL = widthBytes & 0xFF;
-      const xH = (widthBytes >> 8) & 0xFF;
-      const yL = targetHeightPx & 0xFF;
-      const yH = (targetHeightPx >> 8) & 0xFF;
-
-      // GS v 0: 光栅位图模式（XP-P300 支持）
-      const header = new Uint8Array([
-        0x1D, 0x76, 0x30, // GS v 0
-        0x00,             // 正常模式
-        xL, xH,           // 宽度（字节）
-        yL, yH            // 高度（像素）
-      ]);
-
-      console.log('[QR Code] 发送指令头:', Array.from(header).map(b => '0x' + b.toString(16)).join(' '));
-      await this.send(header);
-
-      console.log('[QR Code] 发送位图数据...', bitmap.length, 'bytes');
-      await this.send(bitmap);
-
-      console.log('[QR Code] ✅ QR Code 打印完成');
-
+      console.log('[QR Code] ✅ 原生 QR Code 打印完成');
     } catch (error) {
-      console.error('[QR Code] 打印失败:', error);
-      // 不抛错，让打印继续
-      await this.printText('[QR Code Error]\n');
+      console.error('[QR Code] 原生打印失败:', error);
+      throw error;
     }
   }
 
   // 打印点数卡（XP-58 优化版 - 紧凑布局）
-  async printPointCard(cardNumber, amount, qrData, qrImageDataUrl, eventName = 'MyBazaar') {
+  async printPointCard(cardNumber, amount, qrData, eventName = 'MyBazaar') {
+    let corePrinted = false;
+
     try {
       console.log('[Print] 开始打印点数卡...');
 
@@ -267,42 +376,27 @@ class ESCPOSPrinter {
       await this.send(ESCPOSPrinter.CMD.ALIGN_CENTER);
       await this.printText(`Card No: ${cardNumber}\n`);
 
-      // 5. ⭐ QR Code（放大提高可扫性；并确保居中）
+      // 5. 使用打印机原生 QR 指令，避免蓝牙传大图断开
       console.log('[Print] 准备打印 QR Code...');
-      await this.printQRCodeImage(qrImageDataUrl, 288);
+      await this.printQRCode(qrData);
 
-      // 6. 点数金额（英文标签）
+      // 给打印机时间把 QR 渲染到纸上，避免后续命令把蓝牙链路挤断
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+
+      // 6. 点数金额（蓝牙版保留最关键内容）
       await this.send(ESCPOSPrinter.CMD.ALIGN_CENTER);
       await this.send(ESCPOSPrinter.CMD.FONT_SIZE_LARGE);
       await this.send(ESCPOSPrinter.CMD.BOLD_ON);
       await this.printText(`${amount} Points\n`);
       await this.send(ESCPOSPrinter.CMD.BOLD_OFF);
       await this.send(ESCPOSPrinter.CMD.FONT_SIZE_NORMAL);
+      corePrinted = true;
 
-      // 7. 分隔线
-      await this.printText('========================\n');
-
-      // 8. 使用说明（英文）
-      await this.send(ESCPOSPrinter.CMD.ALIGN_LEFT);
-      await this.printText('* Scan QR at merchant\n');
-      await this.printText('* Valid until event ends\n');
-      await this.printText('* Bearer card - keep safe\n');
-
-      // 9. 发行时间（英文标签）
-      const now = new Date().toLocaleString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      }).replace(',', '');
-
+      // 蓝牙链路不稳定时，减少非必要文字和切纸命令
       await this.send(ESCPOSPrinter.CMD.ALIGN_CENTER);
-      await this.printText(`Issued: ${now}\n`);
-
-      // 10. 换行和切纸（减少空行）
-      await this.printText('\n\n');
+      await this.printText('Use at merchant\n');
+      await this.printText('\n\n\n\n\n');
+      // ⭐ 加切紙指令（XP-58 支援）
       await this.send(ESCPOSPrinter.CMD.CUT_PAPER);
 
       console.log('[Print] ✅ 打印完成');
@@ -310,8 +404,26 @@ class ESCPOSPrinter {
 
     } catch (error) {
       console.error('[Print] 打印失败:', error);
+
+      if (corePrinted && (error?.message?.includes('GATT') || error?.message?.includes('断开'))) {
+        console.warn('[Print] 尾段蓝牙断开，但核心内容已发送，按成功处理');
+        return true;
+      }
+
       throw error;
     }
+  }
+
+  // 简易测试打印（纯 ASCII，不含 QR、无字体命令，用于诊断通道是否正常）
+  async testPrint() {
+    await this.send(new Uint8Array([0x1B, 0x40])); // ESC @ init
+    await new Promise(r => setTimeout(r, 100));
+    await this.send(new Uint8Array([0x1B, 0x61, 0x01])); // center
+    const enc = new TextEncoder();
+    await this.send(enc.encode('=== TEST PRINT ===\n'));
+    await this.send(enc.encode('Printer OK\n'));
+    await this.send(enc.encode('\n\n\n\n\n\n'));
+    return true;
   }
 
   // 断开连接
@@ -683,7 +795,6 @@ const IssuePointCard = ({
         issuedCard.cardNumber,
         issuedCard.balance?.initial || 0,
         qrData,
-        qrCodeDataUrl,
         eventName  // ← 添加 eventName 参数
       );
 
@@ -691,26 +802,76 @@ const IssuePointCard = ({
 
     } catch (err) {
       console.error('[蓝牙打印] 失败:', err);
+      console.error('[蓝牙打印] 错误类型:', err?.name, '错误代码:', err?.code);
 
-      // 用户取消配对
-      if (err.name === 'NotFoundError') {
-        setError('未选择打印机，打印已取消');
+      let errorMessage = '';
+      let shouldResetConnection = false;
+
+      // NetworkError - 蓝牙连接层故障（最常见）
+      if (err.name === 'NetworkError' || err.message?.includes('NetworkError') || err.message?.includes('Connection attempt')) {
+        errorMessage = '❌ 蓝牙连接失败\n\n可能原因：\n• 打印机被其他设备占用\n• 打印机需要重启\n• 配对信息失效\n\n✅ 解决步骤:\n1️⃣ 打开蓝牙设置\n2️⃣ 删除 "Printer001-022C"\n3️⃣ 重启打印机（关闭后等10秒）\n4️⃣ 重新配对此设备\n5️⃣ 返回此页重试';
+        shouldResetConnection = true;
       }
-      // 连接失败
-      else if (err.message.includes('连接')) {
-        setError('无法连接到打印机，请确保打印机已开机并在附近');
-        bluetoothPrinter = null;
-        setIsPrinterConnected(false);
+      // 用户取消选择设备
+      else if (err.name === 'NotAllowedError') {
+        errorMessage = '您取消了蓝牙设备的选择';
+      }
+      // 未找到设备
+      else if (err.name === 'NotFoundError') {
+        errorMessage = '未找到打印机\n\n请检查：\n• 打印机已开机\n• 打印机在蓝牙范围内（≤5m）';
+      }
+      // 连接失败（特性、GATT等）
+      else if (err.message?.includes('连接') || err.message?.includes('GATT') || err.message?.includes('特征')) {
+        errorMessage = err.message || '无法连接到打印机\n请重启打印机后重试';
+        shouldResetConnection = true;
+      }
+      // HTTPS 需求
+      else if (err.message?.includes('HTTPS')) {
+        errorMessage = '需要 HTTPS 安全连接\n请在生产环境下使用此功能';
       }
       // 其他错误
       else {
-        setError('打印失败: ' + err.message);
+        errorMessage = (err.message || String(err)) || '打印失败，请重试';
       }
+
+      // 自动重置蓝牙连接状态
+      if (shouldResetConnection && bluetoothPrinter) {
+        console.log('[蓝牙] 自动断开蓝牙重置...');
+        bluetoothPrinter.disconnect();
+        bluetoothPrinter = null;
+        setIsPrinterConnected(false);
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+
+  // 测试打印（纯文字，诊断蓝牙通道用）
+  const handleTestPrint = async () => {
+    if (!isWebBluetoothSupported) {
+      setError('您的浏览器不支持蓝牙功能');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      if (!bluetoothPrinter || !isPrinterConnected) {
+        bluetoothPrinter = new ESCPOSPrinter();
+        await bluetoothPrinter.connect();
+        setIsPrinterConnected(true);
+      }
+      await bluetoothPrinter.testPrint();
+      setSuccessMessage('✅ 测试打印已发送，请检查打印机是否出纸');
+    } catch (err) {
+      console.error('[测试打印] 失败:', err);
+      setError(err.message || '测试打印失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 清除已发行卡片（准备发行下一张）
   const handleClearCard = () => {
@@ -815,12 +976,28 @@ const IssuePointCard = ({
             >
               {isPrinterConnected ? '📱 蓝牙打印' : '🔗 连接蓝牙打印'}
             </button>
+            <button
+              className="print-button"
+              onClick={handleTestPrint}
+              disabled={loading}
+              style={{ fontSize: '0.8em', opacity: 0.75 }}
+              title="发送纯文字，测试打印机通道是否正常"
+            >
+              🔧 测试打印
+            </button>
           </div>
 
           {/* ⭐ 添加：蓝牙连接状态提示 */}
           {isPrinterConnected && (
             <div className="printer-status">
               ✅ 蓝牙打印机已连接
+            </div>
+          )}
+
+          {/* 蓝牙打印错误提示（显示在打印按钮下方） */}
+          {error && issuedCard && (
+            <div className="error-message" style={{ whiteSpace: 'pre-wrap' }}>
+              ⚠️ {error}
             </div>
           )}
 
@@ -860,7 +1037,7 @@ const IssuePointCard = ({
 
             {/* 错误提示 */}
             {error && (
-              <div className="error-message">
+              <div className="error-message" style={{ whiteSpace: 'pre-wrap' }}>
                 ⚠️ {error}
               </div>
             )}

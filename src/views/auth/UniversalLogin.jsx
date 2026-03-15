@@ -5,6 +5,7 @@ import { safeFetch } from '../../services/safeFetch';
 import { signInWithCustomToken, signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import { syncErudaVisibility, persistErudaState } from '../../utils/eruda';
 // 移除 httpsCallable，統一使用 HTTP 重寫 + safeFetch
 
 /**
@@ -153,6 +154,11 @@ const UniversalLogin = () => {
         const ev = evSnap.docs[0].data();
         if (cancelled) return;
         setEventMeta(ev);
+
+        // ✅ 根据活动的 erudaSettings 决定是否显示 Eruda
+        const erudaEnabled = ev?.erudaSettings?.enabled === true;
+        persistErudaState(erudaEnabled);
+        syncErudaVisibility(erudaEnabled);
       } catch (e) {
         console.warn('[UniversalLogin] 加载 eventMeta 失败:', e);
       }
@@ -216,9 +222,9 @@ const UniversalLogin = () => {
       }
 
       const selectedRole = getPriorityRole(availableRoles);
-      
+
       let navPath = '';
-      
+
       // 尝试构建目标 orgEventCode
       let targetCode = orgEventCode;
       if (!targetCode && effectiveProfile.organizationCode && effectiveProfile.eventCode) {
@@ -229,20 +235,20 @@ const UniversalLogin = () => {
       }
 
       if (selectedRole && targetCode) {
-         // 临时构造一个 path
-         if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
-         else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
-         else if (selectedRole === 'auditor') navPath = `/auditor/${targetCode}/dashboard`; // 🆕
-         
-         // Mobile Roles
-         else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
-         else if (selectedRole === 'merchant' || selectedRole === 'merchantOwner' || selectedRole === 'merchantAsist') navPath = `/merchant/${targetCode}/dashboard`;
-         else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
-         else if (selectedRole === 'pointSeller') navPath = `/pointseller/${targetCode}/dashboard`;
-         
+        // 临时构造一个 path
+        if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
+        else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'auditor') navPath = `/auditor/${targetCode}/dashboard`; // 🆕
+
+        // Mobile Roles
+        else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
+        else if (selectedRole === 'merchant' || selectedRole === 'merchantOwner' || selectedRole === 'merchantAsist') navPath = `/merchant/${targetCode}/dashboard`;
+        else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
+        else if (selectedRole === 'pointSeller') navPath = `/pointseller/${targetCode}/dashboard`;
+
         else navPath = getNavigationPath(effectiveProfile);
       } else {
         navPath = getNavigationPath(effectiveProfile);
@@ -288,8 +294,8 @@ const UniversalLogin = () => {
           console.log('[UniversalLogin] 💾 恢复 Event Manager Legacy Storage (Force)');
           localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
           localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
-        } 
-        
+        }
+
         if (roles.includes('sellerManager')) {
           console.log('[UniversalLogin] 💾 恢复 Seller Manager Legacy Storage (Force)');
           localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
@@ -327,7 +333,7 @@ const UniversalLogin = () => {
     userData?.hasTransactionPin === false ||
     userProfile?.basicInfo?.isFirstLogin === true ||
     userProfile?.basicInfo?.hasTransactionPin === false;
-  
+
   // 检查URL参数是否要求停留在登录页
   const params = new URLSearchParams(window.location.search);
   const shouldStay = manualStay || params.has('stay') || params.has('noRedirect');
@@ -369,9 +375,9 @@ const UniversalLogin = () => {
         <div style={styles.loginCard}>
           <div style={styles.header}>
             {eventMeta?.logo && (
-              <img 
-                src={eventMeta.logo} 
-                alt="Logo" 
+              <img
+                src={eventMeta.logo}
+                alt="Logo"
                 style={styles.logo}
               />
             )}
@@ -380,7 +386,7 @@ const UniversalLogin = () => {
             </h2>
             <p style={styles.subtitle}>义卖会管理系统</p>
           </div>
-          
+
           <div style={{
             textAlign: 'center',
             padding: '2rem',

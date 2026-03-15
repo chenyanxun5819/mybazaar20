@@ -81,3 +81,20 @@ export const syncErudaVisibility = async (enabled) => {
 
   disableEruda();
 };
+
+// ✅ 新增：持久化 Eruda 状态到 localStorage
+export const persistErudaState = (enabled) => {
+  try {
+    localStorage.setItem('mybazaar_erudaEnabled', enabled ? '1' : '0');
+  } catch (e) {}
+};
+
+// ✅ 新增：app 启动时从 localStorage 恢复 Eruda（处理刷新页面场景）
+export const checkAndInitErudaFromStorage = () => {
+  try {
+    const enabled = localStorage.getItem('mybazaar_erudaEnabled') === '1';
+    if (enabled) {
+      enableEruda();
+    }
+  } catch (e) {}
+};
