@@ -141,42 +141,18 @@ export const getMerchantStats = async (orgId, eventId, merchantId) => {
   try {
     const merchantData = await getMerchantData(orgId, eventId, merchantId);
 
-    // 計算今日收入（需要從交易記錄中統計）
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const transactionsRef = collection(
-      db,
-      'organizations',
-      orgId,
-      'events',
-      eventId,
-      'transactions'
-    );
-
-    const q = query(
-      transactionsRef,
-      where('merchantId', '==', merchantId),
-      where('status', '==', 'completed'),
-      where('timestamp', '>=', todayStart)
-    );
-
-    const querySnapshot = await getDocs(q);
-    
-    let todayRevenue = 0;
-    let todayTransactionCount = 0;
-
-    querySnapshot.forEach(doc => {
-      const transaction = doc.data();
-      todayRevenue += transaction.amount || 0;
-      todayTransactionCount++;
-    });
+    const revenueStats = merchantData.revenueStats || {};
+    const dailyRevenue = merchantData.dailyRevenue || {};
 
     return {
-      totalRevenue: merchantData.totalRevenue || 0,
-      transactionCount: merchantData.transactionCount || 0,
-      todayRevenue,
-      todayTransactionCount,
+      // revenueStats 欄位（對應 Firestore schema revenueStats.*）
+      totalRevenue: revenueStats.totalRevenue || 0,
+      transactionCount: revenueStats.transactionCount || 0,
+      ownerCollectedRevenue: revenueStats.ownerCollectedRevenue || 0,
+      asistsCollectedRevenue: revenueStats.asistsCollectedRevenue || 0,
+      // dailyRevenue 欄位（對應 Firestore schema dailyRevenue.*）
+      todayRevenue: dailyRevenue.today || 0,
+      todayTransactionCount: dailyRevenue.todayTransactionCount || 0,
       isActive: merchantData.isActive !== false // 預設為 true
     };
   } catch (error) {

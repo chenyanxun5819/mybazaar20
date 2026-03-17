@@ -141,11 +141,11 @@ class ESCPOSPrinter {
           '49535343',  // ← ISSC，排最後
         ];
 
-        // 先找優先 UUID
-        service = allServices.find(s =>
-          preferredServices.some(p => s.uuid.includes(p))
-        );
-
+        // ⭐ 以 preferredServices 順序為主，確保 18f0 優先被選
+        for (const preferred of preferredServices) {
+          service = allServices.find(s => s.uuid.includes(preferred));
+          if (service) break;
+        }
         // 找不到就取第一個
         if (!service) {
           service = allServices[0];

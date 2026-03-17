@@ -675,6 +675,8 @@ const EventManagerDashboard = () => {
             if (userData.roles?.includes('seller')) stats.totalSellers++;
             if (userData.roles?.includes('customer')) stats.totalCustomers++;
           });
+          // 商家数量从 roleStats.merchants.count 读取（firestore最新架构.json 第301行）
+          stats.totalMerchants = eventInfo.roleStats?.merchants?.count || 0;
           setStatistics(stats);
           setUsers(userList);
         }
