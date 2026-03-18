@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 /**
  * QR扫描组件 - 完全简化版
@@ -9,12 +9,59 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
  * 2. 直接使用后置相机，无选项
  * 3. 自动开始扫描
  */
-const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart = false, helpText }) => {
+const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart = false, helpText, allowRawText = false }) => {
   const [scanning, setScanning] = useState(autoStart); // ⭐ 如果 autoStart=true，初始就开始扫描
   const [cameraPermission, setCameraPermission] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
   const qrScannerRef = useRef(null);
+
+  const stopScanning = async ({ keepScanningState = false } = {}) => {
+    addDebugLog('🛑 stopScanning() 被调用');
+
+    const scanner = qrScannerRef.current;
+    qrScannerRef.current = null;
+
+    if (scanner) {
+      let canClear = true;
+
+      try {
+        const state = typeof scanner.getState === 'function'
+          ? scanner.getState()
+          : Html5QrcodeScannerState.UNKNOWN;
+
+        if (typeof scanner.stop === 'function' && state !== Html5QrcodeScannerState.NOT_STARTED) {
+          try {
+            await scanner.stop();
+            addDebugLog('✅ stop() 成功');
+          } catch (e) {
+            canClear = false;
+            addDebugLog(`⚠️ stop() 失败，跳过 clear(): ${e.message}`);
+          }
+        }
+
+        if (canClear) {
+          try {
+            scanner.clear?.();
+            addDebugLog('✅ 扫描器已清理');
+          } catch (e) {
+            const clearMessage = e?.message || String(e);
+            if (/Cannot clear while scan is ongoing/i.test(clearMessage)) {
+              addDebugLog('ℹ️ clear() 被跳过：扫描器仍在停止中');
+            } else {
+              addDebugLog(`⚠️ clear() 失败: ${clearMessage}`);
+            }
+          }
+        }
+      } catch (e) {
+        addDebugLog(`⚠️ 清理扫描器失败: ${e.message}`);
+      }
+    }
+
+    if (!keepScanningState) {
+      setScanning(false);
+    }
+  };
 
   const addDebugLog = (message) => {
     try {
@@ -33,21 +80,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
     }
     checkCameraPermission();
     return () => {
-      if (qrScannerRef.current) {
-        try {
-          // 兼容直接模式：若存在 stop() 先停止，再清理
-          if (typeof qrScannerRef.current.stop === 'function') {
-            try {
-              qrScannerRef.current.stop();
-            } catch (e) {
-              console.warn('[QRScanner] stop() 失敗，改用 clear():', e?.message);
-            }
-          }
-          qrScannerRef.current.clear?.();
-        } catch (e) {
-          console.error('清理扫描器失败:', e);
-        }
-      }
+      void stopScanning({ keepScanningState: true });
     };
   }, []);
 
@@ -109,7 +142,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
     }
   };
 
-  const handleScanSuccess = (decodedText) => {
+  const handleScanSuccess = async (decodedText) => {
     try {
       addDebugLog('📸 扫描到内容');
       
@@ -128,7 +161,18 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         addDebugLog(`✅ JSON解析成功`);
       } catch (parseError) {
         addDebugLog(`❌ JSON解析失败: ${parseError.message}`);
-        throw new Error('无效的QR Code格式（非JSON）');
+
+        if (!allowRawText) {
+          throw new Error(`扫描到的内容不是系统 QR Code：${preview}`);
+        }
+
+        addDebugLog('ℹ️ 非 JSON 内容，改以原始文字回传');
+        await stopScanning();
+        addDebugLog('📤 调用 onScanSuccess（原始文字）');
+        if (onScanSuccess) {
+          await Promise.resolve(onScanSuccess(decodedText.trim()));
+        }
+        return;
       }
 
       const qrType = qrData?.type || '未知';
@@ -143,11 +187,11 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       }
       
       addDebugLog('🛑 停止扫描');
-      stopScanning();
+      await stopScanning();
       
       addDebugLog('📤 调用 onScanSuccess');
       if (onScanSuccess) {
-        onScanSuccess(qrData);
+        await Promise.resolve(onScanSuccess(qrData));
       }
       
     } catch (error) {
@@ -176,33 +220,42 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
 
     addDebugLog('🎬 scanning=true，开始初始化（直接模式，避免二次权限弹窗）...');
 
-    const init = () => {
+    let cancelled = false;
+
+    const init = async () => {
       const el = document.getElementById('qr-reader');
       if (!el) {
         addDebugLog('⚠️ #qr-reader 元素未找到，100ms后重试');
-        setTimeout(init, 100);
+        setTimeout(() => {
+          if (!cancelled) {
+            void init();
+          }
+        }, 100);
         return;
       }
 
       // 每次開始前先清乾淨
       if (qrScannerRef.current) {
-        try {
-          qrScannerRef.current.stop?.();
-          qrScannerRef.current.clear?.();
-        } catch (_) {}
-        qrScannerRef.current = null;
+        await stopScanning({ keepScanningState: true });
       }
 
       try {
-        initDirectHtml5qrcode();
+        await initDirectHtml5qrcode();
       } catch (error) {
+        if (cancelled) {
+          return;
+        }
         addDebugLog(`❌ 初始化失败: ${error?.message || error}`);
         setScanning(false);
         if (onScanError) onScanError(`扫描器初始化失败: ${error?.message || error}`);
       }
     };
 
-    init();
+    void init();
+
+    return () => {
+      cancelled = true;
+    };
   }, [scanning]);
 
   // ✅ 隐藏 html5-qrcode 的所有控制按钮
@@ -239,29 +292,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
     } catch (error) {
       addDebugLog(`⚠️ 隐藏按钮失败: ${error.message}`);
     }
-  };
-
-  const stopScanning = () => {
-    addDebugLog('🛑 stopScanning() 被调用');
-    if (qrScannerRef.current) {
-      try {
-        if (typeof qrScannerRef.current.stop === 'function') {
-          // 直接模式（Html5Qrcode）需要先 stop()
-          try {
-            qrScannerRef.current.stop();
-            addDebugLog('✅ stop() 成功');
-          } catch (e) {
-            addDebugLog(`⚠️ stop() 失败: ${e.message}`);
-          }
-        }
-        qrScannerRef.current.clear?.();
-        addDebugLog('✅ 扫描器已清理');
-      } catch (e) {
-        addDebugLog(`⚠️ 清理扫描器失败: ${e.message}`);
-      }
-      qrScannerRef.current = null;
-    }
-    setScanning(false);
   };
 
   // 🔁 直接模式回退：避開 Scanner 包裝的 UI 與某些瀏覽器 Bug

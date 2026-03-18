@@ -23,7 +23,6 @@ import EmployeeManIcon from '../../assets/employee-man.svg?react';
 import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
 import SellerFourIcon from '../../assets/seller (4).svg?react';
 import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
-import UserBagIcon from '../../assets/user-bag.svg?react';
 import leaveIcon from '../../assets/leave.svg';
 import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
 import UserAddIcon from '../../assets/user-add (1).svg?react';
@@ -53,7 +52,6 @@ const STAT_ICONS = {
   totalCashiers: UserSalaryIcon,
   totalSellers: EmployeeManIcon,
   totalMerchants: StoreBuyerIcon,
-  totalCustomers: UserBagIcon,
   totalAllocatedPoints: PosBillIcon,
   totalGrantedPoints: FreeIcon
 };
@@ -128,7 +126,6 @@ const EventManagerDashboard = () => {
     totalCashiers: 0,
     totalSellers: 0,
     totalMerchants: 0,
-    totalCustomers: 0,
     totalAllocatedPoints: 0,  // 分配给 seller 的点数总额
     totalGrantedPoints: 0     // 赠送给 customer 的点数总额
   });
@@ -651,7 +648,6 @@ const EventManagerDashboard = () => {
             totalCashiers: 0,
             totalSellers: 0,
             totalMerchants: 0,
-            totalCustomers: 0,
             totalAllocatedPoints: 0,
             totalGrantedPoints: 0
           };
@@ -673,7 +669,6 @@ const EventManagerDashboard = () => {
             if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
             if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
             if (userData.roles?.includes('seller')) stats.totalSellers++;
-            if (userData.roles?.includes('customer')) stats.totalCustomers++;
           });
           // 商家数量从 roleStats.merchants.count 读取（firestore最新架构.json 第301行）
           stats.totalMerchants = eventInfo.roleStats?.merchants?.count || 0;
@@ -877,12 +872,6 @@ const EventManagerDashboard = () => {
           value={statistics.totalMerchants}
           icon={STAT_ICONS.totalMerchants}
           color="#06b6d4"
-        />
-        <StatCard
-          title="消费者"
-          value={statistics.totalCustomers}
-          icon={STAT_ICONS.totalCustomers}
-          color="#84cc16"
         />
         <StatCard
           title="已分配点数"

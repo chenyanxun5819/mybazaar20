@@ -50,6 +50,7 @@ export const enableEruda = async () => {
 
     if (!window.__MYBAZAAR_ERUDA_ENABLED__) {
       eruda.init();
+      eruda.hide(); // ✅ 确保面板默认收起，只显示浮动按钮
       window.__MYBAZAAR_ERUDA_ENABLED__ = true;
     } else if (eruda.show) {
       eruda.show();

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import QRScanner from '../../components/QRScanner';
@@ -109,9 +109,70 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
     }
   };
 
-  const handleScanSuccess = async (qrData) => {
+  const resolveScannedMerchantData = async (scannedValue) => {
+    if (!scannedValue) {
+      throw new Error('QR Code 数据为空');
+    }
+
+    if (typeof scannedValue === 'object') {
+      return scannedValue;
+    }
+
+    if (typeof scannedValue !== 'string') {
+      throw new Error('QR Code 数据格式错误');
+    }
+
+    const rawText = scannedValue.trim();
+
+    if (!rawText) {
+      throw new Error('QR Code 数据为空');
+    }
+
+    console.log('[CustomerPayment] 原始扫码内容:', rawText);
+
+    try {
+      return JSON.parse(rawText);
+    } catch (_) {
+      // 非 JSON，继续尝试旧版简码兼容
+    }
+
+    if (/^M\d{3}$/i.test(rawText) && customerData?.organizationId && customerData?.eventId) {
+      console.log('[CustomerPayment] 尝试以 merchantCode 查询商家:', rawText.toUpperCase());
+
+      const merchantsRef = collection(
+        db,
+        'organizations', customerData.organizationId,
+        'events', customerData.eventId,
+        'merchants'
+      );
+
+      const merchantQuery = query(
+        merchantsRef,
+        where('merchantCode', '==', rawText.toUpperCase())
+      );
+
+      const merchantSnapshot = await getDocs(merchantQuery);
+
+      if (!merchantSnapshot.empty) {
+        const matchedMerchant = merchantSnapshot.docs[0];
+        return {
+          type: 'MERCHANT_PAYMENT',
+          organizationId: customerData.organizationId,
+          eventId: customerData.eventId,
+          merchantId: matchedMerchant.id,
+          merchantCode: rawText.toUpperCase()
+        };
+      }
+
+      throw new Error(`找不到编号为 ${rawText.toUpperCase()} 的商家`);
+    }
+
+    throw new Error(`扫描到的不是 MyBazaar 商家收款码：${rawText}`);
+  };
+
+  const handleScanSuccess = async (scannedValue) => {
     console.log('[CustomerPayment] ========== 扫描成功回调 ==========');
-    console.log('[CustomerPayment] qrData:', qrData);
+    console.log('[CustomerPayment] scannedValue:', scannedValue);
 
     setError(null);
     setAmountError('');
@@ -120,13 +181,8 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
     try {
       // 步骤1：验证基本数据
       console.log('[CustomerPayment] 步骤1：验证基本数据');
-      if (!qrData) {
-        throw new Error('QR Code 数据为空');
-      }
-
-      if (typeof qrData !== 'object') {
-        throw new Error('QR Code 数据格式错误');
-      }
+      const qrData = await resolveScannedMerchantData(scannedValue);
+      console.log('[CustomerPayment] 解析后的 qrData:', qrData);
 
       // 步骤2：检查类型
       console.log('[CustomerPayment] 步骤2：检查类型');
@@ -412,6 +468,7 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
             onScanSuccess={handleScanSuccess}
             onScanError={handleScanError}
             autoStart={true}
+            allowRawText={true}
           />
         )}
 

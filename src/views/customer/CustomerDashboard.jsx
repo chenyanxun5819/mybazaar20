@@ -641,9 +641,6 @@ const CustomerDashboard = () => {
             embedded={true}
             orgEventCode={orgEventCode}
             onBack={handlePaymentExit}
-            onPaymentSuccess={() => {
-              loadCustomerData();
-            }}
           />
         )}
 
