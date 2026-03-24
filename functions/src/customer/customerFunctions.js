@@ -334,10 +334,13 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       userId,
       authUid: userId,  // ✨ 添加 authUid
       roles: ['customer'],
+      
+      // ✨ 身份标签（根级别，符合 Firestore 架构定义）
+      identityTag: 'external',  // Customer 是外部用户
 
       // 身份信息
       identityInfo: {
-        identityTag: 'external',  // ✨ Customer 是外部用户
+        identityId: '',  // Customer 无需身份ID
         identityName: '顾客',
         department: null,
         position: null
