@@ -441,9 +441,9 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                   type="text"
                   value={formData.identityId}
                   onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
-                  style={styles.input}
+                  style={{...styles.input, opacity: formData.identityTag === 'external' ? 0.5 : 1}}
                   placeholder="如: 2024001 或 T2024001"
-                  disabled={loading}
+                  disabled={loading || formData.identityTag === 'external'}
                 />
                 <span style={styles.hint}>可选，如组织有发放请填写</span>
               </div>
@@ -454,8 +454,8 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
               <select
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                style={styles.select}
-                disabled={loading}
+                style={{...styles.select, opacity: formData.identityTag === 'external' ? 0.5 : 1}}
+                disabled={loading || formData.identityTag === 'external'}
               >
                 <option value="">请选择部门</option>
                 {departments.map(dept => (

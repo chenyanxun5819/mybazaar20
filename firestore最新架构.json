@@ -184,6 +184,15 @@
               },
               "isActive": "boolean (是否激活)",
               "displayOrder": "number (显示顺序)"
+            },
+            {
+              "id": "external",
+              "name": {
+                "zh-CN": "非组织人员",
+                "en-US": "External"
+              },
+              "isActive": "boolean (是否激活)",
+              "displayOrder": "number (显示顺序)"
             }
           ],
           "departments": [

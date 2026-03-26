@@ -1324,8 +1324,9 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
 
   // 添加新标签
   const handleAddTag = () => {
+    // ✨ 改进：使用临时 id，后续会根据英文名称更新
     const newTag = {
-      id: `tag_${Date.now()}`,
+      id: `temp_${Date.now()}`,
       name: {
         'en': '',
         'zh-CN': ''
@@ -1342,13 +1343,22 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
     setIdentityTags(identityTags.map(tag => {
       if (tag.id === tagId) {
         if (field === 'name') {
-          return {
+          const updatedTag = {
             ...tag,
             name: {
               ...tag.name,
               [lang]: value
             }
           };
+          
+          // ✨ 改进：如果更新的是英文名称，自动生成标准化的 id
+          if (lang === 'en' && value.trim()) {
+            // 将英文名称转小写，删除空格、特殊字符，使用下划线连接
+            const standardizedId = value.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            updatedTag.id = standardizedId;
+          }
+          
+          return updatedTag;
         }
         return { ...tag, [field]: value };
       }
@@ -1509,7 +1519,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
               </div>
             ) : (
               identityTags.map((tag, index) => (
-                <div key={tag.id} style={styles.tagItem}>
+                <div key={index} style={styles.tagItem}>
                   <div style={styles.tagOrderControls}>
                     <button
                       type="button"
@@ -1556,6 +1566,10 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                         disabled={submitting}
                         required
                       />
+                      {/* ✨ 显示自动生成的标签 ID */}
+                      <span style={{...styles.tagLabel, marginTop: '0.5rem', color: '#2563eb', fontSize: '0.75rem'}}>
+                        标记 ID: <strong>{tag.id}</strong>
+                      </span>
                     </div>
                   </div>
 
@@ -1702,6 +1716,16 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
             'zh-CN': '教师'
           },
           displayOrder: 3,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'external',
+          name: {
+            'en-US': 'External',
+            'zh-CN': '非组织人员'
+          },
+          displayOrder: 4,
           isActive: true,
           createdAt: new Date().toISOString()
         }
