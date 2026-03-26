@@ -4,6 +4,18 @@ import { getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../../services/safeFetch';
 
+// 🆕 导入角色对应的 SVG 图标
+import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
+import SellerFiveIcon from '../../assets/seller (5).svg?react';
+import UsersGearIcon from '../../assets/users-gear.svg?react';
+import UserSalaryIcon from '../../assets/user-salary.svg?react';
+import EmployeeManIcon from '../../assets/employee-man.svg?react';
+import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
+import SellerFourIcon from '../../assets/seller (4).svg?react';
+import UsersIcon from '../../assets/users.svg?react';
+import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
+import AuditorIcon from '../../assets/auditor.svg?react';
+
 /**
  * 通用的用户创建组件
  * 根据调用者角色 (callerRole) 动态显示可选角色
@@ -117,61 +129,71 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         value: 'sellerManager',
         label: '班导师',
         description: '班导师 - 管理学生销售员和点数分配',
-        icon: '💰'
+        icon: ChalkboardUserIcon,
+        color: '#f59e0b'
       },
       merchantManager: {
         value: 'merchantManager',
         label: '商家管理员',
         description: '商家管理员 - 管理商家和 QR Code',
-        icon: '🏪'
+        icon: SellerFiveIcon,
+        color: '#8b5cf6'
       },
       customerManager: {
         value: 'customerManager',
         label: '顾客管理员',
         description: '顾客管理员 - 义卖会当日销售',
-        icon: '🎫'
+        icon: UsersGearIcon,
+        color: '#10b981'
       },
       cashier: {
         value: 'cashier',
         label: '收银员',
         description: '收银员 - 管理现金流和财务报表',
-        icon: '💵'
+        icon: UserSalaryIcon,
+        color: '#3b82f6'
       },
       seller: {
         value: 'seller',
         label: '点数销售员',
         description: '点数销售员 - 销售固本给顾客',
-        icon: '💳'
+        icon: EmployeeManIcon,
+        color: '#ec4899'
       },
       merchantOwner: {
         value: 'merchantOwner',
         label: '商家摊主',
         description: '商家摊主 - 管理摊位和助理',
-        icon: '🏬'
+        icon: StoreBuyerIcon,
+        color: '#84cc16'
       },
       merchantAsist: {
         value: 'merchantAsist',
         label: '摊位助手',
         description: '摊位助手 - 协助摊主收款',
-        icon: '🏪'
+        icon: SellerFourIcon,
+        color: '#a3e635'
       },
       customer: {
         value: 'customer',
         label: '消费者',
         description: '消费者 - 购买和使用固本',
-        icon: '👤'
+        icon: UsersIcon,
+        color: '#06b6d4'
       },
       pointSeller: {
         value: 'pointSeller',
         label: '点数直售员',
         description: '点数直售员 - 为老人和小孩销售点数卡',
-        icon: '🎟️'
+        icon: MoneyCheckEditIcon,
+        color: '#f97316'
       },
       auditor: {
         value: 'auditor',
         label: '稽核人员',
         description: '稽核人员 - 只读查阅活动全部财务数据，不可修改',
-        icon: '🔍'
+        icon: AuditorIcon,
+        color: '#6366f1'
       }
     };
 
@@ -202,9 +224,14 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
 
   // ⭐ 修改：只有 Event Manager 可以自由勾选
   const isRoleDisabled = (roleValue) => {
+    // ⭐ 消费者角色必选，始终禁用（显示为灰色）
+    if (roleValue === 'customer') {
+      return true;
+    }
+
     switch (callerRole) {
       case 'eventManager':
-        // Event Manager 可以自由勾选所有角色
+        // Event Manager 可以自由勾选其他角色
         return false;
 
       default:
@@ -362,7 +389,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 <input
                   type="text"
                   value={formData.englishName}
-                  onChange={(e) => setFormData({ ...formData, englishName: e.target.value })}
+                  onChange={(e) => {
+                    // 只允许英文字母、数字和空格
+                    const filteredValue = e.target.value.replace(/[^a-zA-Z0-9\s]/g, '');
+                    setFormData({ ...formData, englishName: filteredValue });
+                  }}
                   style={styles.input}
                   placeholder="John Doe"
                   required
@@ -485,8 +516,8 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                     key={role.value}
                     style={{
                       ...styles.roleCard,
-                      borderColor: isChecked ? '#667eea' : '#e5e7eb',
-                      backgroundColor: isChecked ? '#eef2ff' : 'white',
+                      borderColor: isChecked ? role.color : '#e5e7eb',
+                      backgroundColor: isChecked ? `${role.color}15` : 'white',
                       opacity: loading ? 0.6 : 1,
                       cursor: loading || isDisabled ? 'not-allowed' : 'pointer'
                     }}
@@ -504,7 +535,11 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                         }}
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <span style={styles.roleIcon}>{role.icon}</span>
+                      {typeof role.icon === 'function' ? (
+                        <role.icon style={{...styles.roleIconSvg, fill: role.color}} />
+                      ) : (
+                        <span style={styles.roleIcon}>{role.icon}</span>
+                      )}
                       <span style={styles.roleLabel}>{role.label}</span>
                       {isDisabled && (
                         <span style={styles.requiredBadge}>必选</span>
@@ -720,6 +755,11 @@ const styles = {
   },
   roleIcon: {
     fontSize: '1.25rem'
+  },
+  roleIconSvg: {
+    width: '24px',
+    height: '24px',
+    flexShrink: 0
   },
   roleLabel: {
     fontSize: '1rem',

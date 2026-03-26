@@ -169,15 +169,13 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
   }
 
   // ============================================
-  // 4. 预先创建 merchant 文档 ref（在 transaction 外获取 ID）
+  // 4. 准备 Firestore 引用（merchantId 将在 transaction 内与 merchantCode 同步生成）
   // ============================================
   const eventRef = db
     .collection('organizations').doc(organizationId)
     .collection('events').doc(eventId);
 
   const merchantsRef = eventRef.collection('merchants');
-  const newMerchantRef = merchantsRef.doc(); // 预先生成随机 Firestore ID
-  const merchantId = newMerchantRef.id;
 
   // now 在 transaction 外声明，避免 serverTimestamp 用于 arrayUnion 的问题
   const now = new Date();
@@ -187,6 +185,7 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
   // 5. Transaction：读取序号 → 生成 merchantCode → 批量写入
   // ============================================
   let merchantCode;
+  let merchantId;
 
   try {
     await db.runTransaction(async (transaction) => {
@@ -230,6 +229,8 @@ exports.createMerchantHttp = onCall({ region: 'asia-southeast1' }, async (reques
       }
 
       merchantCode = `M${String(newSeq).padStart(3, '0')}`; // M001 ~ M999
+      merchantId = merchantCode; // merchantId 与 merchantCode 相同，均为人类可读编号
+      const newMerchantRef = merchantsRef.doc(merchantId);
 
       // --- 5.3 构建 merchant 文档数据 ---
       const merchantData = {
