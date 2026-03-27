@@ -453,7 +453,15 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 <label style={styles.label}>身份标签 *</label>
                 <select
                   value={formData.identityTag}
-                  onChange={(e) => setFormData({ ...formData, identityTag: e.target.value })}
+                  onChange={(e) => {
+                    const newTag = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      identityTag: newTag,
+                      // 切换到 external 时清空 identityId（将由后端自动生成）
+                      identityId: newTag === 'external' ? '' : prev.identityId
+                    }));
+                  }}
                   style={styles.select}
                   required
                   disabled={loading || identityTags.length === 0}
@@ -471,12 +479,20 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 <input
                   type="text"
                   value={formData.identityId}
-                  onChange={(e) => setFormData({ ...formData, identityId: e.target.value })}
-                  style={{...styles.input, opacity: formData.identityTag === 'external' ? 0.5 : 1}}
-                  placeholder="如: 2024001 或 T2024001"
+                  onChange={(e) => setFormData(prev => ({ ...prev, identityId: e.target.value }))}
+                  style={{
+                    ...styles.input,
+                    opacity: formData.identityTag === 'external' ? 0.5 : 1,
+                    backgroundColor: formData.identityTag === 'external' ? '#f3f4f6' : 'white',
+                    cursor: formData.identityTag === 'external' ? 'not-allowed' : 'text'
+                  }}
+                  placeholder={formData.identityTag === 'external' ? '将自动生成（如: ext00001）' : '如: 2024001 或 T2024001'}
                   disabled={loading || formData.identityTag === 'external'}
+                  readOnly={formData.identityTag === 'external'}
                 />
-                <span style={styles.hint}>可选，如组织有发放请填写</span>
+                <span style={styles.hint}>
+                  {formData.identityTag === 'external' ? '外部人员将自动分配可读序号（ext00001 格式）' : '可选，如组织有发放请填写'}
+                </span>
               </div>
             </div>
 

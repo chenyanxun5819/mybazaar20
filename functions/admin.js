@@ -1008,13 +1008,35 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
 
       // 6. 构建 identityInfo（通用方式，支持任意身份标签）
-      // ✅ 使用前端传入的 identityId（学号/工号），如果没有则自动生成
       const identityName = (validTag && validTag.name && (validTag.name['zh-CN'] || validTag.name.zhCN || validTag.name.cn)) || identityTag;
       const identityNameEn = (validTag && validTag.name && (validTag.name['en'] || validTag.name.en || validTag.name['zh-CN'])) || identityTag;
+
+      let finalIdentityId = identityId && String(identityId).trim() ? String(identityId).trim() : '';
+
+      // 对于 external 用户，原子性递增计数器，生成 ext00001 格式的可读序号
+      if (identityTag === 'external' && !finalIdentityId) {
+        const eventRef = getDb()
+          .collection('organizations').doc(organizationId)
+          .collection('events').doc(eventId);
+
+        const newSeq = await getDb().runTransaction(async (tx) => {
+          const eventSnap = await tx.get(eventRef);
+          const currentSeq = (eventSnap.data()?.roleStats?.customers?.lastExternalSeq) || 0;
+          const nextSeq = currentSeq + 1;
+          tx.update(eventRef, { 'roleStats.customers.lastExternalSeq': nextSeq });
+          return nextSeq;
+        });
+
+        finalIdentityId = `ext${String(newSeq).padStart(5, '0')}`;
+        console.log('[createUserByEventManagerHttp] Generated external identityId:', finalIdentityId);
+      }
+
+      if (!finalIdentityId) {
+        finalIdentityId = `${identityTag.toUpperCase()}_${Date.now()}`;
+      }
+
       const identityInfo = {
-        identityId: identityId && String(identityId).trim()
-          ? String(identityId).trim()
-          : `${identityTag.toUpperCase()}_${Date.now()}`,
+        identityId: finalIdentityId,
         identityName: identityName,
         identityNameEn: identityNameEn,
         department: department || '未分配'

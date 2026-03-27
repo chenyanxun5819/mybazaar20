@@ -299,6 +299,22 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
 
     console.log('[createCustomer] ✅ 手机号可用，开始创建账户');
 
+    // === 原子性生成 external 序号（ext00001 格式）===
+    const eventRef = db
+      .collection('organizations').doc(organizationId)
+      .collection('events').doc(eventId);
+
+    const externalSeq = await db.runTransaction(async (tx) => {
+      const eventSnap = await tx.get(eventRef);
+      const currentSeq = (eventSnap.data()?.roleStats?.customers?.lastExternalSeq) || 0;
+      const nextSeq = currentSeq + 1;
+      tx.update(eventRef, { 'roleStats.customers.lastExternalSeq': nextSeq });
+      return nextSeq;
+    });
+
+    const generatedIdentityId = `ext${String(externalSeq).padStart(5, '0')}`;
+    console.log('[createCustomer] 🪪 生成 external identityId:', generatedIdentityId);
+
     // === 生成交易密码哈希（使用 bcrypt）===
     const pinHashData = await hashPin(transactionPin);
     const pinHash = pinHashData.hash;
@@ -340,7 +356,7 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
 
       // 身份信息
       identityInfo: {
-        identityId: '',  // Customer 无需身份ID
+        identityId: generatedIdentityId,  // 自动生成 ext00001 格式可读序号
         identityName: '顾客',
         department: null,
         position: null

@@ -1,9 +1,14 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-03-11-v14",
-    "lastUpdated": "2026-03-11",
+    "version": "2026-03-27-v15",
+    "lastUpdated": "2026-03-27",
     "architectureChanges": {
+      "version_2026-03-27-v15": [
+        "🔢 events.roleStats.customers 新增 lastExternalSeq 字段（外部人员序号计数器，只增不减）",
+        "🪪 external 身份用户的 identityId 自动生成为可读序号，格式 ext00001~ext99999",
+        "⚛️ 序号生成使用 Firestore Transaction 保证原子性，避免并发冲突"
+      ],
       "version_2026-03-11-v14": [
         "🔧 Events 新增 erudaSettings 配置字段（前端调试工具控制）",
         "🛠️ Platform Admin 可为每个 Event 独立启用/禁用 Eruda 调试面板",
@@ -335,6 +340,7 @@
                   "totalPointCardsRedeemed": "number (累计兑换点数卡数量)",
                   "averageBalance": "number (平均余额)",
                   "totalBalance": "number (所有Customer的点数总和)",
+                  "lastExternalSeq": "number (外部人员序号计数器，只增不减，用于生成下一个 identityId，格式 ext00001~ext99999，默认 0)",
                   "lastUpdated": "timestamp"
                 },
                 "pointSellers": {
