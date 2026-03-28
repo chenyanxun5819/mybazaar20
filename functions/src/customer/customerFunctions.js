@@ -196,7 +196,8 @@ async function updatePinVerificationStatus(userRef, success, currentAttempts = 0
  * @param {string} data.organizationId - 组织ID
  * @param {string} data.eventId - 活动ID
  * @param {string} data.phoneNumber - 手机号（可为 012... 或 +60...；Firestore 统一存 0...）
- * @param {string} data.displayName - 显示名称（昵称）
+ * @param {string} data.englishName - 英文名称（仅允许英文字母和数字）
+ * @param {string} [data.chineseName] - 中文名称（可选）
  * @param {string} data.transactionPin - 交易密码（6位数字）
  * @param {string} [data.email] - 邮箱（可选）
  * 
@@ -210,7 +211,8 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       organizationId,
       eventId,
       phoneNumber,
-      displayName,
+      englishName,
+      chineseName,
       transactionPin,
       email
     } = data;
@@ -219,18 +221,19 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       organizationId: organizationId || 'MISSING',
       eventId: eventId || 'MISSING',
       phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 4)}***` : 'MISSING',
-      displayName: displayName || 'MISSING',
+      englishName: englishName || 'MISSING',
+      hasChineseName: !!chineseName,
       hasTransactionPin: !!transactionPin,
       hasEmail: !!email,
     });
 
     // === 验证必填字段 ===
-    if (!organizationId || !eventId || !phoneNumber || !displayName || !transactionPin) {
+    if (!organizationId || !eventId || !phoneNumber || !englishName || !transactionPin) {
       const missing = [];
       if (!organizationId) missing.push('organizationId');
       if (!eventId) missing.push('eventId');
       if (!phoneNumber) missing.push('phoneNumber');
-      if (!displayName) missing.push('displayName');
+      if (!englishName) missing.push('englishName');
       if (!transactionPin) missing.push('transactionPin');
 
       console.error('[createCustomer] ❌ 缺少必填字段:', missing.join(', '));
@@ -365,8 +368,8 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
       // ✨ 纯OTP模式：基本信息（phoneNumber 统一存本地 0... 格式）
       basicInfo: {
         phoneNumber: parsedPhone.local0,
-        englishName: displayName,
-        chineseName: displayName,
+        englishName: englishName,
+        chineseName: chineseName || '',
         email: email || null,
         isPhoneVerified: true,  // ✅ 通过OTP验证注册，手机号已验证
 
@@ -458,7 +461,7 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
           uid: userId,
           phoneNumber: parsedPhone.e164,  // ✅ Auth 使用 E.164
           password: randomPassword,  // ✅ 随机密码（用户通过OTP登录，不需要此密码）
-          displayName: displayName
+          displayName: englishName
         });
 
         console.log('[createCustomer] ✅ Firebase Auth 账户创建成功（OTP登录模式）');
@@ -553,7 +556,7 @@ exports.createCustomer = onCall({ region: 'asia-southeast1' }, async (request) =
     console.log('[createCustomer] ✅✅✅ Customer 注册成功!', {
       userId,
       phoneNumber: parsedPhone.local0,
-      displayName
+      englishName
     });
 
     return {

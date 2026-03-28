@@ -103,7 +103,8 @@ const CustomerRegister = () => {
   // 表单数据
   const [formData, setFormData] = useState({
     phoneNumber: '',
-    displayName: '',
+    englishName: '',
+    chineseName: '',
     email: '',
     transactionPin: '',
     confirmPin: ''
@@ -170,12 +171,14 @@ const CustomerRegister = () => {
       newErrors.phoneNumber = '手机号格式不正确';
     }
 
-    if (!formData.displayName) {
-      newErrors.displayName = '请输入昵称';
-    } else if (formData.displayName.length < 2) {
-      newErrors.displayName = '昵称至少2个字符';
-    } else if (formData.displayName.length > 20) {
-      newErrors.displayName = '昵称不能超过20个字符';
+    if (!formData.englishName) {
+      newErrors.englishName = '请输入英文名称';
+    } else if (!/^[a-zA-Z0-9 ]+$/.test(formData.englishName)) {
+      newErrors.englishName = '只允许输入英文字母和数字';
+    } else if (formData.englishName.trim().length < 2) {
+      newErrors.englishName = '英文名称至少2个字符';
+    } else if (formData.englishName.length > 30) {
+      newErrors.englishName = '英文名称不能超过30个字符';
     }
 
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -488,7 +491,8 @@ const CustomerRegister = () => {
         organizationId: resolvedIds.organizationId,
         eventId: resolvedIds.eventId,
         phoneNumber: normalizedPhoneNumber,
-        displayName: formData.displayName.trim(),
+        englishName: formData.englishName.trim(),
+        chineseName: formData.chineseName.trim() || null,
         transactionPin: formData.transactionPin,
         email: formData.email.trim() || null
       });
@@ -511,8 +515,8 @@ const CustomerRegister = () => {
           eventId: resolvedIds.eventId,
           roles: ['customer'],
           selectedRole: 'customer',
-          englishName: formData.displayName.trim(),
-          chineseName: formData.displayName.trim(),
+          englishName: formData.englishName.trim(),
+          chineseName: formData.chineseName.trim() || '',
           phoneNumber: normalizedPhoneNumber,
           identityTag: 'external',
           orgCode,
@@ -665,23 +669,42 @@ const CustomerRegister = () => {
 
             <div style={styles.formGroup}>
               <label style={styles.label}>
-                昵称 <span style={styles.required}>*</span>
+                英文名称 <span style={styles.required}>*</span>
               </label>
               <input
                 type="text"
-                name="displayName"
-                value={formData.displayName}
-                onChange={handleChange}
-                placeholder="请输入昵称"
+                name="englishName"
+                value={formData.englishName}
+                onChange={(e) => {
+                  const filtered = e.target.value.replace(/[^a-zA-Z0-9 ]/g, '');
+                  setFormData(prev => ({ ...prev, englishName: filtered }));
+                  if (errors.englishName) setErrors(prev => ({ ...prev, englishName: '' }));
+                }}
+                placeholder="John Doe"
                 style={{
                   ...styles.input,
-                  ...(errors.displayName ? styles.inputError : {})
+                  ...(errors.englishName ? styles.inputError : {})
                 }}
                 disabled={loading}
+                maxLength={30}
               />
-              {errors.displayName && (
-                <p style={styles.errorText}>{errors.displayName}</p>
+              {errors.englishName && (
+                <p style={styles.errorText}>{errors.englishName}</p>
               )}
+              <p style={styles.hint}>只允许输入英文字母和数字</p>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>中文名称</label>
+              <input
+                type="text"
+                name="chineseName"
+                value={formData.chineseName}
+                onChange={handleChange}
+                placeholder="张三（可选）"
+                style={styles.input}
+                disabled={loading}
+              />
             </div>
 
             <div style={styles.formGroup}>
@@ -804,6 +827,8 @@ const CustomerRegister = () => {
               </label>
               <input
                 type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 name="transactionPin"
                 value={formData.transactionPin}
                 onChange={(e) => {
@@ -836,6 +861,8 @@ const CustomerRegister = () => {
               </label>
               <input
                 type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 name="confirmPin"
                 value={formData.confirmPin}
                 onChange={(e) => {
