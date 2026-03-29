@@ -417,7 +417,7 @@
 }
 
 .stat-value.pending {
-  color: #F44336;
+  color: #f44336;
 }
 
 .cash-total {
@@ -791,7 +791,7 @@
 /* 新增：交易卡片（参考 CustomerTransactions） */
 .transaction-card-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
   padding: 0.75rem 1rem;
   background-color: #fff;
@@ -815,7 +815,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(33, 150, 243, 0.1);
+  background-color: rgba(244, 67, 54, 0.1);
 }
 
 .transaction-card-icon svg {
@@ -862,7 +862,7 @@
   min-width: 80px;
   font-size: 1rem;
   font-weight: 700;
-  color: #2196F3;
+  color: #f44336;
   text-align: right;
 }
 

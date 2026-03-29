@@ -85,7 +85,7 @@ export function TransactionHistory() {
             {transactions.map((tx) => (
               <div key={tx.id} className="transaction-card-item">
                 {/* 左侧图标 */}
-                <div className="transaction-card-icon" style={{ color: '#2196F3' }}>
+                <div className="transaction-card-icon" style={{ color: '#f44336' }}>
                   <HandshakeDealIcon width="28px" height="28px" />
                 </div>
 
