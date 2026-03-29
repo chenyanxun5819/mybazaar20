@@ -461,7 +461,7 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
         </div>
       )}
 
-      <div style={styles.content}>
+      <div style={{ ...styles.content, ...(embedded ? styles.embeddedContent : {}) }}>
         {/* 扫描页面 */}
         {step === 'scan' && (
           <QRScanner
@@ -663,11 +663,19 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
 const styles = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#f5f5f5',
+    width: '100%',
+    maxWidth: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box'
   },
   embeddedContainer: {
     minHeight: 'auto',
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
+    width: '100%',
+    maxWidth: 'none',
+    overflowX: 'hidden',
+    boxSizing: 'border-box'
   },
   header: {
     display: 'flex',
@@ -711,14 +719,24 @@ const styles = {
     color: '#856404'
   },
   content: {
-    padding: '1.5rem 1rem'
+    width: '100%',
+    maxWidth: 'none',
+    minWidth: 0,
+    padding: '0 1rem 1rem',
+    boxSizing: 'border-box'
+  },
+  embeddedContent: {
+    padding: '0 0 1rem'
   },
   merchantCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '0.5rem',
     padding: '0.75rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    boxSizing: 'border-box'
   },
   merchantHeader: {
     display: 'flex',
@@ -740,11 +758,14 @@ const styles = {
     margin: 0
   },
   balanceCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '0.5rem',
     padding: '0.6rem 0.8rem',
     backgroundColor: '#f0f7ff',
     borderRadius: '8px',
-    border: '1px solid #2196F3'
+    border: '1px solid #2196F3',
+    boxSizing: 'border-box'
   },
   balanceLabel: {
     fontSize: '0.8rem',
@@ -758,11 +779,14 @@ const styles = {
     margin: 0
   },
   inputCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '0.75rem',
     padding: '0.75rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    boxSizing: 'border-box'
   },
   inputLabel: {
     display: 'block',
@@ -774,17 +798,22 @@ const styles = {
   amountInputContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.4rem'
+    gap: '0.4rem',
+    width: '100%',
+    minWidth: 0
   },
   amountInput: {
     flex: 1,
+    width: '100%',
+    minWidth: 0,
     padding: '0.6rem',
     fontSize: '1.3rem',
     fontWeight: '600',
     textAlign: 'center',
     border: '2px solid #ddd',
     borderRadius: '8px',
-    outline: 'none'
+    outline: 'none',
+    boxSizing: 'border-box'
   },
   amountUnit: {
     fontSize: '0.9rem',
@@ -801,7 +830,9 @@ const styles = {
   },
   actions: {
     display: 'flex',
-    gap: '0.6rem'
+    gap: '0.6rem',
+    width: '100%',
+    minWidth: 0
   },
   button: {
     flex: 1,
@@ -830,7 +861,11 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 'calc(100vh - 200px)'
+    minHeight: 'calc(100vh - 200px)',
+    width: '100%',
+    maxWidth: '100%',
+    padding: '0 1rem',
+    boxSizing: 'border-box'
   },
   pinCard: {
     width: '100%',
@@ -839,7 +874,8 @@ const styles = {
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    textAlign: 'center'
+    textAlign: 'center',
+    boxSizing: 'border-box'
   },
   pinIcon: {
     fontSize: '2.5rem',
@@ -866,7 +902,8 @@ const styles = {
     border: '2px solid #ddd',
     borderRadius: '8px',
     outline: 'none',
-    marginBottom: '0.75rem'
+    marginBottom: '0.75rem',
+    boxSizing: 'border-box'
   },
   pinHint: {
     fontSize: '0.8rem',
@@ -875,7 +912,9 @@ const styles = {
   },
   pinActions: {
     display: 'flex',
-    gap: '0.6rem'
+    gap: '0.6rem',
+    width: '100%',
+    minWidth: 0
   },
   processingContainer: {
     display: 'flex',
@@ -910,7 +949,10 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '60vh',
-    padding: '2rem'
+    padding: '2rem 1rem',
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box'
   },
   successIcon: {
     fontSize: '4rem',
@@ -929,7 +971,8 @@ const styles = {
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '1rem'
+    marginBottom: '1rem',
+    boxSizing: 'border-box'
   },
   successDetail: {
     display: 'flex',

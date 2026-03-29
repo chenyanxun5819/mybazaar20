@@ -1,13 +1,29 @@
 import React from 'react';
 import { useTransactions } from '../hooks/useTransactions';
+import { maskPhoneNumber } from '../../../services/transactionService';
+import HandshakeDealIcon from '../../../assets/handshake-deal-loan.svg?react';
 
 export function TransactionHistory() {
   const { transactions, loading, error } = useTransactions();
 
+  const getCustomerDisplayName = (tx) => {
+    const englishName = tx.customerBasicInfo?.englishName?.trim();
+    const phoneLastFour = tx.customerBasicInfo?.phoneNumber?.slice(-4);
+
+    if (englishName && phoneLastFour) {
+      return `${englishName} ${phoneLastFour}`;
+    }
+
+    if (englishName) {
+      return englishName;
+    }
+
+    return tx.customerName || '未知';
+  };
+
   if (loading) {
     return (
       <div className="transaction-history">
-        <h2 className="section-title">📋 交易历史</h2>
         <div className="loading-message">加载中...</div>
       </div>
     );
@@ -25,16 +41,16 @@ export function TransactionHistory() {
   // 格式化时间戳
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '未知时间';
-    
+
     // Firestore Timestamp 对象
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    
+
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    
+
     return `${year}-${month}-${day} ${hours}:${minutes}`;
   };
 
@@ -43,9 +59,7 @@ export function TransactionHistory() {
   const totalCount = transactions.length;
 
   return (
-    <div className="transaction-history">
-      <h2 className="section-title">📋 交易历史</h2>
-
+    <>
       {transactions.length === 0 ? (
         <div className="no-transactions">
           <p>暂无交易记录</p>
@@ -53,44 +67,51 @@ export function TransactionHistory() {
         </div>
       ) : (
         <>
+          {/* 统计摘要 */}
+          <div className="transaction-summary">
+            <div className="summary-stat-item">
+              <span className="summary-stat-value">RM {totalAmount}</span>
+              <span className="summary-stat-label">总销售额</span>
+            </div>
+            <div className="summary-stat-divider"></div>
+            <div className="summary-stat-item">
+              <span className="summary-stat-value">{totalCount} 笔</span>
+              <span className="summary-stat-label">交易次数</span>
+            </div>
+          </div>
+
           {/* 交易列表 */}
           <div className="transactions-list">
             {transactions.map((tx) => (
-              <div key={tx.id} className="transaction-item">
-                <div className="transaction-header">
-                  <span className="transaction-status completed">
-                    🟢 已完成
-                  </span>
-                  <span className="transaction-time">
-                    {formatTimestamp(tx.timestamp)}
-                  </span>
+              <div key={tx.id} className="transaction-card-item">
+                {/* 左侧图标 */}
+                <div className="transaction-card-icon" style={{ color: '#2196F3' }}>
+                  <HandshakeDealIcon width="28px" height="28px" />
                 </div>
-                <div className="transaction-details">
-                  <div className="transaction-customer">
-                    客户: <strong>{tx.customerName || '未知'}</strong>
+
+                {/* 中间信息 */}
+                <div className="transaction-card-info">
+                  <div className="transaction-card-date">
+                    {formatTimestamp(tx.timestamp)}
                   </div>
-                  <div className="transaction-amount">
-                    金额: <strong className="amount-value">RM {tx.points || 0}</strong>
+                  <div className="transaction-card-customer">
+                    {tx.customerBasicInfo?.englishName || '未知'}
                   </div>
+                  <div className="transaction-card-phone">
+                    {maskPhoneNumber(tx.customerBasicInfo?.phoneNumber || '')}
+                  </div>
+                </div>
+
+                {/* 右侧金额 */}
+                <div className="transaction-card-amount">
+                  RM {tx.amount || 0}
                 </div>
               </div>
             ))}
           </div>
-
-          {/* 统计摘要 */}
-          <div className="transaction-summary">
-            <div className="summary-item">
-              <span className="summary-label">总销售额</span>
-              <span className="summary-value">RM {totalAmount}</span>
-            </div>
-            <div className="summary-item">
-              <span className="summary-label">交易次数</span>
-              <span className="summary-value">{totalCount} 笔</span>
-            </div>
-          </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 

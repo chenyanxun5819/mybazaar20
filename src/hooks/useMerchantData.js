@@ -16,7 +16,7 @@ import {
  * @param {string} eventId - 活動 ID
  * @returns {Object} Merchant 資料和操作函數
  */
-export const useMerchantData = (userId, orgId, eventId) => {
+export const useMerchantData = (userId, orgId, eventId, options = {}) => {
   const [merchant, setMerchant] = useState(null);
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -27,6 +27,7 @@ export const useMerchantData = (userId, orgId, eventId) => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { treatPermissionDeniedAsUnassigned = false } = options;
 
   // 初始載入 merchant 資料
   useEffect(() => {
@@ -83,6 +84,18 @@ export const useMerchantData = (userId, orgId, eventId) => {
 
         setLoading(false);
       } catch (err) {
+        const isPermissionDenied =
+          err?.code === 'permission-denied' ||
+          err?.code === 'firestore/permission-denied' ||
+          /insufficient permissions/i.test(err?.message || '');
+
+        if (treatPermissionDeniedAsUnassigned && isPermissionDenied) {
+          setMerchant(null);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+
         console.error('Error loading merchant:', err);
         setError(err.message);
         setLoading(false);
@@ -96,7 +109,7 @@ export const useMerchantData = (userId, orgId, eventId) => {
         unsubscribe();
       }
     };
-  }, [userId, orgId, eventId]);
+  }, [userId, orgId, eventId, treatPermissionDeniedAsUnassigned]);
 
   // 載入統計資料
   const refreshStats = useCallback(async () => {

@@ -276,8 +276,6 @@ function MakeSale() {
 
   return (
     <div className="make-sale">
-      <h2 className="section-title">🛒 销售点数</h2>
-
       {/* 显示 Seller 库存 */}
       <div className="seller-inventory">
         <div className="inventory-label">您的点数库存</div>

@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
+import refreshIcon from '../../assets/refresh.svg';
+import paidIcon from '../../assets/paid.svg';
+import walletIncomeIcon from '../../assets/wallet-income.svg';
+import walletArrowIcon from '../../assets/wallet-arrow.svg';
+import walletMoneyIcon from '../../assets/wallet-money.svg';
+import calculatorBillIcon from '../../assets/calculator-bill.svg';
 
 /**
  * Customer 交易记录页面
@@ -18,7 +24,24 @@ import { collection, query, where, orderBy, getDocs, limit } from 'firebase/fire
  * - customer_transfer: Customer之间转账（转出/转入）
  * - point_card_topup: 点数卡充值
  */
-const CustomerTransactions = () => {
+
+// SVG Icon 组件
+const SVGIcon = ({ src, color = 'currentColor', width = '24px', height = '24px', className = '' }) => {
+  return (
+    <img 
+      src={src}
+      alt="icon"
+      style={{
+        width,
+        height,
+        filter: color !== 'currentColor' ? `hue-rotate(0deg) saturate(1)` : undefined
+      }}
+      className={className}
+    />
+  );
+};
+
+const CustomerTransactions = ({ embedded = false }) => {
   const navigate = useNavigate();
   const { orgEventCode } = useParams();
   
@@ -204,17 +227,17 @@ const CustomerTransactions = () => {
   // 格式化交易类型
   const getTransactionTypeLabel = (transaction) => {
     if (transaction.transactionType === 'customer_to_merchant') {
-      return { label: '商家付款', icon: '💳', color: '#f44336' };
+      return { label: '商家付款', icon: paidIcon, iconColor: '#f44336', color: '#f44336' };
     } else if (transaction.transactionType === 'customer_transfer') {
       if (transaction.fromUser?.userId === customerData.userId) {
-        return { label: '转出', icon: '📤', color: '#FF9800' };
+        return { label: '转出', icon: walletArrowIcon, iconColor: '#FF9800', color: '#FF9800' };
       } else {
-        return { label: '转入', icon: '📥', color: '#4CAF50' };
+        return { label: '转入', icon: walletIncomeIcon, iconColor: '#4CAF50', color: '#4CAF50' };
       }
     } else if (transaction.transactionType === 'point_card_topup') {
-      return { label: '点数卡充值', icon: '🎫', color: '#2196F3' };
+      return { label: '点数卡充值', icon: walletMoneyIcon, iconColor: '#2196F3', color: '#2196F3' };
     }
-    return { label: '未知', icon: '❓', color: '#999' };
+    return { label: '未知', icon: calculatorBillIcon, iconColor: '#999', color: '#999' };
   };
 
   // 格式化时间（相对时间）
@@ -287,7 +310,7 @@ const CustomerTransactions = () => {
 
   if (!customerData) {
     return (
-      <div style={styles.container}>
+      <div style={{ ...styles.container, ...(embedded ? styles.embeddedContainer : {}) }}>
         <div style={styles.loadingCard}>
           <div style={styles.spinner}></div>
           <p>加载中...</p>
@@ -296,81 +319,41 @@ const CustomerTransactions = () => {
     );
   }
 
-  return (
-    <div style={styles.container}>
-      {/* 顶部导航 */}
-      <div style={styles.header}>
-        <button onClick={handleBack} style={styles.backButton}>
-          ← 返回
-        </button>
-        <h1 style={styles.title}>交易记录</h1>
-        <button onClick={handleRefresh} style={styles.refreshButton}>
-          🔄
-        </button>
-      </div>
+  const contentStyle = embedded ? { ...styles.content, ...styles.embeddedContent } : styles.content;
 
+  return (
+    <div style={{ ...styles.container, ...(embedded ? styles.embeddedContainer : {}) }}>
       {/* 筛选栏 */}
       <div style={styles.filterBar}>
-        <div style={styles.filterButtons}>
-          <button
-            onClick={() => setFilterType('all')}
-            style={{
-              ...styles.filterButton,
-              ...(filterType === 'all' ? styles.filterButtonActive : {})
-            }}
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          style={styles.filterSelect}
+        >
+          <option value="all">全部</option>
+          <option value="payment">付款</option>
+          <option value="transfer_out">转出</option>
+          <option value="transfer_in">转入</option>
+          <option value="topup">充值</option>
+        </select>
+
+        <div style={styles.headerRight}>
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            style={styles.sortSelect}
           >
-            全部
-          </button>
-          <button
-            onClick={() => setFilterType('payment')}
-            style={{
-              ...styles.filterButton,
-              ...(filterType === 'payment' ? styles.filterButtonActive : {})
-            }}
-          >
-            💳 付款
-          </button>
-          <button
-            onClick={() => setFilterType('transfer_out')}
-            style={{
-              ...styles.filterButton,
-              ...(filterType === 'transfer_out' ? styles.filterButtonActive : {})
-            }}
-          >
-            📤 转出
-          </button>
-          <button
-            onClick={() => setFilterType('transfer_in')}
-            style={{
-              ...styles.filterButton,
-              ...(filterType === 'transfer_in' ? styles.filterButtonActive : {})
-            }}
-          >
-            📥 转入
-          </button>
-          <button
-            onClick={() => setFilterType('topup')}
-            style={{
-              ...styles.filterButton,
-              ...(filterType === 'topup' ? styles.filterButtonActive : {})
-            }}
-          >
-            🎫 充值
+            <option value="desc">最新在前</option>
+            <option value="asc">最早在前</option>
+          </select>
+          <button onClick={handleRefresh} style={styles.refreshButton}>
+            <SVGIcon src={refreshIcon} color="#2196F3" width="24px" height="24px" />
           </button>
         </div>
-
-        <select
-          value={sortOrder}
-          onChange={(e) => setSortOrder(e.target.value)}
-          style={styles.sortSelect}
-        >
-          <option value="desc">最新在前</option>
-          <option value="asc">最早在前</option>
-        </select>
       </div>
 
       {/* 交易列表 */}
-      <div style={styles.content}>
+      <div style={contentStyle}>
         {loading && (
           <div style={styles.loadingSection}>
             <div style={styles.spinner}></div>
@@ -428,7 +411,12 @@ const CustomerTransactions = () => {
                       ...styles.transactionIcon,
                       backgroundColor: typeInfo.color + '20'
                     }}>
-                      <span style={{ fontSize: '1.5rem' }}>{typeInfo.icon}</span>
+                      <SVGIcon 
+                        src={typeInfo.icon} 
+                        color={typeInfo.iconColor}
+                        width="28px" 
+                        height="28px" 
+                      />
                     </div>
                     <div style={styles.transactionInfo}>
                       <div style={styles.transactionType}>{typeInfo.label}</div>
@@ -496,7 +484,14 @@ const CustomerTransactions = () => {
                 const typeInfo = getTransactionTypeLabel(selectedTransaction);
                 return (
                   <div style={styles.detailSection}>
-                    <div style={styles.detailIconLarge}>{typeInfo.icon}</div>
+                    <div style={styles.detailIconLarge}>
+                      <SVGIcon 
+                        src={typeInfo.icon}
+                        color={typeInfo.iconColor}
+                        width="80px"
+                        height="80px"
+                      />
+                    </div>
                     <div style={styles.detailLabel}>{typeInfo.label}</div>
                   </div>
                 );
@@ -632,70 +627,76 @@ const CustomerTransactions = () => {
 const styles = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#f5f5f5',
+    width: '100%',
+    maxWidth: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box'
   },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '1rem',
-    backgroundColor: '#fff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 10
-  },
-  backButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.9rem',
-    backgroundColor: 'transparent',
-    color: '#2196F3',
-    border: 'none',
-    cursor: 'pointer'
-  },
-  title: {
-    fontSize: '1.2rem',
-    fontWeight: '600',
-    color: '#333',
-    margin: 0
-  },
-  refreshButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '1.2rem',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer'
+  embeddedContainer: {
+    minHeight: 'auto',
+    backgroundColor: 'transparent'
   },
   filterBar: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem',
+    padding: '0.5rem 1rem',
     backgroundColor: '#fff',
-    borderBottom: '1px solid #eee',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
     gap: '1rem',
-    flexWrap: 'wrap'
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box'
+  },
+  filterSelect: {
+    padding: '0.5rem 1rem',
+    fontSize: '0.9rem',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    backgroundColor: '#fff',
+    color: '#333',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    minWidth: '150px'
   },
   filterButtons: {
     display: 'flex',
-    gap: '0.5rem',
-    flexWrap: 'wrap',
-    flex: 1
+    gap: '1.5rem',
+    flex: 1,
+    alignItems: 'center'
   },
-  filterButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.9rem',
-    backgroundColor: '#f5f5f5',
+  filterLink: {
+    fontSize: '0.95rem',
     color: '#666',
-    border: '1px solid #ddd',
-    borderRadius: '20px',
     cursor: 'pointer',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    padding: '0.5rem 0',
+    borderBottom: '2px solid transparent',
+    fontWeight: '500'
   },
-  filterButtonActive: {
-    backgroundColor: '#2196F3',
-    color: '#fff',
-    border: '1px solid #2196F3'
+  filterLinkActive: {
+    color: '#2196F3',
+    borderBottom: '2px solid #2196F3'
+  },
+  headerRight: {
+    display: 'flex',
+    gap: '1rem',
+    alignItems: 'center',
+    minWidth: 0
+  },
+  refreshButton: {
+    padding: '0.25rem 1rem',
+    fontSize: '1.2rem',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   sortSelect: {
     padding: '0.5rem 1rem',
@@ -706,7 +707,14 @@ const styles = {
     cursor: 'pointer'
   },
   content: {
-    padding: '1rem'
+    width: '100%',
+    maxWidth: 'none',
+    minWidth: 0,
+    padding: '0 1rem 1rem',
+    boxSizing: 'border-box'
+  },
+  embeddedContent: {
+    padding: '0 0 1rem'
   },
   loadingSection: {
     display: 'flex',
@@ -753,7 +761,7 @@ const styles = {
     cursor: 'pointer'
   },
   emptyCard: {
-    padding: '3rem 2rem',
+    padding: '2rem 1rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     textAlign: 'center'
@@ -776,29 +784,36 @@ const styles = {
   transactionList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.75rem'
+    gap: '0.35rem',
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0
   },
   transactionCard: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem',
+    padding: '0.625rem 1rem',
     backgroundColor: '#fff',
-    borderRadius: '12px',
+    borderRadius: '10px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     cursor: 'pointer',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box'
   },
   transactionLeft: {
     display: 'flex',
     alignItems: 'center',
     gap: '1rem',
-    flex: 1
+    flex: 1,
+    minWidth: 0
   },
   transactionIcon: {
-    width: '50px',
-    height: '50px',
-    borderRadius: '12px',
+    width: '42px',
+    height: '42px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center'
@@ -806,7 +821,9 @@ const styles = {
   transactionInfo: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.25rem'
+    gap: '0.125rem',
+    minWidth: 0,
+    flex: 1
   },
   transactionType: {
     fontSize: '1rem',
@@ -824,7 +841,9 @@ const styles = {
   transactionRight: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.5rem'
+    gap: '0.5rem',
+    minWidth: 0,
+    flexShrink: 0
   },
   transactionAmount: {
     fontSize: '1.2rem',
@@ -853,22 +872,23 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
-    padding: '1rem'
+    padding: '0.5rem 1rem'
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: '12px',
+    borderRadius: '10px',
     width: '100%',
     maxWidth: '500px',
-    maxHeight: '80vh',
+    maxHeight: '85vh',
     overflow: 'auto',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    boxSizing: 'border-box'
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1.5rem',
+    padding: '0.875rem 1.5rem',
     borderBottom: '1px solid #eee'
   },
   modalTitle: {
@@ -886,17 +906,21 @@ const styles = {
     color: '#999'
   },
   modalBody: {
-    padding: '2rem'
+    padding: '1rem 2rem'
   },
   detailSection: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    marginBottom: '2rem'
+    marginBottom: '1rem'
   },
   detailIconLarge: {
     fontSize: '4rem',
-    marginBottom: '0.5rem'
+    marginBottom: '0.25rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '84px'
   },
   detailLabel: {
     fontSize: '1.1rem',
@@ -905,7 +929,7 @@ const styles = {
   },
   detailAmount: {
     textAlign: 'center',
-    marginBottom: '2rem'
+    marginBottom: '1rem'
   },
   detailUnit: {
     fontSize: '1.2rem',
@@ -916,12 +940,12 @@ const styles = {
   detailList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem'
+    gap: '0.5rem'
   },
   detailItem: {
     display: 'flex',
     justifyContent: 'space-between',
-    paddingBottom: '1rem',
+    paddingBottom: '0.5rem',
     borderBottom: '1px solid #f5f5f5'
   },
   detailItemLabel: {
@@ -937,7 +961,7 @@ const styles = {
     wordBreak: 'break-all'
   },
   modalFooter: {
-    padding: '1.5rem',
+    padding: '0.875rem 1.5rem',
     borderTop: '1px solid #eee',
     display: 'flex',
     justifyContent: 'center'

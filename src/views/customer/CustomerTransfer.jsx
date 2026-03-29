@@ -16,7 +16,7 @@ import { useEvent } from '../../contexts/EventContext';
  * 4. 输入交易密码（6位数字 PIN）
  * 5. 执行转让
  */
-const CustomerTransfer = () => {
+const CustomerTransfer = ({ embedded = false }) => {
   const navigate = useNavigate();
   const {
     orgCode,
@@ -125,6 +125,8 @@ const CustomerTransfer = () => {
     return phone;
   };
 
+  const sanitizeAmountInput = (value) => value.replace(/\D/g, '');
+
   // 查询接收方
   const handleSearchRecipient = async () => {
     setPhoneError('');
@@ -211,12 +213,12 @@ const CustomerTransfer = () => {
   const validateAmount = () => {
     setAmountError('');
 
-    if (!amount || parseFloat(amount) <= 0) {
+    if (!amount || !/^\d+$/.test(amount)) {
       setAmountError('请输入有效金额');
       return false;
     }
 
-    const numAmount = parseFloat(amount);
+    const numAmount = Number.parseInt(amount, 10);
     const availablePoints = customerData?.customer?.pointsAccount?.availablePoints || 0;
 
     if (numAmount > availablePoints) {
@@ -266,7 +268,7 @@ const CustomerTransfer = () => {
 
       const result = await transferPoints({
         toPhoneNumber: recipientData.basicInfo.phoneNumber,
-        amount: parseFloat(amount),
+        amount: Number.parseInt(amount, 10),
         transactionPin: transactionPin
       });
 
@@ -315,7 +317,7 @@ const CustomerTransfer = () => {
 
   if (!customerData) {
     return (
-      <div style={styles.container}>
+      <div style={{ ...styles.container, ...(embedded ? styles.embeddedContainer : {}) }}>
         <div style={styles.loadingCard}>
           <div style={styles.spinner}></div>
           <p>加载中...</p>
@@ -324,17 +326,10 @@ const CustomerTransfer = () => {
     );
   }
 
-  return (
-    <div style={styles.container}>
-      {/* 顶部导航 */}
-      <div style={styles.header}>
-        <button onClick={handleCancel} style={styles.backButton}>
-          ← 取消
-        </button>
-        <h1 style={styles.title}>点数转让</h1>
-        <div style={{ width: '60px' }}></div>
-      </div>
+  const contentStyle = embedded ? { ...styles.content, ...styles.embeddedContent } : styles.content;
 
+  return (
+    <div style={{ ...styles.container, ...(embedded ? styles.embeddedContainer : {}) }}>
       {/* 错误提示 */}
       {error && (
         <div style={styles.errorBanner}>
@@ -345,7 +340,7 @@ const CustomerTransfer = () => {
 
       {/* 步骤1：输入接收方手机号 */}
       {step === 'input' && (
-        <div style={styles.content}>
+        <div style={contentStyle}>
           {/* 余额显示 */}
           <div style={styles.balanceCard}>
             <p style={styles.balanceLabel}>可用余额</p>
@@ -403,14 +398,14 @@ const CustomerTransfer = () => {
 
       {/* 步骤2：确认转让 */}
       {step === 'confirm' && recipientData && (
-        <div style={styles.content}>
+        <div style={contentStyle}>
           {/* 接收方信息 */}
           <div style={styles.recipientCard}>
             <div style={styles.recipientHeader}>
               <div style={styles.recipientIcon}>👤</div>
               <div>
                 <h2 style={styles.recipientName}>
-                  {recipientData.basicInfo.displayName}
+                  {recipientData.basicInfo.englishName}
                 </h2>
                 <p style={styles.recipientPhone}>
                   {maskPhoneNumber(recipientData.basicInfo.phoneNumber)}
@@ -433,10 +428,21 @@ const CustomerTransfer = () => {
             <label style={styles.inputLabel}>转让金额</label>
             <div style={styles.amountInputContainer}>
               <input
-                type="number"
+                type="text"
                 value={amount}
                 onChange={(e) => {
-                  setAmount(e.target.value);
+                  setAmount(sanitizeAmountInput(e.target.value));
+                  setAmountError('');
+                }}
+                onBeforeInput={(e) => {
+                  if (e.data && /\D/.test(e.data)) {
+                    e.preventDefault();
+                  }
+                }}
+                onPaste={(e) => {
+                  e.preventDefault();
+                  const pastedText = e.clipboardData.getData('text');
+                  setAmount(sanitizeAmountInput(pastedText));
                   setAmountError('');
                 }}
                 placeholder="0"
@@ -446,6 +452,9 @@ const CustomerTransfer = () => {
                 }}
                 disabled={loading}
                 autoFocus
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
               />
               <span style={styles.amountUnit}>点</span>
             </div>
@@ -487,7 +496,7 @@ const CustomerTransfer = () => {
             <div style={styles.pinIcon}>🔐</div>
             <h2 style={styles.pinTitle}>请输入交易密码</h2>
             <p style={styles.pinSubtitle}>
-              转让给 {recipientData?.basicInfo?.displayName || '接收方'}：{amount} 点
+              转让给 {recipientData?.basicInfo?.englishName || '接收方'}：{amount} 点
             </p>
 
             <input
@@ -557,7 +566,7 @@ const CustomerTransfer = () => {
           <div style={styles.successDetails}>
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>接收方：</span>
-              <span style={styles.detailValue}>{recipientData.basicInfo.displayName}</span>
+              <span style={styles.detailValue}>{recipientData.basicInfo.englishName}</span>
             </p>
             <p style={styles.successDetail}>
               <span style={styles.detailLabel}>金额：</span>
@@ -586,7 +595,15 @@ const CustomerTransfer = () => {
 const styles = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#f5f5f5',
+    width: '100%',
+    maxWidth: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box'
+  },
+  embeddedContainer: {
+    minHeight: 'auto',
+    backgroundColor: 'transparent'
   },
   loadingCard: {
     display: 'flex',
@@ -646,14 +663,24 @@ const styles = {
     color: '#856404'
   },
   content: {
-    padding: '1rem'
+    width: '100%',
+    maxWidth: 'none',
+    minWidth: 0,
+    padding: '0 1rem 1rem',
+    boxSizing: 'border-box'
+  },
+  embeddedContent: {
+    padding: '0 0 1rem'
   },
   balanceCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '1rem',
     padding: '1rem 1.5rem',
     backgroundColor: '#f0f7ff',
     borderRadius: '8px',
-    border: '1px solid #2196F3'
+    border: '1px solid #2196F3',
+    boxSizing: 'border-box'
   },
   balanceLabel: {
     fontSize: '0.9rem',
@@ -667,11 +694,14 @@ const styles = {
     margin: 0
   },
   inputCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '1.5rem',
     padding: '1.5rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    boxSizing: 'border-box'
   },
   inputLabel: {
     display: 'block',
@@ -740,12 +770,15 @@ const styles = {
     fontSize: '0.85rem'
   },
   recipientCard: {
+    width: '100%',
+    maxWidth: '100%',
     marginBottom: '1rem',
     padding: '1.5rem',
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    position: 'relative'
+    position: 'relative',
+    boxSizing: 'border-box'
   },
   recipientHeader: {
     display: 'flex',
@@ -788,17 +821,22 @@ const styles = {
   amountInputContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.5rem'
+    gap: '0.5rem',
+    width: '100%',
+    minWidth: 0
   },
   amountInput: {
     flex: 1,
+    width: '100%',
+    minWidth: 0,
     padding: '1rem',
     fontSize: '2rem',
     fontWeight: '600',
     textAlign: 'center',
     border: '2px solid #ddd',
     borderRadius: '8px',
-    outline: 'none'
+    outline: 'none',
+    boxSizing: 'border-box'
   },
   amountUnit: {
     fontSize: '1.2rem',
@@ -807,13 +845,19 @@ const styles = {
   },
   actions: {
     display: 'flex',
-    gap: '1rem'
+    gap: '1rem',
+    width: '100%',
+    minWidth: 0
   },
   pinContainer: {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 'calc(100vh - 200px)'
+    minHeight: 'calc(100vh - 200px)',
+    width: '100%',
+    maxWidth: '100%',
+    padding: '0 1rem',
+    boxSizing: 'border-box'
   },
   pinCard: {
     width: '100%',
@@ -822,7 +866,8 @@ const styles = {
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    textAlign: 'center'
+    textAlign: 'center',
+    boxSizing: 'border-box'
   },
   pinIcon: {
     fontSize: '3rem',
@@ -849,7 +894,8 @@ const styles = {
     border: '2px solid #ddd',
     borderRadius: '8px',
     outline: 'none',
-    marginBottom: '1rem'
+    marginBottom: '1rem',
+    boxSizing: 'border-box'
   },
   pinHint: {
     fontSize: '0.85rem',
@@ -858,7 +904,9 @@ const styles = {
   },
   pinActions: {
     display: 'flex',
-    gap: '1rem'
+    gap: '1rem',
+    width: '100%',
+    minWidth: 0
   },
   processingContainer: {
     display: 'flex',
@@ -885,7 +933,10 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '60vh',
-    padding: '2rem'
+    padding: '2rem 1rem',
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box'
   },
   successIcon: {
     fontSize: '4rem',
@@ -904,7 +955,8 @@ const styles = {
     backgroundColor: '#fff',
     borderRadius: '12px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '1rem'
+    marginBottom: '1rem',
+    boxSizing: 'border-box'
   },
   successDetail: {
     display: 'flex',

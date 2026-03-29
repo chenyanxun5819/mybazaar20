@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 
@@ -41,11 +41,41 @@ export function useTransactions(maxRecords = 50) {
 
     const unsubscribe = onSnapshot(
       q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
+      async (snapshot) => {
+        const baseTransactions = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
+
+        const data = await Promise.all(
+          baseTransactions.map(async (transaction) => {
+            if (!transaction.customerId) {
+              return transaction;
+            }
+
+            try {
+              const customerRef = doc(
+                db,
+                'organizations', userProfile.organizationId,
+                'events', userProfile.eventId,
+                'users', transaction.customerId
+              );
+              const customerSnap = await getDoc(customerRef);
+
+              if (!customerSnap.exists()) {
+                return transaction;
+              }
+
+              return {
+                ...transaction,
+                customerBasicInfo: customerSnap.data()?.basicInfo || null
+              };
+            } catch (customerError) {
+              console.warn('[useTransactions] 读取客户资料失败:', transaction.customerId, customerError);
+              return transaction;
+            }
+          })
+        );
         
         console.log('[useTransactions] 收到', data.length, '条交易记录');
         setTransactions(data);

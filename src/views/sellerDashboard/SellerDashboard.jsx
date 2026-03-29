@@ -40,15 +40,19 @@ function SellerDashboard() {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: '0.25rem',
       padding: '1rem 0.5rem',
+      minHeight: '74px',
       background: 'transparent',
       border: 'none',
       outline: 'none',
       cursor: 'pointer',
       color: '#757575',
       transition: 'all 0.2s',
-      borderBottom: '3px solid transparent'
+      borderBottom: '3px solid transparent',
+      position: 'relative',
+      overflow: 'visible'
     },
     tabButtonActive: {
       color: '#2196F3',
@@ -144,10 +148,11 @@ function SellerDashboard() {
           onClick={() => setActiveTab('history')}
         >
           <MemoCircleCheckIcon style={{ width: '1.5rem', height: '1.5rem' }} />
-          <span style={styles.tabLabel}>历史</span>
+          <span style={styles.tabLabel}>交易历史</span>
         </button>
         {/* 🆕 新增Tab */}
         <button
+          className="seller-submit-tab"
           style={{
             ...styles.tabButton,
             ...(activeTab === 'submit' ? styles.tabButtonActive : {})
@@ -159,7 +164,12 @@ function SellerDashboard() {
           {/* 🆕 显示待上交金额徽章 */}
           {cashOnHand > 0 && (
             <span className="badge">
-              RM {cashOnHand.toLocaleString()}
+              {cashOnHand >= 1000
+                ? new Intl.NumberFormat('en-MY', {
+                    notation: 'compact',
+                    maximumFractionDigits: 1
+                  }).format(cashOnHand)
+                : cashOnHand.toLocaleString('en-MY')}
             </span>
           )}
         </button>

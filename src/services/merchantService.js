@@ -86,7 +86,15 @@ export const getMerchantByUserId = async (orgId, eventId, userId) => {
 
     return null;
   } catch (error) {
-    console.error('Error getting merchant by userId:', error);
+    const isPermissionDenied =
+      error?.code === 'permission-denied' ||
+      error?.code === 'firestore/permission-denied' ||
+      /insufficient permissions/i.test(error?.message || '');
+
+    if (!isPermissionDenied) {
+      console.error('Error getting merchant by userId:', error);
+    }
+
     throw error;
   }
 };

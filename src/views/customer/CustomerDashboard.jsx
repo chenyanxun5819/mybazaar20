@@ -5,8 +5,6 @@ import { signOut } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useEvent } from '../../contexts/EventContext';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 导入 useAuth
-import QRCodeDisplay from '../../components/QRCodeDisplay';
-import { generateCustomerReceivePointsQR } from '../../utils/qrCodeGenerator';
 import { safeFetch } from '../../services/safeFetch';
 import { Bell, CheckCircle, XCircle } from 'lucide-react';
 /**
@@ -23,6 +21,8 @@ import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
 import QrScanIcon from '../../assets/qr-scan.svg?react';
 import PointsTransferIcon from '../../assets/points-transfer.svg?react';
 import MemoCircleCheckIcon from '../../assets/memo-circle-check.svg?react';
+import OverviewIcon from '../../assets/overview.svg?react';
+import WalletMoneyIcon from '../../assets/wallet-money.svg?react';
 import CustomerPayment from './CustomerPayment';
 import CustomerTransfer from './CustomerTransfer';
 import CustomerTransactions from './CustomerTransactions';
@@ -56,7 +56,6 @@ const CustomerDashboard = () => {
   const { orgCode, eventCode, event, organizationId: eventOrgId, eventId: eventEventId } = useEvent(); // 🆕 获取 event 对象
   const [loading, setLoading] = useState(true);
   const [customerData, setCustomerData] = useState(null);
-  const [showQRCode, setShowQRCode] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   // ⭐ 新增：交易通知状态
   const [notification, setNotification] = useState(null);
@@ -580,13 +579,11 @@ const CustomerDashboard = () => {
           <>
             <div style={styles.balanceCard}>
               <div style={styles.balanceHeader}>
-                <span style={styles.balanceLabel}>💰 我的余额</span>
-                <button
-                  onClick={() => setShowQRCode(!showQRCode)}
-                  style={styles.qrButton}
-                >
-                  {showQRCode ? '隐藏QR码' : '显示收点数QR码'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <WalletMoneyIcon style={{ width: '1.5rem', height: '1.5rem', color: '#2196F3' }} />
+                  <span style={styles.balanceLabel}>我的余额</span>
+                </div>
+
               </div>
               <div style={styles.balanceAmount}>
                 <span style={styles.balanceNumber}>{pointsAccount.availablePoints || 0}</span>
@@ -616,7 +613,10 @@ const CustomerDashboard = () => {
 
             {/* 活动统计卡片 */}
             <div style={styles.statsCard}>
-              <h3 style={styles.statsTitle}>📊 我的活动</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <OverviewIcon style={{ width: '1.5rem', height: '1.5rem', color: '#2196F3' }} />
+                <h3 style={{ ...styles.statsTitle, margin: 0 }}>我的活动</h3>
+              </div>
               <div style={styles.statsGrid}>
                 <div style={styles.statsItem}>
                   <span style={styles.statLabel}>访问商家</span>
@@ -646,12 +646,12 @@ const CustomerDashboard = () => {
 
         {/* Transfer Tab */}
         {activeTab === 'transfer' && (
-          <CustomerTransfer />
+          <CustomerTransfer embedded={true} />
         )}
 
         {/* History Tab */}
         {activeTab === 'history' && (
-          <CustomerTransactions />
+          <CustomerTransactions embedded={true} />
         )}
       </main>
 
@@ -708,12 +708,14 @@ const styles = {
   dashboardContent: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
-    padding: '1rem',
+    gap: '0.25rem',
+    padding: '0 1rem 1rem',
     margin: 0,
     width: '100%',
     maxWidth: 'none',
-    minHeight: 'auto'
+    minHeight: 'auto',
+    overflowX: 'hidden',
+    boxSizing: 'border-box'
   },
   tabContent: {
     display: 'flex',
@@ -853,10 +855,12 @@ const styles = {
   },
   balanceCard: {
     width: '100%',
+    maxWidth: '100%',
     backgroundColor: '#fff',
     borderRadius: '8px',
     padding: '1.5rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    boxSizing: 'border-box'
   },
   balanceHeader: {
     display: 'flex',
@@ -869,16 +873,7 @@ const styles = {
     fontWeight: '600',
     color: '#333'
   },
-  qrButton: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.85rem',
-    backgroundColor: '#f5f5f5',
-    color: '#2196F3',
-    border: '1px solid #e0e0e0',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  },
+
   balanceAmount: {
     textAlign: 'center',
     marginBottom: '1.5rem'
@@ -922,12 +917,7 @@ const styles = {
   statDivider: {
     display: 'none'
   },
-  qrCodeSection: {
-    backgroundColor: '#fff',
-    borderRadius: '8px',
-    padding: '1.5rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-  },
+
   menuGrid: {
     margin: '0 1rem 1rem',
     display: 'grid',
@@ -965,10 +955,12 @@ const styles = {
   },
   statsCard: {
     width: '100%',
+    maxWidth: '100%',
     backgroundColor: '#fff',
     borderRadius: '8px',
     padding: '1.5rem',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    boxSizing: 'border-box'
   },
   statsTitle: {
     fontSize: '1.1rem',

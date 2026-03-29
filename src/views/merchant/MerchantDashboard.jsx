@@ -79,7 +79,10 @@ const MerchantDashboard = () => {
   } = useMerchantData(
     currentUser?.uid,
     organizationId,
-    eventId
+    eventId,
+    {
+      treatPermissionDeniedAsUnassigned: isMerchantOwner || isMerchantAsist
+    }
   );
 
   // ============================================
@@ -265,26 +268,11 @@ const MerchantDashboard = () => {
           <div className="merchant-not-assigned-icon">
             <Store />
           </div>
-          <h2 className="merchant-not-assigned-title">尚未设置摊位资料</h2>
+          <h2 className="merchant-not-assigned-title">尚未被分配摊位</h2>
           <div className="merchant-not-assigned-content">
             <p className="merchant-not-assigned-message">
-              您已拥有{isMerchantOwner ? '摊主' : '助理'}角色，但还没有被分配到摊位。
+              您尚未被分配摊位，请联系商家管理员，将您分配至正确的摊位！
             </p>
-            <div className="merchant-not-assigned-steps">
-              <h3>请按照以下步骤操作：</h3>
-              <ol>
-                <li>联络活动的 <strong>Merchant Manager</strong> 或 <strong>Event Manager</strong></li>
-                <li>
-                  {isMerchantOwner && '请他们为您创建摊位并分配给您'}
-                  {isMerchantAsist && '请他们将您分配到摊位'}
-                </li>
-                <li>分配完成后，刷新此页面即可查看摊位资料</li>
-              </ol>
-            </div>
-            <div className="merchant-not-assigned-info">
-              <p><strong>您的角色：</strong>{isMerchantOwner ? '摊主 (Merchant Owner)' : '助理 (Merchant Assistant)'}</p>
-              <p><strong>用户 ID：</strong>{currentUser?.uid?.substring(0, 12)}...</p>
-            </div>
           </div>
           <div className="merchant-not-assigned-actions">
             <button
