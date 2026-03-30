@@ -251,7 +251,7 @@ const SellerSubmitCash = () => {
     }
     
     if (isStudent && !sellerManager) {
-      window.mybazaarShowToast('未找到您的班级管理者（Seller Manager）。\n\n请联系管理员为您的班级（' + department + '）分配管理者。');
+      window.mybazaarShowToast('未找到您的班导师（Seller Manager）。\n\n请联系管理员为您的班级（' + department + '）分配管理者。');
       return;
     }
     
@@ -277,7 +277,7 @@ const SellerSubmitCash = () => {
     }
 
     if (isStudent && !sellerManager) {
-      window.mybazaarShowToast('未找到您的班级管理者（Seller Manager）。请联系管理员设置。');
+      window.mybazaarShowToast('未找到您的班导师（Seller Manager）。请联系管理员设置。');
       return;
     }
 
@@ -358,7 +358,7 @@ const SellerSubmitCash = () => {
         <div style={styles.loading}>
           <div style={styles.spinner}></div>
           <p>加载中...</p>
-          {smLoading && <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>正在查找班级管理者...</p>}
+          {smLoading && <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>正在查找班导师...</p>}
           {hasSellerRole && !hasIdentityTag && !identityTagTimeout && (
             <p style={{ fontSize: '0.875rem', color: '#f59e0b' }}>等待身份信息...</p>
           )}
@@ -403,8 +403,8 @@ const SellerSubmitCash = () => {
     ? {
         icon: '👨‍🏫',
         description: sellerManager 
-          ? `上交给班级管理者: ${sellerManager.name}`
-          : '未设置班级管理者'
+          ? `上交给班导师: ${sellerManager.name}`
+          : '未设置班导师'
       }
     : {
         icon: '🏦',
@@ -414,78 +414,60 @@ const SellerSubmitCash = () => {
   return (
     <div style={styles.container}>
       {/* 统计卡片 */}
-      <div style={styles.statsGrid}>
-        <div style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}>
-          <span style={styles.statIcon}>💰</span>
-          <div style={styles.statContent}>
-            <div style={styles.statValue}>RM {summaryStats.cashOnHand.toLocaleString()}</div>
-            <div style={styles.statTitle}>手上现金</div>
-            <div style={styles.statDescription}>
-              {isStudent ? '待上交给 Seller Manager' : '待上交'}
+      <div style={styles.summaryWrapper}>
+        <div style={styles.summaryCard}>
+          {/* 第一行：左边(现有现金+提示) + 右边(金额+按钮+描述) */}
+          <div style={styles.summaryHeaderRow}>
+            {/* 左边 */}
+            <div style={styles.summaryLeftCol}>
+              <div style={styles.summaryLabel}>现有现金</div>
+              {cashOnHand > 0 && (
+                <div style={styles.reminderBoxSmall}>
+                  - 记得及时上交
+                </div>
+              )}
+            </div>
+            {/* 右边 */}
+            <div style={styles.summaryRightCol}>
+              <div style={styles.summaryAmount}>RM {summaryStats.cashOnHand.toLocaleString()}</div>
+              <button 
+                style={styles.submitButton}
+                onClick={handleOpenSubmitModal}
+                disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
+              >
+                {cashOnHand > 0 ? '立即上交' : '暂无现金'}
+              </button>
+              <p style={styles.summaryDesc}>{recipientInfo.description}</p>
+              {isStudent && !sellerManager && (
+                <div style={styles.warningBox}>
+                  ⚠️ 您的班级（{department}）还没有分配 Seller Manager，请联系管理员设置后才能上交现金。
+                </div>
+              )}
             </div>
           </div>
-        </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
-          <span style={styles.statIcon}>📤</span>
-          <div style={styles.statContent}>
-            <div style={styles.statValue}>{summaryStats.pendingCount} 笔</div>
-            <div style={styles.statTitle}>待确认</div>
-            <div style={styles.statDescription}>
-              金额: RM {summaryStats.pendingAmount.toLocaleString()}
+          {/* 第二行：三列统计 */}
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{summaryStats.pendingCount} 笔</span>
+              <span style={styles.summaryStatLabel}>待确认笔数</span>
+              <span style={styles.summaryStatAmt}>RM {summaryStats.pendingAmount.toLocaleString()}</span>
             </div>
-          </div>
-        </div>
-
-        <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
-          <span style={styles.statIcon}>✅</span>
-          <div style={styles.statContent}>
-            <div style={styles.statValue}>{summaryStats.confirmedCount} 笔</div>
-            <div style={styles.statTitle}>已确认</div>
-            <div style={styles.statDescription}>
-              金额: RM {summaryStats.confirmedAmount.toLocaleString()}
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{summaryStats.confirmedCount} 笔</span>
+              <span style={styles.summaryStatLabel}>已确认笔数</span>
+              <span style={styles.summaryStatAmt}>RM {summaryStats.confirmedAmount.toLocaleString()}</span>
             </div>
-          </div>
-        </div>
-
-        <div style={{ ...styles.statCard, borderLeftColor: '#8b5cf6' }}>
-          <span style={styles.statIcon}>📊</span>
-          <div style={styles.statContent}>
-            <div style={styles.statValue}>RM {summaryStats.totalSubmitted.toLocaleString()}</div>
-            <div style={styles.statTitle}>累计上交</div>
-            <div style={styles.statDescription}>历史总额</div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>RM {summaryStats.totalSubmitted.toLocaleString()}</span>
+              <span style={styles.summaryStatLabel}>总收取现金</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 上交操作卡片 */}
-      <div style={styles.actionCard}>
-        <div style={styles.actionHeader}>
-          <div>
-            <h2 style={styles.actionTitle}>📤 上交现金</h2>
-            <p style={styles.actionDesc}>{recipientInfo.description}</p>
-          </div>
-          <button 
-            style={styles.submitButton}
-            onClick={handleOpenSubmitModal}
-            disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
-          >
-            {cashOnHand > 0 ? '立即上交' : '暂无现金'}
-          </button>
-        </div>
-
-        {cashOnHand > 0 && (
-          <div style={styles.reminderBox}>
-            💡 手上现金: RM {cashOnHand.toLocaleString()} - 记得及时上交
-          </div>
-        )}
-        
-        {isStudent && !sellerManager && (
-          <div style={styles.warningBox}>
-            ⚠️ 您的班级（{department}）还没有分配 Seller Manager，请联系管理员设置后才能上交现金。
-          </div>
-        )}
-      </div>
 
       {/* 历史记录 */}
       <div style={styles.historySection}>
@@ -689,13 +671,21 @@ const styles = {
   errorTitle: { color: '#991b1b', marginBottom: '0.5rem' },
   errorMessage: { color: '#7f1d1d', marginBottom: '1.5rem' },
   retryButton: { padding: '0.75rem 1.5rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600' },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' },
-  statCard: { background: '#fafafa', padding: '1.25rem', borderRadius: '12px', borderLeft: '4px solid', display: 'flex', alignItems: 'flex-start', gap: '1rem' },
-  statIcon: { fontSize: '2rem' },
-  statContent: { flex: 1 },
-  statValue: { fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '0.25rem' },
-  statTitle: { fontSize: '0.875rem', color: '#6b7280', fontWeight: '500' },
-  statDescription: { fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' },
+  summaryWrapper: { width: '100%', marginBottom: '1.5rem' },
+  summaryCard: { padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)', color: '#fff', background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' },
+  summaryHeaderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.2)', gap: '2rem' },
+  summaryLeftCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' },
+  summaryRightCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', flex: 1, textAlign: 'right' },
+  summaryLabel: { fontSize: '0.9rem', opacity: 0.9, fontWeight: 500 },
+  reminderBoxSmall: { fontSize: '0.75rem', opacity: 0.8, fontStyle: 'italic' },
+  summaryAmount: { fontSize: '1.8rem', fontWeight: 700 },
+  summaryDesc: { fontSize: '0.75rem', opacity: 0.85, margin: '0.25rem 0 0 0' },
+  summaryStats: { display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'nowrap' },
+  summaryStatItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 150px', textAlign: 'center' },
+  summaryStatValue: { fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.25rem' },
+  summaryStatLabel: { fontSize: '0.8rem', opacity: 0.8, marginBottom: '0.5rem' },
+  summaryStatAmt: { fontSize: '0.9rem', fontWeight: 500 },
+  summaryStatDivider: { width: '1px', backgroundColor: 'rgba(255, 255, 255, 0.2)', alignSelf: 'stretch', margin: '0 0.5rem' },
   actionCard: { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '1.5rem', borderRadius: '12px', color: 'white', marginBottom: '2rem' },
   actionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' },
   actionTitle: { fontSize: '1.25rem', fontWeight: 'bold', margin: '0 0 0.5rem 0' },
