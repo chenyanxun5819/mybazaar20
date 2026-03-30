@@ -24,6 +24,9 @@ import { db, functions } from '../../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { useSellerStats } from '../hooks/useSellerStats';
 import { useAuth } from '../../../contexts/AuthContext';
+import ChalkboardUserIcon from '../../../assets/chalkboard-user.svg?react';
+import MoneyInsertIcon from '../../../assets/money-insert-svgrepo-com.svg?react';
+import EmployeeManIcon from '../../../assets/employee-man.svg?react';
 import './SellerSubmitCash.css';
 
 const SellerSubmitCash = () => {
@@ -401,13 +404,13 @@ const SellerSubmitCash = () => {
   // 根据用户类型设置接收人信息
   const recipientInfo = isStudent 
     ? {
-        icon: '👨‍🏫',
+        icon: <ChalkboardUserIcon style={{ width: '24px', height: '24px', color: '#f59e0b', flexShrink: 0 }} />,
         description: sellerManager 
-          ? `上交给班导师: ${sellerManager.name}`
+          ? `班导师: ${sellerManager.name}`
           : '未设置班导师'
       }
     : {
-        icon: '🏦',
+        icon: <EmployeeManIcon style={{ width: '24px', height: '24px', color: '#ec4899', flexShrink: 0 }} />,
         description: '上交到 Cashier 待认领池子'
       };
 
@@ -424,25 +427,28 @@ const SellerSubmitCash = () => {
               {cashOnHand > 0 && (
                 <div style={styles.reminderBoxSmall}>
                   - 记得及时上交
+                  <p style={styles.summaryDesc}>{recipientInfo.description}</p>
                 </div>
               )}
-            </div>
-            {/* 右边 */}
-            <div style={styles.summaryRightCol}>
-              <div style={styles.summaryAmount}>RM {summaryStats.cashOnHand.toLocaleString()}</div>
-              <button 
-                style={styles.submitButton}
-                onClick={handleOpenSubmitModal}
-                disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
-              >
-                {cashOnHand > 0 ? '立即上交' : '暂无现金'}
-              </button>
-              <p style={styles.summaryDesc}>{recipientInfo.description}</p>
+              
               {isStudent && !sellerManager && (
                 <div style={styles.warningBox}>
                   ⚠️ 您的班级（{department}）还没有分配 Seller Manager，请联系管理员设置后才能上交现金。
                 </div>
               )}
+            </div>
+            {/* 右边 */}
+            <div style={styles.summaryRightCol}>
+              <div style={styles.amountButtonRow}>
+                <div style={styles.summaryAmount}>RM {summaryStats.cashOnHand.toLocaleString()}</div>
+                <button 
+                  style={styles.submitButton}
+                  onClick={handleOpenSubmitModal}
+                  disabled={cashOnHand <= 0 || (isStudent && !sellerManager)}
+                >
+                  {cashOnHand > 0 ? '立即上交' : '暂无现金'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -591,7 +597,7 @@ const SubmitModal = ({
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <h2 style={{ margin: 0 }}>📤 上交现金</h2>
+          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MoneyInsertIcon style={{ width: '22px', height: '22px', color: '#1e40af', flexShrink: 0 }} /> 上交现金</h2>
           <button style={styles.closeButton} onClick={onClose}>✕</button>
         </div>
 
@@ -663,7 +669,7 @@ const SubmitModal = ({
 // ========== 样式 ==========
 
 const styles = {
-  container: { padding: '20px', maxWidth: '1200px', margin: '0 auto' },
+  container: { padding: '5px 2px', maxWidth: '1200px', margin: '0 auto' },
   loading: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem', color: '#6b7280' },
   spinner: { width: '40px', height: '40px', border: '4px solid #f3f4f6', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' },
   errorCard: { background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '12px', padding: '2rem', textAlign: 'center' },
@@ -672,13 +678,14 @@ const styles = {
   errorMessage: { color: '#7f1d1d', marginBottom: '1.5rem' },
   retryButton: { padding: '0.75rem 1.5rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600' },
   summaryWrapper: { width: '100%', marginBottom: '1.5rem' },
-  summaryCard: { padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)', color: '#fff', background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' },
-  summaryHeaderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.2)', gap: '2rem' },
-  summaryLeftCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' },
-  summaryRightCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', flex: 1, textAlign: 'right' },
+  summaryCard: { padding: '1.25rem 0.65rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)', color: '#fff', background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' },
+  summaryHeaderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'stretch', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.2)', gap: '0.5rem' },
+  summaryLeftCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem', width: '33.33%', flex: '0 0 33.33%' },
+  summaryRightCol: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-end', gap: '0.2rem', width: '66.67%', flex: '0 0 66.67%', textAlign: 'left' },
+  amountButtonRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start' },
   summaryLabel: { fontSize: '0.9rem', opacity: 0.9, fontWeight: 500 },
   reminderBoxSmall: { fontSize: '0.75rem', opacity: 0.8, fontStyle: 'italic' },
-  summaryAmount: { fontSize: '1.8rem', fontWeight: 700 },
+  summaryAmount: { fontSize: '1.6rem', fontWeight: 700 },
   summaryDesc: { fontSize: '0.75rem', opacity: 0.85, margin: '0.25rem 0 0 0' },
   summaryStats: { display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'nowrap' },
   summaryStatItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 150px', textAlign: 'center' },
@@ -690,7 +697,7 @@ const styles = {
   actionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' },
   actionTitle: { fontSize: '1.25rem', fontWeight: 'bold', margin: '0 0 0.5rem 0' },
   actionDesc: { fontSize: '0.875rem', opacity: 0.9, margin: 0 },
-  submitButton: { padding: '0.75rem 1.5rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600', whiteSpace: 'nowrap' },
+  submitButton: { padding: '0.5rem 1.2rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600', whiteSpace: 'nowrap', transform: 'scale(0.8)' },
   reminderBox: { padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '8px', fontSize: '0.875rem', marginTop: '1rem' },
   warningBox: { padding: '0.75rem 1rem', background: '#fef3c7', border: '2px solid #fbbf24', color: '#92400e', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', marginTop: '1rem' },
   sectionTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1rem' },
