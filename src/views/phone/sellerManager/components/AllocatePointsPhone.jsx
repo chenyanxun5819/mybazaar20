@@ -190,7 +190,7 @@ const AllocatePointsPhone = ({
           style={styles.changeBtn}
           onClick={() => { onSelectSeller?.(null); setAmount(''); setError(''); setSuccessMessage(''); }}
         >
-          更换
+          返回
         </button>
       </div>
 
@@ -502,8 +502,9 @@ const styles = {
     border: '1px solid #6ee7b7'
   },
   submitBtn: {
-    width: '100%',
-    padding: '1rem',
+    display: 'block',
+    margin: '0 auto',
+    padding: '0.875rem 2.5rem',
     background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
     color: 'white',
     border: 'none',

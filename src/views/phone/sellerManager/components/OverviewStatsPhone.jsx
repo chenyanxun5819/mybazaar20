@@ -62,25 +62,59 @@ const OverviewStatsPhone = ({
 
   return (
     <div style={styles.container}>
-      {/* 分配统计 */}
+      {/* 学生统计 */}
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>我的分配统计</h2>
-        <div style={styles.grid2}>
-          <StatCard icon="📦" label="分配次数" value={allocationStats.totalAllocations} color="#3b82f6" />
-          <StatCard icon="💰" label="累计分配点" value={allocationStats.totalPointsAllocated.toLocaleString()} color="#8b5cf6" />
-          <StatCard icon="📊" label="平均每次" value={Math.round(allocationStats.averagePerAllocation)} color="#06b6d4" />
-          <StatCard icon="🎯" label="单次上限" value={`${maxPerAllocation}/次`} color="#84cc16" />
+        <h2 style={styles.sectionTitle}>学生统计</h2>
+        <div style={styles.summaryCardAmber}>
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{managedStats.totalUsers} 人</span>
+              <span style={styles.summaryStatLabel}>总人数</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{managedStats.currentBalance.toLocaleString()}</span>
+              <span style={styles.summaryStatLabel}>持有点数</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{managedStats.totalRevenue.toLocaleString()}</span>
+              <span style={styles.summaryStatLabel}>累计销售额</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{managedStats.totalCollected.toLocaleString()}</span>
+              <span style={styles.summaryStatLabel}>已收款</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* 卖家统计 */}
+      {/* 分配统计 */}
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>卖家统计</h2>
-        <div style={styles.grid2}>
-          <StatCard icon="👥" label="总人数" value={`${managedStats.totalUsers} 人`} color="#f59e0b" />
-          <StatCard icon="💳" label="持有点数" value={managedStats.currentBalance.toLocaleString()} color="#10b981" />
-          <StatCard icon="📈" label="累计销售额" value={managedStats.totalRevenue.toLocaleString()} color="#6366f1" />
-          <StatCard icon="✅" label="已收款" value={managedStats.totalCollected.toLocaleString()} color="#14b8a6" />
+        <h2 style={styles.sectionTitle}>我的分配统计</h2>
+        <div style={styles.summaryCardBlue}>
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{allocationStats.totalAllocations}</span>
+              <span style={styles.summaryStatLabel}>分配次数</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{allocationStats.totalPointsAllocated.toLocaleString()}</span>
+              <span style={styles.summaryStatLabel}>累计分配点</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{Math.round(allocationStats.averagePerAllocation)}</span>
+              <span style={styles.summaryStatLabel}>平均每次</span>
+            </div>
+            <div style={styles.summaryStatDivider} />
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{maxPerAllocation}/次</span>
+              <span style={styles.summaryStatLabel}>单次上限</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -143,14 +177,6 @@ const OverviewStatsPhone = ({
   );
 };
 
-const StatCard = ({ icon, label, value, color }) => (
-  <div style={{ ...styles.statCard, borderTopColor: color }}>
-    <div style={styles.statIcon}>{icon}</div>
-    <div style={{ ...styles.statValue, color: '#1f2937' }}>{String(value ?? 0)}</div>
-    <div style={styles.statLabel}>{label}</div>
-  </div>
-);
-
 const DetailRow = ({ label, value, valueColor }) => (
   <div style={styles.detailRow}>
     <span style={styles.detailLabel}>{label}</span>
@@ -179,22 +205,25 @@ const styles = {
     marginBottom: '0.75rem',
     marginTop: 0
   },
-  grid2: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '0.75rem'
-  },
-  statCard: {
-    background: 'white',
+  summaryCardAmber: {
+    padding: '1.25rem 0.65rem',
     borderRadius: '12px',
-    borderTop: '3px solid',
-    padding: '1rem 0.75rem',
-    textAlign: 'center',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
+    color: '#fff',
+    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
   },
-  statIcon: { fontSize: '1.5rem', marginBottom: '0.375rem' },
-  statValue: { fontSize: '1.25rem', fontWeight: '700', marginBottom: '0.25rem' },
-  statLabel: { fontSize: '0.75rem', color: '#6b7280', fontWeight: '500' },
+  summaryCardBlue: {
+    padding: '1.25rem 0.65rem',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+    color: '#fff',
+    background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)'
+  },
+  summaryStats: { display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'nowrap' },
+  summaryStatItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', textAlign: 'center' },
+  summaryStatValue: { fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.25rem' },
+  summaryStatLabel: { fontSize: '0.75rem', opacity: 0.85 },
+  summaryStatDivider: { width: '1px', backgroundColor: 'rgba(255,255,255,0.25)', alignSelf: 'stretch', margin: '0 0.25rem' },
 
   collectionCard: {
     background: 'white',

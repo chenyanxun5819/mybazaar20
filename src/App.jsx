@@ -1,5 +1,7 @@
 // src/App.jsx
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
 import UniversalLogin from './views/auth/UniversalLogin';
 import EventManagerLogin from './views/eventManager/EventManagerLogin';
 import PlatformDashboard from './views/platform/PlatformDashboard';
@@ -30,13 +32,43 @@ import PointCardTopup from './views/customer/PointCardTopup';
 import InitialPasswordSetup from './views/auth/InitialPasswordSetup';
 import SellerManagerPhone from './views/phone/sellerManager/SellerManagerPhone';
 
-// Placeholder 组件
-const PhonePlaceholder = () => (
-  <div style={{ padding: '2rem', textAlign: 'center' }}>
-    <h2>手机版首页</h2>
-    <p>此功能将在第三阶段实现</p>
-  </div>
-);
+// 手机版首页：根据角色自动跳转
+const PhoneHome = () => {
+  const navigate = useNavigate();
+  const { eventSlug } = useParams();
+  const { userProfile, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!userProfile) {
+      navigate(`/${eventSlug}/phone/login`, { replace: true });
+      return;
+    }
+
+    const roles = userProfile.roles || [];
+    const code = eventSlug;
+
+    if (roles.includes('sellerManager')) {
+      navigate(`/phone/seller-manager/${code}/dashboard`, { replace: true });
+    } else if (roles.includes('seller')) {
+      navigate(`/seller/${code}/dashboard`, { replace: true });
+    } else if (roles.includes('pointSeller')) {
+      navigate(`/pointseller/${code}/dashboard`, { replace: true });
+    } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
+      navigate(`/merchant/${code}/dashboard`, { replace: true });
+    } else if (roles.includes('customer')) {
+      navigate(`/customer/${code}/dashboard`, { replace: true });
+    } else {
+      navigate(`/${eventSlug}/phone/login`, { replace: true });
+    }
+  }, [userProfile, loading, navigate, eventSlug]);
+
+  return (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+      跳转中...
+    </div>
+  );
+};
 
 const DesktopPlaceholder = () => (
   <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -123,7 +155,7 @@ function App() {
         <MobileGuard>
           <EventProvider>
             <AuthProvider>
-              <PhonePlaceholder />
+              <PhoneHome />
             </AuthProvider>
           </EventProvider>
         </MobileGuard>

@@ -9,8 +9,13 @@ import DashboardHeader from '../../../components/common/DashboardHeader';
 import DashboardFooter from '../../../components/common/DashboardFooter';
 import OverviewStatsPhone from './components/OverviewStatsPhone';
 import SellerListPhone from './components/SellerListPhone';
-import AllocatePointsPhone from './components/AllocatePointsPhone';
 import CollectCashPhone from './components/CollectCashPhone';
+import SubmitCashPhone from './components/SubmitCashPhone';
+import AllocatePointsPhone from './components/AllocatePointsPhone';
+import ChartHistogramIcon from '../../../assets/chart-histogram.svg?react';
+import WorkshopIcon from '../../../assets/workshop.svg?react';
+import HandHoldingUsdIcon from '../../../assets/hand-holding-usd.svg?react';
+import PersonalFinanceIcon from '../../../assets/personal-finance.svg?react';
 
 const SellerManagerPhone = () => {
   const navigate = useNavigate();
@@ -23,9 +28,8 @@ const SellerManagerPhone = () => {
   const [eventData, setEventData] = useState(null);
   const [eventId, setEventId] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
-
-  // 分配点数：选中的 seller
   const [selectedSeller, setSelectedSeller] = useState(null);
+
 
   useEffect(() => {
     if (authLoading) return;
@@ -69,6 +73,13 @@ const SellerManagerPhone = () => {
     init();
   }, [userProfile, authLoading, orgEventCode, navigate]);
 
+  const tabs = [
+    { key: 'overview',  label: '总览',    Icon: ChartHistogramIcon },
+    { key: 'sellers',   label: '学生清单', Icon: WorkshopIcon },
+    { key: 'collect',   label: '收款',    Icon: HandHoldingUsdIcon },
+    { key: 'submit',    label: '上交现金', Icon: PersonalFinanceIcon },
+  ];
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -82,11 +93,6 @@ const SellerManagerPhone = () => {
 
   const handleRefresh = () => window.location.reload();
 
-  // 从卖家列表跳到分配 tab，并带入选中 seller
-  const handleSelectSellerForAllocate = (seller) => {
-    setSelectedSeller(seller);
-    setActiveTab('allocate');
-  };
 
   if (loading) {
     return (
@@ -106,15 +112,6 @@ const SellerManagerPhone = () => {
     orgEventCode?.split('-')?.[1] ||
     '';
 
-  const maxPerAllocation =
-    safeEventData?.pointAllocationRules?.sellerManager?.maxPerAllocation ?? 100;
-
-  const tabs = [
-    { key: 'overview', label: '总览' },
-    { key: 'sellers', label: '卖家' },
-    { key: 'allocate', label: '分配' },
-    { key: 'collect', label: '收款' }
-  ];
 
   return (
     <div style={styles.page}>
@@ -139,16 +136,17 @@ const SellerManagerPhone = () => {
 
       {/* Tab 导航 */}
       <nav style={styles.tabNav}>
-        {tabs.map((tab) => (
+        {tabs.map(({ key, label, Icon }) => (
           <button
-            key={tab.key}
+            key={key}
             style={{
               ...styles.tabButton,
-              ...(activeTab === tab.key ? styles.tabButtonActive : {})
+              ...(activeTab === key ? styles.tabButtonActive : {})
             }}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => setActiveTab(key)}
           >
-            <span style={styles.tabLabel}>{tab.label}</span>
+            <Icon style={{ width: '1.5rem', height: '1.5rem' }} />
+            <span style={styles.tabLabel}>{label}</span>
           </button>
         ))}
       </nav>
@@ -165,21 +163,20 @@ const SellerManagerPhone = () => {
           />
         )}
 
-        {activeTab === 'sellers' && (
+        {activeTab === 'sellers' && !selectedSeller && (
           <SellerListPhone
             userInfo={safeCurrentUser}
-            onAllocate={handleSelectSellerForAllocate}
+            onAllocate={(seller) => setSelectedSeller(seller)}
           />
         )}
 
-        {activeTab === 'allocate' && (
+        {activeTab === 'sellers' && selectedSeller && (
           <AllocatePointsPhone
             userInfo={safeCurrentUser}
             selectedSeller={selectedSeller}
             onSelectSeller={setSelectedSeller}
             organizationId={safeCurrentUser.organizationId}
             eventId={eventId}
-            maxPerAllocation={maxPerAllocation}
           />
         )}
 
@@ -187,6 +184,12 @@ const SellerManagerPhone = () => {
           <CollectCashPhone
             userInfo={safeCurrentUser}
             eventData={safeEventData}
+          />
+        )}
+
+        {activeTab === 'submit' && (
+          <SubmitCashPhone
+            userInfo={safeCurrentUser}
           />
         )}
       </main>
@@ -220,33 +223,38 @@ const styles = {
   },
   tabNav: {
     display: 'flex',
-    background: 'white',
-    borderBottom: '2px solid #e5e7eb',
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e0e0e0',
     position: 'sticky',
     top: 0,
-    zIndex: 100
+    zIndex: 10,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+    overflowX: 'auto',
+    overflowY: 'hidden',
   },
   tabButton: {
     flex: 1,
-    padding: '0.875rem 0.25rem',
-    background: 'transparent',
-    border: 'none',
-    borderBottom: '3px solid transparent',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '0.25rem'
+    gap: '0.25rem',
+    padding: '1rem 0.5rem',
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    cursor: 'pointer',
+    color: '#757575',
+    transition: 'all 0.2s',
+    borderBottom: '3px solid transparent',
+    WebkitTapHighlightColor: 'transparent',
   },
   tabButtonActive: {
-    borderBottomColor: '#f59e0b',
-    background: '#fffbeb'
+    color: '#2196F3',
+    borderBottomColor: '#2196F3',
   },
   tabLabel: {
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#374151'
+    fontSize: '0.85rem',
+    fontWeight: 500,
   },
   content: {
     flex: 1,

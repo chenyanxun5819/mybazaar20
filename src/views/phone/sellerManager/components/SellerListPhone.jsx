@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useManagedUsers } from '../../../../hooks/sellerManager';
+import { maskPhoneNumber } from '../../../../services/transactionService';
 
 /**
  * SellerListPhone
@@ -129,19 +130,11 @@ const SellerCard = ({ seller, onAllocate }) => {
     collectionRate >= 0.8 ? '#10b981' : collectionRate >= 0.5 ? '#f59e0b' : '#ef4444';
 
   return (
-    <div style={{
-      ...styles.card,
-      ...(hasWarning ? styles.cardWarning : {})
-    }}>
+    <div style={styles.card} onClick={onAllocate}>
       {/* 卡片头部 */}
       <div style={styles.cardHeader}>
-        <div style={styles.avatar}>
-          {(name[0] || '?').toUpperCase()}
-        </div>
-        <div style={styles.cardInfo}>
-          <div style={styles.cardName}>{name}</div>
-          <div style={styles.cardDept}>🏫 {dept}</div>
-        </div>
+        <div style={styles.cardName}>{name} <span style={styles.cardId}>{seller.identityInfo?.identityId || ''}</span></div>
+        <div style={styles.cardPhone}>{maskPhoneNumber(seller.basicInfo?.phoneNumber || '')}</div>
         {hasWarning && <span style={styles.warningBadge}>⚠️</span>}
       </div>
 
@@ -163,10 +156,8 @@ const SellerCard = ({ seller, onAllocate }) => {
         </div>
       )}
 
-      {/* 操作按钮 */}
-      <button style={styles.allocateBtn} onClick={onAllocate}>
-        💰 分配点数
-      </button>
+      {/* 底部分隔线 */}
+      <div style={styles.divider} />
     </div>
   );
 };
@@ -220,13 +211,11 @@ const styles = {
     color: '#9ca3af'
   },
   emptyIcon: { fontSize: '3rem', marginBottom: '0.75rem' },
-  cardList: { display: 'flex', flexDirection: 'column', gap: '0.875rem' },
+  cardList: { display: 'flex', flexDirection: 'column', gap: '0' },
   card: {
-    background: 'white',
-    borderRadius: '14px',
-    padding: '1rem',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
-    border: '1.5px solid #e5e7eb'
+    background: 'transparent',
+    padding: '0.5rem 0.75rem',
+    cursor: 'pointer'
   },
   cardWarning: {
     borderColor: '#fbbf24',
@@ -235,8 +224,9 @@ const styles = {
   cardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem',
-    marginBottom: '0.875rem'
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+    marginBottom: '0.25rem'
   },
   avatar: {
     width: '44px',
@@ -252,42 +242,49 @@ const styles = {
     flexShrink: 0
   },
   cardInfo: { flex: 1 },
-  cardName: { fontSize: '1rem', fontWeight: '700', color: '#1f2937', marginBottom: '0.2rem' },
-  cardDept: { fontSize: '0.8125rem', color: '#6b7280' },
+  cardName: { fontSize: '0.9375rem', fontWeight: '700', color: '#1f2937' },
+  cardId: { fontWeight: '400', fontSize: '0.8125rem', color: '#9ca3af', marginLeft: '0.375rem' },
+  cardPhone: { fontSize: '0.75rem', color: '#6b7280', flexShrink: 0 },
   warningBadge: { fontSize: '1.25rem' },
   statsRow: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '0.5rem',
-    marginBottom: '0.75rem',
+    gap: '0.25rem',
+    marginBottom: '0.25rem',
     background: '#f9fafb',
-    borderRadius: '8px',
-    padding: '0.75rem 0.5rem'
+    borderRadius: '6px',
+    padding: '0.375rem 0.5rem'
   },
   miniStat: { textAlign: 'center' },
-  miniValue: { fontSize: '0.9375rem', fontWeight: '700', color: '#1f2937', marginBottom: '0.2rem' },
-  miniLabel: { fontSize: '0.6875rem', color: '#9ca3af' },
+  miniValue: { fontSize: '0.8125rem', fontWeight: '700', color: '#1f2937', marginBottom: '0.1rem' },
+  miniLabel: { fontSize: '0.625rem', color: '#9ca3af' },
   pendingRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     background: '#fef3c7',
-    padding: '0.5rem 0.75rem',
-    borderRadius: '8px',
-    marginBottom: '0.75rem'
+    padding: '0.25rem 0.75rem',
+    borderRadius: '6px',
+    marginBottom: '0.25rem'
   },
-  pendingLabel: { fontSize: '0.8125rem', color: '#92400e', fontWeight: '500' },
-  pendingValue: { fontSize: '0.9375rem', fontWeight: '700', color: '#92400e' },
+  pendingLabel: { fontSize: '0.75rem', color: '#92400e', fontWeight: '500' },
+  pendingValue: { fontSize: '0.8125rem', fontWeight: '700', color: '#92400e' },
   allocateBtn: {
-    width: '100%',
-    padding: '0.75rem',
+    padding: '0.5rem 0.875rem',
     background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
     color: 'white',
     border: 'none',
-    borderRadius: '10px',
-    fontSize: '0.9375rem',
+    borderRadius: '8px',
+    fontSize: '0.8125rem',
     fontWeight: '700',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    flexShrink: 0
+  },
+  divider: {
+    height: '1px',
+    background: '#e5e7eb',
+    marginTop: '0.375rem'
   }
 };
 

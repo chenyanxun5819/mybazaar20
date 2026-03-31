@@ -149,6 +149,23 @@ export const EventProvider = ({ children }) => {
             }
           }
         }
+
+        // ✅ 支持手机版 Manager 路由
+        // 格式: /phone/seller-manager/:orgEventCode/dashboard
+        if (first === 'phone') {
+          const second = segments[1]?.toLowerCase();
+          const orgEvent = segments[2];
+          const fourth = segments[3]?.toLowerCase();
+          if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager'].includes(second) && orgEvent && fourth === 'dashboard') {
+            const idx = orgEvent.indexOf('-');
+            if (idx > 0) {
+              parsedOrgCode = orgEvent.substring(0, idx);
+              parsedEventCode = orgEvent.substring(idx + 1);
+              platform = 'phone';
+              console.log('[EventContext] ✅ 识别为手机版 Manager 路由:', second);
+            }
+          }
+        }
       }
 
       if (!parsedOrgCode || !parsedEventCode) {
