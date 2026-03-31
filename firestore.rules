@@ -225,6 +225,29 @@ service cloud.firestore {
            * ✅ 删除规则：只能通过 Cloud Functions 或 Event Manager
            */
           allow delete: if isEventManager(organizationId, eventId);
+
+          // ====================================================================
+          // Point Allocations (点数分配记录 - Users 子集合)
+          // ====================================================================
+
+          match /pointAllocations/{allocationId} {
+            /**
+             * ✅ 读取规则：
+             * 1. Seller Manager 可以读取自己的分配记录
+             * 2. Event Manager 可以读取所有用户的分配记录
+             * 3. Auditor 可以读取（审计用途）
+             */
+            allow read: if isAuthenticated() && (
+                           request.auth.token.userId == userId ||
+                           isEventManager(organizationId, eventId) ||
+                           isAuditor(organizationId, eventId)
+                         );
+
+            /**
+             * 写入规则：只能通过 Cloud Functions
+             */
+            allow write: if false;
+          }
         }
 
         // ========================================================================

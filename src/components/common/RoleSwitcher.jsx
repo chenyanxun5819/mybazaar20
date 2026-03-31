@@ -11,6 +11,7 @@ import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
 import SellerFourIcon from '../../assets/seller (4).svg?react';
 import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
 import UserBagIcon from '../../assets/user-bag.svg?react';
+import AuditorIcon from '../../assets/auditor.svg?react';
 
 /**
  * 角色切换组件
@@ -76,6 +77,7 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     merchantManager: { label: 'Merchant Manager', buttonLabel: 'Merchant\nManager', icon: SellerFiveIcon, color: '#8b5cf6', category: 'manager' },
     customerManager: { label: 'Customer Manager', buttonLabel: 'Customer\nManager', icon: UsersGearIcon, color: '#10b981', category: 'manager' },
     cashier: { label: 'Cashier (收银员)', buttonLabel: 'Cashier\n(收银员)', icon: UserSalaryIcon, color: '#3b82f6', category: 'manager' },
+    auditor: { label: 'Auditor (稽核人员)', buttonLabel: 'Auditor\n(稽核)', icon: AuditorIcon, color: '#6366f1', category: 'manager' },
 
     seller: { label: 'Seller (销售员)', buttonLabel: 'Seller\n(销售员)', icon: EmployeeManIcon, color: '#ec4899', category: 'user' },
     merchantOwner: { label: 'Merchant Owner (摊主)', buttonLabel: 'Merchant\nOwner', icon: StoreBuyerIcon, color: '#84cc16', category: 'user' },
@@ -88,10 +90,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const roleRouteBuilders = {
     platformAdmin: () => '/platform-admin/dashboard',
     eventManager: (code) => `/event-manager/${code}/dashboard`,
-    sellerManager: (code) => `/seller-manager/${code}/dashboard`,
+    sellerManager: (code) => isMobile
+      ? `/phone/seller-manager/${code}/dashboard`
+      : `/seller-manager/${code}/dashboard`,
     merchantManager: (code) => `/merchant-manager/${code}/dashboard`,
     customerManager: (code) => `/customer-manager/${code}/dashboard`,
     cashier: (code) => `/cashier/${code}/dashboard`,
+    auditor: (code) => `/auditor/${code}/dashboard`,
     seller: (code) => `/seller/${code}/dashboard`,
     pointSeller: (code) => `/pointseller/${code}/dashboard`,
     merchantOwner: (code) => `/merchant/${code}/dashboard`,
@@ -107,6 +112,7 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     'merchantManager': 'merchantManagerInfo',
     'customerManager': 'customerManagerInfo',
     'cashier': 'cashierInfo',
+    'auditor': 'auditorInfo',
     'seller': 'sellerInfo',
     'pointSeller': 'pointSellerInfo',
     'merchantOwner': 'merchantOwnerInfo',
@@ -150,8 +156,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   // 设备过滤规则（按你的要求）
   // - Desktop: 只显示 manager + cashier
   // - : 只显示非 manager（手机角色），并包含 pointSeller
-  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier'];
-  const mobileOnlyRoles = ['seller', 'customer', 'merchantOwner', 'merchantAsist', 'pointSeller'];
+  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor'];
+  const mobileOnlyRoles = ['seller', 'customer', 'merchantOwner', 'merchantAsist', 'pointSeller', 'sellerManager'];
 
   const deviceFilteredRoles = (resolvedAvailableRoles || []).filter((role) =>
     isMobile ? mobileOnlyRoles.includes(role) : desktopOnlyRoles.includes(role)
@@ -209,13 +215,6 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     }
   };
 
-  // 如果只有一个角色，不显示切换器
-  if (!deviceFilteredRoles || deviceFilteredRoles.length <= 1) {
-    return null;
-  }
-
-  const currentConfig = roleConfig[displayRole] || { label: displayRole, icon: UsersIcon, color: '#6b7280' };
-
   const computeAlign = () => {
     if (typeof window === 'undefined' || !containerRef.current) return;
     try {
@@ -245,6 +244,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   useEffect(() => {
     setDisplayRole(actualCurrentRole);
   }, [actualCurrentRole]);
+
+  // 如果只有一个角色，不显示切换器
+  if (!deviceFilteredRoles || deviceFilteredRoles.length <= 1) {
+    return null;
+  }
+
+  const currentConfig = roleConfig[displayRole] || { label: displayRole, icon: UsersIcon, color: '#6b7280' };
 
   return (
     <div style={styles.container} ref={containerRef}>

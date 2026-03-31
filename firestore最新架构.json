@@ -4,6 +4,13 @@
     "version": "2026-03-27-v15",
     "lastUpdated": "2026-03-27",
     "architectureChanges": {
+      "version_2026-03-31-v16": [
+        "📱 新增 SellerManager 手机版页面（src/views/phone/sellerManager/SellerManagerPhone.jsx）",
+        "🔗 手机版路由：/phone/seller-manager/:orgEventCode/dashboard（MobileGuard 保护）",
+        "🗂️ 手机版功能 Tabs：总览、卖家、分配、收款（4个核心功能，不含上交历史）",
+        "♻️ 数据层复用同一套 Firestore hooks（useSellerManagerStats, useManagedUsers）",
+        "🔀 RoleSwitcher 新增：sellerManager 同时出现在手机/桌面可切换角色列表；路由依设备类型自动切换"
+      ],
       "version_2026-03-27-v15": [
         "🔢 events.roleStats.customers 新增 lastExternalSeq 字段（外部人员序号计数器，只增不减）",
         "🪪 external 身份用户的 identityId 自动生成为可读序号，格式 ext00001~ext99999",

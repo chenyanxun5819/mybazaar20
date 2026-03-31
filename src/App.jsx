@@ -28,6 +28,7 @@ import CustomerTransfer from './views/customer/CustomerTransfer';
 import CustomerTransactions from './views/customer/CustomerTransactions';
 import PointCardTopup from './views/customer/PointCardTopup';
 import InitialPasswordSetup from './views/auth/InitialPasswordSetup';
+import SellerManagerPhone from './views/phone/sellerManager/SellerManagerPhone';
 
 // Placeholder 组件
 const PhonePlaceholder = () => (
@@ -99,6 +100,19 @@ function App() {
           <EventProvider>
             <AuthProvider>
               <PhoneLogin />
+            </AuthProvider>
+          </EventProvider>
+        </MobileGuard>
+      } />
+
+      {/* 📱 手机版 Seller Manager */}
+      <Route path="/phone/seller-manager/:orgEventCode/dashboard" element={
+        <MobileGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["sellerManager"]}>
+                <SellerManagerPhone />
+              </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
         </MobileGuard>
