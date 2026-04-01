@@ -139,9 +139,11 @@ exports.submitCashToFinance = onCall(
 
         if (submitterRole === 'sellerManager') {
           // SellerManager 统计
+          // ✅ 修复：上交现金时应该减少 cashOnHand
           transaction.update(userDocRef, {
             'sellerManager.cashStats.totalSubmitted': FieldValue.increment(amount),
             'sellerManager.cashStats.pendingSubmission': FieldValue.increment(amount),
+            'sellerManager.cashStats.cashOnHand': FieldValue.increment(-amount), // ✅ 关键修复：减少手上现金
             'sellerManager.cashStats.lastSubmittedAt': now
           });
 

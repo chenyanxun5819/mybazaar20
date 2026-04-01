@@ -10,14 +10,18 @@ import { db, functions } from '../../../../config/firebase';
  * - 实时监听 cashSubmissions（status=pending, receivedBy=smId）
  * - 点击卡片 → 底部抽屉确认
  * - 调用 confirmCashSubmission Cloud Function
+ * - 历史记录 tab：所有 receivedBy=smId 的记录（含全部状态）
  */
-const CollectCashPhone = ({ userInfo, eventData }) => {
+const CollectCashPhone = ({ userInfo }) => {
   const orgId = userInfo?.organizationId?.replace('organization_', '') || '';
   const eventId = userInfo?.eventId?.replace('event_', '') || '';
   const smId = userInfo?.userId;
 
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'history'
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
+  const [allSubmissions, setAllSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [liveCashStats, setLiveCashStats] = useState(null);
 
   // 确认抽屉
@@ -70,18 +74,53 @@ const CollectCashPhone = ({ userInfo, eventData }) => {
     }
   }, [orgId, eventId, smId]);
 
+  // 实时监听所有上交记录（历史 tab 用，含全部状态）
+  // 不加 orderBy 避免需要额外的 Firestore 复合索引，改在 JS 排序
+  useEffect(() => {
+    if (!orgId || !eventId || !smId) {
+      setHistoryLoading(false);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const ref = collection(db, `organizations/${orgId}/events/${eventId}/cashSubmissions`);
+      const q = query(
+        ref,
+        where('receivedBy', '==', smId)
+      );
+      const unsub = onSnapshot(q, snapshot => {
+        const list = [];
+        snapshot.forEach(d => list.push({ id: d.id, ...d.data() }));
+        // 按提交时间降序排列
+        list.sort((a, b) => (b.submittedAt?.toMillis?.() || 0) - (a.submittedAt?.toMillis?.() || 0));
+        setAllSubmissions(list);
+        setHistoryLoading(false);
+      }, err => {
+        console.error('[CollectCashPhone] 历史监听失败:', err);
+        setHistoryLoading(false);
+      });
+      return () => unsub();
+    } catch (err) {
+      console.error('[CollectCashPhone] 历史监听设置失败:', err);
+      setHistoryLoading(false);
+    }
+  }, [orgId, eventId, smId]);
+
   const cashStats = liveCashStats ?? userInfo?.sellerManager?.cashStats ?? {};
   const totalPending = pendingSubmissions.reduce((s, sub) => s + (sub.amount || 0), 0);
 
-  const displayed = pendingSubmissions.filter(s => {
-    if (!searchTerm) return true;
+  const filterFn = (list) => {
+    if (!searchTerm) return list;
     const term = searchTerm.toLowerCase();
-    return (
+    return list.filter(s =>
       s.submitterName?.toLowerCase().includes(term) ||
       s.submitterDepartment?.toLowerCase().includes(term) ||
       s.submissionNumber?.toLowerCase().includes(term)
     );
-  });
+  };
+
+  const displayed = filterFn(pendingSubmissions);
+  const displayedHistory = filterFn(allSubmissions);
 
   const handleConfirm = async () => {
     if (!selectedSubmission) return;
@@ -143,6 +182,25 @@ const CollectCashPhone = ({ userInfo, eventData }) => {
         />
       </div>
 
+      {/* Tab 切换 */}
+      <div style={styles.tabBar}>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'pending' ? styles.tabBtnActive : {}) }}
+          onClick={() => { setActiveTab('pending'); setSearchTerm(''); }}
+        >
+          待确认
+          {pendingSubmissions.length > 0 && (
+            <span style={styles.tabBadge}>{pendingSubmissions.length}</span>
+          )}
+        </button>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'history' ? styles.tabBtnActive : {}) }}
+          onClick={() => { setActiveTab('history'); setSearchTerm(''); }}
+        >
+          上交记录
+        </button>
+      </div>
+
       {/* 搜索 */}
       <input
         type="text"
@@ -152,27 +210,52 @@ const CollectCashPhone = ({ userInfo, eventData }) => {
         style={styles.searchInput}
       />
 
-      {/* 列表 */}
-      {displayed.length === 0 ? (
-        <div style={styles.empty}>
-          <div style={styles.emptyIcon}>📭</div>
-          <p>{searchTerm ? '没有符合的记录' : '暂无待确认现金'}</p>
-          {!searchTerm && <p style={styles.emptyHint}>当卖家上交现金后，会在这里显示</p>}
-        </div>
-      ) : (
-        <div style={styles.cardList}>
-          {displayed.map(sub => (
-            <SubmissionCard
-              key={sub.id}
-              submission={sub}
-              formatDate={formatDate}
-              onConfirm={() => {
-                setSelectedSubmission(sub);
-                setConfirmNote('');
-              }}
-            />
-          ))}
-        </div>
+      {/* 待确认列表 */}
+      {activeTab === 'pending' && (
+        displayed.length === 0 ? (
+          <div style={styles.empty}>
+            <div style={styles.emptyIcon}>📭</div>
+            <p>{searchTerm ? '没有符合的记录' : '暂无待确认现金'}</p>
+            {!searchTerm && <p style={styles.emptyHint}>当卖家上交现金后，会在这里显示</p>}
+          </div>
+        ) : (
+          <div style={styles.cardList}>
+            {displayed.map(sub => (
+              <SubmissionCard
+                key={sub.id}
+                submission={sub}
+                formatDate={formatDate}
+                onConfirm={() => {
+                  setSelectedSubmission(sub);
+                  setConfirmNote('');
+                }}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {/* 上交记录（历史）列表 */}
+      {activeTab === 'history' && (
+        historyLoading ? (
+          <div style={styles.centered}><p style={{ color: '#6b7280' }}>加载记录中...</p></div>
+        ) : displayedHistory.length === 0 ? (
+          <div style={styles.empty}>
+            <div style={styles.emptyIcon}>📋</div>
+            <p>{searchTerm ? '没有符合的记录' : '暂无上交记录'}</p>
+            {!searchTerm && <p style={styles.emptyHint}>卖家上交后，记录会显示在这里</p>}
+          </div>
+        ) : (
+          <div style={styles.cardList}>
+            {displayedHistory.map(sub => (
+              <HistoryCard
+                key={sub.id}
+                submission={sub}
+                formatDate={formatDate}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {/* 确认抽屉 */}
@@ -199,6 +282,43 @@ const StatChip = ({ icon, label, value, color }) => (
     <div style={styles.statChipLabel}>{label}</div>
   </div>
 );
+
+const STATUS_CONFIG = {
+  pending:   { label: '待确认', color: '#f59e0b', bg: '#fef3c7' },
+  confirmed: { label: '已确认', color: '#10b981', bg: '#d1fae5' },
+  rejected:  { label: '已拒绝', color: '#ef4444', bg: '#fee2e2' },
+};
+
+const HistoryCard = ({ submission, formatDate }) => {
+  const status = STATUS_CONFIG[submission.status] || { label: '未知', color: '#6b7280', bg: '#f3f4f6' };
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTop}>
+        <div style={{ flex: 1 }}>
+          <div style={styles.submitterName}>{submission.submitterName || '未知'}</div>
+          <div style={styles.submitterMeta}>
+            {submission.submitterDepartment || '-'} &nbsp;|&nbsp; #{submission.submissionNumber || '-'}
+          </div>
+          <div style={styles.submitterDate}>{formatDate(submission.submittedAt)}</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.375rem' }}>
+          <div style={{ ...styles.statusBadge, color: status.color, background: status.bg }}>
+            {status.label}
+          </div>
+          <div style={styles.amountValue}>RM {(submission.amount || 0).toLocaleString()}</div>
+        </div>
+      </div>
+      {submission.note && (
+        <div style={styles.noteRow}>📝 {submission.note}</div>
+      )}
+      {submission.status === 'confirmed' && submission.confirmationNote && (
+        <div style={{ ...styles.noteRow, color: '#065f46', background: '#d1fae5' }}>
+          ✅ 确认备注: {submission.confirmationNote}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SubmissionCard = ({ submission, formatDate, onConfirm }) => (
   <div style={styles.card}>
@@ -325,6 +445,49 @@ const styles = {
     marginBottom: '0.875rem',
     boxSizing: 'border-box',
     outline: 'none'
+  },
+
+  tabBar: {
+    display: 'flex',
+    background: '#f3f4f6',
+    borderRadius: '10px',
+    padding: '3px',
+    marginBottom: '0.875rem',
+    gap: '3px',
+  },
+  tabBtn: {
+    flex: 1,
+    padding: '0.5rem',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    background: 'transparent',
+    color: '#6b7280',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.375rem',
+  },
+  tabBtnActive: {
+    background: 'white',
+    color: '#1f2937',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
+  tabBadge: {
+    background: '#f59e0b',
+    color: 'white',
+    borderRadius: '999px',
+    fontSize: '0.6875rem',
+    fontWeight: '700',
+    padding: '1px 6px',
+  },
+  statusBadge: {
+    borderRadius: '6px',
+    fontSize: '0.75rem',
+    fontWeight: '700',
+    padding: '2px 8px',
   },
 
   empty: { textAlign: 'center', padding: '3rem', color: '#9ca3af' },
