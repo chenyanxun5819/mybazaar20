@@ -51,16 +51,24 @@ const PointSellerDashboard = () => {
   const [pointSellerData, setPointSellerData] = useState(null);
   const [statistics, setStatistics] = useState({
     todayStats: {
-      cardsIssued: 0,
-      totalPointsIssued: 0,
-      totalCashReceived: 0,
-      directSalesCount: 0,
-      directSalesPoints: 0
+      cardCount: 0,
+      cardPoints: 0,
+      cardCash: 0,
+      mobileCount: 0,
+      mobilePoints: 0,
+      mobileCash: 0,
+      totalPoints: 0,
+      totalCash: 0
     },
     totalStats: {
-      totalCardsIssued: 0,
-      totalPointsIssued: 0,
-      totalCashReceived: 0
+      totalCardCount: 0,
+      totalCardPoints: 0,
+      totalCardCash: 0,
+      totalMobileCount: 0,
+      totalMobilePoints: 0,
+      totalMobileCash: 0,
+      totalPoints: 0,
+      totalCash: 0
     }
   });
   const [issuanceRecords, setIssuanceRecords] = useState([]);

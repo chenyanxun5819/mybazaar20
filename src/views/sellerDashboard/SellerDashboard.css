@@ -1027,10 +1027,34 @@
   margin-top: 4px;
 }
 
-.cash-divider {
-  height: 1px;
-  background: #e0e0e0;
-  margin: 8px 0;
+/* 当有多个 cash-item 时，第一个之后的项目顶部显示分隔线 */
+.cash-summary > .cash-item:not(:first-child) {
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+  margin-top: 8px;
+}
+
+/* 在较宽的屏幕上，让两侧项目横向排列并把分隔线改为垂直 */
+@media (min-width: 720px) {
+  .cash-summary {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cash-item {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .cash-summary > .cash-item:not(:first-child) {
+    /* 宽屏幕时改为纵向分隔线 */
+    border-top: none;
+    border-left: 1px solid #e0e0e0;
+    padding-top: 0;
+    padding-left: 16px;
+    margin-top: 0;
+    margin-left: 8px;
+  }
 }
 
 /* 收款提醒 */

@@ -261,17 +261,32 @@ const DirectSale = ({
 
   return (
     <div className="direct-sale">
-      <h2 className="section-title">
-        <img src={paymentQrcodeIcon} alt="销售点数" style={{ width: '1.5rem', height: '1.5rem' }} />
-        销售点数
-      </h2>
 
-      {/* 显示单笔限额 */}
-      <div className="seller-inventory">
-        <div className="inventory-label">单笔销售限额</div>
-        <div className="inventory-amount">{MAX_PER_TRANSACTION} 点</div>
-        <div className="inventory-hint">可无限发出点数</div>
+      {/* ===== 今日直销统计 ===== */}
+      <div className="inventory-summary">
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {statistics.todayStats?.mobileCount || 0}
+          </div>
+          <div className="inventory-label">今日直销笔数</div>
+        </div>
+        <div className="inventory-divider"></div>
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {statistics.todayStats?.mobilePoints || 0}
+          </div>
+          <div className="inventory-label">今日直销点数</div>
+        </div>
+        <div className="inventory-divider"></div>
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {formatAmount(statistics.todayStats?.mobileCash || 0)}
+          </div>
+          <div className="inventory-label">今日收现金</div>
+        </div>
       </div>
+
+      <small className="hint">可无限发出点数，单笔最多 {MAX_PER_TRANSACTION} 点</small>
 
       {/* 查找客户 */}
       <div className="form-section">

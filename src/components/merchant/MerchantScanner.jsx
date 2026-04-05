@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import { CreditCard, User, Scan, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
@@ -43,6 +43,26 @@ const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentU
 
   // 步骤：scan | show-info | input-amount | processing | success
   const [step, setStep] = useState('scan');
+
+  const normalizePointCardQr = (rawData) => {
+    if (!rawData || typeof rawData !== 'object') {
+      throw new Error('QR Code 数据格式无效');
+    }
+
+    const type = rawData.type || rawData.t;
+    const version = rawData.v || rawData.version || '1';
+    const cardId = rawData.cardId || rawData.c;
+    const orgId = rawData.organizationId || rawData.o || organizationId;
+    const evtId = rawData.eventId || rawData.e || eventId;
+
+    return {
+      type,
+      version,
+      cardId,
+      organizationId: orgId,
+      eventId: evtId,
+    };
+  };
 
   const stopScanner = async () => {
     const instance = html5QrCodeRef.current;
@@ -129,15 +149,20 @@ const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentU
         await instance.start(
           cameraConfig,
           {
-            fps: 30,  // ⬆️⬆️ 大幅提高到 30 fps，扫码更快
-            // ❌ 移除 qrbox 限制，让整个画面都能扫码
-            aspectRatio: 1.0,
-            disableFlip: false,
-            // ⬆️ 添加高分辨率视频约束
+            fps: 15,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.68);
+              return {
+                width: Math.max(220, Math.min(edge, 320)),
+                height: Math.max(220, Math.min(edge, 320)),
+              };
+            },
+            aspectRatio: 1.333334,
+            disableFlip: true,
+            formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
             videoConstraints: {
-              width: { ideal: 1920 },      // 🎥 高分辨率
-              height: { ideal: 1080 },
-              focusMode: { ideal: 'continuous' },  // 🔍 持续自动对焦
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
               facingMode: 'environment'
             }
           },
@@ -184,14 +209,15 @@ const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentU
 
       // 解析QR Code
       const parsedData = JSON.parse(decodedText);
-      console.log('[MerchantScanner] 解析数据:', parsedData);
+      const normalizedData = normalizePointCardQr(parsedData);
+      console.log('[MerchantScanner] 解析数据:', normalizedData);
 
-      const type = parsedData.type;
+      const type = normalizedData.type;
 
       // 识别QR Code类型
       if (type === 'POINT_CARD') {
         // 点数卡付款
-        handlePointCardScan(parsedData);
+        handlePointCardScan(normalizedData);
       } else if (type === 'MERCHANT_PAYMENT' || type === 'MERCHANT') {
         // Customer记名付款（暂不支持，可以提示）
         setError('此功能用于扫描点数卡。Customer付款请让顾客扫描您的收款码。');
@@ -208,9 +234,17 @@ const MerchantScanner = ({ merchant, organizationId, eventId, userRole, currentU
   };
 
   const onScanError = (errorMessage) => {
-    // 忽略常规扫描错误（未检测到QR Code）
-    if (!errorMessage.includes('NotFoundException')) {
-      console.warn('[MerchantScanner] 扫描错误:', errorMessage);
+    const message = String(errorMessage || '');
+
+    // 这些是逐帧扫描时的正常噪音，不代表真正故障
+    const isRoutineNoResult =
+      message.includes('NotFoundException') ||
+      message.includes('No MultiFormat Readers were able to detect the code') ||
+      message.includes('QR code parse error') ||
+      message.includes('No barcode or QR code detected');
+
+    if (!isRoutineNoResult) {
+      console.warn('[MerchantScanner] 扫描错误:', message);
     }
   };
 

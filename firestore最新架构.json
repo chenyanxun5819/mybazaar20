@@ -1,9 +1,39 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-03-27-v15",
-    "lastUpdated": "2026-03-27",
+    "version": "2026-04-04-v17",
+    "lastUpdated": "2026-04-05",
     "architectureChanges": {
+      "version_2026-04-05-v19": [
+        "🔄 pointSeller.todayStats / totalStats 字段命名全面重构：以 card / mobile 前缀区分两种销售模式，彻底替换旧字段名",
+        "🃏 card 模式（点数卡）当日：todayStats.cardCount / cardPoints / cardCash",
+        "📱 mobile 模式（手机直销）当日：todayStats.mobileCount / mobilePoints / mobileCash",
+        "➕ 合计当日：todayStats.totalPoints / totalCash（= card + mobile 之和）",
+        "🃏 card 模式（点数卡）累计：totalStats.totalCardCount / totalCardPoints / totalCardCash",
+        "📱 mobile 模式（手机直销）累计：totalStats.totalMobileCount / totalMobilePoints / totalMobileCash",
+        "➕ 合计累计：totalStats.totalPoints / totalCash（= card + mobile 之和）",
+        "⏱️ 时间戳统一为 lastSaleAt / firstSaleAt（废弃 lastIssueAt / firstIssueAt）",
+        "☁️ createPointCard.js 写入 cardCount / cardPoints / cardCash + totalPoints / totalCash + lastSaleAt / firstSaleAt",
+        "☁️ pointSellerDirectSale.js 写入 mobileCount / mobilePoints / mobileCash + totalPoints / totalCash + firstSaleAt",
+        "⚛️ PointSellerDashboard.jsx 默认值对齐完整新字段名",
+        "⚛️ IssuePointCard.jsx 读取 cardCount / cardPoints / cardCash",
+        "⚛️ DirectSale.jsx 读取 mobileCount / mobilePoints / mobileCash",
+        "⚛️ IssuanceHistory.jsx 读取 cardCount / mobileCount / totalPoints；累计读取 totalCardCount / totalPoints / totalCash"
+      ],
+      "version_2026-04-05-v18": [
+        "📊 pointSeller.todayStats 新增 directSalesCount（今日直销笔数）和 directSalesPoints（今日直销点数）字段",
+        "📊 pointSeller.totalStats 新增 totalDirectSales（累计直销笔数）和 totalPointsSold（累计直销点数）字段",
+        "✅ 上述字段由 pointSellerDirectSale Cloud Function 写入（已实装），此次为补充 schema 文档对齐",
+        "⚛️ DirectSale.jsx 顶部新增今日直销统计栏（3列：笔数 / 点数 / 收现金）"
+      ],
+      "version_2026-04-04-v17": [
+        "🗂️ pointCards 集合重命名为 pointSellerSales（统一 PointSeller 所有销售记录）",
+        "🪪 pointSellerSales 文档ID格式：card-YYYYMMDD-XXXXX（点数卡发行）/ cash-YYYYMMDD-XXXXX（直接销售）",
+        "📋 pointSellerSales 统一文档结构：saleType 区分 'card' 和 'cash'，card 专属字段放 card 子对象，cash 专属字段放 cash 子对象",
+        "☁️ createPointCard Cloud Function 改写入 pointSellerSales，文档ID从 CARD_{timestamp} 改为 card-YYYYMMDD-XXXXX",
+        "☁️ pointSellerDirectSale Cloud Function 新增写入 pointSellerSales（saleType='cash'），文档ID 为 cash-YYYYMMDD-XXXXX",
+        "⚛️ CashSubmission.jsx 将原 pointCards + transactions 两个监听合并为单一 pointSellerSales 监听"
+      ],
       "version_2026-03-31-v16": [
         "📱 新增 SellerManager 手机版页面（src/views/phone/sellerManager/SellerManagerPhone.jsx）",
         "🔗 手机版路由：/phone/seller-manager/:orgEventCode/dashboard（MobileGuard 保护）",
@@ -800,20 +830,38 @@
                     "cashBoxNumber": "string (现金箱编号)",
                     "// === 当日统计 ===": "",
                     "todayStats": {
-                      "cardsIssued": "number (今日发行卡数)",
-                      "totalPointsIssued": "number (今日发行点数)",
-                      "totalCashReceived": "number (今日收到现金 RM)",
-                      "lastIssueAt": "timestamp (最后一次发行时间)",
-                      "firstIssueAt": "timestamp (首次发行时间)",
+                      "// --- 点数卡（card）---": "",
+                      "cardCount":  "number (今日发行点数卡张数，由 createPointCard 写入)",
+                      "cardPoints": "number (今日点数卡发行总点数，由 createPointCard 写入)",
+                      "cardCash":   "number (今日点数卡收到现金 RM，由 createPointCard 写入)",
+                      "// --- 手机直销（mobile）---": "",
+                      "mobileCount":  "number (今日手机直销笔数，由 pointSellerDirectSale 写入)",
+                      "mobilePoints": "number (今日手机直销总点数，由 pointSellerDirectSale 写入)",
+                      "mobileCash":   "number (今日手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
+                      "// --- 合计 ---": "",
+                      "totalPoints": "number (今日发行总点数，= cardPoints + mobilePoints)",
+                      "totalCash":   "number (今日收到总现金 RM，= cardCash + mobileCash)",
+                      "// --- 时间戳 ---": "",
+                      "lastSaleAt":  "timestamp (最后一次发行/销售时间)",
+                      "firstSaleAt": "timestamp (首次发行/销售时间)",
                       "workingHours": "number (工作时长，小时)"
                     },
                     "// === 累计统计 ===": "",
                     "totalStats": {
-                      "totalCardsIssued": "number (累计发行卡数)",
-                      "totalPointsIssued": "number (累计发行点数)",
-                      "totalCashReceived": "number (累计收到现金 RM)",
-                      "averageCardValue": "number (平均每卡点数)",
-                      "largestCardValue": "number (最大单卡点数)",
+                      "// --- 点数卡（card）---": "",
+                      "totalCardCount":  "number (累计发行点数卡张数，由 createPointCard 写入)",
+                      "totalCardPoints": "number (累计点数卡发行总点数，由 createPointCard 写入)",
+                      "totalCardCash":   "number (累计点数卡收到现金 RM，由 createPointCard 写入)",
+                      "// --- 手机直销（mobile）---": "",
+                      "totalMobileCount":  "number (累计手机直销笔数，由 pointSellerDirectSale 写入)",
+                      "totalMobilePoints": "number (累计手机直销总点数，由 pointSellerDirectSale 写入)",
+                      "totalMobileCash":   "number (累计手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
+                      "// --- 合计 ---": "",
+                      "totalPoints": "number (累计发行总点数，= totalCardPoints + totalMobilePoints)",
+                      "totalCash":   "number (累计收到总现金 RM，= totalCardCash + totalMobileCash)",
+                      "// --- 点数卡额度分析 ---": "",
+                      "averageCardValue":  "number (平均每卡点数)",
+                      "largestCardValue":  "number (最大单卡点数)",
                       "smallestCardValue": "number (最小单卡点数)"
                     },
                     "// === 现金管理 ===": "",
@@ -856,9 +904,11 @@
                     "// === 备注 ===": "",
                     "notes": [
                       "PointSeller 只在义卖会当日有效",
-                      "发行点数卡时必须收取等值现金",
-                      "所有现金必须定期上交给 Cashier",
-                      "点数卡发行记录保存在 pointCards 集合"
+                      "销售模式一：发行点数卡（saleType='card'），收取现金后打印 QR Code 交给客户",
+                      "销售模式二：直接销售（saleType='cash'），现金直接转入指定 Customer 账户",
+                      "所有现金（含两种销售模式）必须定期上交给 Finance Manager",
+                      "点数卡发行记录保存在 pointSellerSales 集合（saleType='card'）",
+                      "直接销售记录保存在 pointSellerSales 集合（saleType='cash'）及 transactions 集合"
                     ]
                   },
                   "accountStatus": {
@@ -1365,93 +1415,122 @@
                   "isActive"
                 ]
               },
-              "pointCards": {
-                "path": "organizations/{orgId}/events/{eventId}/pointCards/{cardId}",
-                "description": "点数卡管理（不记名点数卡）",
+              "pointSellerSales": {
+                "path": "organizations/{orgId}/events/{eventId}/pointSellerSales/{saleId}",
+                "description": "PointSeller 所有销售记录（统一集合，含点数卡发行和直接销售两种类型）",
                 "level": "Event Subcollection",
+                "documentIdFormat": {
+                  "card": "card-YYYYMMDD-XXXXX（点数卡发行，仿照 CARD-YYYYMMDD-XXXXX 格式，前缀改小写 card-）",
+                  "cash": "cash-YYYYMMDD-XXXXX（直接销售，前缀 cash-，日期+5位随机大写字母）"
+                },
                 "documentStructure": {
                   "// === 基本信息 ===": "",
-                  "cardId": "string (自动生成的文档ID)",
-                  "cardNumber": "string (打印在卡上的编号，如 'CARD-2025-001')",
-                  "// === 点数信息 ===": "",
-                  "balance": {
-                    "initial": "number (初始点数)",
-                    "current": "number (当前余额)",
-                    "spent": "number (已消费)",
-                    "reserved": "number (预留，交易进行中)"
-                  },
-                  "// === 状态信息 ===": "",
-                  "status": {
-                    "isActive": "boolean (是否有效)",
-                    "isExpired": "boolean (是否过期)",
-                    "isDestroyed": "boolean (是否已销毁，Customer充值后为true)",
-                    "isEmpty": "boolean (余额是否为零)",
-                    "expiresAt": "timestamp (过期时间，活动结束时间)",
-                    "lastUsedAt": "timestamp (最后使用时间)",
-                    "destroyedAt": "timestamp (销毁时间，可选)",
-                    "destroyedBy": {
-                      "userId": "string (销毁者ID)",
-                      "reason": "string ('customer_topup' | 'expired' | 'manual')"
-                    }
-                  },
-                  "// === QR Code信息 ===": "",
-                  "qrCodeData": {
-                    "type": "string (固定值 'POINT_CARD')",
-                    "version": "string (版本号)",
-                    "cardId": "string (点数卡ID)",
-                    "eventId": "string (活动ID)",
-                    "organizationId": "string (组织ID)",
-                    "generatedAt": "timestamp (生成时间)"
-                  },
-                  "// === 发行信息 ===": "",
+                  "saleId": "string (文档ID，即 card-YYYYMMDD-XXXXX 或 cash-YYYYMMDD-XXXXX)",
+                  "saleNumber": "string (人类可读编号，与 saleId 相同，用于收据打印)",
+                  "saleType": "string ('card' | 'cash'，区分销售类型)",
+                  "organizationId": "string (组织ID，冗余字段)",
+                  "eventId": "string (活动ID，冗余字段)",
+
+                  "// === 金额信息（两种类型共用）===": "",
+                  "amount": "number (销售点数)",
+                  "cashReceived": "number (收到的现金RM，1:1比例)",
+
+                  "// === 发行人信息（两种类型共用）===": "",
                   "issuer": {
                     "pointSellerId": "string (PointSeller用户ID)",
                     "pointSellerName": "string (PointSeller姓名)",
-                    "issuedAt": "timestamp (发行时间)",
-                    "cashReceived": "number (收到的现金RM，1:1比例)",
-                    "receiptNumber": "string (收据编号)"
+                    "issuedAt": "timestamp (发行/销售时间)",
+                    "receiptNumber": "string (收据编号，格式 RC-YYYYMMDD-XXXX)",
+                    "note": "string (备注，可选)"
                   },
-                  "// === 使用记录 ===": "",
-                  "usageStats": {
-                    "transactionCount": "number (使用次数)",
-                    "merchantsUsed": [
-                      "array<string> (使用过的商家ID列表)"
-                    ],
-                    "firstUsedAt": "timestamp (首次使用时间)",
-                    "lastUsedAt": "timestamp (最后使用时间)"
+
+                  "// === card 类型专属字段（saleType='card' 时存在）===": "",
+                  "card": {
+                    "balance": {
+                      "initial": "number (初始点数)",
+                      "current": "number (当前余额)",
+                      "spent": "number (已消费)",
+                      "reserved": "number (预留，交易进行中)"
+                    },
+                    "status": {
+                      "isActive": "boolean (是否有效)",
+                      "isExpired": "boolean (是否过期)",
+                      "isDestroyed": "boolean (Customer充值后为true)",
+                      "isEmpty": "boolean (余额是否为零)",
+                      "expiresAt": "timestamp (过期时间，活动结束时间)",
+                      "lastUsedAt": "timestamp (最后使用时间)",
+                      "destroyedAt": "timestamp (销毁时间，可选)",
+                      "destroyedBy": {
+                        "userId": "string (销毁者ID)",
+                        "reason": "string ('customer_topup' | 'expired' | 'manual')"
+                      }
+                    },
+                    "qrCodeData": {
+                      "type": "string (固定值 'POINT_CARD')",
+                      "version": "string (版本号)",
+                      "saleId": "string (文档ID，即 card-YYYYMMDD-XXXXX)",
+                      "eventId": "string (活动ID)",
+                      "organizationId": "string (组织ID)",
+                      "generatedAt": "timestamp (生成时间)"
+                    },
+                    "usageStats": {
+                      "transactionCount": "number (使用次数)",
+                      "merchantsUsed": [
+                        "array<string> (使用过的商家ID列表)"
+                      ],
+                      "firstUsedAt": "timestamp (首次使用时间)",
+                      "lastUsedAt": "timestamp (最后使用时间)"
+                    }
                   },
-                  "// === 元数据 ===": "",
+
+                  "// === cash 类型专属字段（saleType='cash' 时存在）===": "",
+                  "cash": {
+                    "customerId": "string (客户用户ID)",
+                    "customerName": "string (客户姓名)",
+                    "customerPhone": "string (客户手机号，本地格式如 0123456789)",
+                    "transactionId": "string (对应 transactions 集合的文档ID)"
+                  },
+
+                  "// === 元数据（两种类型共用）===": "",
                   "metadata": {
                     "createdAt": "timestamp",
+                    "updatedAt": "timestamp",
                     "createdBy": "string (PointSeller UID)",
+                    "version": "string (文档版本号，固定 '1.0')",
+                    "source": "string ('createPointCard' | 'pointSellerDirectSale'，来源 Cloud Function 名称)",
                     "eventId": "string (冗余字段)",
                     "organizationId": "string (冗余字段)"
                   }
                 },
+                "idGenerationLogic": {
+                  "card": "const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, ''); const rand = Math.random().toString(36).substr(2,5).toUpperCase(); saleId = `card-${dateStr}-${rand}`;",
+                  "cash": "const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, ''); const rand = Math.random().toString(36).substr(2,5).toUpperCase(); saleId = `cash-${dateStr}-${rand}`;"
+                },
                 "indexes": [
-                  "cardNumber (unique)",
-                  "status.isActive",
-                  "status.expiresAt",
+                  "saleType",
                   "issuer.pointSellerId",
-                  "metadata.createdAt (desc)"
+                  "issuer.issuedAt (desc)",
+                  "metadata.createdAt (desc)",
+                  "card.status.isActive (仅 saleType='card')",
+                  "card.status.expiresAt (仅 saleType='card')"
                 ],
                 "securityRules": {
                   "read": [
-                    "任何人扫描QR Code可读取（用于验证和查询余额）",
-                    "PointSeller可读取自己发行的卡片",
-                    "Event Manager可读取所有卡片"
+                    "任何人扫描 card 类型 QR Code 可读取（验证余额）",
+                    "PointSeller 可读取自己发行的记录（issuer.pointSellerId == request.auth.uid）",
+                    "Event Manager 可读取所有记录"
                   ],
                   "write": [
-                    "仅Cloud Functions可写（创建、更新余额、销毁）",
-                    "PointSeller不能直接修改"
+                    "仅 Cloud Functions 可写（createPointCard、pointSellerDirectSale）",
+                    "PointSeller 不能直接修改"
                   ]
                 },
                 "notes": [
-                  "点数卡为不记名，任何人持有即可使用",
-                  "QR Code统一格式，根据扫描者身份执行不同逻辑",
-                  "Customer扫描 → 充值到账户并销毁卡片",
-                  "Merchant扫描 → 从卡片扣款",
-                  "活动结束后自动过期"
+                  "统一 PointSeller 所有销售记录，用 saleType 区分 card（点数卡）和 cash（直接销售）",
+                  "saleId 同时作为文档ID和人类可读编号，前缀即为类型标识",
+                  "card 类型：点数卡为不记名，任何人持有即可使用；Customer 扫描 QR Code 后充值入账并销毁卡片",
+                  "cash 类型：直接将点数转入指定客户账户，无 QR Code 流程",
+                  "CashSubmission（现金上交）通过 issuer.pointSellerId 查询本集合获取可上交记录"
                 ]
               }
             }
@@ -2370,7 +2449,7 @@
           "三层权限架构：Platform Admin（平台级）-> Organization（组织级）-> Event（活动级，由 Event Manager 管理）",
           "Platform Admin 权限：可以创建和管理所有 Organization；可以创建 Event 并指定 Event Manager",
           "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据；不分配点数；不兼任其他角色；纯监控所有人员数据",
-          "Auditor 权限：纯只读角色，可读取 Event 内所有数据（users、transactions、merchants、departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections、pointCards）；不可写入任何数据；与 Event Manager 相互制衡",
+          "Auditor 权限：纯只读角色，可读取 Event 内所有数据（users、transactions、merchants、departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections、pointSellerSales）；不可写入任何数据；与 Event Manager 相互制衡",
           "完全数据隔离：不同 Organization 和 Event 之间的数据完全隔离",
           "角色权限：基于用户角色（Platform Admin, Event Manager, Seller Manager, Seller, Merchant, Customer, Finance）控制访问",
           "所有权验证：用户只能访问自己的数据或管理范围内的数据",
@@ -2408,7 +2487,7 @@
             "write": "Seller/Merchant 可以创建交易；Event Manager 可以修改交易"
           },
           "organizations/{orgId}/events/{eventId}/[所有统计集合]": {
-            "read": "Auditor 可读取 departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections、merchants、pointCards 所有数据",
+            "read": "Auditor 可读取 departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections、merchants、pointSellerSales 所有数据",
             "write": "Auditor 无任何写入权限",
             "note": "统计集合包括：departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections"
           }
@@ -2536,7 +2615,7 @@
         "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
         "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
         "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}",
-        "organizations/{organizationId}/events/{eventId}/pointCards/{cardId}"
+        "organizations/{organizationId}/events/{eventId}/pointSellerSales/{saleId}"
       ],
       "userSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",

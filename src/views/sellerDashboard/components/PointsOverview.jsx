@@ -97,8 +97,6 @@ function PointsOverview() {
             </small>
           </div>
           
-          <div className="cash-divider"></div>
-          
           <div className="cash-item">
             <span className="cash-label">累计收到现金</span>
             <span className="cash-amount secondary">RM {stats.totalCashCollected || 0}</span>

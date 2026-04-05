@@ -89,9 +89,9 @@ const CashSubmission = ({
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
 
-  // ✅ 新增：监听发行记录（点数卡 + 直接销售）
+  // 监听所有销售记录（pointSellerSales 统一集合，含 card 和 cash 两种类型）
   const [localRecords, setLocalRecords] = useState([]);
-  
+
   useEffect(() => {
     const orgId = userProfile?.organizationId || organizationId;
     const evtId = userProfile?.eventId || eventId;
@@ -99,71 +99,30 @@ const CashSubmission = ({
 
     if (!orgId || !evtId || !userId) return;
 
-    // 监听点数卡发行记录
-    const pointCardsRef = collection(db, 'organizations', orgId, 'events', evtId, 'pointCards');
-    const qCards = query(
-      pointCardsRef,
+    const salesRef = collection(db, 'organizations', orgId, 'events', evtId, 'pointSellerSales');
+    const qSales = query(
+      salesRef,
       where('issuer.pointSellerId', '==', userId),
       orderBy('metadata.createdAt', 'desc')
     );
 
-    const unsubscribeCards = onSnapshot(qCards, (snapshot) => {
-      const cards = snapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'point_card',
-        ...doc.data()
-      }));
-      
-      console.log('[CashSubmission] 监听到点数卡:', cards.length);
-      
-      // 合并到本地记录中
-      setLocalRecords(prev => {
-        const directSales = prev.filter(r => r.type === 'direct_sale');
-        return [...cards, ...directSales].sort((a, b) => {
-          const aTime = a.metadata?.createdAt || a.timestamp;
-          const bTime = b.metadata?.createdAt || b.timestamp;
-          return bTime - aTime;
-        });
-      });
-    }, (error) => {
-      console.error('[CashSubmission] 监听点数卡记录失败:', error);
-    });
-
-    // 监听直接销售记录
-    const transactionsRef = collection(db, 'organizations', orgId, 'events', evtId, 'transactions');
-    const qTransactions = query(
-      transactionsRef,
-      where('sellerId', '==', userId),
-      where('type', '==', 'pointseller_to_customer'),
-      orderBy('timestamp', 'desc')
-    );
-
-    const unsubscribeTransactions = onSnapshot(qTransactions, (snapshot) => {
+    const unsubscribe = onSnapshot(qSales, (snapshot) => {
       const sales = snapshot.docs.map(doc => ({
         id: doc.id,
-        type: 'direct_sale',
         ...doc.data()
       }));
 
-      console.log('[CashSubmission] 监听到直接销售:', sales.length);
-
-      // 合并到本地记录中
-      setLocalRecords(prev => {
-        const cards = prev.filter(r => r.type === 'point_card');
-        return [...cards, ...sales].sort((a, b) => {
-          const aTime = a.metadata?.createdAt || a.timestamp;
-          const bTime = b.metadata?.createdAt || b.timestamp;
-          return bTime - aTime;
-        });
-      });
+      console.log('[CashSubmission] 监听到销售记录:', sales.length);
+      setLocalRecords(sales);
     }, (error) => {
-      console.error('[CashSubmission] 监听直接销售记录失败:', error);
+      console.error('[CashSubmission] 监听销售记录失败:', error);
+
+      if (error.message && error.message.includes('index')) {
+        setError('Firestore 索引缺失，请联系管理员配置');
+      }
     });
 
-    return () => {
-      unsubscribeCards();
-      unsubscribeTransactions();
-    };
+    return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
 
   // ✅ 使用本地监听的记录，如果没有则使用 props
@@ -176,46 +135,9 @@ const CashSubmission = ({
     
     // 检查是否已经在任何提交记录中
     const isSubmitted = submittedRecords.some(sub => {
-      console.log(`[DEBUG] 检查提交记录 ${sub.submissionId}, status=${sub.status}`);
-      console.log(`[DEBUG] recordIds:`, sub.recordIds);
-      
-      // 主要方法：检查 recordIds 数组
       if (sub.recordIds && Array.isArray(sub.recordIds)) {
-        const found = sub.recordIds.includes(record.id);
-        console.log(`[DEBUG] recordIds.includes(${record.id}) = ${found}`);
-        if (found) {
-          console.log(`[CashSubmission] ✅ 记录 ${record.id} 在提交 ${sub.submissionId} 的 recordIds 中`);
-        }
-        return found;
-      } else {
-        console.log(`[DEBUG] recordIds 不存在或不是数组`);
+        return sub.recordIds.includes(record.id);
       }
-      
-      // 兼容方法1：检查 pointCardInfo.cardIds（点数卡）
-      if (record.type === 'point_card' && sub.pointCardInfo?.cardIds) {
-        const cardId = record.id || record.cardId;
-        const found = sub.pointCardInfo.cardIds.includes(cardId);
-        console.log(`[DEBUG] pointCardInfo.cardIds.includes(${cardId}) = ${found}`);
-        if (found) {
-          console.log(`[CashSubmission] ✅ 点数卡 ${cardId} 在提交 ${sub.submissionId} 的 cardIds 中`);
-        }
-        return found;
-      }
-      
-      // 兼容方法2：检查 includedSales（直接销售）
-      if (record.type === 'direct_sale' && sub.includedSales) {
-        const transactionId = record.id || record.transactionId;
-        const found = sub.includedSales.some(sale => 
-          sale.transactionIds && sale.transactionIds.includes(transactionId)
-        );
-        console.log(`[DEBUG] includedSales 检查结果 = ${found}`);
-        if (found) {
-          console.log(`[CashSubmission] ✅ 直接销售 ${transactionId} 在提交 ${sub.submissionId} 的 includedSales 中`);
-        }
-        return found;
-      }
-      
-      console.log(`[DEBUG] 此提交记录不匹配，返回 false`);
       return false;
     });
     
@@ -230,19 +152,16 @@ const CashSubmission = ({
     return !isSubmitted;
   });
 
-  console.log(`[CashSubmission] 总记录: ${effectiveRecords.length}, 可上交: ${availableRecords.length}, 已提交: ${submittedRecords.length}`);
+  console.log(`[CashSubmission] 总记录: ${effectiveRecords.length}, 可上交: ${availableRecords.length}, 已提交: ${submittedRecords.length}, card: ${effectiveRecords.filter(r => r.saleType === 'card').length}, cash: ${effectiveRecords.filter(r => r.saleType === 'cash').length}`);
 
   // 已上交的记录
   const pendingSubmissions = submittedRecords.filter(sub => sub.status === 'pending');
   const confirmedSubmissions = submittedRecords.filter(sub => sub.status === 'confirmed');
 
-  // ✅ 重新设计统计计算
+  // 统计计算（cashReceived 字段在新架构中两种类型统一）
   // 1. 今日收现金（总额）- 从 effectiveRecords 实时计算
   const todayTotalCash = effectiveRecords.reduce((sum, record) => {
-    const amount = record.type === 'point_card' 
-      ? (record.issuer?.cashReceived || 0)
-      : (record.amount || 0);
-    return sum + amount;
+    return sum + (record.cashReceived || 0);
   }, 0);
   
   // 2. 上交待确认（pending 状态的总额）
@@ -253,25 +172,14 @@ const CashSubmission = ({
   
   // 4. 未上交现金（可上交记录的总额）
   const unsubmittedAmount = availableRecords.reduce((sum, record) => {
-    const amount = record.type === 'point_card' 
-      ? (record.issuer?.cashReceived || 0)
-      : (record.amount || 0);
-    console.log(`[DEBUG] 未上交记录 ${record.id}, type=${record.type}, amount=${amount}`);
-    return sum + amount;
+    return sum + (record.cashReceived || 0);
   }, 0);
-  
-  console.log(`[DEBUG] 未上交现金计算: availableRecords=${availableRecords.length}, unsubmittedAmount=${unsubmittedAmount}`);
 
   // 计算选中金额
   const selectedAmount = Array.from(selectedRecords).reduce((sum, recordId) => {
     const record = availableRecords.find(r => r.id === recordId);
     if (!record) return sum;
-    
-    if (record.type === 'point_card') {
-      return sum + (record.issuer?.cashReceived || 0);
-    } else {
-      return sum + (record.amount || 0);
-    }
+    return sum + (record.cashReceived || 0);
   }, 0);
 
   // 处理选择/取消选择
@@ -338,16 +246,11 @@ const CashSubmission = ({
           const record = availableRecords.find(r => r.id === id);
           return {
             id: record.id,
-            type: record.type,
-            amount: record.type === 'point_card' 
-              ? (record.issuer?.cashReceived || 0)
-              : (record.amount || 0),
-            cardNumber: record.cardNumber,
-            customerName: record.customerName,
-            // ✅ 新增：添加更多信息用于后端处理
-            cardId: record.cardId,
-            transactionId: record.transactionId,
-            timestamp: record.metadata?.createdAt || record.timestamp
+            saleType: record.saleType,
+            amount: record.cashReceived || 0,
+            saleNumber: record.saleNumber,
+            customerName: record.cash?.customerName,
+            timestamp: record.metadata?.createdAt
           };
         }),
         transactionPin: pin,
@@ -454,44 +357,31 @@ const CashSubmission = ({
 
                 <div className="record-content">
                   <div className="record-header">
-                    <span className={`record-type ${record.type}`}>
-                      {record.type === 'point_card' ? '🎫 点数卡' : '🛒 直接销售'}
+                    <span className={`record-type ${record.saleType}`}>
+                      {record.saleType === 'card' ? '🎫 点数卡' : '🛒 直接销售'}
                     </span>
                     <span className="record-amount">
-                      {record.type === 'point_card'
-                        ? formatAmount(record.issuer?.cashReceived || 0)
-                        : formatAmount(record.amount || 0)}
+                      {formatAmount(record.cashReceived || 0)}
                     </span>
                   </div>
 
                   <div className="record-details">
-                    {record.type === 'point_card' ? (
-                      <>
-                        <div className="detail-item">
-                          <span className="detail-label">卡号:</span>
-                          <span className="detail-value">{record.cardNumber}</span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">时间:</span>
-                          <span className="detail-value">
-                            {formatDateTime(record.metadata?.createdAt)}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="detail-item">
-                          <span className="detail-label">客户:</span>
-                          <span className="detail-value">{record.customerName}</span>
-                        </div>
-                        <div className="detail-item">
-                          <span className="detail-label">时间:</span>
-                          <span className="detail-value">
-                            {formatDateTime(record.timestamp)}
-                          </span>
-                        </div>
-                      </>
-                    )}
+                    <div className="detail-item">
+                      <span className="detail-label">
+                        {record.saleType === 'card' ? '卡号:' : '客户:'}
+                      </span>
+                      <span className="detail-value">
+                        {record.saleType === 'card'
+                          ? record.saleNumber
+                          : record.cash?.customerName}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="detail-label">时间:</span>
+                      <span className="detail-value">
+                        {formatDateTime(record.metadata?.createdAt)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

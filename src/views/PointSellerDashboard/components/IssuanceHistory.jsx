@@ -51,84 +51,73 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
     return true;
   });
 
-  // 统计卡片数据
-  const statsCards = [
-    {
-      title: '今日发行卡数',
-      icon: '🎫',
-      value: statistics.todayStats?.cardsIssued || 0,
-      unit: '张',
-      color: 'blue'
-    },
-    {
-      title: '今日发行点数',
-      icon: '💎',
-      value: statistics.todayStats?.totalPointsIssued || 0,
-      unit: '点',
-      color: 'green'
-    },
-    {
-      title: '今日收现金',
-      icon: '💰',
-      value: formatAmount(statistics.todayStats?.totalCashReceived || 0),
-      unit: '',
-      color: 'purple'
-    },
-    {
-      title: '直接销售笔数',
-      icon: '🛒',
-      value: statistics.todayStats?.directSalesCount || 0,
-      unit: '笔',
-      color: 'orange'
-    }
-  ];
+  // 计算统计数据
+  const summaryStats = React.useMemo(() => {
+    const todayStats = statistics.todayStats || {};
+    return {
+      cardCount: todayStats.cardCount || 0,
+      mobileCount: todayStats.mobileCount || 0,
+      totalPoints: todayStats.totalPoints || 0
+    };
+  }, [statistics]);
 
   return (
     <div className="issuance-history">
-      {/* 刷新按钮 */}
-      <div className="history-header">
-        <h2>📊 发行记录</h2>
-        <button className="refresh-button" onClick={onRefresh}>
-          🔄 刷新数据
-        </button>
-      </div>
-
-      {/* 统计卡片 */}
-      <div className="stats-cards">
-        {statsCards.map((card, index) => (
-          <div key={index} className={`stat-card ${card.color}`}>
-            <div className="card-header">
-              <span className="card-icon">{card.icon}</span>
-              <span className="card-title">{card.title}</span>
-            </div>
-            <div className="card-content">
-              <div className="value">{card.value}</div>
-              {card.unit && <div className="unit">{card.unit}</div>}
+      {/* 统计卡片 - 参考 SellerSubmitCash 设计 */}
+      <div style={styles.summaryWrapper}>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryHeaderRow}>
+            {/* 左边：标题 */}
+            <div style={styles.summaryLeftCol}>
+              <div style={styles.summaryLabel}>📊 今日发行概览</div>
             </div>
           </div>
-        ))}
+
+          {/* 统计数据行：三列 */}
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{summaryStats.cardCount} 张</span>
+              <span style={styles.summaryStatLabel}>今日发行卡数</span>
+            </div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{summaryStats.mobileCount} 笔</span>
+              <span style={styles.summaryStatLabel}>手机直销笔数</span>
+            </div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{summaryStats.totalPoints} 点</span>
+              <span style={styles.summaryStatLabel}>今日发行点数</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 累计统计 */}
-      <div className="total-stats">
-        <h3>📈 累计统计</h3>
-        <div className="total-cards">
-          <div className="total-card">
-            <div className="total-label">累计发行卡数</div>
-            <div className="total-value">
-              {statistics.totalStats?.totalCardsIssued || 0} 张
+      <div style={styles.summaryWrapper}>
+        <div style={{...styles.summaryCard, background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)'}}>
+          <div style={styles.summaryHeaderRow}>
+            {/* 左边：标题 */}
+            <div style={styles.summaryLeftCol}>
+              <div style={styles.summaryLabel}>📈 累计统计</div>
             </div>
           </div>
-          <div className="total-card">
-            <div className="total-label">累计发行点数</div>
-            <div className="total-value">
-              {statistics.totalStats?.totalPointsIssued || 0} 点
+
+          {/* 统计数据行：三列 */}
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalCardCount || 0} 张</span>
+              <span style={styles.summaryStatLabel}>累计发行卡数</span>
             </div>
-          </div>
-          <div className="total-card">
-            <div className="total-label">累计收现金</div>
-            <div className="total-value">
-              {formatAmount(statistics.totalStats?.totalCashReceived || 0)}
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalPoints || 0} 点</span>
+              <span style={styles.summaryStatLabel}>累计发行点数</span>
+            </div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{formatAmount(statistics.totalStats?.totalCash || 0)}</span>
+              <span style={styles.summaryStatLabel}>累计收现金</span>
             </div>
           </div>
         </div>
@@ -153,7 +142,7 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
             className={`filter-btn ${filter === 'direct_sale' ? 'active' : ''}`}
             onClick={() => setFilter('direct_sale')}
           >
-            🛒 直接销售
+            🛒 手机直销
           </button>
         </div>
 
@@ -190,7 +179,7 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
                   <tr key={record.id}>
                     <td>
                       <span className={`record-type ${record.type}`}>
-                        {record.type === 'point_card' ? '🎫 点数卡' : '🛒 直接销售'}
+                        {record.type === 'point_card' ? '🎫 点数卡' : '🛒 手机直销'}
                       </span>
                     </td>
                     <td>
@@ -261,6 +250,72 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
       </div>
     </div>
   );
+};
+
+// ========== 样式 ==========
+const styles = {
+  summaryWrapper: { 
+    width: '100%', 
+    marginBottom: '1.5rem' 
+  },
+  summaryCard: { 
+    padding: '1.25rem 0.65rem', 
+    borderRadius: '12px', 
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', 
+    color: '#fff', 
+    background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)' 
+  },
+  summaryHeaderRow: { 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'stretch', 
+    marginBottom: '1rem', 
+    paddingBottom: '0.75rem', 
+    borderBottom: '1px solid rgba(255, 255, 255, 0.2)', 
+    gap: '0.5rem' 
+  },
+  summaryLeftCol: { 
+    display: 'flex', 
+    flexDirection: 'column', 
+    alignItems: 'flex-start', 
+    gap: '0.5rem', 
+    flex: '1' 
+  },
+  summaryLabel: { 
+    fontSize: '1rem', 
+    opacity: 0.95, 
+    fontWeight: '600' 
+  },
+  summaryStats: { 
+    display: 'flex', 
+    justifyContent: 'space-around', 
+    alignItems: 'flex-start', 
+    gap: '0.75rem', 
+    flexWrap: 'nowrap' 
+  },
+  summaryStatItem: { 
+    display: 'flex', 
+    flexDirection: 'column', 
+    alignItems: 'center', 
+    flex: '1 1 150px', 
+    textAlign: 'center' 
+  },
+  summaryStatValue: { 
+    fontSize: '1.4rem', 
+    fontWeight: '700', 
+    marginBottom: '0.25rem' 
+  },
+  summaryStatLabel: { 
+    fontSize: '0.85rem', 
+    opacity: 0.85, 
+    marginBottom: '0.25rem' 
+  },
+  summaryStatDivider: { 
+    width: '1px', 
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+    alignSelf: 'stretch', 
+    margin: '0 0.5rem' 
+  }
 };
 
 export default IssuanceHistory;

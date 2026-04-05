@@ -11,6 +11,10 @@ import TransactionPinDialog from '../common/TransactionPinDialog';
 import qrcodeTicketIcon from '../../../assets/qrcode-ticket.svg';
 import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
 import qrIcon from '../../../assets/qr .svg';
+import cloudDownloadIcon from '../../../assets/cloud-download-alt.svg';
+import printWifiIcon from '../../../assets/print-wifi.svg';
+import qrcodeTicketSmallIcon from '../../../assets/qrcode-ticket.svg';
+import sirenOnIcon from '../../../assets/siren-on.svg';
 import './IssuePointCard.css';
 
 /**
@@ -231,7 +235,6 @@ class ESCPOSPrinter {
     }
   }
 
-  // 发送数据到打印机（分块发送，XP-P300 优化）
   // 發送數據到打印機
   async send(data) {
     if (!this.characteristic) {
@@ -241,13 +244,9 @@ class ESCPOSPrinter {
     try {
       const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-      // ⭐ XP-58 使用 writeValueWithoutResponse（串流模式）
-      // writeValue (ATT_WRITE_REQUEST) 會逐包等待 ACK，導致 ESC/POS 指令被截斷
-      const useWithoutResponse =
-        this.characteristic.properties?.writeWithoutResponse;
-
-      // ⭐ chunk size 提升到 100 bytes（10 bytes 太小，指令容易跨包被截斷）
-      const chunkSize = useWithoutResponse ? 100 : 20;
+      // ⭐ 改為 writeValue（有確認）— ESC/POS 指令格式嚴格，必須確保原子性
+      // writeWithoutResponse 容易導致 QR 指令被割裂、長度計算錯亂
+      const chunkSize = 20;  // 维持 20 bytes 兼容 BLE 默认 MTU
       const totalChunks = Math.ceil(buffer.length / chunkSize);
       let sentChunks = 0;
 
@@ -256,16 +255,9 @@ class ESCPOSPrinter {
         sentChunks++;
 
         try {
-          if (useWithoutResponse) {
-            // ⭐ 串流模式：不等回應，直接發下一包
-            await this.characteristic.writeValueWithoutResponse(chunk);
-            // 50ms 給打印機處理緩衝（比 writeValue 快但需要適當間隔）
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          } else {
-            // fallback：有回應確認模式
-            await this.characteristic.writeValue(chunk);
-            await new Promise((resolve) => setTimeout(resolve, 30));
-          }
+          await this.characteristic.writeValue(chunk);
+          // writeValue 已有 ATT ACK，同步後只保留極短節流
+          await new Promise((resolve) => setTimeout(resolve, 4));
 
         } catch (chunkError) {
           console.error(`[Bluetooth] chunk ${sentChunks}/${totalChunks}:`, chunkError?.message);
@@ -287,6 +279,122 @@ class ESCPOSPrinter {
     const encoder = new TextEncoder();
     const data = encoder.encode(text);
     await this.send(data);
+  }
+
+  async printCanvas(canvas, maxWidth = 384) {
+    const printableWidth = Math.max(8, Math.ceil(maxWidth / 8) * 8);
+    const printableHeight = canvas.height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) {
+      throw new Error('无法读取 QR 打印画布');
+    }
+
+    const imageData = context.getImageData(0, 0, printableWidth, printableHeight).data;
+    const pixelMatrix = Array.from({ length: printableHeight }, () => new Uint8Array(printableWidth));
+
+    for (let y = 0; y < printableHeight; y++) {
+      for (let x = 0; x < printableWidth; x++) {
+        const pixelIndex = (y * printableWidth + x) * 4;
+        const red = imageData[pixelIndex];
+        const green = imageData[pixelIndex + 1];
+        const blue = imageData[pixelIndex + 2];
+        const alpha = imageData[pixelIndex + 3];
+        const luminance = (red * 0.299) + (green * 0.587) + (blue * 0.114);
+        pixelMatrix[y][x] = alpha > 127 && luminance < 180 ? 1 : 0;
+      }
+    }
+
+    // 兼容性较高的 ESC * 24-dot 位图模式
+    // 每次发送 24 行，避免廉价 58mm 机型把 GS v 0 位图数据当文字输出
+    await this.send(new Uint8Array([0x1B, 0x33, 24]));
+
+    for (let offsetY = 0; offsetY < printableHeight; offsetY += 24) {
+      const stripeHeight = Math.min(24, printableHeight - offsetY);
+      const stripe = new Uint8Array(5 + printableWidth * 3 + 1);
+      stripe[0] = 0x1B;
+      stripe[1] = 0x2A;
+      stripe[2] = 33;
+      stripe[3] = printableWidth & 0xFF;
+      stripe[4] = (printableWidth >> 8) & 0xFF;
+
+      let writeIndex = 5;
+      for (let x = 0; x < printableWidth; x++) {
+        for (let band = 0; band < 3; band++) {
+          let byte = 0;
+          for (let bit = 0; bit < 8; bit++) {
+            const y = offsetY + band * 8 + bit;
+            if (y >= offsetY + stripeHeight) {
+              continue;
+            }
+            if (pixelMatrix[y][x]) {
+              byte |= (0x80 >> bit);
+            }
+          }
+          stripe[writeIndex++] = byte;
+        }
+      }
+
+      stripe[writeIndex] = 0x0A;
+      await this.send(stripe);
+      await new Promise((resolve) => setTimeout(resolve, 8));
+    }
+
+    await this.send(new Uint8Array([0x1B, 0x32]));
+    await this.printText('\n');
+  }
+
+  buildPrintQrCanvas(qrData, maxWidth = 280) {
+    if (!qrData) {
+      throw new Error('缺少 QR 数据');
+    }
+
+    const qr = QRCode.create(qrData, { errorCorrectionLevel: 'L' });
+    const moduleCount = qr.modules.size;
+    // 热感纸本身是白底，1 个模块静区已足够；进一步缩小 QR 尺寸
+    const quietZoneModules = 1;
+    const totalModules = moduleCount + quietZoneModules * 2;
+    const moduleSize = Math.max(1, Math.floor(maxWidth / totalModules));
+    const qrPixelSize = totalModules * moduleSize;
+    const printableWidth = Math.max(8, Math.ceil(qrPixelSize / 8) * 8);
+    const leftPadding = Math.max(0, Math.floor((printableWidth - qrPixelSize) / 2));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = printableWidth;
+    canvas.height = qrPixelSize;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('无法创建 QR 画布');
+    }
+
+    context.fillStyle = '#FFFFFF';
+    context.fillRect(0, 0, printableWidth, qrPixelSize);
+    context.fillStyle = '#000000';
+
+    for (let row = 0; row < moduleCount; row++) {
+      for (let col = 0; col < moduleCount; col++) {
+        if (!qr.modules.get(row, col)) {
+          continue;
+        }
+
+        const x = leftPadding + (col + quietZoneModules) * moduleSize;
+        const y = (row + quietZoneModules) * moduleSize;
+        context.fillRect(x, y, moduleSize, moduleSize);
+      }
+    }
+
+    return canvas;
+  }
+
+  async printQRCodeImage(qrData) {
+    if (!qrData) {
+      throw new Error('缺少 QR 数据');
+    }
+
+    console.log('[QR Code] 使用位图方式打印 QR...');
+    const canvas = this.buildPrintQrCanvas(qrData, 280);
+    await this.printCanvas(canvas, canvas.width);
+    console.log('[QR Code] ✅ 位图 QR 打印完成');
   }
 
   // 使用打印机原生 ESC/POS QR 指令，避免通过蓝牙发送大位图导致 GATT 断线
@@ -338,7 +446,7 @@ class ESCPOSPrinter {
   }
 
   // 打印点数卡（XP-58 优化版 - 紧凑布局）
-  async printPointCard(cardNumber, amount, qrData, eventName = 'MyBazaar') {
+  async printPointCard(cardNumber, amount, qrData, qrCodeDataUrl, eventName = 'MyBazaar') {
     let corePrinted = false;
 
     try {
@@ -376,9 +484,9 @@ class ESCPOSPrinter {
       await this.send(ESCPOSPrinter.CMD.ALIGN_CENTER);
       await this.printText(`Card No: ${cardNumber}\n`);
 
-      // 5. 使用打印机原生 QR 指令，避免蓝牙传大图断开
+      // 5. 这台机型原生 QR 指令会把 payload 当文字印出，因此改走位图打印
       console.log('[Print] 准备打印 QR Code...');
-      await this.printQRCode(qrData);
+      await this.printQRCodeImage(qrData);
 
       // 给打印机时间把 QR 渲染到纸上，避免后续命令把蓝牙链路挤断
       await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -474,6 +582,14 @@ const IssuePointCard = ({
 
   // 活动名称（从 events/{eventId}.eventName.en-US 读取）
   const [eventNameEnUs, setEventNameEnUs] = useState('');
+
+  const buildPointCardQrPayload = (cardId, orgId, evtId) => JSON.stringify({
+    t: 'POINT_CARD',
+    v: '1',
+    c: cardId,
+    o: orgId,
+    e: evtId
+  });
 
   // 仅允许 ASCII，避免热敏机出现乱码
   const sanitizeAscii = (value) => {
@@ -595,18 +711,12 @@ const IssuePointCard = ({
         // 生成QR Code
         // ⚠️ 必须与 app 扫描逻辑一致（PointCardTopup 期待 type=POINT_CARD）
         // 同时尽量缩短 payload，降低 QR 密度，提升可扫性
-        const qrData = JSON.stringify({
-          type: 'POINT_CARD',
-          v: '1.0',
-          cardId: cardData.cardId,
-          organizationId: orgId,
-          eventId: evtId
-        });
+        const qrData = buildPointCardQrPayload(cardData.cardId, orgId, evtId);
 
         const qrDataUrl = await QRCode.toDataURL(qrData, {
           width: 500,                    // 显示/下载用高分辨率
           margin: 4,                     // 增加边距（quiet zone）
-          errorCorrectionLevel: 'M',     // 降低版本/密度，热敏打印更易扫
+          errorCorrectionLevel: 'L',     // 降低密度，让热敏打印模块更大更清晰
           color: {
             dark: '#000000',             // 确保黑色够深
             light: '#FFFFFF'             // 确保白色够亮
@@ -778,13 +888,7 @@ const IssuePointCard = ({
       // 准备 QR Code 数据（与发行时一致）
       const orgId = userProfile?.organizationId || organizationId;
       const evtId = userProfile?.eventId || eventId;
-      const qrData = JSON.stringify({
-        type: 'POINT_CARD',
-        v: '1.0',
-        cardId: issuedCard.cardId,
-        organizationId: orgId,
-        eventId: evtId
-      });
+      const qrData = buildPointCardQrPayload(issuedCard.cardId, orgId, evtId);
 
       // 打印
       setSuccessMessage('正在打印...');
@@ -795,6 +899,7 @@ const IssuePointCard = ({
         issuedCard.cardNumber,
         issuedCard.balance?.initial || 0,
         qrData,
+        qrCodeDataUrl,
         eventName  // ← 添加 eventName 参数
       );
 
@@ -850,28 +955,7 @@ const IssuePointCard = ({
 
 
   // 测试打印（纯文字，诊断蓝牙通道用）
-  const handleTestPrint = async () => {
-    if (!isWebBluetoothSupported) {
-      setError('您的浏览器不支持蓝牙功能');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      if (!bluetoothPrinter || !isPrinterConnected) {
-        bluetoothPrinter = new ESCPOSPrinter();
-        await bluetoothPrinter.connect();
-        setIsPrinterConnected(true);
-      }
-      await bluetoothPrinter.testPrint();
-      setSuccessMessage('✅ 测试打印已发送，请检查打印机是否出纸');
-    } catch (err) {
-      console.error('[测试打印] 失败:', err);
-      setError(err.message || '测试打印失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   // 清除已发行卡片（准备发行下一张）
   const handleClearCard = () => {
@@ -894,14 +978,12 @@ const IssuePointCard = ({
 
   return (
     <div className="issue-point-card">
-      <h2 className="section-title">🎫 发行点数卡</h2>
-
       {/* 库存统计 */}
       <div className="inventory-summary">
         <div className="inventory-card">
           <img src={qrcodeTicketIcon} alt="已发行" className="inventory-icon" />
           <div className="inventory-value">
-            {statistics.todayStats?.cardsIssued || 0}
+            {statistics.todayStats?.cardCount || 0}
           </div>
           <div className="inventory-label">今日发行张数</div>
         </div>
@@ -909,7 +991,7 @@ const IssuePointCard = ({
         <div className="inventory-card">
           <img src={paymentQrcodeIcon} alt="发行点数" className="inventory-icon" />
           <div className="inventory-value">
-            {statistics.todayStats?.totalPointsIssued || 0}
+            {statistics.todayStats?.cardPoints || 0}
           </div>
           <div className="inventory-label">今日发行点数</div>
         </div>
@@ -917,7 +999,7 @@ const IssuePointCard = ({
         <div className="inventory-card">
           <img src={qrIcon} alt="现金" className="inventory-icon" />
           <div className="inventory-value">
-            {formatAmount(statistics.todayStats?.totalCashReceived || 0)}
+            {formatAmount(statistics.todayStats?.cardCash || 0)}
           </div>
           <div className="inventory-label">今日收现金</div>
         </div>
@@ -957,10 +1039,11 @@ const IssuePointCard = ({
 
           <div className="card-actions">
             <button className="download-button" onClick={handleDownloadQRCode}>
-              📥 下载QR Code
+              <img src={cloudDownloadIcon} alt="下載" className="button-icon" style={{ width: '20px', height: '20px', filter: 'brightness(0) invert(1)' }} />
+              下载QR Code
             </button>
             <button
-              className="print-button"
+              className="print-button usb-print-button"
               onClick={handleUsbPrintPointCard}
               disabled={loading || !issuedCard}
             >
@@ -974,16 +1057,8 @@ const IssuePointCard = ({
               disabled={loading || !issuedCard}
               title={!isWebBluetoothSupported ? '您的浏览器可能不支持蓝牙（iOS 不支持）' : ''}
             >
-              {isPrinterConnected ? '📱 蓝牙打印' : '🔗 连接蓝牙打印'}
-            </button>
-            <button
-              className="print-button"
-              onClick={handleTestPrint}
-              disabled={loading}
-              style={{ fontSize: '0.8em', opacity: 0.75 }}
-              title="发送纯文字，测试打印机通道是否正常"
-            >
-              🔧 测试打印
+              <img src={printWifiIcon} alt="打印" className="button-icon" style={{ width: '20px', height: '20px', filter: 'brightness(0) invert(1)' }} />
+              {isPrinterConnected ? '蓝牙打印' : '连接蓝牙打印'}
             </button>
           </div>
 
@@ -1055,12 +1130,20 @@ const IssuePointCard = ({
               disabled={loading || !amount || !isActiveHours}
               className="submit-button"
             >
-              {loading ? '处理中...' : `🎫 发行点数卡 ${amount || 0} 点`}
+              {loading ? '处理中...' : (
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <img src={qrcodeTicketSmallIcon} alt="发行" className="button-icon" style={{ width: '20px', height: '20px', filter: 'brightness(0) invert(1)' }} />
+                  发行点数卡 {amount || 0} 点
+                </span>
+              )}
             </button>
 
             {/* 提示信息 */}
             <div className="info-box">
-              <p className="info-title">💡 操作说明</p>
+              <p className="info-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <img src={sirenOnIcon} alt="操作说明" className="button-icon" style={{ width: '20px', height: '20px', filter: 'invert(27%) sepia(64%) saturate(1160%) hue-rotate(231deg) brightness(100%) contrast(95%)' }} />
+                操作说明
+              </p>
               <ul className="info-list">
                 <li>输入点数金额（点数 = 现金金额）</li>
                 <li>点击"发行点数卡"按钮</li>
