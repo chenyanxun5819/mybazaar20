@@ -333,8 +333,10 @@ const DirectSale = ({
               <input
                 id="amount"
                 type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
                 onKeyPress={handleAmountKeyPress}
                 placeholder="100"
                 min="1"

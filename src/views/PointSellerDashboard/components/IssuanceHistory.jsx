@@ -51,51 +51,11 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
     return true;
   });
 
-  // 计算统计数据
-  const summaryStats = React.useMemo(() => {
-    const todayStats = statistics.todayStats || {};
-    return {
-      cardCount: todayStats.cardCount || 0,
-      mobileCount: todayStats.mobileCount || 0,
-      totalPoints: todayStats.totalPoints || 0
-    };
-  }, [statistics]);
-
   return (
     <div className="issuance-history">
-      {/* 统计卡片 - 参考 SellerSubmitCash 设计 */}
-      <div style={styles.summaryWrapper}>
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryHeaderRow}>
-            {/* 左边：标题 */}
-            <div style={styles.summaryLeftCol}>
-              <div style={styles.summaryLabel}>📊 今日发行概览</div>
-            </div>
-          </div>
-
-          {/* 统计数据行：三列 */}
-          <div style={styles.summaryStats}>
-            <div style={styles.summaryStatItem}>
-              <span style={styles.summaryStatValue}>{summaryStats.cardCount} 张</span>
-              <span style={styles.summaryStatLabel}>今日发行卡数</span>
-            </div>
-            <div style={styles.summaryStatDivider}></div>
-            <div style={styles.summaryStatItem}>
-              <span style={styles.summaryStatValue}>{summaryStats.mobileCount} 笔</span>
-              <span style={styles.summaryStatLabel}>手机直销笔数</span>
-            </div>
-            <div style={styles.summaryStatDivider}></div>
-            <div style={styles.summaryStatItem}>
-              <span style={styles.summaryStatValue}>{summaryStats.totalPoints} 点</span>
-              <span style={styles.summaryStatLabel}>今日发行点数</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 累计统计 */}
       <div style={styles.summaryWrapper}>
-        <div style={{...styles.summaryCard, background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)'}}>
+        <div style={styles.summaryCard}>
           <div style={styles.summaryHeaderRow}>
             {/* 左边：标题 */}
             <div style={styles.summaryLeftCol}>
@@ -105,16 +65,25 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
 
           {/* 统计数据行：三列 */}
           <div style={styles.summaryStats}>
+            {/* 点数卡统计 - 总点数 */}
             <div style={styles.summaryStatItem}>
-              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalCardCount || 0} 张</span>
-              <span style={styles.summaryStatLabel}>累计发行卡数</span>
+              <div style={styles.summaryStatSubtitle}>
+                {statistics.totalStats?.totalCardCount || 0} 张
+              </div>
+              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalCardPoints || 0}</span>
+              <span style={styles.summaryStatLabel}>卡片总点数</span>
             </div>
             <div style={styles.summaryStatDivider}></div>
+            {/* 手机直销统计 - 总点数 */}
             <div style={styles.summaryStatItem}>
-              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalPoints || 0} 点</span>
-              <span style={styles.summaryStatLabel}>累计发行点数</span>
+              <div style={styles.summaryStatSubtitle}>
+                {statistics.totalStats?.totalMobileCount || 0} 笔
+              </div>
+              <span style={styles.summaryStatValue}>{statistics.totalStats?.totalMobilePoints || 0}</span>
+              <span style={styles.summaryStatLabel}>手机总点数</span>
             </div>
             <div style={styles.summaryStatDivider}></div>
+            {/* 现金统计 */}
             <div style={styles.summaryStatItem}>
               <span style={styles.summaryStatValue}>{formatAmount(statistics.totalStats?.totalCash || 0)}</span>
               <span style={styles.summaryStatLabel}>累计收现金</span>
@@ -198,7 +167,7 @@ const IssuanceHistory = ({ statistics, records, onRefresh }) => {
                     <td>
                       <div className="points-cell">
                         {record.type === 'point_card' 
-                          ? (record.balance?.initial || 0)
+                          ? (record.points || record.balance?.initial || record.issuer?.points || 0)
                           : (record.points || record.amount || 0)
                         } 点
                       </div>
@@ -263,7 +232,7 @@ const styles = {
     borderRadius: '12px', 
     boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', 
     color: '#fff', 
-    background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)' 
+    background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)'
   },
   summaryHeaderRow: { 
     display: 'flex', 
@@ -309,6 +278,12 @@ const styles = {
     fontSize: '0.85rem', 
     opacity: 0.85, 
     marginBottom: '0.25rem' 
+  },
+  summaryStatSubtitle: {
+    fontSize: '0.85rem',
+    opacity: 0.8,
+    marginBottom: '0.5rem',
+    fontWeight: '500'
   },
   summaryStatDivider: { 
     width: '1px', 

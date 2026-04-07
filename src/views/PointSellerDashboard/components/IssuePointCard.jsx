@@ -1096,6 +1096,8 @@ const IssuePointCard = ({
                 <input
                   id="cardAmount"
                   type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="100"
