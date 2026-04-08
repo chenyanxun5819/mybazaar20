@@ -1,8 +1,12 @@
 /**
- * Create Point Card Cloud Function - v4.0
- * 创建点数卡，写入统一销售集合 pointSellerSales
+ * Create Point Card Cloud Function - v5.0
+ * 创建点数卡，同时写入 pointSellerSales + transactions 集合
  *
- * 变更：
+ * 变更 (v5.0)：
+ * 1. 同时写入 transactions 集合（transactionType: pointseller_card_issuance）
+ * 2. 用于统一的交易追踪和数据合并
+ * 
+ * 原有变更 (v4.0)：
  * 1. 集合从 pointCards 改为 pointSellerSales
  * 2. 文档ID 改为 card-YYYYMMDD-XXXXX（与 saleNumber 相同）
  * 3. 数据结构对齐新架构（saleType='card'，card 子对象）
@@ -98,88 +102,51 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
           expiresAt = eventDoc.data().endDate || null;
         }
 
-        // 7.3 生成 saleId（文档ID = 销售编号）和收据编号
-        const saleId = generateCardSaleId();           // card-YYYYMMDD-XXXXX
+        // 7.3 生成 receiptNumber 和 transactionId
         const receiptNumber = generateReceiptNumber(); // RC-YYYYMMDD-XXXX
-
-        // 7.4 写入 pointSellerSales 集合
-        const saleRef = db
-          .collection('organizations').doc(orgId)
-          .collection('events').doc(eventId)
-          .collection('pointSellerSales').doc(saleId);
-
         const now = admin.firestore.FieldValue.serverTimestamp();
 
-        const saleData = {
-          // === 基本信息 ===
-          saleId,
-          saleNumber: saleId,           // 人类可读编号，与文档ID相同
-          saleType: 'card',
-          organizationId: orgId,
-          eventId,
+        // 7.4 只写入 transactions 集合用于统一交易追踪
+        // ✅ v5.1：已删除 pointSellerSales 写入（架构优化：只用 transactions 追踪）
+        // ⚠️ v5.0：新增 - 支持 PointSeller 销售历史的统一查询
+        const transactionId = `txn-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;  // 自动生成交易ID
+        const transactionRef = db
+          .collection('organizations').doc(orgId)
+          .collection('events').doc(eventId)
+          .collection('transactions').doc(transactionId);
 
-          // === 金额信息 ===
-          amount,
-          cashReceived,
-
-          // === 发行人信息 ===
-          issuer: {
-            pointSellerId,
-            pointSellerName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',
-            issuedAt: now,
-            receiptNumber,
-            note: note || ''
-          },
-
-          // === card 类型专属字段 ===
-          card: {
-            balance: {
-              initial: amount,
-              current: amount,
-              spent: 0,
-              reserved: 0
-            },
-            status: {
-              isActive: true,
-              isExpired: false,
-              isDestroyed: false,
-              isEmpty: false,
-              expiresAt,
-              lastUsedAt: null,
-              destroyedAt: null,
-              destroyedBy: null
-            },
-            qrCodeData: {
-              type: 'POINT_CARD',
-              version: '1.0',
-              saleId,
-              eventId,
-              organizationId: orgId,
-              generatedAt: now
-            },
-            usageStats: {
-              transactionCount: 0,
-              merchantsUsed: [],
-              firstUsedAt: null,
-              lastUsedAt: null
-            }
-          },
-
+        const transactionData = {
+          // === 交易基本信息 ===
+          transactionId,
+          transactionType: 'pointseller_card_issuance',  // ✅ v5.0：新增交易类型
+          status: 'completed',
+          
+          // === 参与者 ===
+          sellerId: pointSellerId,
+          sellerType: 'pointSeller',
+          sellerName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',
+          
+          // === 交易金额 ===
+          pointAmount: amount,      // 发行的点数
+          cashAmount: cashReceived, // 收取的现金
+          
+          // === 时间戳（用于查询排序）===
+          timestamp: now,  // ✅ 顶级 timestamp，用于前端查询排序
+          
           // === 元数据 ===
           metadata: {
             createdAt: now,
-            updatedAt: now,
             createdBy: pointSellerId,
-            version: '1.0',
-            source: 'createPointCard',
+            organizationId: orgId,
             eventId,
-            organizationId: orgId
+            version: '1.0',
+            source: 'createPointCard'
           }
         };
 
-        transaction.set(saleRef, saleData);
+        transaction.set(transactionRef, transactionData);
 
-        // 7.5 更新 PointSeller 统计数据
+        // 7.7 更新 PointSeller 统计数据
         const updateData = {
           // --- 点数卡（card）当日 ---
           'pointSeller.todayStats.cardCount':   admin.firestore.FieldValue.increment(1),
@@ -211,8 +178,7 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
         transaction.update(pointSellerRef, updateData);
 
         return {
-          saleId,
-          saleNumber: saleId,
+          transactionId,
           receiptNumber,
           amount,
           cashReceived,

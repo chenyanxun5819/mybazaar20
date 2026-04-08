@@ -34,7 +34,7 @@ import PersonalFinanceIcon from '../../assets/personal-finance.svg?react';
 // 导入子组件
 import IssuePointCard from './components/IssuePointCard';
 import DirectSale from './components/DirectSale';
-import IssuanceHistory from './components/IssuanceHistory';
+import PointSellerTransactions from './components/PointSellerTransactions';
 import CashSubmission from './components/CashSubmission';
 
 const PointSellerDashboard = () => {
@@ -277,44 +277,18 @@ const PointSellerDashboard = () => {
 
     if (!orgId || !evtId || !userId) return;
 
-    // 监听点数卡发行记录
-    const pointCardsRef = collection(db, 'organizations', orgId, 'events', evtId, 'pointCards');
-    const qCards = query(
-      pointCardsRef,
-      where('issuer.pointSellerId', '==', userId),
-      orderBy('metadata.createdAt', 'desc')
-    );
-
-    const unsubscribeCards = onSnapshot(qCards, (snapshot) => {
-      const cards = snapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'point_card',
-        ...doc.data()
-      }));
-      
-      // 合并到发行记录中
-      setIssuanceRecords(prev => {
-        const directSales = prev.filter(r => r.type === 'direct_sale');
-        return [...cards, ...directSales].sort((a, b) => {
-          const aTime = a.metadata?.createdAt || a.timestamp;
-          const bTime = b.metadata?.createdAt || b.timestamp;
-          return bTime - aTime;
-        });
-      });
-    }, (error) => {
-      console.error('监听点数卡记录失败:', error);
-    });
-
-    // 监听直接销售记录
+    // ✅ v5.1：统一从 transactions 集合查询两种销售类型（已删除废弃的 pointCards 查询）
     const transactionsRef = collection(db, 'organizations', orgId, 'events', evtId, 'transactions');
-    const qTransactions = query(
+    
+    // ✅ v5.0：查询直接销售交易（pointseller_to_customer）
+    const qDirectSales = query(
       transactionsRef,
       where('sellerId', '==', userId),
-      where('type', '==', 'pointseller_to_customer'),
+      where('transactionType', '==', 'pointseller_to_customer'),
       orderBy('timestamp', 'desc')
     );
 
-    const unsubscribeTransactions = onSnapshot(qTransactions, (snapshot) => {
+    const unsubscribeDirectSales = onSnapshot(qDirectSales, (snapshot) => {
       const sales = snapshot.docs.map(doc => ({
         id: doc.id,
         type: 'direct_sale',
@@ -334,9 +308,49 @@ const PointSellerDashboard = () => {
       console.error('监听直接销售记录失败:', error);
     });
 
+    // ✅ v5.0：查询点数卡发行交易（pointseller_card_issuance）
+    const qCardIssuances = query(
+      transactionsRef,
+      where('sellerId', '==', userId),
+      where('transactionType', '==', 'pointseller_card_issuance'),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribeCardIssuances = onSnapshot(qCardIssuances, (snapshot) => {
+      // 📌 将 transactions 中的卡片发行记录转换为前端显示格式
+      const issuances = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          type: 'point_card',  // ✅ 统一为 point_card 类型用于前端显示
+          transactionType: 'pointseller_card_issuance',  // 保留原始交易类型供参考
+          
+          // 📌 v5.1 字段映射：将 Cloud Function 的字段转换为前端期望的格式
+          points: data.pointAmount || 0,  // 映射：pointAmount → points
+          amount: data.cashAmount || 0,   // 映射：cashAmount → amount（现金）
+          timestamp: data.metadata?.createdAt || data.timestamp,  // 映射：metadata.createdAt → timestamp
+          
+          // 保持原始数据用于备用
+          ...data
+        };
+      });
+
+      // 合并所有发行记录（来自两种交易类型）
+      setIssuanceRecords(prev => {
+        const sales = prev.filter(r => r.type === 'direct_sale');
+        return [...issuances, ...sales].sort((a, b) => {
+          const aTime = a.metadata?.createdAt || a.timestamp;
+          const bTime = b.metadata?.createdAt || b.timestamp;
+          return bTime - aTime;
+        });
+      });
+    }, (error) => {
+      console.error('监听点数卡发行记录失败:', error);
+    });
+
     return () => {
-      unsubscribeCards();
-      unsubscribeTransactions();
+      unsubscribeDirectSales();
+      unsubscribeCardIssuances();
     };
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, orgCode, eventCode]);
 
@@ -458,7 +472,7 @@ const PointSellerDashboard = () => {
         )}
 
         {activeTab === 'history' && (
-          <IssuanceHistory
+          <PointSellerTransactions
             statistics={statistics}
             records={issuanceRecords}
             onRefresh={handleRefresh}

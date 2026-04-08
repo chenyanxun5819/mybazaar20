@@ -29,7 +29,7 @@ import './CashierDashboard.css';
 
 // 导入子组件
 import CollectionOverview from './CollectionOverview';
-import CollectionHistory from './CollectionHistory';
+import CashierTransactions from './CashierTransactions';
 
 const CashierDashboard = () => {
   const { orgEventCode } = useParams();
@@ -529,7 +529,7 @@ const CashierDashboard = () => {
         )}
 
         {activeTab === 'history' && (
-          <CollectionHistory
+          <CashierTransactions
             submissions={eligibleAllSubmissions}
             onRefresh={loadFinanceData}
           />

@@ -12,7 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useEvent } from '../../contexts/EventContext'; // 🆕 导入 EventContext
 import PointsOverview from './components/PointsOverview';
 import MakeSale from './components/MakeSale';
-import { TransactionHistory } from './components/TransactionHistory';
+import { SellerTransactions } from './components/SellerTransactions';
 import SellerSubmitCash from './components/SellerSubmitCash'; // 🆕 新增
 import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
 import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
@@ -179,7 +179,7 @@ function SellerDashboard() {
       <main className="dashboard-content">
         {activeTab === 'overview' && <PointsOverview />}
         {activeTab === 'sale' && <MakeSale />}
-        {activeTab === 'history' && <TransactionHistory />}
+        {activeTab === 'history' && <SellerTransactions />}
         {activeTab === 'submit' && <SellerSubmitCash />}
       </main>
       

@@ -12,7 +12,7 @@ import SellerList from './components/SellerList';
 import OverviewStats from './components/OverviewStats';
 import CollectCash from './components/CollectCash';
 import SubmitCash from './components/SubmitCash';
-import AllocationHistory from './components/AllocationHistory';
+import SellerManagerTransactions from './components/SellerManagerTransactions';
 
 /**
  * Seller Manager Dashboard (修复版 v2.1)
@@ -633,7 +633,7 @@ const SellerManagerDashboard = () => {
 
         {activeTab === 'history' && (
           <div style={styles.section}>
-            <AllocationHistory
+            <SellerManagerTransactions
               organizationId={safeCurrentUser.organizationId}
               eventId={eventId}
               sellerManagerId={safeCurrentUser.userId}

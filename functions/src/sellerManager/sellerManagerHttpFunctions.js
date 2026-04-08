@@ -233,7 +233,6 @@ exports.allocatePointsBySellerManagerHttp = onRequest(
 
           transaction.set(txRef, {
             transactionId,
-            type:            'sellerManager_to_customer',
             transactionType: 'sellerManager_to_customer',
             organizationId,
             eventId,

@@ -1,9 +1,17 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-04-04-v17",
-    "lastUpdated": "2026-04-05",
+    "version": "2026-04-08-v20",
+    "lastUpdated": "2026-04-08",
     "architectureChanges": {
+      "version_2026-04-08-v20": [
+        "🎫 新增 transactionType: pointseller_card_issuance（PointSeller 发行点数卡）",
+        "📋 补充架构定义：点数卡发行的交易类型定义，同时写入 transactions 和 pointSellerSales 两个集合",
+        "☁️ createPointCard.js 需修改：同时写入 transactions 集合（transactionType: pointseller_card_issuance）用于交易追踪",
+        "⚛️ PointSellerDashboard.jsx 数据聚合逻辑需调整：从 transactions 查询 sellerId 且 transactionType in ['pointseller_to_customer', 'pointseller_card_issuance']",
+        "🔍 PointSellerTransactions.jsx 代码逻辑已支持两种销售类型，无需改动",
+        "✅ 完整解决 PointSeller 销售历史的两种模式（直销 vs 卡片发行）的统一追踪"
+      ],
       "version_2026-04-05-v19": [
         "🔄 pointSeller.todayStats / totalStats 字段命名全面重构：以 card / mobile 前缀区分两种销售模式，彻底替换旧字段名",
         "🃏 card 模式（点数卡）当日：todayStats.cardCount / cardPoints / cardCash",
@@ -1181,15 +1189,93 @@
                   "transactionType": {
                     "type": "string",
                     "values": [
-                      "POINTS_SALE",
+                      "pointseller_to_customer",
+                      "pointseller_card_issuance",
+                      "seller_to_customer",
+                      "sellerManager_to_customer",
                       "customer_to_merchant",
                       "customer_transfer",
                       "point_card_payment",
                       "point_card_topup",
-                      "free_grant",
-                      "sellerManager_to_customer"
+                      "free_grant"
                     ],
-                    "description": "POINTS_SALE: sellermanager_to_customer；Seller卖点给Customer; Mcustomer_to_merchant: Customer付款给Merchant; customer_transfer: Customer转让点数; point_card_payment: 点数卡付款给Merchant; point_card_topup: 点数卡充值到Customer账户"
+                    "description": "9 种交易类型的详细说明",
+                    "detailedDefinitions": {
+                      "pointseller_to_customer": {
+                        "role": "PointSeller（点数直销员）",
+                        "description": "PointSeller 直接销售点数给 Customer，收取现金",
+                        "direction": "PointSeller → Customer",
+                        "source": "点数直销（无库存限制，按需生成）",
+                        "cloudFunction": "pointSellerDirectSale",
+                        "example": "PointSeller 销售 50 点给 Customer，Customer 支付 RM 50 现金"
+                      },
+                      "pointseller_card_issuance": {
+                        "role": "PointSeller（点数卡发行员）",
+                        "description": "PointSeller 发行点数卡给客户，收取现金。点数卡是不记名的，客户可扫描 QR Code 充值到个人账户或直接消费",
+                        "direction": "PointSeller → PointCard (Customer 持有)",
+                        "source": "点数卡发行（无库存限制，按需生成）",
+                        "cloudFunction": "createPointCard",
+                        "dataStorage": "同时写入 transactions（交易追踪）和 pointSellerSales（发行统计，saleType='card'）两个集合",
+                        "cardStatus": "不记名、可流转、客户扫码充值后销毁",
+                        "example": "PointSeller 发行 100 点的点数卡，收取 RM 100 现金，客户获得不记名卡片并持有"
+                      },
+                      "seller_to_customer": {
+                        "role": "Seller（销售员）",
+                        "description": "Seller 销售分配给他的点数给 Customer，收取现金",
+                        "direction": "Seller → Customer",
+                        "source": "SellerManager 分配给 Seller 的库存点数",
+                        "cloudFunction": "sellerDirectSale",
+                        "example": "Seller 销售 30 点给 Customer，Customer 支付 RM 30 现金，Seller 库存减少 30"
+                      },
+                      "sellerManager_to_customer": {
+                        "role": "SellerManager（点数分配管理员）",
+                        "description": "SellerManager 分配点数给 Customer（通常分配给所属学生），无需收款",
+                        "direction": "SellerManager → Customer",
+                        "source": "SellerManager 权限分配（活动管理员分配给学生）",
+                        "cloudFunction": "grantPointsBySellerManager",
+                        "example": "SellerManager 为学生充值 100 点（作为班级内部福利或奖励）"
+                      },
+                      "customer_to_merchant": {
+                        "role": "Customer（顾客） & Merchant（摊位）",
+                        "description": "Customer 在摊位支付点数给 Merchant 购买商品",
+                        "direction": "Customer → Merchant",
+                        "source": "Customer 账户可用点数（来自销售、充值或分配）",
+                        "cloudFunction": "processCustomerPayment / confirmMerchantPayment",
+                        "example": "Customer 用 20 点购买 Merchant 的商品"
+                      },
+                      "customer_transfer": {
+                        "role": "Customer ↔ Customer",
+                        "description": "Customer 互相转让点数（支持朋友间赠予或交易）",
+                        "direction": "Customer A → Customer B",
+                        "source": "Customer 账户可用点数",
+                        "cloudFunction": "transferPoints",
+                        "example": "Customer A 转让 10 点给 Customer B"
+                      },
+                      "point_card_payment": {
+                        "role": "Customer（使用点数卡）",
+                        "description": "Customer 使用点数卡里的点数支付给 Merchant 购买商品",
+                        "direction": "PointCard → Merchant（Customer 间接）",
+                        "source": "不记名点数卡中的点数",
+                        "cloudFunction": "processPointCardPayment",
+                        "example": "Customer 用点数卡裡的 25 点购买 Merchant 的商品，卡内余额对应减少"
+                      },
+                      "point_card_topup": {
+                        "role": "Customer（用点数卡充值个人账户）",
+                        "description": "Customer 使用点数卡为个人账户充值，将卡内点数转入个人账户",
+                        "direction": "PointCard → Customer Account",
+                        "source": "不记名点数卡中的点数",
+                        "cloudFunction": "topupFromPointCard",
+                        "example": "Customer 用点数卡裡的 50 点充值到个人账户，个人点数增加 50，卡内余额减少 50"
+                      },
+                      "free_grant": {
+                        "role": "EventManager（活动管理员）",
+                        "description": "EventManager 赠送点数给 Customer（通常用于奖励或补偿）",
+                        "direction": "EventManager → Customer",
+                        "source": "活动管理员权限（不消耗任何库存）",
+                        "cloudFunction": "grantPointsByEventManager",
+                        "example": "活动管理员赠送 5 点给参加者作为参与奖"
+                      }
+                    }
                   },
                   "merchantId": {
                     "type": "string",

@@ -167,7 +167,7 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
                     <td>
                       <div className="points-cell">
                         {record.type === 'point_card' 
-                          ? (record.points || record.pointAmount || record.balance?.initial || record.issuer?.points || 0)
+                          ? (record.points || record.balance?.initial || record.issuer?.points || 0)
                           : (record.points || record.amount || 0)
                         } 点
                       </div>
@@ -175,7 +175,7 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
                     <td>
                       <div className="amount-cell">
                         {record.type === 'point_card'
-                          ? formatAmount(record.amount || record.cashAmount || record.issuer?.cashReceived || 0)
+                          ? formatAmount(record.issuer?.cashReceived || 0)
                           : formatAmount(record.amount || 0)
                         }
                       </div>

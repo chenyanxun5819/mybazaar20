@@ -78,7 +78,7 @@ exports.sellerDirectSale = onCall({ region: 'asia-southeast1' }, async (request)
 
       transaction.set(transactionRef, {
         transactionId,
-        type: 'seller_to_customer',
+        transactionType: 'seller_to_customer',
         organizationId: orgId,
         eventId,
         sellerId,

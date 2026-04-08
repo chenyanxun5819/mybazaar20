@@ -6,7 +6,7 @@
  * 1. Seller Manager 只能销售给他管理的 Seller
  * 2. 购买点数的 Seller 身份是 Customer
  * 3. 点数流向 customer.pointsAccount.availablePoints
- * 4. 记录 transaction (type: 'sellerManager_to_customer')
+ * 4. 记录 transaction (transactionType: 'sellerManager_to_customer')
  * 5. 更新 sellerManager.cashStats.cashOnHand
  * 6. 更新 sellerManager.cashStats.cashSources.fromPointPurchase
  * 
@@ -121,7 +121,7 @@ exports.sellerManagerDirectSale = onCall({ region: 'asia-southeast1' }, async (r
       
       const transactionData = {
         transactionId,
-        type: 'sellerManager_to_customer',
+        transactionType: 'sellerManager_to_customer',
         organizationId: orgId,
         eventId: eventId,
         
