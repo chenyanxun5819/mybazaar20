@@ -302,30 +302,27 @@ const CashSubmission = ({
     <div className="cash-submission">
       <h2 className="section-title">💰 现金上交</h2>
 
-      {/* 统计卡片 - 4个 */}
-      <div className="stats-row">
-        <div className="stat-card blue">
-          <div className="stat-label">今日收现金</div>
-          <div className="stat-value">{formatAmount(todayTotalCash)}</div>
-          <div className="stat-hint">现金总额</div>
+      {/* 统计卡片 - 3个（参考DirectSale的设计） */}
+      <div className="inventory-summary">
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {formatAmount(todayTotalCash)}
+          </div>
+          <div className="inventory-label">今日收现金</div>
         </div>
-
-        <div className="stat-card orange">
-          <div className="stat-label">上交待确认</div>
-          <div className="stat-value">{formatAmount(pendingAmount)}</div>
-          <div className="stat-hint">{pendingSubmissions.length} 笔待确认</div>
+        <div className="inventory-divider"></div>
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {formatAmount(pendingAmount)}
+          </div>
+          <div className="inventory-label">上交待确认</div>
         </div>
-
-        <div className="stat-card green">
-          <div className="stat-label">已上交</div>
-          <div className="stat-value">{formatAmount(confirmedAmount)}</div>
-          <div className="stat-hint">{confirmedSubmissions.length} 笔已确认</div>
-        </div>
-
-        <div className="stat-card purple">
-          <div className="stat-label">未上交现金</div>
-          <div className="stat-value">{formatAmount(unsubmittedAmount)}</div>
-          <div className="stat-hint">可上交金额</div>
+        <div className="inventory-divider"></div>
+        <div className="inventory-card">
+          <div className="inventory-value">
+            {formatAmount(unsubmittedAmount)}
+          </div>
+          <div className="inventory-label">未上交现金</div>
         </div>
       </div>
 
@@ -341,48 +338,41 @@ const CashSubmission = ({
         </div>
 
         {availableRecords.length > 0 ? (
-          <div className="records-list">
+          <div style={styles.cardList}>
             {availableRecords.map(record => (
               <div
                 key={record.id}
-                className={`record-item ${selectedRecords.has(record.id) ? 'selected' : ''}`}
+                style={styles.recordCard}
                 onClick={() => handleToggleSelect(record.id)}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedRecords.has(record.id)}
-                  onChange={() => {}}
-                  className="record-checkbox"
-                />
-
-                <div className="record-content">
-                  <div className="record-header">
-                    <span className={`record-type ${record.saleType}`}>
-                      {record.saleType === 'card' ? '🎫 点数卡' : '🛒 直接销售'}
-                    </span>
-                    <span className="record-amount">
-                      {formatAmount(record.cashReceived || 0)}
-                    </span>
+                {/* 第一行：类型 + 金额 */}
+                <div style={styles.recordCardFirstRow}>
+                  <div style={styles.recordCardType}>
+                    {record.saleType === 'card' ? '🎫 点数卡' : '🛒 直接销售'}
                   </div>
+                  <div style={styles.recordCardQuantity}>
+                    {formatAmount(record.cashReceived || 0)}
+                  </div>
+                </div>
 
-                  <div className="record-details">
-                    <div className="detail-item">
-                      <span className="detail-label">
-                        {record.saleType === 'card' ? '卡号:' : '客户:'}
-                      </span>
-                      <span className="detail-value">
-                        {record.saleType === 'card'
-                          ? record.saleNumber
-                          : record.cash?.customerName}
-                      </span>
+                {/* 第二行：详情信息 */}
+                <div style={styles.recordCardSecondRow}>
+                  <div style={styles.recordCardLeftInfo}>
+                    <div style={styles.recordCardName}>
+                      {record.saleType === 'card'
+                        ? `卡号: ${record.saleNumber}`
+                        : `客户: ${record.cash?.customerName}`}
                     </div>
-                    <div className="detail-item">
-                      <span className="detail-label">时间:</span>
-                      <span className="detail-value">
-                        {formatDateTime(record.metadata?.createdAt)}
-                      </span>
+                    <div style={styles.recordCardCustomer}>
+                      {formatDateTime(record.metadata?.createdAt)}
                     </div>
                   </div>
+                  <input
+                    type="checkbox"
+                    checked={selectedRecords.has(record.id)}
+                    onChange={() => {}}
+                    style={{ cursor: 'pointer' }}
+                  />
                 </div>
               </div>
             ))}
@@ -486,6 +476,64 @@ const CashSubmission = ({
       )}
     </div>
   );
+};
+
+// ===== 内联样式定义 =====
+const styles = {
+  cardList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0'
+  },
+  recordCard: {
+    background: 'transparent',
+    padding: '0.5rem 0.75rem',
+    marginBottom: '0.25rem',
+    borderBottom: '1px solid #e5e7eb'
+  },
+  recordCardFirstRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '0.5rem'
+  },
+  recordCardDate: {
+    fontSize: '0.8rem',
+    color: '#6b7280',
+    fontWeight: '500'
+  },
+  recordCardType: {
+    fontSize: '0.75rem',
+    color: '#9ca3af',
+    fontFamily: 'monospace'
+  },
+  recordCardSecondRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '1rem'
+  },
+  recordCardLeftInfo: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.2rem'
+  },
+  recordCardName: {
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#1f2937'
+  },
+  recordCardCustomer: {
+    fontSize: '0.75rem',
+    color: '#9ca3af'
+  },
+  recordCardQuantity: {
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#3b82f6',
+    whiteSpace: 'nowrap'
+  }
 };
 
 export default CashSubmission;

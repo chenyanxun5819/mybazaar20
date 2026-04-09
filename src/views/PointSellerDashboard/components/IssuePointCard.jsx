@@ -731,7 +731,8 @@ const IssuePointCard = ({
         setAmount('');
         setPendingAmount(null);
 
-        // 刷新统计
+        // 🔄 刷新数据（统计信息将通过实时监听器自动更新）
+        console.log('[IssuePointCard] 📊 点数卡发行成功，触发数据刷新');
         onRefresh();
       }
     } catch (err) {

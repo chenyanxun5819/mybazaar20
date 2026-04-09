@@ -5,8 +5,6 @@
 
 import React, { useState } from 'react';
 import { maskPhoneNumber } from '../../../services/transactionService';
-import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
-import topupMobileIcon from '../../../assets/topup-mobile.svg';
 import './PointSellerTransactions.css';
 
 const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
@@ -32,6 +30,18 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
     });
   };
 
+  // 短日期格式 (dd MM, hh:mm)，月份用英文缩写
+  const formatShortDateTime = (timestamp) => {
+    if (!timestamp) return '-';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = months[date.getMonth()];
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day} ${month}, ${hours}:${minutes}`;
+  };
+
   // 过滤记录
   const filteredRecords = records.filter(record => {
     // 类型过滤
@@ -45,10 +55,10 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
       const cardNumber = record.cardNumber?.toLowerCase() || '';
       const customerName = record.customerName?.toLowerCase() || '';
       const transactionId = record.transactionId?.toLowerCase() || '';
-      
-      return cardNumber.includes(term) || 
-             customerName.includes(term) || 
-             transactionId.includes(term);
+
+      return cardNumber.includes(term) ||
+        customerName.includes(term) ||
+        transactionId.includes(term);
     }
 
     return true;
@@ -132,61 +142,52 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
       {/* 记录列表 */}
       <div className="records-section">
         <h3>📝 发行记录明细</h3>
-        
+
         {filteredRecords.length > 0 ? (
           <div className="records-card-list" style={styles.cardList}>
             {filteredRecords.map(record => (
               <div key={record.id} style={styles.recordCard}>
-                {/* 第一行：圖標、名稱、電話、日期 */}
-                <div style={styles.recordCardHeader}>
-                  <div style={styles.recordCardIconSection}>
-                    <img
-                      src={
-                        record.transactionType === 'pointseller_card_issuance'
-                          ? paymentQrcodeIcon
-                          : topupMobileIcon
-                      }
-                      alt={record.transactionType}
-                      style={styles.recordCardIcon}
-                    />
-                  </div>
-                  <div style={styles.recordCardInfo}>
-                    <div style={styles.recordCardName}>
-                      {record.basicInfo?.englishName || record.customerName || '未知'}
-                    </div>
-                    <div style={styles.recordCardPhone}>
-                      {maskPhoneNumber(record.basicInfo?.phoneNumber || record.customerPhone || '')}
-                    </div>
-                  </div>
+                {/* 第一行：短日期 + 交易序号，分散对齐 */}
+                <div style={styles.recordCardFirstRow}>
                   <div style={styles.recordCardDate}>
-                    {formatDateTime(
+                    {formatShortDateTime(
                       record.transactionType === 'pointseller_card_issuance'
                         ? record.metadata?.createdAt
                         : record.timestamp
                     )}
                   </div>
-                </div>
-
-                {/* 第二行：交易序號、金額 */}
-                <div style={styles.recordCardContent}>
                   <div style={styles.recordCardTransId}>
-                    <span style={styles.recordCardLabel}>交易序號</span>
-                    <span style={styles.recordCardValue}>{record.transactionId || record.id}</span>
-                  </div>
-                  <div style={styles.recordCardAmount}>
-                    <span style={styles.recordCardLabel}>金額</span>
-                    <span style={styles.recordCardValue}>
-                      {formatAmount(
-                        record.transactionType === 'pointseller_card_issuance'
-                          ? (record.issuer?.cashReceived || 0)
-                          : (record.amount || 0)
-                      )}
-                    </span>
+                    {record.transactionId || record.id}
                   </div>
                 </div>
 
-                {/* 底部分隔線 */}
-                <div style={styles.recordCardDivider} />
+                {/* 第二行：根据类型显示不同内容 */}
+                <div style={styles.recordCardSecondRow}>
+                  {record.transactionType === 'pointseller_to_customer' ? (
+                    <>
+                      <div style={styles.recordCardLeftInfo}>
+                        <div style={styles.recordCardName}>
+                          {record.customerEnglishName || record.customerName || '未知'}
+                        </div>
+                        <div style={styles.recordCardPhone}>
+                          {maskPhoneNumber(record.customerPhone || '')}
+                        </div>
+                      </div>
+                      <div style={styles.recordCardQuantity}>
+                        {record.pointAmount || record.amount || 0} pts
+                      </div>
+                    </>
+                  ) : record.transactionType === 'pointseller_card_issuance' ? (
+                    <>
+                      <div style={styles.recordCardCardLabel}>
+                        点数卡交易
+                      </div>
+                      <div style={styles.recordCardQuantity}>
+                        {record.pointAmount || 0} pts
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -194,7 +195,7 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
           <div className="records-empty">
             <div className="empty-icon">📋</div>
             <p className="empty-message">
-              {searchTerm || filter !== 'all' 
+              {searchTerm || filter !== 'all'
                 ? '没有符合条件的记录'
                 : '还没有发行记录'
               }
@@ -208,61 +209,61 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
 
 // ========== 样式 ==========
 const styles = {
-  summaryWrapper: { 
-    width: '100%', 
-    marginBottom: '1.5rem' 
+  summaryWrapper: {
+    width: '100%',
+    marginBottom: '1.5rem'
   },
-  summaryCard: { 
-    padding: '1.25rem 0.65rem', 
-    borderRadius: '12px', 
-    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', 
-    color: '#fff', 
+  summaryCard: {
+    padding: '1.25rem 0.65rem',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    color: '#fff',
     background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)'
   },
-  summaryHeaderRow: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    alignItems: 'stretch', 
-    marginBottom: '1rem', 
-    paddingBottom: '0.75rem', 
-    borderBottom: '1px solid rgba(255, 255, 255, 0.2)', 
-    gap: '0.5rem' 
+  summaryHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    marginBottom: '1rem',
+    paddingBottom: '0.75rem',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+    gap: '0.5rem'
   },
-  summaryLeftCol: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    alignItems: 'flex-start', 
-    gap: '0.5rem', 
-    flex: '1' 
+  summaryLeftCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '0.5rem',
+    flex: '1'
   },
-  summaryLabel: { 
-    fontSize: '1rem', 
-    opacity: 0.95, 
-    fontWeight: '600' 
+  summaryLabel: {
+    fontSize: '1rem',
+    opacity: 0.95,
+    fontWeight: '600'
   },
-  summaryStats: { 
-    display: 'flex', 
-    justifyContent: 'space-around', 
-    alignItems: 'flex-start', 
-    gap: '0.75rem', 
-    flexWrap: 'nowrap' 
+  summaryStats: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    alignItems: 'flex-start',
+    gap: '0.75rem',
+    flexWrap: 'nowrap'
   },
-  summaryStatItem: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    alignItems: 'center', 
-    flex: '1 1 150px', 
-    textAlign: 'center' 
+  summaryStatItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    flex: '1 1 150px',
+    textAlign: 'center'
   },
-  summaryStatValue: { 
-    fontSize: '1.4rem', 
-    fontWeight: '700', 
-    marginBottom: '0.25rem' 
+  summaryStatValue: {
+    fontSize: '1.4rem',
+    fontWeight: '700',
+    marginBottom: '0.25rem'
   },
-  summaryStatLabel: { 
-    fontSize: '0.85rem', 
-    opacity: 0.85, 
-    marginBottom: '0.25rem' 
+  summaryStatLabel: {
+    fontSize: '0.85rem',
+    opacity: 0.85,
+    marginBottom: '0.25rem'
   },
   summaryStatSubtitle: {
     fontSize: '0.85rem',
@@ -270,11 +271,11 @@ const styles = {
     marginBottom: '0.5rem',
     fontWeight: '500'
   },
-  summaryStatDivider: { 
-    width: '1px', 
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-    alignSelf: 'stretch', 
-    margin: '0 0.5rem' 
+  summaryStatDivider: {
+    width: '1px',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'stretch',
+    margin: '0 0.5rem'
   },
   // === 卡片樣式 ===
   cardList: {
@@ -285,66 +286,59 @@ const styles = {
   recordCard: {
     background: 'transparent',
     padding: '0.5rem 0.75rem',
-    marginBottom: '0.25rem'
+    marginBottom: '0.25rem',
+    borderBottom: '1px solid #e5e7eb'
   },
-  recordCardHeader: {
+  // 第一行：短日期 + 交易序号
+  recordCardFirstRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '0.75rem',
     marginBottom: '0.5rem'
   },
-  recordCardIconSection: {
+  recordCardDate: {
+    fontSize: '0.8rem',
+    color: '#6b7280',
+    fontWeight: '500'
+  },
+  recordCardTransId: {
+    fontSize: '0.75rem',
+    color: '#9ca3af',
+    fontFamily: 'monospace'
+  },
+  // 第二行：内容区域
+  recordCardSecondRow: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0
+    justifyContent: 'space-between',
+    gap: '1rem'
   },
-  recordCardIcon: {
-    width: '2.5rem',
-    height: '2.5rem',
-    objectFit: 'contain'
-  },
-  recordCardInfo: {
+  recordCardLeftInfo: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.25rem'
+    gap: '0.2rem'
   },
   recordCardName: {
     fontSize: '0.9375rem',
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#1f2937'
   },
   recordCardPhone: {
     fontSize: '0.75rem',
-    color: '#6b7280'
+    color: '#9ca3af'
   },
-  recordCardDate: {
-    fontSize: '0.75rem',
-    color: '#9ca3af',
-    whiteSpace: 'nowrap',
-    flexShrink: 0
+  recordCardCardLabel: {
+    flex: 1,
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#1f2937'
   },
-  recordCardContent: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '0.5rem',
-    background: '#f9fafb',
-    borderRadius: '6px',
-    padding: '0.375rem 0.5rem',
-    marginBottom: '0.25rem'
-  },
-  recordCardTransId: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.1rem'
-  },
-  recordCardAmount: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.1rem',
-    textAlign: 'right'
+  recordCardQuantity: {
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#3b82f6',
+    whiteSpace: 'nowrap'
   },
   recordCardLabel: {
     fontSize: '0.625rem',
@@ -355,11 +349,6 @@ const styles = {
     fontSize: '0.8125rem',
     fontWeight: '700',
     color: '#1f2937'
-  },
-  recordCardDivider: {
-    height: '1px',
-    background: '#e5e7eb',
-    marginTop: '0.375rem'
   }
 };
 

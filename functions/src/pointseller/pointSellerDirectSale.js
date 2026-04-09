@@ -107,6 +107,8 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
 
           customerId,
           customerName,
+          customerEnglishName: customerData.basicInfo?.englishName || '', // ✅ 新增
+          customerPhone: customerData.basicInfo?.phoneNumber || '',         // ✅ 新增
 
           amount,
           points: amount,

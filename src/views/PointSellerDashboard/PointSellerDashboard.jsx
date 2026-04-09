@@ -23,7 +23,7 @@ import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 �
 import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
 import { auth, db, functions } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import './PointSellerDashboard.css';
 import ChartHistogramIcon from '../../assets/chart-histogram.svg?react';
@@ -269,6 +269,39 @@ const PointSellerDashboard = () => {
     }
   };
 
+  // ===== 2.5. 实时监听 PointSeller 统计数据 =====
+  // ⭐ 新增：监听用户文档中的 pointSeller 字段，确保统计数据实时更新
+  useEffect(() => {
+    const orgId = userProfile?.organizationId || orgCode;
+    const evtId = userProfile?.eventId || eventCode;
+    const userId = userProfile?.userId;
+
+    if (!orgId || !evtId || !userId) return;
+
+    // 直接监听用户文档（使用 userId 作为文档 ID）
+    const userDocRef = doc(db, 'organizations', orgId, 'events', evtId, 'users', userId);
+    const unsubscribe = onSnapshot(
+      userDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const userData = docSnap.data();
+          if (userData.pointSeller) {
+            console.log('[PointSeller] 🔄 统计数据已实时更新:', userData.pointSeller);
+            setStatistics({
+              todayStats: userData.pointSeller.todayStats || {},
+              totalStats: userData.pointSeller.totalStats || {}
+            });
+          }
+        }
+      },
+      (error) => {
+        console.error('[PointSeller] ❌ 监听统计数据失败:', error.message);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, orgCode, eventCode]);
+
   // ===== 3. 实时监听发行记录 =====
   useEffect(() => {
     const orgId = userProfile?.organizationId || orgCode;
@@ -355,7 +388,9 @@ const PointSellerDashboard = () => {
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, orgCode, eventCode]);
 
   // ===== 4. 刷新数据 =====
+  // ⭐ 改进：触发重新加载（统计数据现在通过实时监听自动更新）
   const handleRefresh = () => {
+    console.log('[PointSeller] 手动刷新触发');
     loadPointSellerData();
   };
 

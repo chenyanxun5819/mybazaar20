@@ -109,7 +109,7 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
         // 7.4 只写入 transactions 集合用于统一交易追踪
         // ✅ v5.1：已删除 pointSellerSales 写入（架构优化：只用 transactions 追踪）
         // ⚠️ v5.0：新增 - 支持 PointSeller 销售历史的统一查询
-        const transactionId = `txn-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;  // 自动生成交易ID
+        const transactionId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;  // 自动生成交易ID
         const transactionRef = db
           .collection('organizations').doc(orgId)
           .collection('events').doc(eventId)

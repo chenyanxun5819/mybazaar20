@@ -229,7 +229,8 @@ const DirectSale = ({
         setCustomer(null);
         setPendingSale(null);
 
-        // 刷新统计
+        // 🔄 刷新数据（统计信息将通过实时监听器自动更新）
+        console.log('[DirectSale] 📊 直销成功，触发数据刷新');
         onRefresh();
       }
     } catch (err) {

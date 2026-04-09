@@ -839,37 +839,37 @@
                     "// === 当日统计 ===": "",
                     "todayStats": {
                       "// --- 点数卡（card）---": "",
-                      "cardCount":  "number (今日发行点数卡张数，由 createPointCard 写入)",
+                      "cardCount": "number (今日发行点数卡张数，由 createPointCard 写入)",
                       "cardPoints": "number (今日点数卡发行总点数，由 createPointCard 写入)",
-                      "cardCash":   "number (今日点数卡收到现金 RM，由 createPointCard 写入)",
+                      "cardCash": "number (今日点数卡收到现金 RM，由 createPointCard 写入)",
                       "// --- 手机直销（mobile）---": "",
-                      "mobileCount":  "number (今日手机直销笔数，由 pointSellerDirectSale 写入)",
+                      "mobileCount": "number (今日手机直销笔数，由 pointSellerDirectSale 写入)",
                       "mobilePoints": "number (今日手机直销总点数，由 pointSellerDirectSale 写入)",
-                      "mobileCash":   "number (今日手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
+                      "mobileCash": "number (今日手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
                       "// --- 合计 ---": "",
                       "totalPoints": "number (今日发行总点数，= cardPoints + mobilePoints)",
-                      "totalCash":   "number (今日收到总现金 RM，= cardCash + mobileCash)",
+                      "totalCash": "number (今日收到总现金 RM，= cardCash + mobileCash)",
                       "// --- 时间戳 ---": "",
-                      "lastSaleAt":  "timestamp (最后一次发行/销售时间)",
+                      "lastSaleAt": "timestamp (最后一次发行/销售时间)",
                       "firstSaleAt": "timestamp (首次发行/销售时间)",
                       "workingHours": "number (工作时长，小时)"
                     },
                     "// === 累计统计 ===": "",
                     "totalStats": {
                       "// --- 点数卡（card）---": "",
-                      "totalCardCount":  "number (累计发行点数卡张数，由 createPointCard 写入)",
+                      "totalCardCount": "number (累计发行点数卡张数，由 createPointCard 写入)",
                       "totalCardPoints": "number (累计点数卡发行总点数，由 createPointCard 写入)",
-                      "totalCardCash":   "number (累计点数卡收到现金 RM，由 createPointCard 写入)",
+                      "totalCardCash": "number (累计点数卡收到现金 RM，由 createPointCard 写入)",
                       "// --- 手机直销（mobile）---": "",
-                      "totalMobileCount":  "number (累计手机直销笔数，由 pointSellerDirectSale 写入)",
+                      "totalMobileCount": "number (累计手机直销笔数，由 pointSellerDirectSale 写入)",
                       "totalMobilePoints": "number (累计手机直销总点数，由 pointSellerDirectSale 写入)",
-                      "totalMobileCash":   "number (累计手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
+                      "totalMobileCash": "number (累计手机直销收到现金 RM，由 pointSellerDirectSale 写入)",
                       "// --- 合计 ---": "",
                       "totalPoints": "number (累计发行总点数，= totalCardPoints + totalMobilePoints)",
-                      "totalCash":   "number (累计收到总现金 RM，= totalCardCash + totalMobileCash)",
+                      "totalCash": "number (累计收到总现金 RM，= totalCardCash + totalMobileCash)",
                       "// --- 点数卡额度分析 ---": "",
-                      "averageCardValue":  "number (平均每卡点数)",
-                      "largestCardValue":  "number (最大单卡点数)",
+                      "averageCardValue": "number (平均每卡点数)",
+                      "largestCardValue": "number (最大单卡点数)",
                       "smallestCardValue": "number (最小单卡点数)"
                     },
                     "// === 现金管理 ===": "",
@@ -1207,7 +1207,13 @@
                         "direction": "PointSeller → Customer",
                         "source": "点数直销（无库存限制，按需生成）",
                         "cloudFunction": "pointSellerDirectSale",
-                        "example": "PointSeller 销售 50 点给 Customer，Customer 支付 RM 50 现金"
+                        "example": "PointSeller 销售 50 点给 Customer，Customer 支付 RM 50 现金",
+                        "storedCustomerFields": {
+                          "customerId": "string (客户UID)",
+                          "customerName": "string (客户姓名中文)",
+                          "customerEnglishName": "string (客户英文名，来自 basicInfo.englishName)",
+                          "customerPhone": "string (客户电话号码，来自 basicInfo.phoneNumber，原始值未脱敏)"
+                        }
                       },
                       "pointseller_card_issuance": {
                         "role": "PointSeller（点数卡发行员）",
@@ -1516,11 +1522,9 @@
                   "saleType": "string ('card' | 'cash'，区分销售类型)",
                   "organizationId": "string (组织ID，冗余字段)",
                   "eventId": "string (活动ID，冗余字段)",
-
                   "// === 金额信息（两种类型共用）===": "",
                   "amount": "number (销售点数)",
                   "cashReceived": "number (收到的现金RM，1:1比例)",
-
                   "// === 发行人信息（两种类型共用）===": "",
                   "issuer": {
                     "pointSellerId": "string (PointSeller用户ID)",
@@ -1529,7 +1533,6 @@
                     "receiptNumber": "string (收据编号，格式 RC-YYYYMMDD-XXXX)",
                     "note": "string (备注，可选)"
                   },
-
                   "// === card 类型专属字段（saleType='card' 时存在）===": "",
                   "card": {
                     "balance": {
@@ -1568,7 +1571,6 @@
                       "lastUsedAt": "timestamp (最后使用时间)"
                     }
                   },
-
                   "// === cash 类型专属字段（saleType='cash' 时存在）===": "",
                   "cash": {
                     "customerId": "string (客户用户ID)",
@@ -1576,7 +1578,6 @@
                     "customerPhone": "string (客户手机号，本地格式如 0123456789)",
                     "transactionId": "string (对应 transactions 集合的文档ID)"
                   },
-
                   "// === 元数据（两种类型共用）===": "",
                   "metadata": {
                     "createdAt": "timestamp",
