@@ -4,6 +4,9 @@
  */
 
 import React, { useState } from 'react';
+import { maskPhoneNumber } from '../../../services/transactionService';
+import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
+import topupMobileIcon from '../../../assets/topup-mobile.svg';
 import './PointSellerTransactions.css';
 
 const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
@@ -131,79 +134,61 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
         <h3>📝 发行记录明细</h3>
         
         {filteredRecords.length > 0 ? (
-          <div className="records-table-container">
-            <table className="records-table">
-              <thead>
-                <tr>
-                  <th>类型</th>
-                  <th>编号/客户</th>
-                  <th>点数</th>
-                  <th>现金</th>
-                  <th>时间</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.map(record => (
-                  <tr key={record.id}>
-                    <td>
-                      <span className={`record-type ${record.type}`}>
-                        {record.type === 'point_card' ? '🎫 点数卡' : '🛒 手机直销'}
-                      </span>
-                    </td>
-                    <td>
-                      {record.type === 'point_card' ? (
-                        <div className="card-info">
-                          <div className="card-number">{record.cardNumber}</div>
-                          <div className="card-id">{record.cardId}</div>
-                        </div>
-                      ) : (
-                        <div className="customer-info">
-                          <div className="customer-name">{record.customerName}</div>
-                          <div className="customer-id">{record.customerId}</div>
-                        </div>
+          <div className="records-card-list" style={styles.cardList}>
+            {filteredRecords.map(record => (
+              <div key={record.id} style={styles.recordCard}>
+                {/* 第一行：圖標、名稱、電話、日期 */}
+                <div style={styles.recordCardHeader}>
+                  <div style={styles.recordCardIconSection}>
+                    <img
+                      src={
+                        record.transactionType === 'pointseller_card_issuance'
+                          ? paymentQrcodeIcon
+                          : topupMobileIcon
+                      }
+                      alt={record.transactionType}
+                      style={styles.recordCardIcon}
+                    />
+                  </div>
+                  <div style={styles.recordCardInfo}>
+                    <div style={styles.recordCardName}>
+                      {record.basicInfo?.englishName || record.customerName || '未知'}
+                    </div>
+                    <div style={styles.recordCardPhone}>
+                      {maskPhoneNumber(record.basicInfo?.phoneNumber || record.customerPhone || '')}
+                    </div>
+                  </div>
+                  <div style={styles.recordCardDate}>
+                    {formatDateTime(
+                      record.transactionType === 'pointseller_card_issuance'
+                        ? record.metadata?.createdAt
+                        : record.timestamp
+                    )}
+                  </div>
+                </div>
+
+                {/* 第二行：交易序號、金額 */}
+                <div style={styles.recordCardContent}>
+                  <div style={styles.recordCardTransId}>
+                    <span style={styles.recordCardLabel}>交易序號</span>
+                    <span style={styles.recordCardValue}>{record.transactionId || record.id}</span>
+                  </div>
+                  <div style={styles.recordCardAmount}>
+                    <span style={styles.recordCardLabel}>金額</span>
+                    <span style={styles.recordCardValue}>
+                      {formatAmount(
+                        record.transactionType === 'pointseller_card_issuance'
+                          ? (record.issuer?.cashReceived || 0)
+                          : (record.amount || 0)
                       )}
-                    </td>
-                    <td>
-                      <div className="points-cell">
-                        {record.type === 'point_card' 
-                          ? (record.points || record.balance?.initial || record.issuer?.points || 0)
-                          : (record.points || record.amount || 0)
-                        } 点
-                      </div>
-                    </td>
-                    <td>
-                      <div className="amount-cell">
-                        {record.type === 'point_card'
-                          ? formatAmount(record.issuer?.cashReceived || 0)
-                          : formatAmount(record.amount || 0)
-                        }
-                      </div>
-                    </td>
-                    <td>
-                      <div className="time-cell">
-                        {formatDateTime(
-                          record.type === 'point_card'
-                            ? record.metadata?.createdAt
-                            : record.timestamp
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      {record.type === 'point_card' ? (
-                        <span className={`status-badge ${record.status?.isActive ? 'active' : 'inactive'}`}>
-                          {record.status?.isActive ? '✓ 有效' : '✗ 已失效'}
-                        </span>
-                      ) : (
-                        <span className={`status-badge ${record.status === 'completed' ? 'completed' : 'pending'}`}>
-                          {record.status === 'completed' ? '✓ 完成' : '⏳ 处理中'}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 底部分隔線 */}
+                <div style={styles.recordCardDivider} />
+              </div>
+            ))}
           </div>
         ) : (
           <div className="records-empty">
@@ -290,6 +275,91 @@ const styles = {
     backgroundColor: 'rgba(255, 255, 255, 0.2)', 
     alignSelf: 'stretch', 
     margin: '0 0.5rem' 
+  },
+  // === 卡片樣式 ===
+  cardList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0'
+  },
+  recordCard: {
+    background: 'transparent',
+    padding: '0.5rem 0.75rem',
+    marginBottom: '0.25rem'
+  },
+  recordCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.75rem',
+    marginBottom: '0.5rem'
+  },
+  recordCardIconSection: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0
+  },
+  recordCardIcon: {
+    width: '2.5rem',
+    height: '2.5rem',
+    objectFit: 'contain'
+  },
+  recordCardInfo: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  recordCardName: {
+    fontSize: '0.9375rem',
+    fontWeight: '700',
+    color: '#1f2937'
+  },
+  recordCardPhone: {
+    fontSize: '0.75rem',
+    color: '#6b7280'
+  },
+  recordCardDate: {
+    fontSize: '0.75rem',
+    color: '#9ca3af',
+    whiteSpace: 'nowrap',
+    flexShrink: 0
+  },
+  recordCardContent: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '0.5rem',
+    background: '#f9fafb',
+    borderRadius: '6px',
+    padding: '0.375rem 0.5rem',
+    marginBottom: '0.25rem'
+  },
+  recordCardTransId: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.1rem'
+  },
+  recordCardAmount: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.1rem',
+    textAlign: 'right'
+  },
+  recordCardLabel: {
+    fontSize: '0.625rem',
+    color: '#9ca3af',
+    fontWeight: '500'
+  },
+  recordCardValue: {
+    fontSize: '0.8125rem',
+    fontWeight: '700',
+    color: '#1f2937'
+  },
+  recordCardDivider: {
+    height: '1px',
+    background: '#e5e7eb',
+    marginTop: '0.375rem'
   }
 };
 
