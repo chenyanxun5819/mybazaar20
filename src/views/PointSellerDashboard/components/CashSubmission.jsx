@@ -89,7 +89,7 @@ const CashSubmission = ({
     return () => unsubscribe();
   }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, organizationId, eventId]);
 
-  // 监听所有销售记录（pointSellerSales 统一集合，含 card 和 cash 两种类型）
+  // 监听所有销售记录（从 transactions 集合读取，支持两种交易类型）
   const [localRecords, setLocalRecords] = useState([]);
 
   useEffect(() => {
@@ -99,21 +99,35 @@ const CashSubmission = ({
 
     if (!orgId || !evtId || !userId) return;
 
-    const salesRef = collection(db, 'organizations', orgId, 'events', evtId, 'pointSellerSales');
-    const qSales = query(
-      salesRef,
-      where('issuer.pointSellerId', '==', userId),
-      orderBy('metadata.createdAt', 'desc')
+    const transactionsRef = collection(db, 'organizations', orgId, 'events', evtId, 'transactions');
+    const qTransactions = query(
+      transactionsRef,
+      where('sellerId', '==', userId),
+      where('transactionType', 'in', ['pointseller_card_issuance', 'pointseller_to_customer']),
+      orderBy('timestamp', 'desc')
     );
 
-    const unsubscribe = onSnapshot(qSales, (snapshot) => {
-      const sales = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const unsubscribe = onSnapshot(qTransactions, (snapshot) => {
+      const transactions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // 适配数据格式：将 transactions 字段转换为 pointSellerSales 格式以保持现有逻辑
+        return {
+          id: doc.id,
+          saleType: data.transactionType === 'pointseller_card_issuance' ? 'card' : 'cash',
+          cashReceived: data.transactionType === 'pointseller_card_issuance' ? data.cashAmount : data.amount,
+          saleNumber: doc.id,  // 使用 transactionId 作为编号
+          metadata: {
+            createdAt: data.timestamp
+          },
+          cash: {
+            customerName: data.customerName || ''
+          },
+          ...data  // 保留原始数据供其他逻辑使用
+        };
+      });
 
-      console.log('[CashSubmission] 监听到销售记录:', sales.length);
-      setLocalRecords(sales);
+      console.log('[CashSubmission] 监听到销售记录:', transactions.length);
+      setLocalRecords(transactions);
     }, (error) => {
       console.error('[CashSubmission] 监听销售记录失败:', error);
 
