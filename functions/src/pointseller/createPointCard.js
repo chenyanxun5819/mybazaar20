@@ -1,8 +1,13 @@
 /**
- * Create Point Card Cloud Function - v5.0
- * 创建点数卡，同时写入 pointSellerSales + transactions 集合
+ * Create Point Card Cloud Function - v5.2 (Updated: 2026-04-10)
+ * 创建点数卡，同时写入 pointCards + transactions 集合
  *
- * 变更 (v5.0)：
+ * 变更 (v5.2)：
+ * 1. ✅ 创建 pointCards 集合文档（Merchant 查询余额用）
+ * 2. ✅ 创建 transactions 集合文档（交易追踪用）
+ * 3. ✅ 返回 cardId 和 cardNumber（QR Code 生成用）
+ * 
+ * 原有变更 (v5.0)：
  * 1. 同时写入 transactions 集合（transactionType: pointseller_card_issuance）
  * 2. 用于统一的交易追踪和数据合并
  * 
@@ -110,6 +115,8 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
         // ✅ v5.1：已删除 pointSellerSales 写入（架构优化：只用 transactions 追踪）
         // ⚠️ v5.0：新增 - 支持 PointSeller 销售历史的统一查询
         const transactionId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;  // 自动生成交易ID
+        const cardNumber = generateCardSaleId();  // 生成卡号
+        
         const transactionRef = db
           .collection('organizations').doc(orgId)
           .collection('events').doc(eventId)
@@ -146,6 +153,53 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
 
         transaction.set(transactionRef, transactionData);
 
+        // 7.5 创建 pointCards 集合文档（用于 Merchant 查询余额）
+        const pointCardRef = db
+          .collection('organizations').doc(orgId)
+          .collection('events').doc(eventId)
+          .collection('pointCards').doc(transactionId);
+
+        const pointCardData = {
+          // === 点数卡基本信息 ===
+          cardId: transactionId,
+          cardNumber: cardNumber,
+          
+          // === 余额信息 ===
+          balance: {
+            initial: amount,      // 初始点数
+            current: amount,      // 当前点数
+            spent: 0,             // 已消费点数
+            reserved: 0           // 预留点数
+          },
+          
+          // === 状态信息 ===
+          status: {
+            isActive: true,       // 是否有效
+            isExpired: false,      // 是否过期
+            isDestroyed: false,    // 是否已销毁
+            isEmpty: false,        // 是否为空
+            expiresAt: expiresAt,  // 过期时间
+            lastUsedAt: null       // 最后使用时间
+          },
+          
+          // === 发行方信息 ===
+          issuer: {
+            pointSellerId: pointSellerId,
+            pointSellerName: pointSellerData.basicInfo?.chineseName || pointSellerData.basicInfo?.englishName || 'PointSeller',
+            issuedAt: now
+          },
+          
+          // === 交易ID关联 ===
+          transactionId: transactionId,
+          
+          // === 版本和元数据 ===
+          version: '1.0',
+          createdAt: now,
+          updatedAt: now
+        };
+
+        transaction.set(pointCardRef, pointCardData);
+
         // 7.7 更新 PointSeller 统计数据
         const updateData = {
           // --- 点数卡（card）当日 ---
@@ -179,6 +233,8 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
 
         return {
           transactionId,
+          cardId: transactionId,        // ✅ 新增：卡ID（用于QR Code和交易追踪）
+          cardNumber: cardNumber,       // ✅ 新增：卡号显示（用户可见）
           receiptNumber,
           amount,
           cashReceived,

@@ -269,44 +269,113 @@ const PointSellerDashboard = () => {
     }
   };
 
-  // ===== 2.5. 实时监听 PointSeller 统计数据 =====
-  // ⭐ 新增：监听用户文档中的 pointSeller 字段，确保统计数据实时更新
+  // ===== 2.5. 实时计算统计数据（基于 issuanceRecords）=====
+  // ⭐ 关键改进：每当发行记录改变时，自动计算统计数据（类似 CashSubmission 的做法）
   useEffect(() => {
-    const orgId = userProfile?.organizationId || orgCode;
-    const evtId = userProfile?.eventId || eventCode;
-    const userId = userProfile?.userId;
-
-    if (!orgId || !evtId || !userId) return;
-
-    // 直接监听用户文档（使用 userId 作为文档 ID）
-    const userDocRef = doc(db, 'organizations', orgId, 'events', evtId, 'users', userId);
-    const unsubscribe = onSnapshot(
-      userDocRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const userData = docSnap.data();
-          if (userData.pointSeller) {
-            console.log('[PointSeller] 🔄 统计数据已实时更新:', userData.pointSeller);
-            setStatistics({
-              todayStats: userData.pointSeller.todayStats || {},
-              totalStats: userData.pointSeller.totalStats || {}
-            });
-          }
+    if (!issuanceRecords || issuanceRecords.length === 0) {
+      // 重置为初始值
+      setStatistics({
+        todayStats: {
+          cardCount: 0,
+          cardPoints: 0,
+          cardCash: 0,
+          mobileCount: 0,
+          mobilePoints: 0,
+          mobileCash: 0,
+          totalPoints: 0,
+          totalCash: 0
+        },
+        totalStats: {
+          totalCardCount: 0,
+          totalCardPoints: 0,
+          totalCardCash: 0,
+          totalMobileCount: 0,
+          totalMobilePoints: 0,
+          totalMobileCash: 0,
+          totalPoints: 0,
+          totalCash: 0
         }
-      },
-      (error) => {
-        console.error('[PointSeller] ❌ 监听统计数据失败:', error.message);
-      }
-    );
+      });
+      return;
+    }
 
-    return () => unsubscribe();
-  }, [userProfile?.organizationId, userProfile?.eventId, userProfile?.userId, orgCode, eventCode]);
+    // 统计当日数据（基于今天的记录）
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTime = today.getTime();
+
+    let cardCount = 0, cardPoints = 0, cardCash = 0;
+    let mobileCount = 0, mobilePoints = 0, mobileCash = 0;
+    let totalCardCount = 0, totalCardPoints = 0, totalCardCash = 0;
+    let totalMobileCount = 0, totalMobilePoints = 0, totalMobileCash = 0;
+
+    issuanceRecords.forEach(record => {
+      const recordTime = record.timestamp?.toDate?.() || new Date(record.timestamp);
+      const isToday = recordTime.getTime() >= todayTime;
+
+      if (record.type === 'point_card') {
+        // 点数卡
+        const amount = record.points || record.pointAmount || 0;
+        const cash = record.amount || record.cashAmount || 0;
+
+        totalCardCount++;
+        totalCardPoints += amount;
+        totalCardCash += cash;
+
+        if (isToday) {
+          cardCount++;
+          cardPoints += amount;
+          cardCash += cash;
+        }
+      } else if (record.type === 'direct_sale') {
+        // 直接销售
+        const amount = record.amount || record.points || 0;
+        const cash = record.amount || 0;
+
+        totalMobileCount++;
+        totalMobilePoints += amount;
+        totalMobileCash += cash;
+
+        if (isToday) {
+          mobileCount++;
+          mobilePoints += amount;
+          mobileCash += cash;
+        }
+      }
+    });
+
+    const newStatistics = {
+      todayStats: {
+        cardCount,
+        cardPoints,
+        cardCash,
+        mobileCount,
+        mobilePoints,
+        mobileCash,
+        totalPoints: cardPoints + mobilePoints,
+        totalCash: cardCash + mobileCash
+      },
+      totalStats: {
+        totalCardCount,
+        totalCardPoints,
+        totalCardCash,
+        totalMobileCount,
+        totalMobilePoints,
+        totalMobileCash,
+        totalPoints: totalCardPoints + totalMobilePoints,
+        totalCash: totalCardCash + totalMobileCash
+      }
+    };
+
+    console.log('[PointSeller] 🧮 统计数据已计算（基于 issuanceRecords）:', newStatistics);
+    setStatistics(newStatistics);
+  }, [issuanceRecords]);
 
   // ===== 3. 实时监听发行记录 =====
   useEffect(() => {
     const orgId = userProfile?.organizationId || orgCode;
     const evtId = userProfile?.eventId || eventCode;
-    const userId = userProfile?.userId;
+    const userId = currentUser?.uid || userProfile?.userId;
 
     if (!orgId || !evtId || !userId) return;
 

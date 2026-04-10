@@ -11,6 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { maskPhoneNumber } from '../../../services/transactionService';
 import TransactionPinDialog from '../common/TransactionPinDialog';
 import './CashSubmission.css';
 
@@ -26,6 +27,7 @@ const CashSubmission = ({
 }) => {
   const [selectedRecords, setSelectedRecords] = useState(new Set());
   const [submittedRecords, setSubmittedRecords] = useState([]);
+  const [activeTab, setActiveTab] = useState('available');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -52,6 +54,18 @@ const CashSubmission = ({
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // 短日期格式 (dd MM, hh:mm)，月份用英文缩写
+  const formatShortDateTime = (timestamp) => {
+    if (!timestamp) return '-';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = months[date.getMonth()];
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day} ${month}, ${hours}:${minutes}`;
   };
 
   // 监听已提交的现金记录
@@ -189,12 +203,21 @@ const CashSubmission = ({
     return sum + (record.cashReceived || 0);
   }, 0);
 
+  // 5. 总收取现金（PointSeller 累计统计，对齐 Firestore 新架构 totalStats.totalCash）
+  const totalReceivedCash = statistics?.totalStats?.totalCash || 0;
+
   // 计算选中金额
   const selectedAmount = Array.from(selectedRecords).reduce((sum, recordId) => {
     const record = availableRecords.find(r => r.id === recordId);
     if (!record) return sum;
     return sum + (record.cashReceived || 0);
   }, 0);
+
+  const getSubmissionRecordCount = (submission) => {
+    if (Array.isArray(submission.recordIds)) return submission.recordIds.length;
+    if (Array.isArray(submission.records)) return submission.records.length;
+    return 0;
+  };
 
   // 处理选择/取消选择
   const handleToggleSelect = (recordId) => {
@@ -314,92 +337,257 @@ const CashSubmission = ({
 
   return (
     <div className="cash-submission">
-      <h2 className="section-title">💰 现金上交</h2>
+     
+      {/* 统计卡片 - 参考 SellerSubmitCash 的摘要模板 */}
+      <div style={styles.summaryWrapper}>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryHeaderRow}>
+            <div style={styles.summaryLeftCol}>
+              <div style={styles.summaryLabel}>现有现金</div>
+              {unsubmittedAmount > 0 && (
+                <div style={styles.reminderBoxSmall}>
+                  - 记得及时上交
+                </div>
+              )}
+            </div>
+            <div style={styles.summaryRightCol}>
+              <div style={styles.amountButtonRow}>
+                <div style={styles.summaryAmount}>{formatAmount(unsubmittedAmount)}</div>
+              </div>
+            </div>
+          </div>
 
-      {/* 统计卡片 - 3个（参考DirectSale的设计） */}
-      <div className="inventory-summary">
-        <div className="inventory-card">
-          <div className="inventory-value">
-            {formatAmount(todayTotalCash)}
+          <div style={styles.summaryStats}>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{pendingSubmissions.length} 笔</span>
+              <span style={styles.summaryStatLabel}>待确认笔数</span>
+              <span style={styles.summaryStatAmt}>{formatAmount(pendingAmount)}</span>
+            </div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{confirmedSubmissions.length} 笔</span>
+              <span style={styles.summaryStatLabel}>已确认笔数</span>
+              <span style={styles.summaryStatAmt}>{formatAmount(confirmedAmount)}</span>
+            </div>
+            <div style={styles.summaryStatDivider}></div>
+            <div style={styles.summaryStatItem}>
+              <span style={styles.summaryStatValue}>{formatAmount(totalReceivedCash)}</span>
+              <span style={styles.summaryStatLabel}>总收取现金</span>
+            </div>
           </div>
-          <div className="inventory-label">今日收现金</div>
-        </div>
-        <div className="inventory-divider"></div>
-        <div className="inventory-card">
-          <div className="inventory-value">
-            {formatAmount(pendingAmount)}
-          </div>
-          <div className="inventory-label">上交待确认</div>
-        </div>
-        <div className="inventory-divider"></div>
-        <div className="inventory-card">
-          <div className="inventory-value">
-            {formatAmount(unsubmittedAmount)}
-          </div>
-          <div className="inventory-label">未上交现金</div>
         </div>
       </div>
 
-      {/* 可上交记录 */}
-      <div className="submission-section">
+      {/* 下方列表区 */}
         <div className="section-header">
-          <h3>📋 可上交记录</h3>
-          <button className="select-all-btn" onClick={handleToggleSelectAll}>
-            {selectedRecords.size === availableRecords.length && availableRecords.length > 0
-              ? '取消全选'
-              : '全选'}
-          </button>
+          <div style={styles.tabGroup}>
+            <button
+              type="button"
+              style={{
+                ...styles.tabButton,
+                ...(activeTab === 'available' ? styles.tabButtonActive : null)
+              }}
+              onClick={() => setActiveTab('available')}
+            >
+              可上交
+              <span
+                style={{
+                  ...styles.tabCountBadge,
+                  ...(activeTab === 'available' ? styles.tabCountBadgeActive : null)
+                }}
+              >
+                {availableRecords.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              style={{
+                ...styles.tabButton,
+                ...(activeTab === 'pending' ? styles.tabButtonActive : null)
+              }}
+              onClick={() => setActiveTab('pending')}
+            >
+              待确认
+              <span
+                style={{
+                  ...styles.tabCountBadge,
+                  ...(activeTab === 'pending' ? styles.tabCountBadgeActive : null)
+                }}
+              >
+                {pendingSubmissions.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              style={{
+                ...styles.tabButton,
+                ...(activeTab === 'confirmed' ? styles.tabButtonActive : null)
+              }}
+              onClick={() => setActiveTab('confirmed')}
+            >
+              已确认
+              <span
+                style={{
+                  ...styles.tabCountBadge,
+                  ...(activeTab === 'confirmed' ? styles.tabCountBadgeActive : null)
+                }}
+              >
+                {confirmedSubmissions.length}
+              </span>
+            </button>
+          </div>
         </div>
 
-        {availableRecords.length > 0 ? (
+        {activeTab === 'available' && (
+          <div style={{ marginTop: '5px', marginBottom: '0.75rem' }}>
+            <span className="select-all-link" onClick={handleToggleSelectAll}>
+              {selectedRecords.size === availableRecords.length && availableRecords.length > 0
+                ? '取消全选'
+                : '全选'}
+            </span>
+          </div>
+        )}
+
+        {activeTab === 'available' && availableRecords.length > 0 ? (
           <div style={styles.cardList}>
             {availableRecords.map(record => (
               <div
                 key={record.id}
-                style={styles.recordCard}
+                style={{
+                  ...styles.recordCard,
+                  ...(selectedRecords.has(record.id) ? styles.recordCardSelected : null)
+                }}
                 onClick={() => handleToggleSelect(record.id)}
               >
-                {/* 第一行：类型 + 金额 */}
+                {/* 第一行：短日期 + 交易序号，分散对齐 */}
                 <div style={styles.recordCardFirstRow}>
-                  <div style={styles.recordCardType}>
-                    {record.saleType === 'card' ? '🎫 点数卡' : '🛒 直接销售'}
+                  <div style={styles.recordCardDate}>
+                    {formatShortDateTime(record.metadata?.createdAt)}
                   </div>
-                  <div style={styles.recordCardQuantity}>
-                    {formatAmount(record.cashReceived || 0)}
+                  <div style={styles.recordCardTransId}>
+                    {record.transactionId || record.saleNumber || record.id}
                   </div>
                 </div>
 
-                {/* 第二行：详情信息 */}
+                {/* 第二行：根据类型显示不同内容 */}
                 <div style={styles.recordCardSecondRow}>
-                  <div style={styles.recordCardLeftInfo}>
-                    <div style={styles.recordCardName}>
-                      {record.saleType === 'card'
-                        ? `卡号: ${record.saleNumber}`
-                        : `客户: ${record.cash?.customerName}`}
-                    </div>
-                    <div style={styles.recordCardCustomer}>
-                      {formatDateTime(record.metadata?.createdAt)}
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={selectedRecords.has(record.id)}
-                    onChange={() => {}}
-                    style={{ cursor: 'pointer' }}
-                  />
+                  {record.saleType === 'card' ? (
+                    <>
+                      <div style={styles.recordCardCardLabel}>
+                        🎫 点数卡交易
+                      </div>
+                      <div style={styles.recordCardQuantity}>
+                        {formatAmount(record.cashReceived || 0)}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={styles.recordCardLeftInfo}>
+                        <div style={styles.recordCardName}>
+                          {record.customerEnglishName || record.customerName || '未知'}
+                        </div>
+                        <div style={styles.recordCardPhone}>
+                          {maskPhoneNumber(record.customerPhone || '')}
+                        </div>
+                      </div>
+                      <div style={styles.recordCardQuantity}>
+                        {formatAmount(record.cashReceived || 0)}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
           </div>
-        ) : (
+        ) : null}
+
+        {activeTab === 'available' && availableRecords.length === 0 ? (
           <div className="records-empty">
             <div className="empty-icon">✅</div>
             <p className="empty-message">所有记录已上交或暂无可上交记录</p>
           </div>
-        )}
+        ) : null}
+
+        {activeTab === 'pending' && pendingSubmissions.length > 0 ? (
+          <div style={styles.cardList}>
+            {pendingSubmissions.map(sub => (
+              <div
+                key={sub.id}
+                style={styles.recordCard}
+              >
+                <div style={styles.recordCardFirstRow}>
+                  <div style={styles.recordCardDate}>
+                    {formatShortDateTime(sub.submittedAt)}
+                  </div>
+                  <div style={styles.recordCardTransId}>
+                    {sub.submissionNumber || sub.submissionId || sub.id}
+                  </div>
+                </div>
+
+                <div style={styles.recordCardSecondRow}>
+                  <div style={styles.recordCardLeftInfo}>
+                    <div style={styles.recordCardName}>⏳ 待确认</div>
+                    <div style={styles.recordCardPhone}>
+                      {getSubmissionRecordCount(sub)} 笔记录{sub.note ? ` · ${sub.note}` : ''}
+                    </div>
+                  </div>
+                  <div style={styles.recordCardQuantity}>
+                    {formatAmount(sub.amount || 0)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {activeTab === 'pending' && pendingSubmissions.length === 0 ? (
+          <div className="records-empty">
+            <div className="empty-icon">⏳</div>
+            <p className="empty-message">暂无待确认记录</p>
+          </div>
+        ) : null}
+
+        {activeTab === 'confirmed' && confirmedSubmissions.length > 0 ? (
+          <div style={styles.cardList}>
+            {confirmedSubmissions.map(sub => (
+              <div
+                key={sub.id}
+                style={styles.recordCard}
+              >
+                <div style={styles.recordCardFirstRow}>
+                  <div style={styles.recordCardDate}>
+                    {formatShortDateTime(sub.confirmedAt || sub.submittedAt)}
+                  </div>
+                  <div style={styles.recordCardTransId}>
+                    {sub.submissionNumber || sub.submissionId || sub.id}
+                  </div>
+                </div>
+
+                <div style={styles.recordCardSecondRow}>
+                  <div style={styles.recordCardLeftInfo}>
+                    <div style={styles.recordCardName}>✅ 已确认</div>
+                    <div style={styles.recordCardPhone}>
+                      {sub.receiverName ? `确认人: ${sub.receiverName}` : `${getSubmissionRecordCount(sub)} 笔记录`}
+                    </div>
+                  </div>
+                  <div style={styles.recordCardQuantity}>
+                    {formatAmount(sub.amount || 0)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {activeTab === 'confirmed' && confirmedSubmissions.length === 0 ? (
+          <div className="records-empty">
+            <div className="empty-icon">✅</div>
+            <p className="empty-message">暂无已确认记录</p>
+          </div>
+        ) : null}
 
         {/* 选中金额和提交按钮 */}
-        {selectedRecords.size > 0 && (
+        {activeTab === 'available' && selectedRecords.size > 0 && (
           <div className="selection-summary">
             <div className="summary-info">
               已选择 <strong>{selectedRecords.size}</strong> 笔记录，
@@ -428,52 +616,6 @@ const CashSubmission = ({
             {successMessage}
           </div>
         )}
-      </div>
-
-      {/* 提交历史 */}
-      {submittedRecords.length > 0 && (
-        <div className="submission-history">
-          <h3>📜 提交历史</h3>
-
-          {/* 待确认 */}
-          {pendingSubmissions.length > 0 && (
-            <div className="history-section">
-              <h4>⏳ 待确认 ({pendingSubmissions.length})</h4>
-              {pendingSubmissions.map(sub => (
-                <div key={sub.id} className="history-item pending">
-                  <div className="history-header">
-                    <span className="submission-number">{sub.submissionNumber || sub.submissionId}</span>
-                    <span className="submission-amount">{formatAmount(sub.amount)}</span>
-                  </div>
-                  <div className="history-details">
-                    <span>提交时间: {formatDateTime(sub.submittedAt)}</span>
-                    <span className="status-badge pending">⏳ 待确认</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* 已确认 */}
-          {confirmedSubmissions.length > 0 && (
-            <div className="history-section">
-              <h4>✅ 已确认 ({confirmedSubmissions.length})</h4>
-              {confirmedSubmissions.slice(0, 5).map(sub => (
-                <div key={sub.id} className="history-item confirmed">
-                  <div className="history-header">
-                    <span className="submission-number">{sub.submissionNumber || sub.submissionId}</span>
-                    <span className="submission-amount">{formatAmount(sub.amount)}</span>
-                  </div>
-                  <div className="history-details">
-                    <span>确认时间: {formatDateTime(sub.confirmedAt)}</span>
-                    <span className="status-badge confirmed">✅ 已确认</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 交易密码对话框 */}
       {showPinDialog && pendingSubmission && (
@@ -494,6 +636,146 @@ const CashSubmission = ({
 
 // ===== 内联样式定义 =====
 const styles = {
+  summaryWrapper: {
+    width: '100%',
+    marginBottom: '1rem'
+  },
+  summaryCard: {
+    padding: '1.25rem 0.65rem',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    color: '#fff',
+    background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)'
+  },
+  summaryHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    marginBottom: '1.5rem',
+    paddingBottom: '1rem',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+    gap: '0.5rem'
+  },
+  summaryLeftCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '0.5rem',
+    width: '33.33%',
+    flex: '0 0 33.33%'
+  },
+  summaryRightCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    gap: '0.2rem',
+    width: '66.67%',
+    flex: '0 0 66.67%',
+    textAlign: 'left'
+  },
+  amountButtonRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    justifyContent: 'flex-start'
+  },
+  summaryLabel: {
+    fontSize: '0.9rem',
+    opacity: 0.9,
+    fontWeight: 500
+  },
+  reminderBoxSmall: {
+    fontSize: '0.75rem',
+    opacity: 0.8,
+    fontStyle: 'italic'
+  },
+  summaryAmount: {
+    fontSize: '1.6rem',
+    fontWeight: 700
+  },
+  summaryDesc: {
+    fontSize: '0.75rem',
+    opacity: 0.85,
+    margin: '0.25rem 0 0 0'
+  },
+  summaryStats: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    alignItems: 'flex-start',
+    gap: '0.75rem',
+    flexWrap: 'nowrap'
+  },
+  summaryStatItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    flex: '1 1 150px',
+    textAlign: 'center'
+  },
+  summaryStatValue: {
+    fontSize: '1.4rem',
+    fontWeight: '700',
+    marginBottom: '0.25rem'
+  },
+  summaryStatLabel: {
+    fontSize: '0.85rem',
+    opacity: 0.85,
+    marginBottom: '0.25rem'
+  },
+  summaryStatAmt: {
+    fontSize: '0.9rem',
+    fontWeight: 500
+  },
+  summaryStatDivider: {
+    width: '1px',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'stretch',
+    margin: '0 0.5rem'
+  },
+  tabGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    flexWrap: 'wrap'
+  },
+  tabButton: {
+    border: 'none',
+    background: '#e5e7eb',
+    color: '#374151',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.45rem',
+    padding: '0.6rem 0.9rem',
+    borderRadius: '999px',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  tabButtonActive: {
+    background: '#3b82f6',
+    color: '#fff',
+    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.25)'
+  },
+  tabCountBadge: {
+    minWidth: '1.35rem',
+    height: '1.35rem',
+    padding: '0 0.35rem',
+    borderRadius: '999px',
+    background: '#dc2626',
+    color: '#fff',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1
+  },
+  tabCountBadgeActive: {
+    background: '#991b1b',
+    color: '#fff'
+  },
   cardList: {
     display: 'flex',
     flexDirection: 'column',
@@ -503,7 +785,14 @@ const styles = {
     background: 'transparent',
     padding: '0.5rem 0.75rem',
     marginBottom: '0.25rem',
-    borderBottom: '1px solid #e5e7eb'
+    borderBottom: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease, box-shadow 0.2s ease'
+  },
+  recordCardSelected: {
+    background: '#eff6ff',
+    boxShadow: 'inset 0 0 0 1px #bfdbfe'
   },
   recordCardFirstRow: {
     display: 'flex',
@@ -515,6 +804,11 @@ const styles = {
     fontSize: '0.8rem',
     color: '#6b7280',
     fontWeight: '500'
+  },
+  recordCardTransId: {
+    fontSize: '0.75rem',
+    color: '#9ca3af',
+    fontFamily: 'monospace'
   },
   recordCardType: {
     fontSize: '0.75rem',
@@ -534,6 +828,16 @@ const styles = {
     gap: '0.2rem'
   },
   recordCardName: {
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#1f2937'
+  },
+  recordCardPhone: {
+    fontSize: '0.75rem',
+    color: '#9ca3af'
+  },
+  recordCardCardLabel: {
+    flex: 1,
     fontSize: '0.9375rem',
     fontWeight: '600',
     color: '#1f2937'

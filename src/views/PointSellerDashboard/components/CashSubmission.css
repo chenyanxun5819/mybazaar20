@@ -6,6 +6,9 @@
 .cash-submission {
   max-width: 1000px;
   margin: 0 auto;
+  width: 100%;
+  padding: 0 0.75rem 2rem;
+  box-sizing: border-box;
 }
 
 /* ===== 标题 ===== */
@@ -22,23 +25,24 @@
   width: 100%;
 }
 
-/* ===== 统计卡片 - 参考DirectSale的设计 ===== */
+/* ===== 统计卡片 - 参考PointSellerTransactions的设计 ===== */
 .inventory-summary {
   display: flex;
   align-items: center;
   justify-content: space-around;
   background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   border-radius: 12px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  padding: 1.5rem 1rem;
+  margin: 0 0.5rem 1.5rem 0.5rem;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  gap: 0.75rem;
 }
 
 .inventory-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
+  flex: 1 1 150px;
   text-align: center;
 }
 
@@ -123,33 +127,30 @@
 
 .section-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .section-header h3 {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: #2d3748;
   margin: 0;
 }
 
-.select-all-btn {
-  padding: 8px 16px;
-  background: #667eea;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
+.select-all-link {
+  color: #3b82f6;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  text-decoration: underline;
 }
 
-.select-all-btn:hover {
-  background: #5a67d8;
-  transform: translateY(-2px);
+.select-all-link:hover {
+  color: #1e40af;
+  opacity: 0.8;
 }
 
 /* ===== 记录列表 ===== */
