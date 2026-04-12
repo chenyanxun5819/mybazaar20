@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import { db } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
+import { getAllowedIdentityTagsForImport } from '../../utils/identityTagUtils';
 
 const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   const [importMode, setImportMode] = useState('upload');
@@ -10,6 +13,10 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [importing, setImporting] = useState(false);
   const [errors, setErrors] = useState([]);
+  
+  // 🆕 加载组织数据以获得动态身份标签
+  const [organization, setOrganization] = useState(null);
+  const [allowedIdentityTags, setAllowedIdentityTags] = useState(['student', 'teacher', 'staff', 'parent']); // 降级方案
 
   const styles = {
     overlay: {
@@ -197,6 +204,34 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
     return { valid: true, normalized };
   };
 
+  // 🆕 加载组织配置以获取允许的身份标签
+  useEffect(() => {
+    const loadOrgConfiguration = async () => {
+      if (!organizationId) return;
+      
+      try {
+        const orgRef = doc(db, 'organizations', organizationId);
+        const orgDoc = await getDoc(orgRef);
+        if (orgDoc.exists()) {
+          const org = orgDoc.data();
+          setOrganization(org);
+          
+          // 更新允许的身份标签
+          const tags = getAllowedIdentityTagsForImport(org);
+          if (tags.length > 0) {
+            setAllowedIdentityTags(tags);
+            console.log('[BatchImportUser] ✅ 加载组织身份标签:', tags);
+          }
+        }
+      } catch (error) {
+        console.error('[BatchImportUser] ❌ 加载组织配置失败:', error);
+        // 使用降级方案：保持默认身份标签
+      }
+    };
+
+    loadOrgConfiguration();
+  }, [organizationId]);
+
   const downloadTemplate = () => {
     const instructionsData = [
       ['批量导入用户 - 使用说明'],
@@ -315,8 +350,10 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
           }
           
           if (!user.department) errors.push('缺少部门');
-          if (!['student', 'teacher', 'staff', 'parent'].includes(user.identityTag)) {
-            errors.push('身份标签不正确');
+          
+          // ✅ 使用动态身份标签列表替代硬编码的 ['student', 'teacher', 'staff', 'parent']
+          if (!allowedIdentityTags.includes(user.identityTag)) {
+            errors.push(`身份标签不正确，允许的值: ${allowedIdentityTags.join(', ')}`);
           }
 
           return { ...user, errors };

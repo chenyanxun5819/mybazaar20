@@ -224,22 +224,45 @@
           "logoUpdatedBy": "string (Platform Admin UID，可選)",
           "identityTags": [
             {
-              "id": "string (标签ID，如 'student')",
+              "id": "string (标签ID，如 'student'、'monk'等 - 组织自定义)",
               "name": {
                 "zh-CN": "string (中文名，如 '学生')",
                 "en-US": "string (英文名，如 'Student')"
               },
+              "displayOrder": "number (显示顺序)",
               "isActive": "boolean (是否激活)",
-              "displayOrder": "number (显示顺序)"
+              "// === 🆕 角色配置 - 方案 B 核心 ===": "",
+              "roleConfig": {
+                "roleType": "string ('managed' | 'independent')",
+                "description": "string (角色说明，如 '需要被 Seller Manager 管理的身份')"
+              },
+              "// === 仅当 roleType='managed' 时有效 ===": "",
+              "managedByRole": {
+                "role": "string (由哪个角色管理，如 'sellerManager')",
+                "policies": {
+                  "requiresApprovalForCash": "boolean (现金上交需要批准)",
+                  "calculateCollectionWarning": "boolean (计算低收款率警示)",
+                  "canBatchAllocate": "boolean (允许批量分配点数)",
+                  "canExportData": "boolean (允许导出数据)"
+                }
+              },
+              "createdAt": "timestamp",
+              "updatedAt": "timestamp"
             },
             {
-              "id": "external",
+              "id": "external (外部人员 - 系统内置)",
               "name": {
                 "zh-CN": "非组织人员",
                 "en-US": "External"
               },
-              "isActive": "boolean (是否激活)",
-              "displayOrder": "number (显示顺序)"
+              "displayOrder": "number",
+              "isActive": "boolean",
+              "roleConfig": {
+                "roleType": "independent",
+                "description": "外部访客或临时人员"
+              },
+              "createdAt": "timestamp",
+              "updatedAt": "timestamp"
             }
           ],
           "departments": [
@@ -695,9 +718,8 @@
                     "managedDepartments": [
                       "string (管理的部门代码数组，如 ['J1A', 'J1B'])"
                     ],
-                    "managedIdentityTags": [
-                      "student"
-                    ],
+                    "// === ⚠️ managedIdentityTags 已移除 ===": "从 organization.identityTags 中读取 roleType='managed' 的标签",
+                    "// === 动态读取方式 ===": "const managedTags = org.identityTags.filter(t => t.roleConfig?.roleType === 'managed')",
                     "// === 🆕 现金管理统计 ===": "",
                     "cashStats": {
                       "// 从学生收取的现金": "",
@@ -759,12 +781,8 @@
                   },
                   "cashier": {
                     "// === 基本信息 ===": "",
-                    "managedIdentityTags": [
-                      "teacher",
-                      "staff",
-                      "parent",
-                      "...其他非学生身份"
-                    ],
+                    "// === ⚠️ managedIdentityTags 已移除 ===": "从 organization.identityTags 中读取 roleType='independent' 的标签，或 managedByRole.role!='sellerManager' 的标签",
+                    "// === 动态读取方式 ===": "const independentTags = org.identityTags.filter(t => t.roleConfig?.roleType === 'independent')",
                     "// === 收款统计 ===": "",
                     "cashStats": {
                       "totalCollected": "number (累计收款总额 RM)",

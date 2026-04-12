@@ -660,7 +660,7 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
 
       // 检查是否已有 identityTags
       if (!orgData.identityTags) {
-        // 添加默认的身份标签
+        // ✅ 添加带新型 roleConfig 的身份标签（方案 B）
         const defaultIdentityTags = [
           {
             id: 'staff',
@@ -670,7 +670,11 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
             },
             displayOrder: 1,
             isActive: true,
-            createdAt: now // ✅ 使用字符串而不是 serverTimestamp()
+            roleConfig: {
+              roleType: 'independent',
+              description: '独立身份，可直接交现金给 Cashier'
+            },
+            createdAt: now
           },
           {
             id: 'student',
@@ -680,6 +684,19 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
             },
             displayOrder: 2,
             isActive: true,
+            roleConfig: {
+              roleType: 'managed',
+              description: '需要被 Seller Manager 管理的身份'
+            },
+            managedByRole: {
+              role: 'sellerManager',
+              policies: {
+                requiresApprovalForCash: true,
+                calculateCollectionWarning: true,
+                canBatchAllocate: true,
+                canExportData: true
+              }
+            },
             createdAt: now
           },
           {
@@ -690,13 +707,17 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
             },
             displayOrder: 3,
             isActive: true,
+            roleConfig: {
+              roleType: 'independent',
+              description: '独立身份，可直接交现金给 Cashier'
+            },
             createdAt: now
           }
         ];
 
         batch.update(orgDoc.ref, {
           identityTags: defaultIdentityTags,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp() // ✅ 这里可以用 serverTimestamp
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
         updateCount++;

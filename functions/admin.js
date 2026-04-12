@@ -239,10 +239,30 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', '缺少手机号码、英文姓名、邮箱或密码');
   }
 
-  // 验证身份标签 - 只允许 staff 和 teacher
-  const validIdentityTags = ['staff', 'teacher'];
+  // 验证身份标签 - 必须是「独立身份」（不被管理的）
+  // 如果有 orgId，从组织配置读取；否则使用系统默认值
+  let validIdentityTags = ['staff', 'teacher']; // 系统默认
+  
+  // 如果提供了 organizationId，从组织配置读取允许的身份标签
+  if (actualData.organizationId) {
+    try {
+      const orgRef = getDb().collection('organizations').doc(actualData.organizationId);
+      const orgDoc = await orgRef.get();
+      if (orgDoc.exists) {
+        const org = orgDoc.data();
+        // 获取所有 roleType === 'independent' 的身份标签
+        validIdentityTags = org.identityTags
+          ?.filter(tag => tag.roleConfig?.roleType === 'independent')
+          ?.map(tag => tag.id) || validIdentityTags;
+        console.log('[createInitialAdmin] Available identity tags for org:', validIdentityTags);
+      }
+    } catch (err) {
+      console.warn('[createInitialAdmin] Failed to read org config, using defaults:', err);
+    }
+  }
+  
   if (!identityTag || !validIdentityTags.includes(identityTag)) {
-    throw new functions.https.HttpsError('invalid-argument', '请选择有效的身份标签 (staff 或 teacher)');
+    throw new functions.https.HttpsError('invalid-argument', `请选择有效的身份标签: ${validIdentityTags.join(', ')}`);
   }
 
   // 检查是否已有超级管理员
@@ -659,9 +679,19 @@ exports.createManager = functions.https.onCall(async (data, context) => {
   }
 
   // 验证身份标签 (manager 必须有身份标签)
-  const validIdentityTags = ['staff', 'teacher'];
+  // 从组织配置读取允许的身份标签（仅独立身份可成为 Manager）
+  const org = await getDb().collection('organizations').doc(organizationId).get();
+  if (!org.exists) {
+    throw new functions.https.HttpsError('not-found', '组织不存在');
+  }
+  
+  const orgData = org.data();
+  const validIdentityTags = orgData.identityTags
+    ?.filter(tag => tag.roleConfig?.roleType === 'independent')
+    ?.map(tag => tag.id) || ['staff', 'teacher']; // 降级方案
+  
   if (!identityTag || !validIdentityTags.includes(identityTag)) {
-    throw new functions.https.HttpsError('invalid-argument', 'Manager 必须选择有效的身份标签 (staff 或 teacher)');
+    throw new functions.https.HttpsError('invalid-argument', `Manager 必须选择有效的身份标签: ${validIdentityTags.join(', ')}`);
   }
 
   try {

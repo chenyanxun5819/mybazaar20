@@ -17,13 +17,16 @@ import {
   where,
   onSnapshot,
   orderBy,
-  getDocs
+  getDocs,
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, functions } from '../../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { useSellerStats } from '../hooks/useSellerStats';
 import { useAuth } from '../../../contexts/AuthContext';
+import { isIdentityManaged } from '../../../utils/identityTagUtils';
 import ChalkboardUserIcon from '../../../assets/chalkboard-user.svg?react';
 import MoneyInsertIcon from '../../../assets/money-insert-svgrepo-com.svg?react';
 import EmployeeManIcon from '../../../assets/employee-man.svg?react';
@@ -42,6 +45,10 @@ const SellerSubmitCash = () => {
   const [sellerManager, setSellerManager] = useState(null);
   const [smLoading, setSmLoading] = useState(false);
   
+  // 🆕 为了支持动态身份标签配置，需要加载组织数据
+  const [organization, setOrganization] = useState(null);
+  const [orgLoading, setOrgLoading] = useState(true);
+  
   // 🆕 2秒后放宽检查
   const [identityTagTimeout, setIdentityTagTimeout] = useState(false);
 
@@ -53,7 +60,9 @@ const SellerSubmitCash = () => {
   
   // 支持多种 identityTag 格式
   const identityTag = userProfile?.identityTag || userProfile?.identityInfo?.identityTag;
-  const isStudent = identityTag === 'student' || identityTag === 'students';
+  
+  // ✅ 用新的工具函数替代硬编码的 === 'student' 检查
+  const isStudent = organization ? isIdentityManaged(identityTag, organization) : false;
   const department = userProfile?.identityInfo?.department;
 
   // 🔧 智能加载检查：
@@ -81,6 +90,33 @@ const SellerSubmitCash = () => {
   console.log('  smLoading:', smLoading);
   console.log('  sellerManager:', sellerManager);
   console.log('=================================');
+
+  // 🆕 加载组织数据以支持动态身份标签配置
+  useEffect(() => {
+    if (!orgId) {
+      setOrgLoading(false);
+      return;
+    }
+
+    const loadOrganization = async () => {
+      try {
+        const orgRef = doc(db, 'organizations', orgId);
+        const orgDoc = await getDoc(orgRef);
+        if (orgDoc.exists()) {
+          setOrganization(orgDoc.data());
+          console.log('[SellerSubmitCash] ✅ 组织数据加载成功');
+        } else {
+          console.warn('[SellerSubmitCash] ⚠️ 组织不存在');
+        }
+      } catch (error) {
+        console.error('[SellerSubmitCash] ❌ 加载组织数据失败:', error);
+      } finally {
+        setOrgLoading(false);
+      }
+    };
+
+    loadOrganization();
+  }, [orgId]);
 
   // 🆕 2秒超时机制：如果Seller角色但没有identityTag，2秒后自动判定为非学生
   useEffect(() => {

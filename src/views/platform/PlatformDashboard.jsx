@@ -1322,9 +1322,8 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
   const [error, setError] = useState('');
   const [checkingUsage, setCheckingUsage] = useState(false);
 
-  // 添加新标签
+  // ✅ 添加新标签（方案 B：支持 roleConfig）
   const handleAddTag = () => {
-    // ✨ 改进：使用临时 id，后续会根据英文名称更新
     const newTag = {
       id: `temp_${Date.now()}`,
       name: {
@@ -1333,12 +1332,17 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
       },
       displayOrder: identityTags.length + 1,
       isActive: true,
+      // 🆕 新增：角色配置
+      roleConfig: {
+        roleType: 'independent',  // 默认设为独立身份
+        description: ''
+      },
       createdAt: new Date().toISOString()
     };
     setIdentityTags([...identityTags, newTag]);
   };
 
-  // 更新标签
+  // 更新标签的基本信息（名称等）
   const handleUpdateTag = (tagId, field, lang, value) => {
     setIdentityTags(identityTags.map(tag => {
       if (tag.id === tagId) {
@@ -1351,9 +1355,8 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
             }
           };
           
-          // ✨ 改进：如果更新的是英文名称，自动生成标准化的 id
+          // 如果更新的是英文名称，自动生成标准化的 id
           if (lang === 'en' && value.trim()) {
-            // 将英文名称转小写，删除空格、特殊字符，使用下划线连接
             const standardizedId = value.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
             updatedTag.id = standardizedId;
           }
@@ -1361,6 +1364,51 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
           return updatedTag;
         }
         return { ...tag, [field]: value };
+      }
+      return tag;
+    }));
+  };
+
+  // 🆕 更新标签的 roleConfig（方案 B）
+  const handleUpdateRoleConfig = (tagId, configPath, value) => {
+    setIdentityTags(identityTags.map(tag => {
+      if (tag.id === tagId) {
+        const updatedTag = { ...tag };
+        
+        // 支持嵌套路径，如 'roleConfig.roleType' 或 'managedByRole.policies.requiresApprovalForCash'
+        const keys = configPath.split('.');
+        let obj = updatedTag;
+        
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!obj[keys[i]]) {
+            obj[keys[i]] = {};
+          }
+          obj = obj[keys[i]];
+        }
+        
+        obj[keys[keys.length - 1]] = value;
+        
+        // 如果从 managed 改为 independent，清除 managedByRole
+        if (configPath === 'roleConfig.roleType' && value === 'independent') {
+          updatedTag.managedByRole = undefined;
+        }
+        
+        // 如果改为 managed，初始化 managedByRole
+        if (configPath === 'roleConfig.roleType' && value === 'managed') {
+          if (!updatedTag.managedByRole) {
+            updatedTag.managedByRole = {
+              role: 'sellerManager',
+              policies: {
+                requiresApprovalForCash: true,
+                calculateCollectionWarning: true,
+                canBatchAllocate: true,
+                canExportData: true
+              }
+            };
+          }
+        }
+        
+        return updatedTag;
       }
       return tag;
     }));
@@ -1507,7 +1555,13 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
         <div style={styles.infoBox}>
           <p style={styles.infoText}>
             💡 <strong>说明：</strong>身份标签将应用于此组织下的所有活动。
-            用户注册时需要选择一个身份标签。
+          </p>
+          <p style={{...styles.infoText, marginTop: '0.5rem'}}>
+            🔧 <strong>角色配置：</strong>
+            <ul style={{ marginTop: '0.5rem', marginBottom: 0, paddingLeft: '1.5rem' }}>
+              <li><strong>独立身份</strong>：可直接与 Cashier 交互（如教师、职员）</li>
+              <li><strong>被管理身份</strong>：需要通过管理者处理（如学生、修行者）</li>
+            </ul>
           </p>
         </div>
 
@@ -1566,11 +1620,120 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                         disabled={submitting}
                         required
                       />
-                      {/* ✨ 显示自动生成的标签 ID */}
                       <span style={{...styles.tagLabel, marginTop: '0.5rem', color: '#2563eb', fontSize: '0.75rem'}}>
                         标记 ID: <strong>{tag.id}</strong>
                       </span>
                     </div>
+                  </div>
+
+                  {/* 🆕 角色配置区域（方案 B） */}
+                  <div style={{
+                    marginTop: '1rem',
+                    padding: '1rem',
+                    backgroundColor: '#f9fafb',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb'
+                  }}>
+                    <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.875rem', fontWeight: '600' }}>
+                      🔧 角色配置
+                    </h4>
+
+                    {/* 角色类型选择 */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                      <div>
+                        <label style={{...styles.tagLabel, fontSize: '0.875rem'}}>角色类型 *</label>
+                        <select
+                          value={tag.roleConfig?.roleType || 'independent'}
+                          onChange={(e) => handleUpdateRoleConfig(tag.id, 'roleConfig.roleType', e.target.value)}
+                          style={{
+                            ...styles.tagInput,
+                            padding: '0.5rem 0.75rem',
+                            fontSize: '0.875rem'
+                          }}
+                          disabled={submitting}
+                        >
+                          <option value="independent">📌 独立身份（直接处理）</option>
+                          <option value="managed">👥 被管理身份（需要管理者）</option>
+                        </select>
+                      </div>
+
+                      {/* 如果是 managed，显示由谁管理 */}
+                      {tag.roleConfig?.roleType === 'managed' && (
+                        <div>
+                          <label style={{...styles.tagLabel, fontSize: '0.875rem'}}>由谁管理 *</label>
+                          <select
+                            value={tag.managedByRole?.role || 'sellerManager'}
+                            onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.role', e.target.value)}
+                            style={{
+                              ...styles.tagInput,
+                              padding: '0.5rem 0.75rem',
+                              fontSize: '0.875rem'
+                            }}
+                            disabled={submitting}
+                          >
+                            <option value="sellerManager">Seller Manager</option>
+                            <option value="departmentManager">Department Manager</option>
+                            <option value="teamManager">Team Manager</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 如果是 managed，显示策略复选框 */}
+                    {tag.roleConfig?.roleType === 'managed' && tag.managedByRole && (
+                      <div style={{
+                        padding: '0.75rem',
+                        backgroundColor: 'white',
+                        borderRadius: '6px',
+                        border: '1px solid #d1d5db'
+                      }}>
+                        <label style={{...styles.tagLabel, fontSize: '0.875rem', marginBottom: '0.5rem', display: 'block'}}>
+                          📋 管理策略：
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={tag.managedByRole?.policies?.requiresApprovalForCash ?? true}
+                              onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.policies.requiresApprovalForCash', e.target.checked)}
+                              disabled={submitting}
+                              style={{ marginRight: '0.5rem' }}
+                            />
+                            现金上交需要批准
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={tag.managedByRole?.policies?.calculateCollectionWarning ?? true}
+                              onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.policies.calculateCollectionWarning', e.target.checked)}
+                              disabled={submitting}
+                              style={{ marginRight: '0.5rem' }}
+                            />
+                            计算低收款率警示
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={tag.managedByRole?.policies?.canBatchAllocate ?? true}
+                              onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.policies.canBatchAllocate', e.target.checked)}
+                              disabled={submitting}
+                              style={{ marginRight: '0.5rem' }}
+                            />
+                            允许批量分配点数
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={tag.managedByRole?.policies?.canExportData ?? true}
+                              onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.policies.canExportData', e.target.checked)}
+                              disabled={submitting}
+                              style={{ marginRight: '0.5rem' }}
+                            />
+                            允许导出数据
+                          </label>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -1687,46 +1850,71 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
         return;
       }
 
-      // 创建默认的身份标签
+      // ✅ 创建默认的身份标签（方案 B：包含 roleConfig）
       const defaultIdentityTags = [
         {
           id: 'staff',
           name: {
-            'en-US': 'Staff',
+            'en': 'Staff',
             'zh-CN': '职员'
           },
           displayOrder: 1,
           isActive: true,
+          roleConfig: {
+            roleType: 'independent',
+            description: '独立身份，可直接交现金给 Cashier'
+          },
           createdAt: new Date().toISOString()
         },
         {
           id: 'student',
           name: {
-            'en-US': 'Student',
+            'en': 'Student',
             'zh-CN': '学生'
           },
           displayOrder: 2,
           isActive: true,
+          roleConfig: {
+            roleType: 'managed',
+            description: '需要被 Seller Manager 管理的身份'
+          },
+          managedByRole: {
+            role: 'sellerManager',
+            policies: {
+              requiresApprovalForCash: true,
+              calculateCollectionWarning: true,
+              canBatchAllocate: true,
+              canExportData: true
+            }
+          },
           createdAt: new Date().toISOString()
         },
         {
           id: 'teacher',
           name: {
-            'en-US': 'Teacher',
+            'en': 'Teacher',
             'zh-CN': '教师'
           },
           displayOrder: 3,
           isActive: true,
+          roleConfig: {
+            roleType: 'independent',
+            description: '独立身份，可直接交现金给 Cashier'
+          },
           createdAt: new Date().toISOString()
         },
         {
           id: 'external',
           name: {
-            'en-US': 'External',
+            'en': 'External',
             'zh-CN': '非组织人员'
           },
           displayOrder: 4,
           isActive: true,
+          roleConfig: {
+            roleType: 'independent',
+            description: '外部访客或临时人员'
+          },
           createdAt: new Date().toISOString()
         }
       ];
