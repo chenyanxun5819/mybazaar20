@@ -1261,7 +1261,13 @@
                         "direction": "Customer → Merchant",
                         "source": "Customer 账户可用点数（来自销售、充值或分配）",
                         "cloudFunction": "processCustomerPayment / confirmMerchantPayment",
-                        "example": "Customer 用 20 点购买 Merchant 的商品"
+                        "example": "Customer 用 20 点购买 Merchant 的商品",
+                        "storedCustomerFields": {
+                          "customerId": "string (客户UID)",
+                          "customerName": "string (客户姓名，优先中文名，来自 basicInfo.chineseName，fallback 到 englishName)",
+                          "customerEnglishName": "string (客户英文名，来自 basicInfo.englishName)",
+                          "customerPhone": "string (客户电话号码，来自 basicInfo.phoneNumber，原始值未脱敏)"
+                        }
                       },
                       "customer_transfer": {
                         "role": "Customer ↔ Customer",

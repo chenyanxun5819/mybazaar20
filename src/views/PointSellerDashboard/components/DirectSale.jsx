@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import TransactionPinDialog from '../common/TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
 import './DirectSale.css';
 

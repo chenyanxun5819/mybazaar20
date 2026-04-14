@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import TransactionPinDialog from './TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import './CollectionOverview.css';
 
 const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim, currentUser }) => {
@@ -265,7 +265,15 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
       {/* 交易密码对话框 */}
       {showPinDialog && selectedSubmission && (
         <TransactionPinDialog
+          title="🔐 接单确认收款"
           submission={selectedSubmission}
+          requireReceiptNumber={true}
+          receiptNumberLabel="收据编号"
+          receiptNumberPlaceholder="例如：RCP-2025-001"
+          allowNote={true}
+          noteLabel="确认备注（可选）"
+          notePlaceholder="例如：已核对无误，收到50张100元纸钞"
+          confirmButtonText="✅ 确认收款"
           onConfirm={handlePinConfirm}
           onCancel={handlePinCancel}
         />

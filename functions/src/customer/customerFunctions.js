@@ -803,6 +803,7 @@ exports.processCustomerPayment = onCall({ region: 'asia-southeast1' }, async (re
         customerId,
         customerPhone: customerDataLatest.basicInfo?.phoneNumber || '',
         customerName: customerDataLatest.basicInfo?.chineseName || customerDataLatest.basicInfo?.englishName || '',
+        customerEnglishName: customerDataLatest.basicInfo?.englishName || '',
         merchantId,
         merchantName: merchantData.stallName || '',
 

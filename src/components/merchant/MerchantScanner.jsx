@@ -13,7 +13,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import { CreditCard, User, Scan, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import TransactionPinDialog from '../../views/PointSellerDashboard/common/TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import { formatAmount } from '../../services/transactionService';
 import './MerchantScanner.css';
 

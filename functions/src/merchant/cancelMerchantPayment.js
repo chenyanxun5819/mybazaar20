@@ -23,6 +23,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { verifyTransactionPin } = require('../../utils/verifyTransactionPin');
 
 exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (request) => {
   const { data, auth } = request;
@@ -34,7 +35,7 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     }
 
     // ========== 2. 提取参数 ==========
-    const { organizationId, eventId, transactionId, cancelReason } = data;
+    const { organizationId, eventId, transactionId, cancelReason, transactionPin } = data;
 
     console.log('[cancelMerchantPayment] 收到取消请求:', {
       organizationId,
@@ -47,6 +48,11 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     // ========== 3. 验证必填参数 ==========
     if (!organizationId || !eventId || !transactionId) {
       throw new HttpsError('invalid-argument', '缺少必填参数');
+    }
+
+    // ========== 3.5. 验证交易密码格式 ==========
+    if (!transactionPin || !/^\d{6}$/.test(transactionPin)) {
+      throw new HttpsError('invalid-argument', '请输入6位数字交易密码');
     }
 
     const db = admin.firestore();
@@ -121,6 +127,9 @@ exports.cancelMerchantPayment = onCall({ region: 'asia-southeast1' }, async (req
     if (transactionData.merchantId !== callerMerchantId) {
       throw new HttpsError('permission-denied', '此交易不属于您的商家');
     }
+
+    // ========== 8.5. 验证交易密码 ==========
+    await verifyTransactionPin(auth.uid, transactionPin, organizationId, eventId);
 
     // ========== 9. 取消交易并回滚点数/统计 ==========
     const amount = Number(transactionData.amount) || 0;

@@ -14,10 +14,16 @@ const TransactionPinDialog = ({
   confirmButtonText = '✅ 确认',
   allowNote = false,
   noteLabel = '备注（可选）',
-  notePlaceholder = '请输入备注信息...'
+  notePlaceholder = '请输入备注信息...',
+  // Cashier specific props
+  submission = null,
+  requireReceiptNumber = false,
+  receiptNumberLabel = '收据编号',
+  receiptNumberPlaceholder = '例如：RCP-2025-001'
 }) => {
   const [pin, setPin] = useState('');
   const [note, setNote] = useState('');
+  const [receiptNumber, setReceiptNumber] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const pinInputRef = useRef(null);
@@ -28,6 +34,25 @@ const TransactionPinDialog = ({
       pinInputRef.current.focus();
     }
   }, []);
+
+  // 格式化金额
+  const formatAmount = (amount) => {
+    if (!amount && amount !== 0) return 'RM 0.00';
+    return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // 格式化日期时间
+  const formatDateTime = (timestamp) => {
+    if (!timestamp) return '-';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   // 处理密码输入
   const handlePinChange = (e) => {
@@ -46,9 +71,21 @@ const TransactionPinDialog = ({
       return;
     }
 
+    // 验证收据编号（如果需要）
+    if (requireReceiptNumber && !receiptNumber.trim()) {
+      setError('请输入收据编号');
+      return;
+    }
+
     try {
       setLoading(true);
-      await onConfirm(pin, note);
+      if (requireReceiptNumber) {
+        // Cashier 模式：传递三个参数
+        await onConfirm(pin, receiptNumber.trim(), note.trim());
+      } else {
+        // 通用模式：传递两个参数
+        await onConfirm(pin, note);
+      }
     } catch (err) {
       setError(err.message || '确认失败，请重试');
       setLoading(false);
@@ -69,7 +106,10 @@ const TransactionPinDialog = ({
       <div className="pin-dialog" onClick={(e) => e.stopPropagation()}>
         {/* 对话框头部 */}
         <div className="pin-dialog-header">
-          <h3>{title}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+            <span className="header-icon">🔐</span>
+            <h3>{title}</h3>
+          </div>
           <button className="close-button" onClick={onCancel}>✕</button>
         </div>
 
@@ -79,6 +119,34 @@ const TransactionPinDialog = ({
           {message && (
             <div className="message-box">
               <p className="message-text">{message}</p>
+            </div>
+          )}
+
+          {/* 提交摘要（Cashier 特定） */}
+          {submission && (
+            <div className="submission-summary">
+              <div className="summary-row">
+                <span className="summary-label">提交者：</span>
+                <span className="summary-value">{submission.submitterName}</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-label">角色：</span>
+                <span className="summary-value">{submission.submitterRole}</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-label">金额：</span>
+                <span className="summary-value amount">{formatAmount(submission.amount)}</span>
+              </div>
+              <div className="summary-row">
+                <span className="summary-label">提交时间：</span>
+                <span className="summary-value">{formatDateTime(submission.submittedAt)}</span>
+              </div>
+              {submission.note && (
+                <div className="summary-row">
+                  <span className="summary-label">备注：</span>
+                  <span className="summary-value">{submission.note}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -109,6 +177,29 @@ const TransactionPinDialog = ({
             {error && <p className="error-message">{error}</p>}
           </div>
 
+          {/* 收据编号输入（如果需要） */}
+          {requireReceiptNumber && (
+            <div className="receipt-input-section">
+              <label htmlFor="receiptNumber" className="receipt-label">
+                <span className="label-icon">🧾</span>
+                {receiptNumberLabel} <span className="required-mark">*</span>
+              </label>
+              <input
+                id="receiptNumber"
+                type="text"
+                value={receiptNumber}
+                onChange={(e) => setReceiptNumber(e.target.value)}
+                placeholder={receiptNumberPlaceholder}
+                className="receipt-input"
+                disabled={loading}
+                maxLength={50}
+              />
+              <div className="input-hint">
+                请输入纸本收据上的编号，作为收款凭证
+              </div>
+            </div>
+          )}
+
           {/* 备注输入（可选） */}
           {allowNote && (
             <div className="note-section">
@@ -135,7 +226,7 @@ const TransactionPinDialog = ({
           <div className="security-tip">
             <span className="tip-icon">⚠️</span>
             <span className="tip-text">
-              请妥善保管您的交易密码。此操作不可撤销。
+              {submission ? '请确认已收到现金并当面核对金额后再点击确认。此操作不可撤销。' : '请妥善保管您的交易密码。此操作不可撤销。'}
             </span>
           </div>
         </div>
@@ -152,7 +243,7 @@ const TransactionPinDialog = ({
           <button 
             className="confirm-btn" 
             onClick={handleConfirm}
-            disabled={loading || pin.length !== 6}
+            disabled={loading || pin.length !== 6 || (requireReceiptNumber && !receiptNumber.trim())}
           >
             {loading ? '确认中...' : confirmButtonText}
           </button>

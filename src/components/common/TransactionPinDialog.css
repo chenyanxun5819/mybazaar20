@@ -37,6 +37,7 @@
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   animation: slideUp 0.3s ease-out;
+  box-sizing: border-box;
 }
 
 @keyframes slideUp {
@@ -55,15 +56,20 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px;
+  padding: 20px 24px;
   border-bottom: 2px solid #e2e8f0;
 }
 
 .pin-dialog-header h3 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #2d3748;
   margin: 0;
+}
+
+.header-icon {
+  font-size: 24px;
+  flex-shrink: 0;
 }
 
 .close-button {
@@ -79,6 +85,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .close-button:hover {
@@ -88,10 +95,10 @@
 
 /* ===== 对话框内容 ===== */
 .pin-dialog-content {
-  padding: 24px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 /* ===== 消息提示 ===== */
@@ -107,6 +114,41 @@
   color: #2c5282;
   margin: 0;
   line-height: 1.6;
+}
+
+/* ===== 提交摘要（Cashier特定）===== */
+.submission-summary {
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.summary-label {
+  font-weight: 600;
+  color: #4a5568;
+  flex: 0 0 100px;
+}
+
+.summary-value {
+  color: #2d3748;
+  text-align: right;
+  flex: 1;
+}
+
+.summary-value.amount {
+  color: #c53030;
+  font-weight: 700;
 }
 
 /* ===== 密码输入区域 ===== */
@@ -127,18 +169,20 @@
 
 .label-icon {
   font-size: 18px;
+  flex-shrink: 0;
 }
 
 .pin-input {
   width: 100%;
-  padding: 14px 16px;
+  padding: 12px 16px;
   border: 2px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 8px;
+  letter-spacing: 6px;
   text-align: center;
   transition: all 0.3s ease;
+  box-sizing: border-box;
 }
 
 .pin-input:focus {
@@ -190,6 +234,49 @@
   border: 1px solid #fc8181;
 }
 
+/* ===== 收据编号输入区域 ===== */
+.receipt-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.receipt-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.required-mark {
+  color: #c53030;
+  font-weight: 700;
+}
+
+.receipt-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.receipt-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.input-hint {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 4px;
+}
+
 /* ===== 备注区域 ===== */
 .note-section {
   display: flex;
@@ -212,6 +299,7 @@
   font-family: inherit;
   resize: vertical;
   transition: all 0.3s ease;
+  box-sizing: border-box;
 }
 
 .note-textarea:focus {
@@ -252,20 +340,25 @@
 .pin-dialog-footer {
   display: flex;
   gap: 12px;
-  padding: 24px;
+  padding: 20px 24px;
   border-top: 2px solid #e2e8f0;
+  box-sizing: border-box;
 }
 
 .cancel-btn,
 .confirm-btn {
   flex: 1;
-  padding: 14px 24px;
+  min-width: 0;
+  padding: 12px 20px;
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cancel-btn {
@@ -297,39 +390,56 @@
 @media (max-width: 768px) {
   .pin-dialog {
     width: 95%;
+    max-width: none;
     max-height: 95vh;
   }
 
-  .pin-dialog-header,
-  .pin-dialog-content,
-  .pin-dialog-footer {
-    padding: 20px;
+  .pin-dialog-header {
+    padding: 16px 20px;
   }
 
   .pin-dialog-header h3 {
-    font-size: 18px;
-  }
-
-  .pin-input {
     font-size: 16px;
-    letter-spacing: 6px;
   }
 
-  .pin-dots {
-    gap: 10px;
-  }
-
-  .pin-dot {
-    width: 10px;
-    height: 10px;
+  .pin-dialog-content {
+    padding: 16px 20px;
+    gap: 16px;
   }
 
   .pin-dialog-footer {
-    flex-direction: column;
+    padding: 16px 20px;
   }
 
-  .cancel-btn,
-  .confirm-btn {
-    width: 100%;
+  .pin-input {
+    font-size: 14px;
+    letter-spacing: 4px;
+    padding: 10px 12px;
+  }
+
+  .confirm-btn,
+  .cancel-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .note-textarea {
+    font-size: 13px;
+  }
+
+  .receipt-input {
+    font-size: 13px;
+  }
+
+  .submission-summary {
+    padding: 12px;
+  }
+
+  .summary-row {
+    font-size: 13px;
+  }
+
+  .summary-label {
+    flex: 0 0 80px;
   }
 }

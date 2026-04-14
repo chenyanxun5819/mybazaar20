@@ -12,7 +12,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { maskPhoneNumber } from '../../../services/transactionService';
-import TransactionPinDialog from '../common/TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import './CashSubmission.css';
 
 const CashSubmission = ({ 

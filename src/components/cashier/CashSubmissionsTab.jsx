@@ -16,7 +16,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../../firebase';
-import TransactionPinDialog from '../../common/TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import './CashSubmissionsTab.css';
 
 const CashSubmissionsTab = ({ organizationId, eventId, cashierUid }) => {

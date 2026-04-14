@@ -15,6 +15,8 @@ import {
   Calendar
 } from 'lucide-react';
 import { formatAmount, maskPhoneNumber } from '../../services/transactionService';
+import { useAuth } from '../../contexts/AuthContext';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import './MerchantTransactions.css';
 
 /**
@@ -310,6 +312,8 @@ const MerchantTransactions = ({
   const [allTransactions, setAllTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // 取消交易密码弹窗
+  const [cancelDialog, setCancelDialog] = useState({ open: false, transactionId: null });
   // ⭐ 通知狀態
   const [notification, setNotification] = useState(null);
   const notificationTimeoutRef = useRef(null);
@@ -344,10 +348,41 @@ const MerchantTransactions = ({
     }
   };
 
+  const { userProfile } = useAuth();
+
+  // 统计数据（来自 userProfile roleData）
+  const ownerStats = userProfile?.merchantOwner?.statistics;
+  const asistStats = userProfile?.merchantAsist?.statistics;
+
+  // 统计卡片 inline styles（参考 PointSellerTransactions）
+  const summaryStyles = {
+    wrapper: { width: '100%', marginBottom: '0.75rem' },
+    card: {
+      padding: '1rem 0.75rem',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+      color: '#fff',
+      background: userRole === 'merchantOwner'
+        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+    },
+    headerRow: {
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      marginBottom: '0.75rem', paddingBottom: '0.5rem',
+      borderBottom: '1px solid rgba(255,255,255,0.2)'
+    },
+    label: { fontSize: '0.95rem', fontWeight: '600', opacity: 0.95 },
+    stats: { display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', gap: '0.5rem' },
+    statItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1', textAlign: 'center' },
+    statValue: { fontSize: '1.3rem', fontWeight: '700', marginBottom: '0.2rem' },
+    statLabel: { fontSize: '0.78rem', opacity: 0.85 },
+    statSubtitle: { fontSize: '0.75rem', opacity: 0.75, marginBottom: '0.3rem' },
+    divider: { width: '1px', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'stretch', margin: '0 0.25rem' }
+  };
+
   // ⭐ Tab 配置
   const tabs = [
     { id: 'pending', label: '待收点数', icon: Bell },
-    { id: 'today', label: '今日', icon: Calendar },
     { id: 'all', label: '全部', icon: Receipt }
   ];
 
@@ -545,9 +580,7 @@ const handleConfirmPayment = async (transactionId) => {
   // ============================================
   // ⭐ 5. 取消交易
   // ============================================
-  const handleCancelPayment = async (transactionId) => {
-    const reason = prompt('请输入取消原因（可选）:');
-    
+  const handleCancelPayment = async (transactionId, transactionPin) => {
     try {
       const cancelPayment = httpsCallable(functions, 'cancelMerchantPayment');
       
@@ -555,10 +588,11 @@ const handleConfirmPayment = async (transactionId) => {
         organizationId,
         eventId,
         transactionId,
-        cancelReason: reason || undefined
+        transactionPin
       });
 
       if (result.data.success) {
+        setCancelDialog({ open: false, transactionId: null });
         showNotification(
           'completed',
           '取消成功',
@@ -570,7 +604,8 @@ const handleConfirmPayment = async (transactionId) => {
       }
     } catch (error) {
       console.error('❌ 取消交易失败:', error);
-      showNotification('error', `取消交易失败：${error.message}`);
+      // 展開错误给 TransactionPinDialog（它会展示在 dialog 内部）
+      throw error;
     }
   };
 
@@ -670,13 +705,63 @@ const handleConfirmPayment = async (transactionId) => {
         </div>
       )}
 
-      {/* Tabs Navigation */}
+      {/* ⭐ 销售统计卡片 */}
+      {userRole === 'merchantOwner' && ownerStats && (
+        <div style={summaryStyles.wrapper}>
+          <div style={summaryStyles.card}>
+            <div style={summaryStyles.headerRow}>
+              <span style={summaryStyles.label}>📈 摊位统计</span>
+            </div>
+            <div style={summaryStyles.stats}>
+              <div style={summaryStyles.statItem}>
+                <div style={summaryStyles.statSubtitle}>{ownerStats.transactionCount || 0} 笔</div>
+                <span style={summaryStyles.statValue}>{ownerStats.totalRevenue || 0}</span>
+                <span style={summaryStyles.statLabel}>总收入 (点)</span>
+              </div>
+              <div style={summaryStyles.divider}></div>
+              <div style={summaryStyles.statItem}>
+                <span style={summaryStyles.statValue}>{ownerStats.totalCollected || 0}</span>
+                <span style={summaryStyles.statLabel}>本人收取</span>
+              </div>
+              <div style={summaryStyles.divider}></div>
+              <div style={summaryStyles.statItem}>
+                <span style={summaryStyles.statValue}>{ownerStats.asistsCollected || 0}</span>
+                <span style={summaryStyles.statLabel}>助理收取</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {userRole === 'merchantAsist' && asistStats && (
+        <div style={summaryStyles.wrapper}>
+          <div style={summaryStyles.card}>
+            <div style={summaryStyles.headerRow}>
+              <span style={summaryStyles.label}>📊 我的统计</span>
+            </div>
+            <div style={summaryStyles.stats}>
+              <div style={summaryStyles.statItem}>
+                <div style={summaryStyles.statSubtitle}>{asistStats.transactionCount || 0} 笔</div>
+                <span style={summaryStyles.statValue}>{asistStats.totalCollected || 0}</span>
+                <span style={summaryStyles.statLabel}>累计收取 (点)</span>
+              </div>
+              <div style={summaryStyles.divider}></div>
+              <div style={summaryStyles.statItem}>
+                <div style={summaryStyles.statSubtitle}>{asistStats.todayTransactionCount || 0} 笔</div>
+                <span style={summaryStyles.statValue}>{asistStats.todayCollected || 0}</span>
+                <span style={summaryStyles.statLabel}>今日收取 (点)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs Navigation  348行的tabs集合*/}
       <div className="transactions-tabs">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const count = 
             tab.id === 'pending' ? pendingPayments.length :
-            tab.id === 'today' ? todayTransactions.length :
             allTransactions.length;
 
           return (
@@ -707,41 +792,52 @@ const handleConfirmPayment = async (transactionId) => {
                 <p className="empty-text">顾客扫码付款后会显示在这里</p>
               </div>
             ) : (
-              <div className="pending-payments-grid">
+              <div className="records-card-list">
                 {pendingPayments.map((payment) => (
-                  <PendingPaymentCard
-                    key={payment.id}
-                    payment={payment}
-                    onConfirm={handleConfirmPayment}
-                    onCancel={handleCancelPayment}
-                    userRole={userRole}
-                    loading={loading}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Today Tab - 今日交易 */}
-        {currentTab === 'today' && (
-          <div className="transactions-list">
-            {todayTransactions.length === 0 ? (
-              <div className="transactions-empty">
-                <Calendar className="empty-icon" />
-                <p className="empty-title">今日暂无交易</p>
-                <p className="empty-text">今日的交易记录会显示在这里</p>
-              </div>
-            ) : (
-              <div className="transactions-grid">
-                {todayTransactions.map((transaction) => (
-                  <TransactionCard
-                    key={transaction.id}
-                    transaction={transaction}
-                    onRefund={handleRefund}
-                    userRole={userRole}
-                    currentUserId={currentUserId}
-                  />
+                  <div key={payment.id} className="records-card">
+                    {/* 第一行：时间 + 客户名称 */}
+                    <div className="records-card-first-row">
+                      <div className="records-card-time">
+                        {new Date(payment.timestamp?.toDate()).toLocaleString('zh-CN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}
+                      </div>
+                      <div className="records-card-amount">
+                        {formatAmount(payment.amount)} 点
+                      </div>
+                    </div>
+                    {/* 第二行：客户信息 + 操作按钮 */}
+                    <div className="records-card-second-row">
+                      <div className="records-card-customer-info">
+                        <div className="records-card-customer-name">
+                          {payment.customerEnglishName || payment.customerName || '顾客'}
+                        </div>
+                        <div className="records-card-customer-phone">
+                          {maskPhoneNumber(payment.customerPhone)}
+                        </div>
+                      </div>
+                      <div className="records-card-actions">
+                        <button
+                          onClick={() => handleConfirmPayment(payment.id)}
+                          disabled={loading}
+                          className="action-btn-confirm"
+                          title="确认收款"
+                        >
+                          <CheckCircle size={18} />
+                        </button>
+                        <button
+                          onClick={() => setCancelDialog({ open: true, transactionId: payment.id })}
+                          disabled={loading}
+                          className="action-btn-cancel"
+                          title="取消"
+                        >
+                          <XCircle size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -758,15 +854,44 @@ const handleConfirmPayment = async (transactionId) => {
                 <p className="empty-text">所有交易记录会显示在这里</p>
               </div>
             ) : (
-              <div className="transactions-grid">
+              <div className="records-card-list">
                 {allTransactions.map((transaction) => (
-                  <TransactionCard
-                    key={transaction.id}
-                    transaction={transaction}
-                    onRefund={handleRefund}
-                    userRole={userRole}
-                    currentUserId={currentUserId}
-                  />
+                  <div key={transaction.id} className="records-card">
+                    {/* 第一行：时间 + 交易金额 */}
+                    <div className="records-card-first-row">
+                      <div className="records-card-time">
+                        {new Date(transaction.timestamp?.toDate()).toLocaleString('zh-CN', {
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                      <div className="records-card-amount">
+                        {formatAmount(transaction.amount)} 点
+                      </div>
+                    </div>
+                    {/* 第二行：客户信息 + 状态 */}
+                    <div className="records-card-second-row">
+                      <div className="records-card-customer-info">
+                        <div className="records-card-customer-name">
+                          {transaction.transactionType === 'point_card_payment'
+                            ? `🎫 ${transaction.pointCardNumber || '点数卡 / Point Card'}`
+                            : transaction.customerEnglishName || transaction.customerName || '顾客'}
+                        </div>
+                        <div className="records-card-customer-phone">
+                          {transaction.transactionType === 'point_card_payment'
+                            ? ''
+                            : maskPhoneNumber(transaction.customerPhone)}
+                        </div>
+                      </div>
+                      <div className="records-card-status" style={{ 
+                        color: transaction.status === 'completed' ? '#10b981' : transaction.status === 'refunded' ? '#f59e0b' : transaction.status === 'cancelled' ? '#6b7280' : '#3b82f6' 
+                      }}>
+                        {transaction.status === 'completed' ? '已完成' : transaction.status === 'refunded' ? '已退款' : transaction.status === 'cancelled' ? '已取消' : '待确认'}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -775,11 +900,24 @@ const handleConfirmPayment = async (transactionId) => {
       </div>
 
       {/* ⭐ 角色提示（仅 merchantAsist 显示）*/}
-      {userRole === 'merchantAsist' && currentTab !== 'pending' && (
+      {userRole === 'merchantAsist' && currentTab === 'all' && (
         <div className="transactions-role-notice">
           <AlertCircle className="notice-icon" />
           <p>您只能查看自己确认的交易记录</p>
         </div>
+      )}
+
+      {/* ⭐ 取消交易 - 交易密码確认弹窗 */}
+      {cancelDialog.open && (
+        <TransactionPinDialog
+          title="🔐 取消交易確认"
+          message="请输入交易密码以确认取消此轉帳，點數將退回顧客。"
+          confirmButtonText="✅ 確認取消"
+          onConfirm={async (pin) => {
+            await handleCancelPayment(cancelDialog.transactionId, pin);
+          }}
+          onCancel={() => setCancelDialog({ open: false, transactionId: null })}
+        />
       )}
     </div>
   );

@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import TransactionPinDialog from '../common/TransactionPinDialog';
+import TransactionPinDialog from '@components/common/TransactionPinDialog';
 import qrcodeTicketIcon from '../../../assets/qrcode-ticket.svg';
 import paymentQrcodeIcon from '../../../assets/payment-qrcode.svg';
 import qrIcon from '../../../assets/qr .svg';
