@@ -910,7 +910,7 @@ const handleConfirmPayment = async (transactionId) => {
       {/* ⭐ 取消交易 - 交易密码確认弹窗 */}
       {cancelDialog.open && (
         <TransactionPinDialog
-          title="🔐 取消交易確认"
+          title="取消交易確认"
           message="请输入交易密码以确认取消此轉帳，點數將退回顧客。"
           confirmButtonText="✅ 確認取消"
           onConfirm={async (pin) => {

@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import './TransactionPinDialog.css';
+import KeyIcon from '../../assets/key.svg';
+import PasswordIcon from '../../assets/password.svg';
 
 const TransactionPinDialog = ({ 
   title = '🔐 交易密码验证',
@@ -107,7 +109,17 @@ const TransactionPinDialog = ({
         {/* 对话框头部 */}
         <div className="pin-dialog-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-            <span className="header-icon">🔐</span>
+            <img 
+              src={KeyIcon} 
+              alt="key" 
+              style={{ 
+                width: '20px', 
+                height: '20px', 
+                color: '#1EB5FA',
+                filter: 'invert(0.7) hue-rotate(200deg) saturate(1.5)',
+                display: 'block'
+              }} 
+            />
             <h3>{title}</h3>
           </div>
           <button className="close-button" onClick={onCancel}>✕</button>
@@ -153,7 +165,17 @@ const TransactionPinDialog = ({
           {/* 交易密码输入 */}
           <div className="pin-input-section">
             <label htmlFor="transactionPin" className="pin-label">
-              <span className="label-icon">🔑</span>
+              <img 
+                src={PasswordIcon} 
+                alt="password" 
+                style={{ 
+                  width: '18px', 
+                  height: '18px', 
+                  color: '#1EB5FA',
+                  filter: 'invert(0.7) hue-rotate(200deg) saturate(1.5)',
+                  display: 'block'
+                }} 
+              />
               请输入交易密码
             </label>
             <input

@@ -860,6 +860,10 @@ const UniversalLogin = () => {
 
       console.log('[UniversalLogin] ✅ 用户信息已保存到 localStorage');
 
+      // 🆕 保存 orgEventCode 以便后续使用（如登出时重定向）
+      localStorage.setItem('lastOrgEventCode', orgEventCode);
+      console.log('[UniversalLogin] 💾 已保存 orgEventCode:', orgEventCode);
+
       // 根据角色和设备类型跳转
       // ✅ 关键修复：不要用 getNavigationPath（它不区分设备，会优先导向 manager）
       // 这里必须使用 selectedRole 的结果，确保手机一定进入手机角色页面

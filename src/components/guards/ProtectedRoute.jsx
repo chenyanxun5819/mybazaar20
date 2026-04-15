@@ -39,8 +39,15 @@ const ProtectedRoute = ({ allowedRoles = [], children }) => {
     if (orgEventCode) {
       return <Navigate to={`/login/${orgEventCode}`} replace />;
     } else {
-      // 如果无法提取 orgEventCode，才降级到 /platform/login
-      return <Navigate to="/platform/login" replace />;
+      // 如果无法提取 orgEventCode，尝试从 localStorage 获取最后使用的代码
+      const lastOrgEventCode = localStorage.getItem('lastOrgEventCode');
+      if (lastOrgEventCode) {
+        console.warn('[ProtectedRoute] 无法从URL提取orgEventCode，使用localStorage:', lastOrgEventCode);
+        return <Navigate to={`/login/${lastOrgEventCode}`} replace />;
+      }
+      // 最后的降级方案：使用根路由（会显示帮助页面）
+      console.error('[ProtectedRoute] 无法确定orgEventCode，重定向到根路由');
+      return <Navigate to="/" replace />;
     }
   }
 

@@ -83,6 +83,85 @@ const RedirectToLogin = () => {
   return <Navigate to={`/login/${combinedCode}`} replace />;
 };
 
+// 🆕 根路由处理 - 尝试重定向到正确的登入页面
+const RootRedirect = () => {
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    // 尝试从 localStorage 获取最后使用的 orgEventCode
+    const lastOrgEventCode = localStorage.getItem('lastOrgEventCode');
+    if (lastOrgEventCode) {
+      console.log('[RootRedirect] 使用保存的 orgEventCode:', lastOrgEventCode);
+      navigate(`/login/${lastOrgEventCode}`, { replace: true });
+    } else {
+      console.log('[RootRedirect] 没有保存的 orgEventCode，显示帮助页面');
+      // 没有保存的代码，显示错误页面
+      navigate('/help', { replace: true });
+    }
+  }, [navigate]);
+
+  return (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+      加载中...
+    </div>
+  );
+};
+
+// 🆕 帮助/错误页面 - 当无法确定事件时显示
+const HelpPage = () => {
+  const navigate = useNavigate();
+  
+  return (
+    <div style={{
+      padding: '2rem',
+      textAlign: 'center',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#f3f4f6'
+    }}>
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        padding: '2rem',
+        maxWidth: '500px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+      }}>
+        <h1 style={{ fontSize: '2.5rem', margin: '0 0 1rem 0' }}>📱 MyBazaar</h1>
+        <h2 style={{ fontSize: '1.25rem', color: '#374151', margin: '0 0 1rem 0' }}>欢迎回来</h2>
+        <p style={{ color: '#6b7280', marginBottom: '2rem', lineHeight: '1.6' }}>
+          我们无法找到您最近访问的活动。<br />
+          请使用下方链接返回登入页面。
+        </p>
+        <button
+          onClick={() => window.history.back()}
+          style={{
+            padding: '0.75rem 1.5rem',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '1rem',
+            fontWeight: '600',
+            cursor: 'pointer',
+            marginBottom: '1rem',
+            transition: 'opacity 0.2s'
+          }}
+          onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+          onMouseLeave={(e) => e.target.style.opacity = '1'}
+        >
+          ← 返回上一页
+        </button>
+        <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
+          如果问题持续，请联系管理员或重新登入系统。
+        </p>
+      </div>
+    </div>
+  );
+};
+
 function App() {
   console.log('Current path:', window.location.pathname);
 
@@ -390,7 +469,10 @@ function App() {
       } />
 
       {/* 默认路由 */}
-      <Route path="/" element={<Navigate to="/platform/login" replace />} />
+      <Route path="/" element={<RootRedirect />} />
+
+      {/* 帮助页面 */}
+      <Route path="/help" element={<HelpPage />} />
 
       {/* 404 */}
       <Route path="*" element={
@@ -406,17 +488,25 @@ function App() {
           <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
           <p style={{ fontSize: '1.25rem', color: '#6b7280' }}>页面不存在</p>
           <a
-            href="/platform/login"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.back();
+            }}
             style={{
               marginTop: '1rem',
               padding: '0.75rem 1.5rem',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               color: 'white',
               textDecoration: 'none',
-              borderRadius: '8px'
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'opacity 0.2s'
             }}
+            onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+            onMouseLeave={(e) => e.target.style.opacity = '1'}
           >
-            回到登录页
+            ← 返回上一页
           </a>
         </div>
       } />

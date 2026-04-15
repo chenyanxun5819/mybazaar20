@@ -23,8 +23,14 @@ const EventManagerLogin = () => {
     if (orgEventCode) {
       navigate(`/login/${orgEventCode}`, { replace: true });
     } else {
-      // 如果没有 orgEventCode，重定向到 Platform Admin 登录
-      navigate('/platform/login', { replace: true });
+      // 如果没有 orgEventCode，尝试从 localStorage 获取
+      const lastOrgEventCode = localStorage.getItem('lastOrgEventCode');
+      if (lastOrgEventCode) {
+        navigate(`/login/${lastOrgEventCode}`, { replace: true });
+      } else {
+        // 最后才重定向到根路由
+        navigate('/', { replace: true });
+      }
     }
   }, [orgEventCode, navigate]);
 

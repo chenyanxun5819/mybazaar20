@@ -883,8 +883,14 @@ const AuditorDashboard = () => {
       if (targetRoute && targetRoute !== '-') {
         navigate(`/login/${targetRoute}`);
       } else {
-        // 如果都无效，返回通用登录页
-        navigate('/platform/login');
+        // 如果都无效，尝试从 localStorage 获取最后使用的 orgEventCode
+        const lastOrgEventCode = localStorage.getItem('lastOrgEventCode');
+        if (lastOrgEventCode) {
+          navigate(`/login/${lastOrgEventCode}`);
+        } else {
+          // 最后才重定向到根路由或帮助页面
+          navigate('/', { replace: true });
+        }
       }
     } catch (error) {
       console.error('登出失败:', error);

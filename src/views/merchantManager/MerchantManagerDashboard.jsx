@@ -52,7 +52,14 @@ const MerchantManagerDashboard = () => {
     if (orgEventCode) {
       navigate(`/login/${orgEventCode}`, { replace: true });
     } else {
-      navigate('/platform/login', { replace: true });
+      // 尝试从 localStorage 获取最后使用的 orgEventCode
+      const lastOrgEventCode = localStorage.getItem('lastOrgEventCode');
+      if (lastOrgEventCode) {
+        navigate(`/login/${lastOrgEventCode}`, { replace: true });
+      } else {
+        // 最后的降级方案
+        navigate('/', { replace: true });
+      }
     }
   };
 

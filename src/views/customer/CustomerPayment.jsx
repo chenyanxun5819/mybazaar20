@@ -5,6 +5,7 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../config/firebase';
 import QRScanner from '../../components/QRScanner';
+import TransactionPinDialog from '../../components/common/TransactionPinDialog';
 
 /**
  * Customer付款页面 - 使用交易密码验证
@@ -19,13 +20,12 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
   const { orgEventCode: orgEventCodeParam } = useParams();
   const orgEventCode = orgEventCodeProp || orgEventCodeParam;
 
-  const [step, setStep] = useState('scan'); // scan | confirm | pin | processing | success
+  const [step, setStep] = useState('scan'); // scan | confirm | processing | success
   const [customerData, setCustomerData] = useState(null);
   const [merchantData, setMerchantData] = useState(null);
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState('');
-  const [transactionPin, setTransactionPin] = useState('');
-  const [pinError, setPinError] = useState('');
+  const [showPinDialog, setShowPinDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -293,7 +293,7 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
     return true;
   };
 
-  // 确认金额后，进入 PIN 输入界面
+  // 确认金额后，打开 PIN 对话框
   const handleConfirmAmount = () => {
     console.log('[CustomerPayment] ========== 确认金额 ==========');
 
@@ -302,30 +302,25 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
       return;
     }
 
-    console.log('[CustomerPayment] 金额验证通过，进入 PIN 输入界面');
-    setStep('pin');
-    setTransactionPin('');
-    setPinError('');
+    console.log('[CustomerPayment] 金额验证通过，打开 PIN 对话框');
+    setError(null);
+    setShowPinDialog(true);
   };
 
-  const handleExecutePayment = async () => {
+  const handleExecutePayment = async (transactionPin) => {
     console.log('[CustomerPayment] ========== 开始执行支付 ==========');
 
     // 验证 PIN 格式
     if (!transactionPin || transactionPin.length !== 6) {
-      setPinError('请输入6位交易密码');
-      return;
+      throw new Error('请输入6位交易密码');
     }
 
     if (!/^\d{6}$/.test(transactionPin)) {
-      setPinError('交易密码必须是6位数字');
-      return;
+      throw new Error('交易密码必须是6位数字');
     }
 
     setLoading(true);
     setError(null);
-    setPinError('');
-    setStep('processing');
 
     try {
       console.log('[CustomerPayment] 调用 processCustomerPayment...');
@@ -337,10 +332,11 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
         amount: parseFloat(amount),
         organizationId: merchantData.organizationId,
         eventId: merchantData.eventId,
-        transactionPin: transactionPin  // ← 传递交易密码给后端验证
+        transactionPin // ← 传递交易密码给后端验证
       });
 
       console.log('[CustomerPayment] 支付成功:', result.data);
+      setShowPinDialog(false);
 
       // ⭐ 修改（2026-01-23）：更新本地 customerData 状态
       // 后端已立即扣除，这里同步状态以显示正确的剩余余额
@@ -397,22 +393,23 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
       // 处理交易密码相关错误
       if (error.code === 'permission-denied') {
         errorMessage = error.message || '交易密码错误';
-        setPinError(errorMessage);
-        setStep('pin'); // 返回 PIN 输入界面
+        throw new Error(errorMessage);
       } else if (error.code === 'failed-precondition') {
         errorMessage = error.message || '操作失败';
         if (error.message?.includes('锁定')) {
-          setPinError(errorMessage);
-          setStep('pin');
+          throw new Error(errorMessage);
         } else {
+          setShowPinDialog(false);
           setError(errorMessage);
           setStep('confirm');
         }
       } else if (error.message) {
         errorMessage = error.message;
+        setShowPinDialog(false);
         setError(errorMessage);
         setStep('confirm');
       } else {
+        setShowPinDialog(false);
         setError(errorMessage);
         setStep('confirm');
       }
@@ -431,8 +428,6 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
             onClick={() => {
               if (step === 'confirm') {
                 setStep('scan');
-              } else if (step === 'pin') {
-                setStep('confirm');
               } else {
                 handleReturnToDashboard();
               }
@@ -443,7 +438,6 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
           </button>
           <h1 style={styles.title}>
             {step === 'confirm' && '确认支付'}
-            {step === 'pin' && '输入交易密码'}
             {step === 'processing' && '处理中...'}
             {step === 'success' && '支付成功'}
           </h1>
@@ -548,74 +542,6 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
           </>
         )}
 
-        {/* 交易密码输入页面 */}
-        {step === 'pin' && (
-          <div style={styles.pinContainer}>
-            <div style={styles.pinCard}>
-              <div style={styles.pinIcon}>🔐</div>
-              <h2 style={styles.pinTitle}>请输入交易密码</h2>
-              <p style={styles.pinSubtitle}>
-                向 {merchantData?.stallName || '商家'} 支付 {amount} 点
-              </p>
-
-              {/* PIN 输入框 */}
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength="6"
-                value={transactionPin}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, '');
-                  setTransactionPin(value);
-                  setPinError('');
-                }}
-                placeholder="请输入6位数字"
-                style={{
-                  ...styles.pinInput,
-                  ...(pinError ? styles.inputError : {})
-                }}
-                autoFocus
-                disabled={loading}
-              />
-
-              {pinError && <p style={styles.errorText}>{pinError}</p>}
-
-              <p style={styles.pinHint}>
-                交易密码是您在注册时设置的6位数字密码
-              </p>
-
-              {/* 操作按钮 */}
-              <div style={styles.pinActions}>
-                <button
-                  onClick={() => {
-                    setStep('confirm');
-                    setTransactionPin('');
-                    setPinError('');
-                  }}
-                  style={{
-                    ...styles.button,
-                    ...styles.secondaryButton
-                  }}
-                  disabled={loading}
-                >
-                  返回修改金额
-                </button>
-                <button
-                  onClick={handleExecutePayment}
-                  style={{
-                    ...styles.button,
-                    ...styles.primaryButton,
-                    ...(loading ? styles.buttonDisabled : {})
-                  }}
-                  disabled={loading || transactionPin.length !== 6}
-                >
-                  {loading ? '验证中...' : '确认支付'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 处理中页面 */}
         {step === 'processing' && (
           <div style={styles.processingContainer}>
@@ -642,7 +568,7 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
               <p style={styles.successDetail}>
                 <span style={styles.detailLabel}>剩余余额：</span>
                 <span style={styles.detailValue}>
-                  {(customerData?.customer?.pointsAccount?.availablePoints || 0) - parseFloat(amount)} 点
+                  {customerData?.customer?.pointsAccount?.availablePoints || 0} 点
                 </span>
               </p>
             </div>
@@ -656,6 +582,16 @@ const CustomerPayment = ({ embedded = false, orgEventCode: orgEventCodeProp, onB
           </div>
         )}
       </div>
+
+      {showPinDialog && merchantData && (
+        <TransactionPinDialog
+          title="🔐 确认支付"
+          message={`请输入交易密码，向 ${merchantData.stallName || '商家'} 支付 ${amount} 点。`}
+          confirmButtonText="确认支付"
+          onConfirm={handleExecutePayment}
+          onCancel={() => setShowPinDialog(false)}
+        />
+      )}
     </div>
   );
 };
@@ -856,65 +792,6 @@ const styles = {
   buttonDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed'
-  },
-  pinContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: 'calc(100vh - 200px)',
-    width: '100%',
-    maxWidth: '100%',
-    padding: '0 1rem',
-    boxSizing: 'border-box'
-  },
-  pinCard: {
-    width: '100%',
-    maxWidth: '380px',
-    padding: '1.5rem',
-    backgroundColor: '#fff',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    textAlign: 'center',
-    boxSizing: 'border-box'
-  },
-  pinIcon: {
-    fontSize: '2.5rem',
-    marginBottom: '0.75rem'
-  },
-  pinTitle: {
-    fontSize: '1.3rem',
-    fontWeight: '600',
-    color: '#333',
-    margin: '0 0 0.4rem 0'
-  },
-  pinSubtitle: {
-    fontSize: '0.9rem',
-    color: '#666',
-    marginBottom: '1.5rem'
-  },
-  pinInput: {
-    width: '100%',
-    padding: '1.2rem',
-    fontSize: '1.8rem',
-    fontWeight: '600',
-    textAlign: 'center',
-    letterSpacing: '0.5rem',
-    border: '2px solid #ddd',
-    borderRadius: '8px',
-    outline: 'none',
-    marginBottom: '0.75rem',
-    boxSizing: 'border-box'
-  },
-  pinHint: {
-    fontSize: '0.8rem',
-    color: '#999',
-    marginBottom: '1.5rem'
-  },
-  pinActions: {
-    display: 'flex',
-    gap: '0.6rem',
-    width: '100%',
-    minWidth: 0
   },
   processingContainer: {
     display: 'flex',
