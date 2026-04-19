@@ -14,9 +14,16 @@ import {
   User,
   Calendar
 } from 'lucide-react';
-import { formatAmount, maskPhoneNumber } from '../../services/transactionService';
+import { formatAmount } from '../../services/transactionService';
+import { formatMerchantCustomerDisplay, formatShortDateTime, transactionListStyles } from '../common/transactionUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import TransactionPinDialog from '@components/common/TransactionPinDialog';
+
+// 共享的统计卡片背景色（可由 prop 覆写）
+const DEFAULT_SUMMARY_CARD_BACKGROUNDS = {
+  owner: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  asist: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+};
 import './MerchantTransactions.css';
 
 /**
@@ -53,7 +60,6 @@ const PendingPaymentCard = ({ payment, onConfirm, onCancel, userRole, loading })
           </div>
           <div className="customer-info">
             <p className="customer-name">{payment.customerName || '顾客'}</p>
-            <p className="customer-phone">{maskPhoneNumber(payment.customerPhone)}</p>
           </div>
         </div>
         <div className="pending-payment-amount">
@@ -168,7 +174,6 @@ const TransactionCard = ({ transaction, onRefund, userRole, currentUserId }) => 
           </div>
           <div className="customer-info">
             <p className="customer-name">{transaction.customerName || '顾客'}</p>
-            <p className="customer-phone">{maskPhoneNumber(transaction.customerPhone)}</p>
           </div>
         </div>
         <div 
@@ -304,7 +309,8 @@ const MerchantTransactions = ({
   organizationId, 
   eventId, 
   userRole,
-  currentUserId 
+  currentUserId,
+  summaryCardBackgrounds = null
 }) => {
   const [currentTab, setCurrentTab] = useState('pending');
   const [pendingPayments, setPendingPayments] = useState([]);
@@ -354,6 +360,9 @@ const MerchantTransactions = ({
   const ownerStats = userProfile?.merchantOwner?.statistics;
   const asistStats = userProfile?.merchantAsist?.statistics;
 
+  // 合併外部傳入的背景設定或使用預設值
+  const backgrounds = summaryCardBackgrounds || DEFAULT_SUMMARY_CARD_BACKGROUNDS;
+
   // 统计卡片 inline styles（参考 PointSellerTransactions）
   const summaryStyles = {
     wrapper: { width: '100%', marginBottom: '0.75rem' },
@@ -362,9 +371,7 @@ const MerchantTransactions = ({
       borderRadius: '12px',
       boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
       color: '#fff',
-      background: userRole === 'merchantOwner'
-        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+      background: userRole === 'merchantOwner' ? backgrounds.owner : backgrounds.asist
     },
     headerRow: {
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -781,9 +788,8 @@ const handleConfirmPayment = async (transactionId) => {
       </div>
 
       {/* Tab Content */}
-      <div className="transactions-content">
-        {/* ⭐ Pending Tab - 待收点数 */}
-        {currentTab === 'pending' && (
+      {/* ⭐ Pending Tab - 待收点数 */}
+      {currentTab === 'pending' && (
           <div className="transactions-list">
             {pendingPayments.length === 0 ? (
               <div className="transactions-empty">
@@ -792,48 +798,40 @@ const handleConfirmPayment = async (transactionId) => {
                 <p className="empty-text">顾客扫码付款后会显示在这里</p>
               </div>
             ) : (
-              <div className="records-card-list">
+              <div style={transactionListStyles.cardList}>
                 {pendingPayments.map((payment) => (
-                  <div key={payment.id} className="records-card">
-                    {/* 第一行：时间 + 客户名称 */}
-                    <div className="records-card-first-row">
-                      <div className="records-card-time">
-                        {new Date(payment.timestamp?.toDate()).toLocaleString('zh-CN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
+                  <div key={payment.id} style={transactionListStyles.recordCard}>
+                    {/* 第一行：时间 + 交易ID */}
+                    <div style={transactionListStyles.recordCardFirstRow}>
+                      <div style={transactionListStyles.recordCardDate}>
+                        {formatShortDateTime(payment.timestamp)}
                       </div>
-                      <div className="records-card-amount">
-                        {formatAmount(payment.amount)} 点
+                      <div style={transactionListStyles.recordCardTransId}>
+                        {payment.id}
                       </div>
                     </div>
-                    {/* 第二行：客户信息 + 操作按钮 */}
-                    <div className="records-card-second-row">
-                      <div className="records-card-customer-info">
-                        <div className="records-card-customer-name">
-                          {payment.customerEnglishName || payment.customerName || '顾客'}
-                        </div>
-                        <div className="records-card-customer-phone">
-                          {maskPhoneNumber(payment.customerPhone)}
-                        </div>
+                    {/* 第二行：客户名称 + 金额 + 操作按钮 */}
+                    <div style={transactionListStyles.recordCardSecondRow}>
+                      <div style={transactionListStyles.recordCardName}>
+                        {formatMerchantCustomerDisplay(payment)}
                       </div>
-                      <div className="records-card-actions">
+                      <div style={{...transactionListStyles.recordCardQuantity, display: 'flex', alignItems: 'center', gap: '0.375rem'}}>
+                        <span>{formatAmount(payment.amount)} 点</span>
                         <button
                           onClick={() => handleConfirmPayment(payment.id)}
                           disabled={loading}
-                          className="action-btn-confirm"
+                          style={{padding: '0.1875rem 0.375rem', fontSize: '0.6875rem', lineHeight: 1, cursor: 'pointer'}}
                           title="确认收款"
                         >
-                          <CheckCircle size={18} />
+                          ✅
                         </button>
                         <button
                           onClick={() => setCancelDialog({ open: true, transactionId: payment.id })}
                           disabled={loading}
-                          className="action-btn-cancel"
+                          style={{padding: '0.1875rem 0.375rem', fontSize: '0.6875rem', lineHeight: 1, cursor: 'pointer'}}
                           title="取消"
                         >
-                          <XCircle size={18} />
+                          ❌
                         </button>
                       </div>
                     </div>
@@ -845,59 +843,49 @@ const handleConfirmPayment = async (transactionId) => {
         )}
 
         {/* All Tab - 所有交易 */}
-        {currentTab === 'all' && (
-          <div className="transactions-list">
-            {allTransactions.length === 0 ? (
+        {currentTab === 'all' && (allTransactions.length === 0 ? (
               <div className="transactions-empty">
                 <Receipt className="empty-icon" />
                 <p className="empty-title">暂无交易记录</p>
                 <p className="empty-text">所有交易记录会显示在这里</p>
               </div>
             ) : (
-              <div className="records-card-list">
+              <div style={transactionListStyles.cardList}>
                 {allTransactions.map((transaction) => (
-                  <div key={transaction.id} className="records-card">
-                    {/* 第一行：时间 + 交易金额 */}
-                    <div className="records-card-first-row">
-                      <div className="records-card-time">
-                        {new Date(transaction.timestamp?.toDate()).toLocaleString('zh-CN', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                  <div key={transaction.id} style={transactionListStyles.recordCard}>
+                    {/* 第一行：时间 + 交易ID */}
+                    <div style={transactionListStyles.recordCardFirstRow}>
+                      <div style={transactionListStyles.recordCardDate}>
+                        {formatShortDateTime(transaction.timestamp)}
                       </div>
-                      <div className="records-card-amount">
-                        {formatAmount(transaction.amount)} 点
+                      <div style={transactionListStyles.recordCardTransId}>
+                        {transaction.id}
                       </div>
                     </div>
-                    {/* 第二行：客户信息 + 状态 */}
-                    <div className="records-card-second-row">
-                      <div className="records-card-customer-info">
-                        <div className="records-card-customer-name">
-                          {transaction.transactionType === 'point_card_payment'
-                            ? `🎫 ${transaction.pointCardNumber || '点数卡 / Point Card'}`
-                            : transaction.customerEnglishName || transaction.customerName || '顾客'}
-                        </div>
-                        <div className="records-card-customer-phone">
-                          {transaction.transactionType === 'point_card_payment'
-                            ? ''
-                            : maskPhoneNumber(transaction.customerPhone)}
-                        </div>
+                    {/* 第二行：客户信息 + 金额 + 状态 */}
+                    <div style={transactionListStyles.recordCardSecondRow}>
+                      <div style={transactionListStyles.recordCardName}>
+                        {transaction.transactionType === 'point_card_payment'
+                          ? `🎫 ${transaction.pointCardNumber || '点数卡 / Point Card'}`
+                          : formatMerchantCustomerDisplay(transaction)}
                       </div>
-                      <div className="records-card-status" style={{ 
-                        color: transaction.status === 'completed' ? '#10b981' : transaction.status === 'refunded' ? '#f59e0b' : transaction.status === 'cancelled' ? '#6b7280' : '#3b82f6' 
-                      }}>
-                        {transaction.status === 'completed' ? '已完成' : transaction.status === 'refunded' ? '已退款' : transaction.status === 'cancelled' ? '已取消' : '待确认'}
+                      <div style={{...transactionListStyles.recordCardQuantity, display: 'flex', alignItems: 'center', gap: '0.375rem'}}>
+                        <span>{formatAmount(transaction.amount)} 点</span>
+                        <span style={{ 
+                          fontSize: '0.6875rem',
+                          padding: '0.1875rem 0.375rem',
+                          borderRadius: '4px',
+                          backgroundColor: transaction.status === 'completed' ? '#d1fae5' : transaction.status === 'refunded' ? '#fef3c7' : transaction.status === 'cancelled' ? '#f3f4f6' : '#dbeafe',
+                          color: transaction.status === 'completed' ? '#065f46' : transaction.status === 'refunded' ? '#92400e' : transaction.status === 'cancelled' ? '#374151' : '#1e40af'
+                        }}>
+                          {transaction.status === 'completed' ? '已完成' : transaction.status === 'refunded' ? '已退款' : transaction.status === 'cancelled' ? '已取消' : '待确认'}
+                        </span>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        )}
-      </div>
+            ))}
 
       {/* ⭐ 角色提示（仅 merchantAsist 显示）*/}
       {userRole === 'merchantAsist' && currentTab === 'all' && (

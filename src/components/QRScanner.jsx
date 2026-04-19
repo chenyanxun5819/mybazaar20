@@ -406,7 +406,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
           </button>
         </div>
       ) : (
-        <div style={styles.scannerContainer}>
+        <>
           {/* ⬆️ 扫码提示框 */}
           <div style={styles.scannerTips}>
             <p style={styles.scannerTipText}>💡 保持 QR Code 在画面中央，距离 10-20cm</p>
@@ -417,7 +417,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
 
           {/* 停止扫描按钮 */}
           <button onClick={stopScanning} style={styles.cancelButton}>停止扫描</button>
-        </div>
+        </>
       )}
 
       {/* 调试面板 */}

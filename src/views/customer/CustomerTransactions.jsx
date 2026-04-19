@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
+import { formatShortDateTime, transactionListStyles } from '../../components/common/transactionUtils';
 import refreshIcon from '../../assets/refresh.svg';
 import paidIcon from '../../assets/paid.svg';
 import walletIncomeIcon from '../../assets/wallet-income.svg';
@@ -383,7 +384,7 @@ const CustomerTransactions = ({ embedded = false }) => {
         )}
 
         {!loading && !error && filteredTransactions.length > 0 && (
-          <div style={styles.transactionList}>
+          <div style={transactionListStyles.cardList}>
             {filteredTransactions.map(tx => {
               const typeInfo = getTransactionTypeLabel(tx);
               const isNegative = tx.transactionType === 'customer_to_merchant' ||
@@ -404,63 +405,56 @@ const CustomerTransactions = ({ embedded = false }) => {
                 <div
                   key={tx.id}
                   onClick={() => handleViewDetail(tx)}
-                  style={styles.transactionCard}
+                  style={{...transactionListStyles.recordCard, cursor: 'pointer'}}
                 >
-                  <div style={styles.transactionLeft}>
-                    <div style={{
-                      ...styles.transactionIcon,
-                      backgroundColor: typeInfo.color + '20'
-                    }}>
-                      <SVGIcon 
-                        src={typeInfo.icon} 
-                        color={typeInfo.iconColor}
-                        width="28px" 
-                        height="28px" 
-                      />
+                  {/* 第一行：时间 + 交易ID */}
+                  <div style={transactionListStyles.recordCardFirstRow}>
+                    <div style={transactionListStyles.recordCardDate}>
+                      {formatShortDateTime(tx.timestamp)}
                     </div>
-                    <div style={styles.transactionInfo}>
-                      <div style={styles.transactionType}>{typeInfo.label}</div>
-                      <div style={styles.transactionTime}>{formatTime(tx.timestamp)}</div>
-                      
-                      {/* 交易对象 */}
-                      {tx.transactionType === 'customer_to_merchant' && (
-                        <div style={styles.transactionTarget}>
-                          {tx.merchantName || '商家'}
-                        </div>
-                      )}
-                      {tx.transactionType === 'customer_transfer' && (
-                        <div style={styles.transactionTarget}>
-                          {tx.fromUser?.userId === customerData.userId 
-                            ? `转给 ${tx.toUser?.userName || '未知'}` 
-                            : `来自 ${tx.fromUser?.userName || '未知'}`}
-                        </div>
-                      )}
-                      {tx.transactionType === 'point_card_topup' && (
-                        <div style={styles.transactionTarget}>
-                          卡号：{tx.cardNumber || '未知'}
-                        </div>
-                      )}
+                    <div style={transactionListStyles.recordCardTransId}>
+                      {tx.id}
                     </div>
                   </div>
 
-                  <div style={styles.transactionRight}>
-                    {/* 🎨 状态徽章 */}
-                    {tx.status !== 'completed' && (
-                      <div style={{
-                        ...styles.statusBadge,
-                        backgroundColor: statusBadge.bg,
-                        color: statusBadge.color
-                      }}>
-                        {statusBadge.label}
+                  {/* 第二行：交易类型+对象 + 金额+状态 */}
+                  <div style={transactionListStyles.recordCardSecondRow}>
+                    <div style={transactionListStyles.recordCardLeftInfo}>
+                      <div style={transactionListStyles.recordCardName}>
+                        {typeInfo.label}
                       </div>
-                    )}
-                    <div style={{
-                      ...styles.transactionAmount,
-                      color: isNegative ? '#f44336' : '#4CAF50'
-                    }}>
-                      {isNegative ? '-' : '+'}{tx.amount}
+                      <div style={transactionListStyles.recordCardPhone}>
+                        {tx.transactionType === 'customer_to_merchant' && (
+                          `${tx.merchantName || '商家'}`
+                        )}
+                        {tx.transactionType === 'customer_transfer' && (
+                          tx.fromUser?.userId === customerData.userId 
+                            ? `转给 ${tx.toUser?.userName || '未知'}` 
+                            : `来自 ${tx.fromUser?.userName || '未知'}`
+                        )}
+                        {tx.transactionType === 'point_card_topup' && (
+                          `卡号：${tx.cardNumber || '未知'}`
+                        )}
+                      </div>
                     </div>
-                    <div style={styles.transactionArrow}>›</div>
+                    <div style={{...transactionListStyles.recordCardQuantity, display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                      {tx.status !== 'completed' && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '4px',
+                          backgroundColor: statusBadge.bg,
+                          color: statusBadge.color,
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {statusBadge.label}
+                        </div>
+                      )}
+                      <span style={{ color: isNegative ? '#f44336' : '#4CAF50' }}>
+                        {isNegative ? '-' : '+'}{tx.amount}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );

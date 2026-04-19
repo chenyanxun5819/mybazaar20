@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { maskPhoneNumber } from '../../../services/transactionService';
+import { formatPointSellerCustomerDisplay, formatShortDateTime } from '../../../components/common/transactionUtils';
 import './PointSellerTransactions.css';
 
 const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
@@ -28,18 +28,6 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
-
-  // 短日期格式 (dd MM, hh:mm)，月份用英文缩写
-  const formatShortDateTime = (timestamp) => {
-    if (!timestamp) return '-';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = months[date.getMonth()];
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${day} ${month}, ${hours}:${minutes}`;
   };
 
   // 过滤记录
@@ -165,13 +153,8 @@ const PointSellerTransactions = ({ statistics, records, onRefresh }) => {
                 <div style={styles.recordCardSecondRow}>
                   {record.transactionType === 'pointseller_to_customer' ? (
                     <>
-                      <div style={styles.recordCardLeftInfo}>
-                        <div style={styles.recordCardName}>
-                          {record.customerEnglishName || record.customerName || '未知'}
-                        </div>
-                        <div style={styles.recordCardPhone}>
-                          {maskPhoneNumber(record.customerPhone || '')}
-                        </div>
+                      <div style={styles.recordCardName}>
+                        {formatPointSellerCustomerDisplay(record)}
                       </div>
                       <div style={styles.recordCardQuantity}>
                         {record.pointAmount || record.amount || 0} pts

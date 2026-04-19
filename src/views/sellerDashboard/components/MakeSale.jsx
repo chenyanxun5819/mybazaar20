@@ -12,9 +12,14 @@ import { useEvent } from '../../../contexts/EventContext';
 import { useSellerStats } from '../hooks/useSellerStats';
 
 function MakeSale() {
-  const { userProfile } = useAuth();
+  const { userProfile, refreshProfile } = useAuth();
   const { organizationId, eventId } = useEvent();
-  const { stats: sellerStats, loading: statsLoading } = useSellerStats();
+  const {
+    stats: sellerStats,
+    loading: statsLoading,
+    refresh: refreshSellerStats,
+    applyLocalStatsUpdate
+  } = useSellerStats();
   const [customerPhone, setCustomerPhone] = useState('');
   const [amount, setAmount] = useState('');
   const [customer, setCustomer] = useState(null);
@@ -213,6 +218,17 @@ function MakeSale() {
 
       console.log('[MakeSale] ✅ 销售成功:', result.data);
 
+      const saleResult = result.data?.data || {};
+
+      applyLocalStatsUpdate((previousStats) => ({
+        ...previousStats,
+        availablePoints: saleResult.sellerBalanceAfter ?? Math.max((previousStats.availablePoints || 0) - saleAmount, 0),
+        totalPointsSold: (previousStats.totalPointsSold || 0) + saleAmount,
+        totalRevenue: (previousStats.totalRevenue || 0) + saleAmount,
+        totalCashCollected: (previousStats.totalCashCollected || 0) + saleAmount,
+        pendingCollection: (previousStats.pendingCollection || 0) + saleAmount
+      }));
+
       // 成功提示
       setSuccessMessage(`销售成功！金额: RM ${saleAmount}，客户获得 ${saleAmount} 点`);
 
@@ -223,6 +239,23 @@ function MakeSale() {
       setShowPinInput(false);
       setTransactionPin('');
       setPinError('');
+
+      // 主動重新抓取 seller 統計資料（確保庫存立刻更新）
+      try {
+        if (typeof refreshSellerStats === 'function') {
+          await refreshSellerStats();
+        }
+      } catch (e) {
+        console.warn('[MakeSale] refreshSellerStats 失敗:', e);
+      }
+
+      try {
+        if (typeof refreshProfile === 'function') {
+          await refreshProfile();
+        }
+      } catch (e) {
+        console.warn('[MakeSale] refreshProfile 失敗:', e);
+      }
 
     } catch (err) {
       console.error('[MakeSale] 销售失败:', err);

@@ -1,25 +1,9 @@
 import React from 'react';
 import { useTransactions } from '../hooks/useTransactions';
-import { maskPhoneNumber } from '../../../services/transactionService';
-import HandshakeDealIcon from '../../../assets/handshake-deal-loan.svg?react';
+import { formatCustomerDisplayName, formatShortDateTime, transactionListStyles } from '../../../components/common/transactionUtils';
 
 export function SellerTransactions() {
   const { transactions, loading, error } = useTransactions();
-
-  const getCustomerDisplayName = (tx) => {
-    const englishName = tx.customerBasicInfo?.englishName?.trim();
-    const phoneLastFour = tx.customerBasicInfo?.phoneNumber?.slice(-4);
-
-    if (englishName && phoneLastFour) {
-      return `${englishName} ${phoneLastFour}`;
-    }
-
-    if (englishName) {
-      return englishName;
-    }
-
-    return tx.customerName || '未知';
-  };
 
   if (loading) {
     return (
@@ -38,25 +22,10 @@ export function SellerTransactions() {
     );
   }
 
-  // 格式化时间戳
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '未知时间';
-
-    // Firestore Timestamp 对象
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
-
   // 计算总计
   const totalAmount = transactions.reduce((sum, tx) => sum + (tx.points || 0), 0);
   const totalCount = transactions.length;
+  const styles = transactionListStyles;
 
   return (
     <>
@@ -81,30 +50,27 @@ export function SellerTransactions() {
           </div>
 
           {/* 交易列表 */}
-          <div className="transactions-list">
+          <div style={styles.cardList}>
             {transactions.map((tx) => (
-              <div key={tx.id} className="transaction-card-item">
-                {/* 左侧图标 */}
-                <div className="transaction-card-icon" style={{ color: '#f44336' }}>
-                  <HandshakeDealIcon width="28px" height="28px" />
-                </div>
-
-                {/* 中间信息 */}
-                <div className="transaction-card-info">
-                  <div className="transaction-card-date">
-                    {formatTimestamp(tx.timestamp)}
+              <div key={tx.id} style={styles.recordCard}>
+                {/* 第一行：短日期 + 交易序号，分散对齐 */}
+                <div style={styles.recordCardFirstRow}>
+                  <div style={styles.recordCardDate}>
+                    {formatShortDateTime(tx.timestamp)}
                   </div>
-                  <div className="transaction-card-customer">
-                    {tx.customerBasicInfo?.englishName || '未知'}
-                  </div>
-                  <div className="transaction-card-phone">
-                    {maskPhoneNumber(tx.customerBasicInfo?.phoneNumber || '')}
+                  <div style={styles.recordCardTransId}>
+                    {tx.id}
                   </div>
                 </div>
 
-                {/* 右侧金额 */}
-                <div className="transaction-card-amount">
-                  RM {tx.amount || 0}
+                {/* 第二行：客户信息 + 金额 */}
+                <div style={styles.recordCardSecondRow}>
+                  <div style={styles.recordCardName}>
+                    {formatCustomerDisplayName(tx)}
+                  </div>
+                  <div style={styles.recordCardQuantity}>
+                    RM {tx.amount || 0}
+                  </div>
                 </div>
               </div>
             ))}

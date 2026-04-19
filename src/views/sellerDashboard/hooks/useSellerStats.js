@@ -1,39 +1,83 @@
-import { useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useEvent } from '../../../contexts/EventContext';
 
 /**
  * Hook: 获取 Seller 统计数据
  * 实时监听 users/{userId} 的 seller 对象
  */
 export function useSellerStats() {
-  // 🔥 修复：使用 userProfile 而不是 currentUser
-  const { userProfile } = useAuth();
+  const { currentUser, userProfile } = useAuth();
+  const { organizationId, eventId } = useEvent();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const resolvedOrganizationId = organizationId || userProfile?.organizationId;
+  const resolvedEventId = eventId || userProfile?.eventId;
+  const resolvedUserId = userProfile?.userId || currentUser?.uid;
+
+  const userRef = useMemo(() => {
+    if (!resolvedOrganizationId || !resolvedEventId || !resolvedUserId) {
+      return null;
+    }
+
+    return doc(
+      db,
+      `organizations/${resolvedOrganizationId}/events/${resolvedEventId}/users/${resolvedUserId}`
+    );
+  }, [resolvedOrganizationId, resolvedEventId, resolvedUserId]);
+
+  // 提供一個主動重新抓取的函式，供使用者在必要時觸發一次性讀取
+  const refresh = async () => {
+    if (!userRef) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        const sellerData = data.seller || null;
+        setStats(sellerData);
+        setError(null);
+      } else {
+        setStats(null);
+        setError('用户数据不存在');
+      }
+    } catch (err) {
+      console.error('[useSellerStats][refresh] 错误:', err);
+      setError(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyLocalStatsUpdate = (updater) => {
+    setStats((previousStats) => {
+      const baseStats = previousStats || {};
+      return typeof updater === 'function' ? updater(baseStats) : baseStats;
+    });
+  };
+
   useEffect(() => {
     console.log('=== useSellerStats Debug ===');
     console.log('1. userProfile:', userProfile);
-    console.log('2. organizationId:', userProfile?.organizationId);
-    console.log('3. eventId:', userProfile?.eventId);
-    console.log('4. userId:', userProfile?.userId);
+    console.log('2. organizationId:', resolvedOrganizationId);
+    console.log('3. eventId:', resolvedEventId);
+    console.log('4. userId:', resolvedUserId);
 
-    // 🔥 修复：检查 userProfile 而不是 currentUser
-    if (!userProfile?.organizationId || !userProfile?.eventId || !userProfile?.userId) {
+    if (!userRef) {
       console.warn('[useSellerStats] ⚠️ 缺少必要字段，停止监听');
       console.warn('[useSellerStats] userProfile:', userProfile);
       setLoading(false);
       return;
     }
 
-    // 监听当前用户的文档
-    const userPath = `organizations/${userProfile.organizationId}/events/${userProfile.eventId}/users/${userProfile.userId}`;
-    console.log('5. Firestore 路径:', userPath);
-
-    const userRef = doc(db, userPath);
+    console.log('5. Firestore 路径:', userRef.path);
 
     console.log('[useSellerStats] 🔥 开始监听 Firestore...');
 
@@ -81,7 +125,7 @@ export function useSellerStats() {
       console.log('[useSellerStats] 🔚 停止监听 Firestore');
       unsubscribe();
     };
-  }, [userProfile]); // 🔥 修复：依赖 userProfile
+  }, [userRef, resolvedOrganizationId, resolvedEventId, resolvedUserId, userProfile]);
 
   console.log('=== useSellerStats 返回值 ===');
   console.log('stats:', stats);
@@ -89,6 +133,6 @@ export function useSellerStats() {
   console.log('error:', error);
   console.log('============================');
 
-  return { stats, loading, error };
+  return { stats, loading, error, refresh, applyLocalStatsUpdate };
 }
 
