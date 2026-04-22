@@ -54,6 +54,10 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
       .collection('events').doc(eventId)
       .collection('users').doc(customerId);
 
+    const eventRef = db
+      .collection('organizations').doc(orgId)
+      .collection('events').doc(eventId);
+
     try {
       const result = await db.runTransaction(async (transaction) => {
         // 7.1 读取 PointSeller 数据
@@ -169,6 +173,15 @@ exports.pointSellerDirectSale = onCall({ region: 'asia-southeast1' }, async (req
         }
 
         transaction.update(pointSellerRef, updateData);
+
+        transaction.update(eventRef, {
+          'globalPointsStats.totalSold': admin.firestore.FieldValue.increment(amount),
+          'globalPointsStats.totalRevenue': admin.firestore.FieldValue.increment(amount),
+          'globalPointsStats.currentCirculation': admin.firestore.FieldValue.increment(amount),
+          'globalPointsStats.lastUpdated': now,
+          'financeSummary.lastUpdatedAt': now,
+          'financeSummary.lastUpdatedBy': pointSellerId
+        });
 
         return {
           success: true,

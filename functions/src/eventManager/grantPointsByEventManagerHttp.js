@@ -198,7 +198,11 @@ exports.grantPointsByEventManagerHttp = onRequest(
         const eventRef = db.doc(`organizations/${organizationId}/events/${eventId}`);
         batch.update(eventRef, {
           'roleStats.eventManagers.totalGrants': admin.firestore.FieldValue.increment(1),
-          'roleStats.eventManagers.totalPointsGranted': admin.firestore.FieldValue.increment(points * grantedUserIds.length)
+          'roleStats.eventManagers.totalPointsGranted': admin.firestore.FieldValue.increment(points * grantedUserIds.length),
+          'globalPointsStats.emTotalGranted': admin.firestore.FieldValue.increment(points * grantedUserIds.length),
+          'globalPointsStats.totalSold': admin.firestore.FieldValue.increment(points * grantedUserIds.length),
+          'globalPointsStats.currentCirculation': admin.firestore.FieldValue.increment(points * grantedUserIds.length),
+          'globalPointsStats.lastUpdated': timestamp
         });
 
         // 8. 提交批量操作

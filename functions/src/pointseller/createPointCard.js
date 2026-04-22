@@ -231,6 +231,20 @@ exports.createPointCard = onCall({ region: 'asia-southeast1' }, async (request) 
 
         transaction.update(pointSellerRef, updateData);
 
+          transaction.update(eventRef, {
+            'globalPointsStats.totalSold': admin.firestore.FieldValue.increment(amount),
+            'globalPointsStats.totalRevenue': admin.firestore.FieldValue.increment(cashReceived),
+            'globalPointsStats.currentCirculation': admin.firestore.FieldValue.increment(amount),
+            'globalPointsStats.lastUpdated': now,
+            'financeSummary.points.totalFromPointCards': admin.firestore.FieldValue.increment(amount),
+            'financeSummary.lastUpdatedAt': now,
+            'financeSummary.lastUpdatedBy': pointSellerId,
+            'roleStats.pointSellers.totalCardsIssued': admin.firestore.FieldValue.increment(1),
+            'roleStats.pointSellers.totalPointsIssued': admin.firestore.FieldValue.increment(amount),
+            'roleStats.pointSellers.totalCashReceived': admin.firestore.FieldValue.increment(cashReceived),
+            'roleStats.pointSellers.lastUpdated': now
+          });
+
         return {
           transactionId,
           cardId: transactionId,        // ✅ 新增：卡ID（用于QR Code和交易追踪）

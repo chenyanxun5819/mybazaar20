@@ -1,9 +1,15 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-04-08-v20",
-    "lastUpdated": "2026-04-08",
+    "version": "2026-04-22-v21",
+    "lastUpdated": "2026-04-22",
     "architectureChanges": {
+      "version_2026-04-22-v21": [
+        "🌐 createPointCard.js 新增同步更新 events.globalPointsStats（totalSold / totalRevenue / currentCirculation）",
+        "🌐 pointSellerDirectSale.js 新增同步更新 events.globalPointsStats（totalSold / totalRevenue / currentCirculation）",
+        "🎁 grantPointsByEventManagerHttp.js 新增同步更新 events.globalPointsStats.emTotalGranted，并同步写入 totalSold 与 currentCirculation",
+        "📘 globalPointsStats 新增 emTotalGranted 字段说明，用于记录 Event Manager 直接赠送给 Customer 的总点数"
+      ],
       "version_2026-04-08-v20": [
         "🎫 新增 transactionType: pointseller_card_issuance（PointSeller 发行点数卡）",
         "☁️ createPointCard.js 写入 transactions 集合（transactionType: pointseller_card_issuance）用于交易追踪",
@@ -349,6 +355,7 @@
                 "totalAllocated": "number (累计分配的点数总额)",
                 "currentCirculation": "number (当前流通中的点数)",
                 "totalSold": "number (累计售出点数)",
+                "emTotalGranted": "number (Event Manager 直接赠送给 Customer 的累计点数)",
                 "totalRevenue": "number (累计销售额 RM，1:1比例)",
                 "totalCollected": "number (累计已收款项 RM)",
                 "pendingCollection": "number (待收款项 RM)",
@@ -1221,6 +1228,7 @@
                         "direction": "PointSeller → Customer",
                         "source": "点数直销（无库存限制，按需生成）",
                         "cloudFunction": "pointSellerDirectSale",
+                        "globalStatsUpdate": "更新 events.globalPointsStats.totalSold / totalRevenue / currentCirculation",
                         "example": "PointSeller 销售 50 点给 Customer，Customer 支付 RM 50 现金",
                         "storedCustomerFields": {
                           "customerId": "string (客户UID)",
@@ -1235,6 +1243,7 @@
                         "direction": "PointSeller → PointCard (Customer 持有)",
                         "source": "点数卡发行（无库存限制，按需生成）",
                         "cloudFunction": "createPointCard",
+                        "globalStatsUpdate": "更新 events.globalPointsStats.totalSold / totalRevenue / currentCirculation，并同步 financeSummary.points.totalFromPointCards",
                         "dataStorage": "仅写入 transactions 集合（transactionType: pointseller_card_issuance，用于一体化交易追踪）",
                         "cardStatus": "不记名、可流转、客户扫码充值后销毁",
                         "example": "PointSeller 发行 100 点的点数卡，收取 RM 100 现金，客户获得不记名卡片并持有"
@@ -1299,6 +1308,7 @@
                         "direction": "EventManager → Customer",
                         "source": "活动管理员权限（不消耗任何库存）",
                         "cloudFunction": "grantPointsByEventManager",
+                        "globalStatsUpdate": "更新 events.globalPointsStats.emTotalGranted / totalSold / currentCirculation",
                         "example": "活动管理员赠送 5 点给参加者作为参与奖"
                       }
                     }
