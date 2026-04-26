@@ -1,4 +1,4 @@
-const functions = require('firebase-functions');
+﻿const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
@@ -302,8 +302,8 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
     const authUidForToken = userData.authUid || `phone_60${norm}`;
 
     // ✨ 提取 managedDepartments（支持两种数据结构）
-    const managedDepartments = userData.sellerManager?.managedDepartments ||
-      userData.roleSpecificData?.sellerManager?.managedDepartments ||
+    const managedDepartments = userData.teamLeader?.managedDepartments ||
+      userData.roleSpecificData?.teamLeader?.managedDepartments ||
       [];
 
     // ✨ 构建 Custom Claims
@@ -312,7 +312,7 @@ exports.loginUniversalHttp = functions.https.onRequest(async (req, res) => {
       eventId,
       userId,
       roles,  // 用户的所有角色（包括 eventManager）
-      managedDepartments,  // Seller Manager 管理的部门
+      managedDepartments,  // Team Leader 管理的部门
       department: userData.identityInfo?.department || '',
       identityTag: userData.identityTag || userData.identityInfo?.identityTag || ''
     };

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Collection History Component - Desktop 1000px Layout
  * Tab 3: 收款记录 - 添加FM统计行和电话/工号列
  */
@@ -13,20 +13,10 @@ const CashierTransactions = ({ submissions, onRefresh }) => {
   const [expandedId, setExpandedId] = useState(null);
 
   // 验证提交者身份是否符合 Cashier 直接交款条件
-  // 仅允许：sellerManager / pointSeller / seller+teacher / seller+staff
+  // 仅允许：teamLeader / pointSeller
   const isValidSubmitter = (submission) => {
     const submitterRole = submission.submitterRole;
-    const identityTag = submission.resolvedSubmitterIdentityTag ?? submission.submitterIdentityTag ?? null;
-
-    if (submitterRole === 'sellerManager' || submitterRole === 'pointSeller') {
-      return true;
-    }
-
-    if (submitterRole === 'seller') {
-      return identityTag === 'teacher' || identityTag === 'staff';
-    }
-
-    return false;
+    return submitterRole === 'teamLeader' || submitterRole === 'pointSeller';
   };
 
   // 格式化金额
@@ -64,8 +54,7 @@ const CashierTransactions = ({ submissions, onRefresh }) => {
   // 角色翻译
   const getRoleLabel = (role) => {
     const roleMap = {
-      seller: 'Seller',
-      sellerManager: 'Seller Manager',
+      teamLeader: 'Team Leader',
       pointSeller: 'Point Seller'
     };
     return roleMap[role] || role;
@@ -74,8 +63,7 @@ const CashierTransactions = ({ submissions, onRefresh }) => {
   // 获取角色图标
   const getRoleIcon = (role) => {
     const iconMap = {
-      seller: '🛍️',
-      sellerManager: '👨‍🏫',
+      teamLeader: '👨‍🏫',
       pointSeller: '💳'
     };
     return iconMap[role] || '👤';
@@ -286,8 +274,7 @@ const CashierTransactions = ({ submissions, onRefresh }) => {
             onChange={(e) => setRoleFilter(e.target.value)}
           >
             <option value="all">全部角色</option>
-            <option value="seller">Seller</option>
-            <option value="sellerManager">Seller Manager</option>
+            <option value="teamLeader">Team Leader</option>
             <option value="pointSeller">Point Seller</option>
           </select>
         </div>

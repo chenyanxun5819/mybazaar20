@@ -12,13 +12,9 @@ import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } fro
 const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart = false, helpText, allowRawText = false }) => {
   const [scanning, setScanning] = useState(autoStart); // ⭐ 如果 autoStart=true，初始就开始扫描
   const [cameraPermission, setCameraPermission] = useState(null);
-  const [debugLogs, setDebugLogs] = useState([]);
-  const [showDebug, setShowDebug] = useState(false);
   const qrScannerRef = useRef(null);
 
   const stopScanning = async ({ keepScanningState = false } = {}) => {
-    addDebugLog('🛑 stopScanning() 被调用');
-
     const scanner = qrScannerRef.current;
     qrScannerRef.current = null;
 
@@ -33,28 +29,23 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         if (typeof scanner.stop === 'function' && state !== Html5QrcodeScannerState.NOT_STARTED) {
           try {
             await scanner.stop();
-            addDebugLog('✅ stop() 成功');
           } catch (e) {
             canClear = false;
-            addDebugLog(`⚠️ stop() 失败，跳过 clear(): ${e.message}`);
           }
         }
 
         if (canClear) {
           try {
             scanner.clear?.();
-            addDebugLog('✅ 扫描器已清理');
           } catch (e) {
             const clearMessage = e?.message || String(e);
-            if (/Cannot clear while scan is ongoing/i.test(clearMessage)) {
-              addDebugLog('ℹ️ clear() 被跳过：扫描器仍在停止中');
-            } else {
-              addDebugLog(`⚠️ clear() 失败: ${clearMessage}`);
+            if (!/Cannot clear while scan is ongoing/i.test(clearMessage)) {
+              // 继续处理
             }
           }
         }
       } catch (e) {
-        addDebugLog(`⚠️ 清理扫描器失败: ${e.message}`);
+        // 扫描器清理失败，继续
       }
     }
 
@@ -63,21 +54,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
     }
   };
 
-  const addDebugLog = (message) => {
-    try {
-      const timestamp = new Date().toLocaleTimeString();
-      const logMsg = `[${timestamp}] ${message}`;
-      setDebugLogs(prev => [...prev.slice(-19), logMsg]);
-      console.log('[QRScanner]', message);
-    } catch (error) {
-      console.error('[QRScanner] 添加日志失败:', error);
-    }
-  };
-
   useEffect(() => {
-    if (autoStart) {
-      addDebugLog('⚡ autoStart=true，直接开始扫描（跳过权限按钮）');
-    }
     checkCameraPermission();
     return () => {
       void stopScanning({ keepScanningState: true });
@@ -86,10 +63,7 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
 
   const checkCameraPermission = async () => {
     try {
-      addDebugLog('🔍 检查摄像头权限(不弹窗)...');
-
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        addDebugLog('❌ 浏览器不支持 getUserMedia');
         setCameraPermission('denied');
         return;
       }
@@ -98,15 +72,12 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       if (navigator.permissions && typeof navigator.permissions.query === 'function') {
         try {
           const status = await navigator.permissions.query({ name: 'camera' });
-          addDebugLog(`🔐 camera permission state: ${status.state}`);
           setCameraPermission(status.state); // 'granted' | 'prompt' | 'denied'
           status.onchange = () => {
-            addDebugLog(`🔐 camera permission changed: ${status.state}`);
             setCameraPermission(status.state);
           };
         } catch (e) {
           // 某些瀏覽器（尤其 iOS Safari）可能不支援 camera query
-          addDebugLog('⚠️ Permissions API 不支援 camera，改用 prompt 狀態');
           setCameraPermission('prompt');
         }
       } else {
@@ -114,7 +85,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       }
 
     } catch (error) {
-      addDebugLog(`❌ 权限状态检查失败: ${error.name} - ${error.message}`);
       setCameraPermission('prompt');
     }
   };
@@ -144,31 +114,22 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
 
   const handleScanSuccess = async (decodedText) => {
     try {
-      addDebugLog('📸 扫描到内容');
-      
       if (!decodedText) {
-        addDebugLog('❌ 扫描内容为空');
         if (onScanError) onScanError('扫描到的数据为空');
         return;
       }
 
       const preview = decodedText.length > 50 ? decodedText.substring(0, 50) + '...' : decodedText;
-      addDebugLog(`📄 数据预览: ${preview}`);
       
       let qrData;
       try {
         qrData = JSON.parse(decodedText);
-        addDebugLog(`✅ JSON解析成功`);
       } catch (parseError) {
-        addDebugLog(`❌ JSON解析失败: ${parseError.message}`);
-
         if (!allowRawText) {
           throw new Error(`扫描到的内容不是系统 QR Code：${preview}`);
         }
 
-        addDebugLog('ℹ️ 非 JSON 内容，改以原始文字回传');
         await stopScanning();
-        addDebugLog('📤 调用 onScanSuccess（原始文字）');
         if (onScanSuccess) {
           await Promise.resolve(onScanSuccess(decodedText.trim()));
         }
@@ -176,27 +137,21 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       }
 
       const qrType = qrData?.type || '未知';
-      addDebugLog(`🏷️ QR Code类型: ${qrType}`);
       
       try {
         validateQRType(qrType);
-        addDebugLog('✅ 类型验证通过');
       } catch (typeError) {
-        addDebugLog(`❌ ${typeError.message}`);
         throw typeError;
       }
       
-      addDebugLog('🛑 停止扫描');
       await stopScanning();
       
-      addDebugLog('📤 调用 onScanSuccess');
       if (onScanSuccess) {
         await Promise.resolve(onScanSuccess(qrData));
       }
       
     } catch (error) {
       const errorMessage = error?.message || '扫描处理失败';
-      addDebugLog(`❌ 处理失败: ${errorMessage}`);
       if (onScanError) {
         onScanError(errorMessage);
       }
@@ -208,24 +163,19 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
   };
 
   const startScanning = () => {
-    addDebugLog('🟢 startScanning() 被调用');
     setScanning(true);
   };
 
   useEffect(() => {
     if (!scanning) {
-      addDebugLog('⏸️ scanning=false，不初始化扫描器');
       return;
     }
-
-    addDebugLog('🎬 scanning=true，开始初始化（直接模式，避免二次权限弹窗）...');
 
     let cancelled = false;
 
     const init = async () => {
       const el = document.getElementById('qr-reader');
       if (!el) {
-        addDebugLog('⚠️ #qr-reader 元素未找到，100ms后重试');
         setTimeout(() => {
           if (!cancelled) {
             void init();
@@ -245,7 +195,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         if (cancelled) {
           return;
         }
-        addDebugLog(`❌ 初始化失败: ${error?.message || error}`);
         setScanning(false);
         if (onScanError) onScanError(`扫描器初始化失败: ${error?.message || error}`);
       }
@@ -261,8 +210,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
   // ✅ 隐藏 html5-qrcode 的所有控制按钮
   const hideHtml5QrcodeButtons = () => {
     try {
-      addDebugLog('🎨 开始隐藏控制按钮...');
-      
       // 隐藏所有按钮
       const buttons = document.querySelectorAll('#qr-reader button');
       buttons.forEach(btn => {
@@ -271,7 +218,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
         if (text.includes('start') || text.includes('stop') || text.includes('select') || 
             text.includes('camera') || text.includes('torch') || text.includes('switch')) {
           btn.style.display = 'none';
-          addDebugLog(`🚫 隐藏按钮: ${btn.textContent}`);
         }
       });
       
@@ -279,7 +225,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       const selects = document.querySelectorAll('#qr-reader select');
       selects.forEach(select => {
         select.style.display = 'none';
-        addDebugLog(`🚫 隐藏下拉框`);
       });
       
       // 隐藏可能的错误提示
@@ -287,10 +232,8 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       errorDivs.forEach(div => {
         div.style.display = 'none';
       });
-      
-      addDebugLog('✅ 控制按钮已隐藏');
     } catch (error) {
-      addDebugLog(`⚠️ 隐藏按钮失败: ${error.message}`);
+      // 隐藏按钮失败，继续
     }
   };
 
@@ -302,7 +245,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       throw new Error('#qr-reader 元素未找到');
     }
 
-    addDebugLog('🧩 使用直接模式初始化 Html5Qrcode（優化版）...');
     const html5Qr = new Html5Qrcode('qr-reader');
     qrScannerRef.current = html5Qr;
 
@@ -320,11 +262,9 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       if (backCam?.id) {
         // 如果找到後置攝像頭，使用設備 ID
         cameraConfig = backCam.id;
-        addDebugLog(`📹 使用後置攝像頭: ${backCam.label}`);
       }
     } catch (e) {
       // iOS 在未授權前可能無法列舉相機，直接用 facingMode 走授權流程即可
-      addDebugLog(`⚠️ 無法列舉相機，使用 facingMode: ${e?.message}`);
     }
 
     // ⭐ 高性能掃碼配置（參考 MerchantScanner）
@@ -342,19 +282,15 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
       }
     };
 
-    addDebugLog(`🛠️ 優化配置: fps=30, 自動對焦=true, 高分辨率=1920x1080`);
-
     return html5Qr.start(
       cameraConfig,
       config,
       handleScanSuccess,
       handleScanFailure
     ).then(() => {
-      addDebugLog('✅ 優化模式啟動成功，攝像頭已打開');
       setCameraPermission('granted');
     }).catch((e) => {
       const name = e?.name || '';
-      addDebugLog(`❌ 優化模式啟動失敗: ${name} ${e?.message || e}`);
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         setCameraPermission('denied');
       }
@@ -365,7 +301,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
   const requestCameraPermission = async () => {
     // ⚠️ 不在這裡先 getUserMedia()，避免「先預檢一次、掃描再請求一次」造成雙重彈窗。
     // 讓 Html5Qrcode.start() 來做唯一一次的權限請求。
-    addDebugLog('🔐 准备启动扫描（将由掃描器请求一次摄像头权限）...');
     setCameraPermission('prompt');
     startScanning();
   };
@@ -419,30 +354,6 @@ const QRScanner = ({ onScanSuccess, onScanError, expectedType = null, autoStart 
           <button onClick={stopScanning} style={styles.cancelButton}>停止扫描</button>
         </>
       )}
-
-      {/* 调试面板 */}
-      <div style={styles.debugPanel}>
-        <div style={styles.debugHeader}>
-          <h4 style={styles.debugTitle}>🐛 调试日志</h4>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => setDebugLogs([])} style={styles.debugClearButton}>清空</button>
-            <button onClick={() => setShowDebug(!showDebug)} style={styles.debugToggleButton}>
-              {showDebug ? '隐藏' : '显示'}
-            </button>
-          </div>
-        </div>
-        {showDebug && (
-          <div style={styles.debugContent}>
-            {debugLogs.length === 0 ? (
-              <div style={styles.debugEmpty}>没有日志</div>
-            ) : (
-              debugLogs.map((log, index) => (
-                <div key={index} style={styles.debugLine}>{log}</div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
 
       {/* ✅ 添加CSS来隐藏按钮 */}
       <style>{`
@@ -606,63 +517,6 @@ const styles = {
     fontSize: '0.85rem',
     color: '#1976D2',
     fontWeight: 500
-  },
-  debugPanel: {
-    marginTop: '1rem',
-    backgroundColor: '#1e1e1e',
-    borderRadius: '8px',
-    overflow: 'hidden',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-  },
-  debugHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#2d2d2d',
-    padding: '0.75rem 1rem',
-    borderBottom: '1px solid #444'
-  },
-  debugTitle: {
-    margin: 0,
-    color: '#fff',
-    fontSize: '0.9rem',
-    fontWeight: '600'
-  },
-  debugToggleButton: {
-    padding: '0.25rem 0.75rem',
-    fontSize: '0.8rem',
-    backgroundColor: '#4CAF50',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  },
-  debugClearButton: {
-    padding: '0.25rem 0.75rem',
-    fontSize: '0.8rem',
-    backgroundColor: '#f44336',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  },
-  debugContent: {
-    maxHeight: '300px',
-    overflowY: 'auto',
-    fontFamily: 'monospace',
-    fontSize: '0.75rem',
-    padding: '0.75rem'
-  },
-  debugLine: {
-    color: '#4ade80',
-    marginBottom: '0.25rem',
-    wordBreak: 'break-all',
-    lineHeight: '1.4'
-  },
-  debugEmpty: {
-    color: '#888',
-    textAlign: 'center',
-    padding: '1rem'
   }
 };
 

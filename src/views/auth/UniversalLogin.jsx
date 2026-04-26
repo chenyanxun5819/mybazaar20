@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { safeFetch } from '../../services/safeFetch';
@@ -68,11 +68,10 @@ const UniversalLogin = () => {
       const keys = [
         'currentUser',
         'eventManagerInfo',
-        'sellerManagerInfo',
+        'teamLeaderInfo',
         'cashierInfo',
         'merchantOwnerInfo',
         'merchantAsistInfo',
-        'sellerInfo',
         'customerInfo'
       ];
 
@@ -237,14 +236,13 @@ const UniversalLogin = () => {
       if (selectedRole && targetCode) {
         // 临时构造一个 path
         if (selectedRole === 'eventManager') navPath = `/event-manager/${targetCode}/dashboard`;
-        else if (selectedRole === 'sellerManager') navPath = `/seller-manager/${targetCode}/dashboard`;
+        else if (selectedRole === 'teamLeader') navPath = `/team-leader/${targetCode}/dashboard`;
         else if (selectedRole === 'cashier') navPath = `/cashier/${targetCode}/dashboard`;
         else if (selectedRole === 'merchantManager') navPath = `/merchant-manager/${targetCode}/dashboard`;
         else if (selectedRole === 'customerManager') navPath = `/customer-manager/${targetCode}/dashboard`;
         else if (selectedRole === 'auditor') navPath = `/auditor/${targetCode}/dashboard`; // 🆕
 
         // Mobile Roles
-        else if (selectedRole === 'seller') navPath = `/seller/${targetCode}/dashboard`;
         else if (selectedRole === 'merchant' || selectedRole === 'merchantOwner' || selectedRole === 'merchantAsist') navPath = `/merchant/${targetCode}/dashboard`;
         else if (selectedRole === 'customer') navPath = `/customer/${targetCode}/dashboard`;
         else if (selectedRole === 'pointSeller') navPath = `/pointseller/${targetCode}/dashboard`;
@@ -296,9 +294,9 @@ const UniversalLogin = () => {
           localStorage.setItem('eventManagerLogin', JSON.stringify(userInfoToSave));
         }
 
-        if (roles.includes('sellerManager')) {
-          console.log('[UniversalLogin] 💾 恢复 Seller Manager Legacy Storage (Force)');
-          localStorage.setItem('sellerManagerInfo', JSON.stringify(userInfoToSave));
+        if (roles.includes('teamLeader')) {
+          console.log('[UniversalLogin] 💾 恢复 Team Leader Legacy Storage (Force)');
+          localStorage.setItem('teamLeaderInfo', JSON.stringify(userInfoToSave));
         }
 
         if (roles.includes('cashier')) {
@@ -349,11 +347,10 @@ const UniversalLogin = () => {
         'currentUser',
         'eventManagerInfo',
         'eventManagerLogin',
-        'sellerManagerInfo',
+        'teamLeaderInfo',
         'cashierInfo',
         'merchantOwnerInfo',
         'merchantAsistInfo',
-        'sellerInfo',
         'customerInfo'
       ];
       keysToClear.forEach((key) => localStorage.removeItem(key));
@@ -452,8 +449,8 @@ const UniversalLogin = () => {
     // Desktop 角色路由
     if (role === 'eventManager') {
       return `/event-manager/${orgEventCode}/dashboard`;
-    } else if (role === 'sellerManager') {
-      return `/seller-manager/${orgEventCode}/dashboard`;
+    } else if (role === 'teamLeader') {
+      return `/team-leader/${orgEventCode}/dashboard`;
     } else if (role === 'merchantManager') {
       return `/merchant-manager/${orgEventCode}/dashboard`;
     } else if (role === 'customerManager') {
@@ -464,9 +461,7 @@ const UniversalLogin = () => {
       return `/auditor/${orgEventCode}/dashboard`; // 🆕 稽核人员 - 仅桌面端
     }
     // Mobile 角色路由
-    else if (role === 'seller') {
-      return `/seller/${orgEventCode}/dashboard`;
-    } else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
+    else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
       return `/merchant/${orgEventCode}/dashboard`;
     } else if (role === 'pointSeller') {
       return `/pointseller/${orgEventCode}/dashboard`;
@@ -608,7 +603,7 @@ const UniversalLogin = () => {
     // 电脑端：仅允许桌面角色（含 pointSeller）
     const desktopRoles = [
       'eventManager',
-      'sellerManager',
+      'teamLeader',
       'merchantManager',
       'customerManager',
       'cashier',
@@ -632,7 +627,7 @@ const UniversalLogin = () => {
       return role;
     }
 
-    const priority = ['eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'pointSeller'];
+    const priority = ['eventManager', 'teamLeader', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'pointSeller'];
     for (const role of priority) {
       if (roles.includes(role)) {
         console.log('[UniversalLogin] getPriorityRole - Desktop 选中角色:', role);
@@ -841,14 +836,14 @@ const UniversalLogin = () => {
       // 注意：selectedRole 可能是手机端角色（例如 seller），但用户仍可能拥有 manager 身份
       // 为避免桌面端后续访问报错，这里按“是否拥有该角色”写入 legacy keys
       const allRoles = verifiedUser.roles || [];
-      if (allRoles.includes('sellerManager')) {
+      if (allRoles.includes('teamLeader')) {
         // 确保 legacy key 包含 managedDepartments & roleSpecificData，避免 Dashboard 误判
-        const sellerLegacy = {
+        const teamLeaderLegacy = {
           ...userInfoToSave,
           managedDepartments: verifiedUser.managedDepartments || [],
           roleSpecificData: verifiedUser.roleSpecificData || {}
         };
-        localStorage.setItem('sellerManagerInfo', JSON.stringify(sellerLegacy));
+        localStorage.setItem('teamLeaderInfo', JSON.stringify(teamLeaderLegacy));
       }
       if (allRoles.includes('eventManager')) {
         localStorage.setItem('eventManagerInfo', JSON.stringify(userInfoToSave));
@@ -896,8 +891,8 @@ const UniversalLogin = () => {
     // Desktop 角色路由
     if (role === 'eventManager') {
       navigate(`/event-manager/${orgEventCode}/dashboard`);
-    } else if (role === 'sellerManager') {
-      navigate(`/seller-manager/${orgEventCode}/dashboard`);
+    } else if (role === 'teamLeader') {
+      navigate(`/team-leader/${orgEventCode}/dashboard`);
     } else if (role === 'merchantManager') {
       navigate(`/merchant-manager/${orgEventCode}/dashboard`);
     } else if (role === 'customerManager') {
@@ -906,9 +901,7 @@ const UniversalLogin = () => {
       navigate(`/cashier/${orgEventCode}/dashboard`);
     }
     // Mobile 角色路由
-    else if (role === 'seller') {
-      navigate(`/seller/${orgEventCode}/dashboard`);
-    } else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
+    else if (role === 'merchant' || role === 'merchantOwner' || role === 'merchantAsist') {
       navigate(`/merchant/${orgEventCode}/dashboard`);
     } else if (role === 'customer') {
       navigate(`/customer/${orgEventCode}/dashboard`);

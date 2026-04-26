@@ -151,10 +151,11 @@ exports.grantPointsByEventManagerHttp = onRequest(
           const userId = userDoc.id;
           const userRef = db.doc(`organizations/${organizationId}/events/${eventId}/users/${userId}`);
 
-          // 更新 Customer 的 availablePoints
+          // 更新 Customer 的 availablePoints + grantedPoints
           batch.update(userRef, {
             'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(points),
             'customer.pointsAccount.totalReceived': admin.firestore.FieldValue.increment(points),
+            'customer.pointsAccount.grantedPoints': admin.firestore.FieldValue.increment(points),
             'customer.stats.lastActivityAt': timestamp
           });
 

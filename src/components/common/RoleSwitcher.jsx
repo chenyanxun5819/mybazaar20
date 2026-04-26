@@ -1,14 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import UsersIcon from '../../assets/users.svg?react';
 import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
-import SellerFiveIcon from '../../assets/seller (5).svg?react';
 import UsersGearIcon from '../../assets/users-gear.svg?react';
 import UserSalaryIcon from '../../assets/user-salary.svg?react';
 import EmployeeManIcon from '../../assets/employee-man.svg?react';
 import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
-import SellerFourIcon from '../../assets/seller (4).svg?react';
 import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
 import UserBagIcon from '../../assets/user-bag.svg?react';
 import AuditorIcon from '../../assets/auditor.svg?react';
@@ -38,11 +36,10 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const inferRoleFromUrl = () => {
     const pathname = location.pathname;
     if (pathname.includes('/customer/')) return 'customer';
-    if (pathname.includes('/seller/')) return 'seller';
     if (pathname.includes('/pointseller/')) return 'pointSeller';
     if (pathname.includes('/cashier/')) return 'cashier';
     if (pathname.includes('/event-manager/')) return 'eventManager';
-    if (pathname.includes('/seller-manager/')) return 'sellerManager';
+    if (pathname.includes('/team-leader/')) return 'teamLeader';
     if (pathname.includes('/merchant-manager/')) return 'merchantManager';
     if (pathname.includes('/customer-manager/')) return 'customerManager';
     if (pathname.includes('/platform-admin/')) return 'platformAdmin';
@@ -73,15 +70,14 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const roleConfig = {
     platformAdmin: { label: 'Platform Admin', buttonLabel: 'Platform\nAdmin', icon: UsersGearIcon, color: '#ef4444', category: 'manager' },
     eventManager: { label: 'Event Manager', buttonLabel: 'Event\nManager', icon: UsersIcon, color: '#667eea', category: 'manager' },
-    sellerManager: { label: 'Seller Manager', buttonLabel: 'Seller\nManager', icon: ChalkboardUserIcon, color: '#f59e0b', category: 'manager' },
-    merchantManager: { label: 'Merchant Manager', buttonLabel: 'Merchant\nManager', icon: SellerFiveIcon, color: '#8b5cf6', category: 'manager' },
+    teamLeader: { label: 'Team Leader', buttonLabel: 'Team\nLeader', icon: ChalkboardUserIcon, color: '#f59e0b', category: 'manager' },
+    merchantManager: { label: 'Merchant Manager', buttonLabel: 'Merchant\nManager', icon: StoreBuyerIcon, color: '#8b5cf6', category: 'manager' },
     customerManager: { label: 'Customer Manager', buttonLabel: 'Customer\nManager', icon: UsersGearIcon, color: '#10b981', category: 'manager' },
     cashier: { label: 'Cashier (收银员)', buttonLabel: 'Cashier\n(收银员)', icon: UserSalaryIcon, color: '#3b82f6', category: 'manager' },
     auditor: { label: 'Auditor (稽核人员)', buttonLabel: 'Auditor\n(稽核)', icon: AuditorIcon, color: '#6366f1', category: 'manager' },
 
-    seller: { label: 'Seller (销售员)', buttonLabel: 'Seller\n(销售员)', icon: EmployeeManIcon, color: '#ec4899', category: 'user' },
     merchantOwner: { label: 'Merchant Owner (摊主)', buttonLabel: 'Merchant\nOwner', icon: StoreBuyerIcon, color: '#84cc16', category: 'user' },
-    merchantAsist: { label: 'Merchant Assistant (助理)', buttonLabel: 'Merchant\nAsist', icon: SellerFourIcon, color: '#a3e635', category: 'user' },
+    merchantAsist: { label: 'Merchant Assistant (助理)', buttonLabel: 'Merchant\nAsist', icon: EmployeeManIcon, color: '#a3e635', category: 'user' },
     pointSeller: { label: 'Point Seller (点数直售员)', buttonLabel: 'Point\nSeller', icon: MoneyCheckEditIcon, color: '#f97316', category: 'user' },
     customer: { label: 'Customer (顾客)', buttonLabel: 'Customer\n(顾客)', icon: UserBagIcon, color: '#ec4899', category: 'user' }
   };
@@ -90,14 +86,13 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const roleRouteBuilders = {
     platformAdmin: () => '/platform-admin/dashboard',
     eventManager: (code) => `/event-manager/${code}/dashboard`,
-    sellerManager: (code) => isMobile
-      ? `/phone/seller-manager/${code}/dashboard`
-      : `/seller-manager/${code}/dashboard`,
+    teamLeader: (code) => isMobile
+      ? `/phone/team-leader/${code}/dashboard`
+      : `/team-leader/${code}/dashboard`,
     merchantManager: (code) => `/merchant-manager/${code}/dashboard`,
     customerManager: (code) => `/customer-manager/${code}/dashboard`,
     cashier: (code) => `/cashier/${code}/dashboard`,
     auditor: (code) => `/auditor/${code}/dashboard`,
-    seller: (code) => `/seller/${code}/dashboard`,
     pointSeller: (code) => `/pointseller/${code}/dashboard`,
     merchantOwner: (code) => `/merchant/${code}/dashboard`,
     merchantAsist: (code) => `/merchant/${code}/dashboard`,
@@ -108,12 +103,11 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   const storageKeys = {
     'platformAdmin': 'platformAdminInfo',
     'eventManager': 'eventManagerInfo',
-    'sellerManager': 'sellerManagerInfo',
+    'teamLeader': 'teamLeaderInfo',
     'merchantManager': 'merchantManagerInfo',
     'customerManager': 'customerManagerInfo',
     'cashier': 'cashierInfo',
     'auditor': 'auditorInfo',
-    'seller': 'sellerInfo',
     'pointSeller': 'pointSellerInfo',
     'merchantOwner': 'merchantOwnerInfo',
     'merchantAsist': 'merchantAsistInfo',
@@ -156,8 +150,8 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   // 设备过滤规则（按你的要求）
   // - Desktop: 只显示 manager + cashier
   // - : 只显示非 manager（手机角色），并包含 pointSeller
-  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'sellerManager', 'merchantManager', 'customerManager', 'cashier', 'auditor'];
-  const mobileOnlyRoles = ['seller', 'customer', 'merchantOwner', 'merchantAsist', 'pointSeller', 'sellerManager'];
+  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'teamLeader', 'merchantManager', 'customerManager', 'cashier', 'auditor'];
+  const mobileOnlyRoles = ['customer', 'merchantOwner', 'merchantAsist', 'pointSeller', 'teamLeader'];
 
   const deviceFilteredRoles = (resolvedAvailableRoles || []).filter((role) =>
     isMobile ? mobileOnlyRoles.includes(role) : desktopOnlyRoles.includes(role)

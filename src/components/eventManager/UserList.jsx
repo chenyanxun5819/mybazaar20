@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import chalkboardUserIcon from '../../assets/chalkboard-user.svg';
-import sellerFiveIcon from '../../assets/seller (5).svg';
 import usersGearIcon from '../../assets/users-gear.svg';
 import userSalaryIcon from '../../assets/user-salary.svg';
 import employeeManIcon from '../../assets/employee-man.svg';
 import storeBuyerIcon from '../../assets/store-buyer.svg';
-import sellerFourIcon from '../../assets/seller (4).svg';
 import moneyCheckEditIcon from '../../assets/money-check-edit (1).svg';
 import userBagIcon from '../../assets/user-bag.svg';
 
@@ -26,10 +24,9 @@ const UserList = ({ organizationId, eventId, onClose }) => {
   // 角色过滤器配置
   const roleFilters = [
     { id: 'all', label: '全部用户' },
-    { id: 'sellerManager', label: 'Seller Manager' },
+    { id: 'teamLeader', label: 'Team Leader' },
     { id: 'merchantManager', label: 'Merchant Manager' },
     { id: 'customerManager', label: 'Customer Manager' },
-    { id: 'seller', label: 'Seller' },
     { id: 'merchantOwner', label: 'Merchant Owner' },
     { id: 'merchantAsist', label: 'Merchant Assistant' },
     { id: 'customer', label: 'Customer' }
@@ -37,10 +34,9 @@ const UserList = ({ organizationId, eventId, onClose }) => {
 
   // 角色标签映射
   const roleLabels = {
-    sellerManager: 'Seller Manager',
+    teamLeader: 'Team Leader',
     merchantManager: 'Merchant Manager',
     customerManager: 'Customer Manager',
-    seller: 'Seller',
     merchantOwner: 'Merchant Owner',
     merchantAsist: 'Merchant Assistant',
     customer: 'Customer'
@@ -48,10 +44,9 @@ const UserList = ({ organizationId, eventId, onClose }) => {
 
   // 角色中文标签映射（鼠标滑过显示）
   const roleChineseLabels = {
-    sellerManager: '班导师',
+    teamLeader: '班导师',
     merchantManager: '商家管理员',
     customerManager: '消费者管理员',
-    seller: '点数销售员',
     merchantOwner: '摊主',
     merchantAsist: '摊位助手',
     customer: '消费者'
@@ -59,21 +54,19 @@ const UserList = ({ organizationId, eventId, onClose }) => {
 
   // 角色颜色映射
   const roleColors = {
-    sellerManager: '#f59e0b',
+    teamLeader: '#f59e0b',
     merchantManager: '#8b5cf6',
     customerManager: '#10b981',
-    seller: '#3b82f6',
     customer: '#6366f1'
   };
 
   // 角色icon映射
   const roleIcons = {
-    sellerManager: chalkboardUserIcon,
-    merchantManager: sellerFiveIcon,
+    teamLeader: chalkboardUserIcon,
+    merchantManager: storeBuyerIcon,
     customerManager: usersGearIcon,
-    seller: employeeManIcon,
     merchantOwner: storeBuyerIcon,
-    merchantAsist: sellerFourIcon,
+    merchantAsist: employeeManIcon,
     customer: userBagIcon
   };
 
@@ -166,11 +159,6 @@ const UserList = ({ organizationId, eventId, onClose }) => {
     let totalCashCollected = 0;
 
     // 累加所有角色的点数
-    if (user.seller) {
-      availablePoints += user.seller.availablePoints || 0;
-      totalPointsSold += user.seller.totalPointsSold || 0;
-      totalCashCollected += user.seller.totalCashCollected || 0;
-    }
     if (user.merchantOwner) {
       availablePoints += user.merchantOwner.availablePoints || 0;
       totalPointsSold += user.merchantOwner.totalPointsSold || 0;
@@ -182,9 +170,7 @@ const UserList = ({ organizationId, eventId, onClose }) => {
       totalCashCollected += user.merchantAsist.totalCashCollected || 0;
     }
     if (user.customer) {
-      availablePoints += user.customer.availablePoints || 0;
-      totalPointsSold += user.customer.totalPointsSold || 0;
-      totalCashCollected += user.customer.totalCashCollected || 0;
+      availablePoints += user.customer.pointsAccount?.availablePoints || 0;
     }
 
     const outstandingCash = totalPointsSold - totalCashCollected;

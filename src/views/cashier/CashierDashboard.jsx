@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cashier Dashboard
  * 收银员控制台 - 管理现金收款和财务统计
  * 
@@ -158,20 +158,10 @@ const CashierDashboard = () => {
   const [orgCode, eventCode] = orgEventCode?.split('-') || [];
 
   // 验证提交者身份是否符合 Cashier 直接交款条件
-  // 仅允许：sellerManager / pointSeller / seller+teacher / seller+staff
+  // 仅允许：teamLeader / pointSeller
   const isValidSubmitter = (submission) => {
     const submitterRole = submission.submitterRole;
-    const identityTag = submission.resolvedSubmitterIdentityTag ?? submission.submitterIdentityTag ?? null;
-
-    if (submitterRole === 'sellerManager' || submitterRole === 'pointSeller') {
-      return true;
-    }
-
-    if (submitterRole === 'seller') {
-      return identityTag === 'teacher' || identityTag === 'staff';
-    }
-
-    return false;
+    return submitterRole === 'teamLeader' || submitterRole === 'pointSeller';
   };
 
   const enrichSubmissionWithIdentityTag = (submission) => {

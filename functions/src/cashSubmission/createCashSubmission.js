@@ -1,12 +1,12 @@
-/**
+﻿/**
  * createCashSubmission.js
  * 创建现金上交记录
  * 
  * 适用角色：
  * - PointSeller: 上交到 Cashier 池子 (receivedBy = null)
  * - Seller (教师/职员): 上交到 Cashier 池子 (receivedBy = null)
- * - Seller (学生): 上交到 SellerManager (receivedBy = sellerManagerId)
- * - SellerManager: 上交到 Cashier 池子 (receivedBy = null)
+ * - Seller (学生): 上交到 teamLeader (receivedBy = teamLeaderId)
+ * - teamLeader: 上交到 Cashier 池子 (receivedBy = null)
  * 
  * 创建日期：2025-01-20
  */
@@ -32,12 +32,12 @@ exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (requ
       eventId,
       submittedBy,
       submitterName,
-      submitterRole,      // 'pointSeller' | 'seller' | 'sellerManager'
+      submitterRole,      // 'pointSeller' | 'seller' | 'teamLeader'
       amount,
       note,
-      receivedBy,         // null = 待认领池子, sellerManagerId = 指定SellerManager
+      receivedBy,         // null = 待认领池子, teamLeaderId = 指定teamLeader
       receiverName,
-      receiverRole,       // null | 'sellerManager'
+      receiverRole,       // null | 'teamLeader'
       transactionPin
     } = data;
 
@@ -68,7 +68,7 @@ exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (requ
     }
 
     // 验证角色
-    const validRoles = ['pointSeller', 'seller', 'sellerManager'];
+    const validRoles = ['pointSeller', 'teamLeader'];
     if (!validRoles.includes(submitterRole)) {
       throw new HttpsError('invalid-argument', '无效的提交者角色');
     }
@@ -121,8 +121,8 @@ exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (requ
       const receiverRoles = receiverData.roles || [];
 
       // 验证接收者角色
-      if (receiverRole === 'sellerManager' && !receiverRoles.includes('sellerManager')) {
-        throw new HttpsError('invalid-argument', '接收者不是 SellerManager');
+      if (receiverRole === 'teamLeader' && !receiverRoles.includes('teamLeader')) {
+        throw new HttpsError('invalid-argument', '接收者不是 teamLeader');
       }
     }
 
@@ -188,33 +188,25 @@ exports.createCashSubmission = onCall({ region: 'asia-southeast1' }, async (requ
           'activityData.updatedAt': now
         });
 
-      } else if (submitterRole === 'seller') {
+      } else if (submitterRole === 'teamLeader') {
         transaction.update(userRef, {
-          'seller.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
-          'seller.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
-          'seller.statistics.lastSubmissionAt': now,
-          'activityData.updatedAt': now
-        });
-
-      } else if (submitterRole === 'sellerManager') {
-        transaction.update(userRef, {
-          'sellerManager.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
-          'sellerManager.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
-          'sellerManager.statistics.lastSubmissionAt': now,
+          'teamLeader.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
+          'teamLeader.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
+          'teamLeader.statistics.lastSubmissionAt': now,
           'activityData.updatedAt': now
         });
       }
 
       // 8.4 如果有接收者，更新接收者的待处理统计
-      if (receivedBy && receiverRole === 'sellerManager') {
+      if (receivedBy && receiverRole === 'teamLeader') {
         const receiverRef = db
           .collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
           .collection('users').doc(receivedBy);
 
         transaction.update(receiverRef, {
-          'sellerManager.cashStats.pendingFromSellers': admin.firestore.FieldValue.increment(amount),
-          'sellerManager.cashStats.pendingSubmissionsCount': admin.firestore.FieldValue.increment(1),
+          'teamLeader.cashStats.pendingFromSellers': admin.firestore.FieldValue.increment(amount),
+          'teamLeader.cashStats.pendingSubmissionsCount': admin.firestore.FieldValue.increment(1),
           'activityData.updatedAt': now
         });
       }

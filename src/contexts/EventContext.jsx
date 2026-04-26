@@ -1,4 +1,4 @@
-// src/contexts/EventContext.jsx
+﻿// src/contexts/EventContext.jsx
 // ✅ 已更新：添加对 Manager 路由和 Login 路由的支持
 import { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../config/firebase';
@@ -114,8 +114,8 @@ export const EventProvider = ({ children }) => {
           }
         }
         
-        // ✅ 支持普通用户路由: seller, merchant, customer, pointseller
-        if (['seller','merchant','customer','pointseller'].includes(first)) {
+        // ✅ 支持普通用户路由: merchant, customer, pointseller
+        if (['merchant','customer','pointseller'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
           // 支持 /customer/:orgEventCode/dashboard, /customer/:orgEventCode/register, 等
@@ -130,13 +130,13 @@ export const EventProvider = ({ children }) => {
         }
         
         // ✅ 支持 Manager 路由
-        // 格式: /seller-manager/:orgEventCode/dashboard
+        // 格式: /team-leader/:orgEventCode/dashboard
         //       /cashier/:orgEventCode/dashboard
         //       /merchant-manager/:orgEventCode/dashboard
         //       /customer-manager/:orgEventCode/dashboard
         //       /event-manager/:orgEventCode/dashboard
         //       /auditor/:orgEventCode/dashboard
-        if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager', 'event-manager', 'auditor'].includes(first)) {
+        if (['team-leader', 'cashier', 'merchant-manager', 'customer-manager', 'event-manager', 'auditor'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
           if (orgEvent && third === 'dashboard') {
@@ -151,12 +151,12 @@ export const EventProvider = ({ children }) => {
         }
 
         // ✅ 支持手机版 Manager 路由
-        // 格式: /phone/seller-manager/:orgEventCode/dashboard
+        // 格式: /phone/team-leader/:orgEventCode/dashboard
         if (first === 'phone') {
           const second = segments[1]?.toLowerCase();
           const orgEvent = segments[2];
           const fourth = segments[3]?.toLowerCase();
-          if (['seller-manager', 'cashier', 'merchant-manager', 'customer-manager'].includes(second) && orgEvent && fourth === 'dashboard') {
+          if (['team-leader', 'cashier', 'merchant-manager', 'customer-manager'].includes(second) && orgEvent && fourth === 'dashboard') {
             const idx = orgEvent.indexOf('-');
             if (idx > 0) {
               parsedOrgCode = orgEvent.substring(0, idx);
@@ -184,10 +184,10 @@ export const EventProvider = ({ children }) => {
 
       if (!parsedOrgCode || !parsedEventCode) {
         console.warn('[EventContext] URL 格式无法识别！: ' + urlPath);
-        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(seller|merchant|customer)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type|auditor)/:orgEventCode/dashboard');
+        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(merchant|customer|pointseller)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type|auditor)/:orgEventCode/dashboard');
         const hints = [
           'URL 格式不正确，请使用正确的链接',
-          '例如: /login/xhessbn-2025 或 /seller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
+          '例如: /login/xhessbn-2025 或 /pointseller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
           '或 /cashier/xhessbn-2025/dashboard 或 /auditor/xhessbn-2025/dashboard',
           '',
           '可能原因：',

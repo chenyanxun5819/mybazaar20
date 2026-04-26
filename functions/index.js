@@ -1,4 +1,4 @@
-require('./loadEnv');
+﻿require('./loadEnv');
 const functions = require('firebase-functions');
 // removed unused onDocumentCreated import (not used in this file)
 const { setGlobalOptions } = require('firebase-functions/v2');
@@ -23,7 +23,7 @@ const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { resolveOrgEventHttp } = require('./auth/resolveOrgEventHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
 // 导入现金收款 Cloud Functions
-const { onCashCollection } = require('./src/sellerManager/onCashCollection');
+const { onCashCollection } = require('./src/teamLeader/onCashCollection');
 
 
 // 導入 Platform Admin logo 和活動管理函數
@@ -39,12 +39,12 @@ const { grantPointsByEventManagerHttp } = require('./src/eventManager/grantPoint
 // Cashier callable / triggers
 const financeManagerFunctions = require('./src/cashier/cashierFunction');
 
-const sellerManagerFunctions = require('./src/sellerManager/sellerManagerFunctions');
-const sellerManagerHttpFunctions = require('./src/sellerManager/sellerManagerHttpFunctions');
+const teamLeaderFunctions = require('./src/teamLeader/teamLeaderFunctions');
+const teamLeaderHttpFunctions = require('./src/teamLeader/teamLeaderHttpFunctions');
 
 // ✅ 從正確的模組導入函數
-const { onSellerManagerAllocation } = sellerManagerFunctions;
-const { allocatePointsBySellerManagerHttp, getSellerManagerDashboardDataHttp } = sellerManagerHttpFunctions;
+const { onTeamLeaderAllocation } = teamLeaderFunctions;
+const { allocatePointsByTeamLeaderHttp, getTeamLeaderDashboardDataHttp } = teamLeaderHttpFunctions;
 const { getCustomerDashboardDataHttp } = require('./src/customer/customerHttpFunctions');
 
 // Cashier: claim + confirm cash submission (callable)
@@ -52,7 +52,7 @@ const { claimAndConfirmCashSubmission } = require('./src/cashier/Claimandconfirm
 
 // Cash Submission (callable)
 const { submitCashToFinance } = require('./src/cash/Submitcashtofinance');
-const { submitCashToSellerManager } = require('./src/cash/Submitcashtosellermanager');
+const { submitCashToTeamLeader } = require('./src/cash/SubmitcashtoTeamLeader');
 // 新增 CashSubmission/Confirmation functions
 const { createCashSubmission } = require('./src/cashSubmission/createCashSubmission');
 const { confirmCashSubmissionByCashier } = require('./src/cashier/confirmCashSubmissionByCashier');
@@ -69,8 +69,7 @@ const {
 const { createPointCard } = require('./src/pointseller/createPointCard');
 const { pointSellerDirectSale } = require('./src/pointseller/pointSellerDirectSale');
 const { submitCashAsPointSeller } = require('./src/pointseller/submitCashAsPointSeller');
-const { sellerManagerDirectSale } = require('./src/sellerManager/sellerManagerDirectSale');
-const { sellerDirectSale } = require('./src/sellerManager/sellerDirectSale');
+const { teamLeaderDirectSale } = require('./src/teamLeader/teamLeaderDirectSale');
 // 導入密碼與交易密碼相關函式
 const { changeLoginPassword: changeLoginPasswordFn } = require('./changeLoginPassword');
 const { setupTransactionPin: setupTransactionPinFn } = require('./setupTransactionPin');
@@ -118,16 +117,15 @@ exports.createEventByPlatformAdminHttp = createEventByPlatformAdminHttp;
 // 导出现金收款 Cloud Functions
 exports.onCashCollection = onCashCollection;
 
-// 导出 Seller Manager Functions
-exports.sellerManagerDirectSale = sellerManagerDirectSale;
-exports.sellerDirectSale = sellerDirectSale;
-exports.onSellerManagerAllocation = onSellerManagerAllocation;
+// 导出 Team Leader Functions
+exports.teamLeaderDirectSale = teamLeaderDirectSale;
+exports.onTeamLeaderAllocation = onTeamLeaderAllocation;
 // exports.updateUserPointsStats = updateUserPointsStats;
 // exports.checkCollectionWarnings = checkCollectionWarnings;
 
-// 导出 Seller Manager HTTP Functions
-exports.allocatePointsBySellerManagerHttp = allocatePointsBySellerManagerHttp;
-exports.getSellerManagerDashboardDataHttp = getSellerManagerDashboardDataHttp;
+// 导出 Team Leader HTTP Functions
+exports.allocatePointsByTeamLeaderHttp = allocatePointsByTeamLeaderHttp;
+exports.getTeamLeaderDashboardDataHttp = getTeamLeaderDashboardDataHttp;
 exports.getCustomerDashboardDataHttp = getCustomerDashboardDataHttp;
 
 // 导出 Finance Manager 相关 HTTP Functions
@@ -148,7 +146,7 @@ exports.claimAndConfirmCashSubmission = claimAndConfirmCashSubmission;
 
 // Cash Submission (callable)
 exports.submitCashToFinance = submitCashToFinance;
-exports.submitCashToSellerManager = submitCashToSellerManager;
+exports.submitCashToTeamLeader = submitCashToTeamLeader;
 exports.createCashSubmission = createCashSubmission;
 // 將 Customer callable 以頂層名稱導出，供前端 httpsCallable 使用
 exports.createCustomer = createCustomer;
@@ -421,8 +419,8 @@ exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
       }
 
       // 🎫 構造 Custom Claims（與 otpVerify 對齊，確保 Firestore 規則可用）
-      const managedDepartments = userData.sellerManager?.managedDepartments ||
-        userData.roleSpecificData?.sellerManager?.managedDepartments || [];
+      const managedDepartments = userData.teamLeader?.managedDepartments ||
+        userData.roleSpecificData?.teamLeader?.managedDepartments || [];
 
       const customClaims = {
         organizationId,
@@ -467,7 +465,7 @@ exports.loginWithPin = onRequest({ region: 'asia-southeast1' }, (req, res) => {
         basicInfo: { ...userData.basicInfo },
         identityInfo: userData.identityInfo || {},
         identityTag: userData.identityTag || userData.identityInfo?.identityTag || '',
-        sellerManager: userData.sellerManager,
+        teamLeader: userData.teamLeader,
         accountStatus: userData.accountStatus
       };
 
@@ -686,10 +684,10 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
             isActive: true,
             roleConfig: {
               roleType: 'managed',
-              description: '需要被 Seller Manager 管理的身份'
+              description: '需要被 Team Leader 管理的身份'
             },
             managedByRole: {
-              role: 'sellerManager',
+              role: 'teamLeader',
               policies: {
                 requiresApprovalForCash: true,
                 calculateCollectionWarning: true,
@@ -745,6 +743,6 @@ exports.migrateIdentityTags = onRequest({ region: 'asia-southeast1' }, async (re
 // index.js
 
 // ============================================================================
-// 注意：onSellerManagerAllocation 已迁移到 sellerManagerFunctions.js
+// 注意：onTeamLeaderAllocation 已迁移到 teamLeaderFunctions.js
 // 该触发器已从此处删除以避免重复触发导致点数翻倍
-// 请参考 sellerManagerFunctions.js 中的 onSellerManagerAllocation 实现
+// 请参考 teamLeaderFunctions.js 中的 onTeamLeaderAllocation 实现

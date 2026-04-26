@@ -1,9 +1,33 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-04-22-v21",
-    "lastUpdated": "2026-04-22",
+    "version": "2026-04-25-v22",
+    "lastUpdated": "2026-04-25",
     "architectureChanges": {
+      "version_2026-04-26-v23": [
+        "💰 Customer.cashAccount 新增现金账户（用于追踪应收现金）",
+        "💰 Customer.cashAccount 字段：totalAllocatedCash（应收总额）、pendingCash（待支付）、confirmedCash（已支付）",
+        "💰 Customer.cashAccount 区分来源：emAllocatedCash（EM分配）、tlAllocatedCash（TL派发）",
+        "📋 Customer.pointsAccount 新增来源追踪：allocatedPoints（需支付现金）、grantedPoints（赠送无需支付）",
+        "🔧 pointAllocations 新增字段：requiresCash、cashAmount、allocationType、sourceRole",
+        "🎯 allocationType 取值：'allocated'（EM分配）、'granted'（EM赠送）、'personal'（TL派发）",
+        "☁️ 需要同步修改 Cloud Functions 以自动更新 Customer.cashAccount 字段"
+      ],
+      "version_2026-04-25-v22": [
+        "🔄 sellerManager 角色重命名为 teamLeader（班导/班级负责人），反映其管理约50名学生的班级角色",
+        "❌ seller 角色（点数分销中间层）已移除，不再作为点数分配中介",
+        "✅ 强制购买模式：所有 customer 必须购买点数，点数直接分配给 customer，无需经过 seller 中间层",
+        "📊 roles 枚举移除 'seller'，将 'sellerManager' 改为 'teamLeader'",
+        "📊 roleStats.sellerManagers → teamLeaders；移除 roleStats.sellers",
+        "🔗 identityTags.managedByRole.role 从 'sellerManager' 改为 'teamLeader'",
+        "💰 transactionType 移除 'seller_to_customer'；'sellerManager_to_customer' 改为 'teamLeader_to_customer'",
+        "🏦 cashCollections：记录从 customer 收款的场景，由 teamLeader 收取（原为 sellerManager 从 seller 收取）",
+        "🏦 cashSubmissions：submitterRole 移除 'seller'，保留 'teamLeader'（原 sellerManager）提交给 cashier",
+        "📋 pointsStats 描述更新：主要用于 teamLeader 追踪点数分配与现金收取；移除 receivedFromSellerManager 字段",
+        "📋 sellerManagerStats 子集合重命名为 teamLeaderStats",
+        "📋 pointAllocations 路径与描述更新（sellerManagerId → teamLeaderId）",
+        "🔧 platform_settings.otpRequired：seller* 配置移除，sellerManager* 改为 teamLeader*"
+      ],
       "version_2026-04-22-v21": [
         "🌐 createPointCard.js 新增同步更新 events.globalPointsStats（totalSold / totalRevenue / currentCirculation）",
         "🌐 pointSellerDirectSale.js 新增同步更新 events.globalPointsStats（totalSold / totalRevenue / currentCirculation）",
@@ -171,7 +195,7 @@
       "dataIsolation": "每个 Organization 的数据完全隔离",
       "eventManager": "每个 Event 只有一个 Event Manager，存储在 users 集合中，通过 roles 识别",
       "contactPerson": "Event Manager 本身就是活动联络人，无需额外的 contactPerson 字段",
-      "subcollections": "users, departmentStats, sellerManagerStats 等都是 Event 的子集合"
+      "subcollections": "users, departmentStats, teamLeaderStats 等都是 Event 的子集合"
     },
     "collections": {
       "admin_uids": {
@@ -240,11 +264,11 @@
               "// === 🆕 角色配置 - 方案 B 核心 ===": "",
               "roleConfig": {
                 "roleType": "string ('managed' | 'independent')",
-                "description": "string (角色说明，如 '需要被 Seller Manager 管理的身份')"
+                "description": "string (角色说明，如 '需要被 TeamLeader 管理的身份')"
               },
               "// === 仅当 roleType='managed' 时有效 ===": "",
               "managedByRole": {
-                "role": "string (由哪个角色管理，如 'sellerManager')",
+                "role": "string (由哪个角色管理，如 'teamLeader')",
                 "policies": {
                   "requiresApprovalForCash": "boolean (现金上交需要批准)",
                   "calculateCollectionWarning": "boolean (计算低收款率警示)",
@@ -367,21 +391,16 @@
                 "description": "各角色统计信息",
                 "eventManagers": {
                   "count": "number (Event Manager 数量，固定为1)",
-                  "totalAllocations": "number (累计分配次数，分配给 seller 的操作次数)",
-                  "totalPointsAllocated": "number (累计分配给 seller 的点数总额)",
+                  "totalAllocations": "number (累计分配次数，分配给 teamLeader/customer 的操作次数)",
+                  "totalPointsAllocated": "number (累计分配给 customer 的点数总额)",
                   "totalGrants": "number (累计赠送次数，直接赠送给 customer 的操作次数)",
                   "totalPointsGranted": "number (累计赠送给 customer 的点数总额)"
                 },
-                "sellerManagers": {
-                  "count": "number (Seller Manager 数量)",
+                "teamLeaders": {
+                  "count": "number (TeamLeader 数量)",
                   "totalAllocations": "number (累计分配次数)",
-                  "totalPointsAllocated": "number (累计分配点数)",
+                  "totalPointsAllocated": "number (累计分配给 customer 的点数总额)",
                   "averageCollectionRate": "number (平均收款率)"
-                },
-                "sellers": {
-                  "count": "number (Seller 总数)",
-                  "activeCount": "number (有交易记录的 Seller 数)",
-                  "totalRevenue": "number (累计销售额)"
                 },
                 "merchants": {
                   "count": "number (Merchant 总数)",
@@ -457,7 +476,6 @@
               "statistics": {
                 "totalUsers": "number (总用户数)",
                 "totalManagers": "number (管理员总数)",
-                "totalSellers": "number (Seller 总数)",
                 "totalMerchantOwners": "number (Merchant Owner 总数)",
                 "totalCustomers": "number (Customer 总数)",
                 "lastUpdated": "timestamp"
@@ -486,13 +504,11 @@
                   "expectedFromPointCards": "number (点数卡预期收款 RM = totalFromPointCards)",
                   "totalExpected": "number (总预期收款 RM)",
                   "// 实际收款": "",
-                  "collectedFromSellers": "number (从 Seller 收到的现金 RM)",
-                  "collectedFromSellerManagers": "number (从 SellerManager 收到的现金 RM)",
+                  "collectedFromTeamLeaders": "number (从 TeamLeader 收到的现金 RM)",
                   "collectedFromPointSellers": "number (从 PointSeller 收到的现金 RM)",
                   "totalCollected": "number (总实际收款 RM)",
                   "// 待收款": "",
-                  "pendingFromSellers": "number (Seller 待上交 RM)",
-                  "pendingFromSellerManagers": "number (SellerManager 待上交 RM)",
+                  "pendingFromTeamLeaders": "number (TeamLeader 待上交 RM)",
                   "pendingFromPointSellers": "number (PointSeller 待上交 RM)",
                   "totalPending": "number (总待收款 RM)",
                   "// 未收款": "",
@@ -515,8 +531,7 @@
                     "collectionsCount": "number (收款笔数)",
                     "lastCollection": "timestamp (最后收款时间)",
                     "cashSources": {
-                      "fromSellers": "number (来自 Seller RM)",
-                      "fromSellerManagers": "number (来自 SellerManager RM)",
+                      "fromTeamLeaders": "number (来自 TeamLeader RM)",
                       "fromPointSellers": "number (来自 PointSeller RM)"
                     }
                   }
@@ -560,7 +575,7 @@
                   "userId": "string (Firebase Auth UID，文档ID)",
                   "authUid": "string (认证UID，与userId相同)",
                   "roles": [
-                    "string ('eventManager' | 'sellerManager' | 'merchantManager' | 'customerManager' | 'cashier' | 'pointSeller' | 'seller' | 'merchantOwner' | 'merchantAsist' | 'customer' | 'auditor')"
+                    "string ('eventManager' | 'teamLeader' | 'merchantManager' | 'customerManager' | 'cashier' | 'pointSeller' | 'merchantOwner' | 'merchantAsist' | 'customer' | 'auditor')"
                   ],
                   "identityTag": "string ('student' | 'teacher' | 'parent' | 'staff' | 'volunteer' | 'external')",
                   "identityInfo": {
@@ -583,35 +598,19 @@
                     "pinLastChanged": "timestamp (交易密码最后修改时间，可选)"
                   },
                   "pointsStats": {
-                    "description": "点数统计（实时维护，主要用于 seller 角色）",
-                    "totalReceived": "number (累计收到的点数)",
-                    "currentBalance": "number (当前拥有点数/库存)",
-                    "totalSold": "number (累计已售出点数)",
-                    "totalRevenue": "number (累计销售额 RM)",
+                    "description": "点数统计（实时维护，主要用于 teamLeader 角色追踪点数分配与现金收取情况）",
+                    "totalReceived": "number (累计收到的点数，从 EventManager 获得)",
+                    "currentBalance": "number (当前未分配的点数库存)",
+                    "totalSold": "number (累计已分配给 customer 的点数)",
+                    "totalRevenue": "number (累计应收款项 RM)",
                     "totalCollected": "number (累计已收款 RM)",
                     "pendingCollection": "number (待收款 RM)",
                     "collectionRate": "number (个人收款率，0-1之间)",
                     "receivedFromEventManager": "number (从 Event Manager 获得的点数)",
-                    "receivedFromSellerManager": "number (从 Seller Manager 获得的点数)",
                     "lastReceived": "timestamp (最后一次收到点数)",
-                    "lastSold": "timestamp (最后一次销售)",
+                    "lastSold": "timestamp (最后一次分配点数给 customer)",
                     "lastCollected": "timestamp (最后一次收款)",
                     "lastUpdated": "timestamp"
-                  },
-                  "seller": {
-                    "availablePoints": "number (当前可用点数余额)",
-                    "totalPointsSold": "number (累计售出点数)",
-                    "totalRevenue": "number (累计销售额 RM)",
-                    "totalCashCollected": "number (累计已收现金)",
-                    "pendingCollection": "number (待收款金额)",
-                    "transactions": "object (交易记录)",
-                    "totalSubmitted": "number (累计提交现金)",
-                    "collectionAlert": {
-                      "hasWarning": "boolean (是否有收款警示)",
-                      "warningLevel": "string ('none' | 'low' | 'medium' | 'high')",
-                      "pendingAmount": "number (待收款金额)",
-                      "pendingRatio": "number (待收款比例 0-1)"
-                    }
                   },
                   "merchantOwner": {
                     "merchantId": "string (关联的 merchant 文档 ID)",
@@ -660,12 +659,28 @@
                   },
                   "customer": {
                     "pointsAccount": {
-                      "availablePoints": "number (可用点数)",
+                      "availablePoints": "number (可用点数 - 所有来源的点数合并)",
                       "reservedPoints": "number (预留点数)",
                       "totalReceived": "number (累计获得)",
                       "totalSpent": "number (累计消费)",
                       "totalTransferredOut": "number (累计转出)",
-                      "totalTransferredIn": "number (累计接收转入)"
+                      "totalTransferredIn": "number (累计接收转入)",
+                      "// === 🆕 点数来源追踪 ===": "",
+                      "allocatedPoints": "number (来自EventManager分配 + TeamLeader派发的总点数，需要支付现金)",
+                      "grantedPoints": "number (来自EventManager赠送的总点数，无需支付现金)"
+                    },
+                    "// === 🆕 现金账户（用于追踪应收现金） ===": "",
+                    "cashAccount": {
+                      "// === 应收现金 ===": "",
+                      "totalAllocatedCash": "number (应收现金总额 RM - 来自所有分配和派发的点数)",
+                      "pendingCash": "number (待支付现金 RM - 尚未确认收款)",
+                      "confirmedCash": "number (已支付现金 RM - 已被TeamLeader确认收款)",
+                      "// === 现金来源 ===": "",
+                      "emAllocatedCash": "number (来自EventManager分配的应收现金 RM)",
+                      "tlAllocatedCash": "number (来自TeamLeader派发的应收现金 RM)",
+                      "// === 时间戳 ===": "",
+                      "lastAllocatedAt": "timestamp (最后一次被分配或派发点数的时间)",
+                      "lastConfirmedAt": "timestamp (最后一次支付现金的时间)"
                     },
                     "qrCodeData": {
                       "type": "string (固定值 'CUSTOMER_RECEIVE_POINTS')",
@@ -691,8 +706,8 @@
                   "eventManager": {
                     "description": "Event Manager 角色专用数据",
                     "// === 点数操作统计 ===": "",
-                    "totalAllocations": "number (累计分配次数，分配给 seller 的操作次数)",
-                    "totalPointsAllocated": "number (累计分配给 seller 的点数总额)",
+                    "totalAllocations": "number (累计分配次数，分配给 teamLeader 或 customer 的操作次数)",
+                    "totalPointsAllocated": "number (累计分配给 customer 的点数总额)",
                     "totalGrants": "number (累计赠送次数，直接赠送给 customer 的操作次数)",
                     "totalPointsGranted": "number (累计赠送给 customer 的点数总额)",
                     "lastAllocatedAt": "timestamp (最后一次分配点数时间)",
@@ -700,7 +715,7 @@
                     "permissions": {
                       "canManageUsers": "boolean (可以创建、编辑、删除用户)",
                       "canManageRoles": "boolean (可以分配角色给用户)",
-                      "canAssignManagers": "boolean (可以指派 Seller Manager、Cashier)",
+                      "canAssignManagers": "boolean (可以指派 TeamLeader、Cashier)",
                       "canViewAllData": "boolean (可以查看所有数据)",
                       "canMonitorAll": "boolean (可以监控所有人员活动)",
                       "canModifyEventSettings": "boolean (可以修改活动设置)"
@@ -712,16 +727,16 @@
                     },
                     "monitoringScope": {
                       "canMonitorCashier": "boolean (可以监控 Cashier 的点数分配)",
-                      "canMonitorSellerManager": "boolean (可以监控 Seller Manager 的收款活动)",
+                      "canMonitorTeamLeader": "boolean (可以监控 TeamLeader 的收款活动)",
                       "canMonitorAllTransactions": "boolean (可以查看所有交易记录)",
                       "canViewAllStats": "boolean (可以查看所有统计数据)"
                     },
-                    "notes": "Event Manager 可执行两种点数操作：(1) 分配给 seller → seller.availablePoints，seller 需售出给 customer；(2) 赠送给 customer → customer.pointsAccount.availablePoints，可直接消费。两种操作独立计算。"
+                    "notes": "Event Manager 可执行两种点数操作：(1) 分配给 teamLeader → teamLeader 将点数分配给所管理的 customer（学生必须购买）；(2) 赠送给 customer → customer.pointsAccount.availablePoints，可直接消费，无需付款。两种操作独立计算。"
                   },
-                  "sellerManager": {
-                    "description": "Seller Manager 角色专用数据",
-                    "totalAllocations": "number (累计分配次数)",
-                    "totalPointsAllocated": "number (累计分配点数)",
+                  "teamLeader": {
+                    "description": "TeamLeader（班导）角色专用数据，负责管理约50名学生，分配点数并收取现金",
+                    "totalAllocations": "number (累计分配次数，分配给所管 customer 的次数)",
+                    "totalPointsAllocated": "number (累计分配给 customer 的点数总额)",
                     "managedDepartments": [
                       "string (管理的部门代码数组，如 ['J1A', 'J1B'])"
                     ],
@@ -729,14 +744,14 @@
                     "// === 动态读取方式 ===": "const managedTags = org.identityTags.filter(t => t.roleConfig?.roleType === 'managed')",
                     "// === 🆕 现金管理统计 ===": "",
                     "cashStats": {
-                      "// 从学生收取的现金": "",
-                      "pendingFromSellers": "number (待确认的学生现金 RM - 学生已上交但SM未确认)",
-                      "confirmedFromSellers": "number (已确认的学生现金 RM - SM已确认收到)",
-                      "totalReceivedFromSellers": "number (累计从学生收到的现金 RM)",
+                      "// 从学生（customer）收取的现金": "",
+                      "pendingFromCustomers": "number (待确认的学生现金 RM - 学生已上交但TL未确认)",
+                      "confirmedFromCustomers": "number (已确认的学生现金 RM - TL已确认收到)",
+                      "totalReceivedFromCustomers": "number (累计从学生收到的现金 RM)",
                       "lastConfirmedAt": "timestamp (最后确认收款时间)",
-                      "// SM持有的现金": "",
-                      "cashOnHand": "number (SM当前持有现金 RM - 已确认但未上交)",
-                      "// SM上交给Finance的现金": "",
+                      "// TL持有的现金": "",
+                      "cashOnHand": "number (TL当前持有现金 RM - 已确认但未上交)",
+                      "// TL上交给Finance的现金": "",
                       "totalSubmitted": "number (累计上交给Finance的现金 RM)",
                       "pendingSubmission": "number (待Finance确认的现金 RM)",
                       "lastSubmittedAt": "timestamp (最后上交时间)"
@@ -747,7 +762,7 @@
                       "canViewDepartmentStats": true,
                       "canBatchAllocate": false
                     },
-                    "notes": "Seller Manager 只管理 students，不管理 teacher/staff",
+                    "notes": "TeamLeader 只管理 students（即 customer 角色用户），不管理 teacher/staff；学生必须强制购买点数",
                     "alerts": {
                       "lowCollectionRate": [
                         "string (低收款率警示的用户ID列表)"
@@ -788,7 +803,7 @@
                   },
                   "cashier": {
                     "// === 基本信息 ===": "",
-                    "// === ⚠️ managedIdentityTags 已移除 ===": "从 organization.identityTags 中读取 roleType='independent' 的标签，或 managedByRole.role!='sellerManager' 的标签",
+                    "// === ⚠️ managedIdentityTags 已移除 ===": "从 organization.identityTags 中读取 roleType='independent' 的标签，或 managedByRole.role!='teamLeader' 的标签",
                     "// === 动态读取方式 ===": "const independentTags = org.identityTags.filter(t => t.roleConfig?.roleType === 'independent')",
                     "// === 收款统计 ===": "",
                     "cashStats": {
@@ -822,8 +837,7 @@
                     },
                     "// === 现金来源分布 ===": "",
                     "cashSources": {
-                      "fromSellers": "number (来自 Seller 的现金 RM)",
-                      "fromSellerManagers": "number (来自 SellerManager 的现金 RM)",
+                      "fromTeamLeaders": "number (来自 TeamLeader 的现金 RM)",
                       "fromPointSellers": "number (来自 PointSeller 的现金 RM)",
                       "lastUpdated": "timestamp"
                     },
@@ -960,20 +974,25 @@
                   "identityInfo.department",
                   "accountStatus.isActive"
                 ],
-                "securityRules": "用户可以读取自己的数据；Event Manager 可以读取所有用户；Seller Manager 可以读取 managedDepartments 内的用户",
+                "securityRules": "用户可以读取自己的数据；Event Manager 可以读取所有用户；TeamLeader 可以读取 managedDepartments 内的用户",
                 "subcollections": {
                   "pointAllocations": {
-                    "path": "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
-                    "description": "Seller Manager 的点数分配记录（仅 sellerManager 角色有此子集合）",
+                    "path": "organizations/{organizationId}/events/{eventId}/users/{teamLeaderId}/pointAllocations/{allocationId}",
+                    "description": "TeamLeader 的点数分配记录（仅 teamLeader 角色有此子集合）",
                     "documentStructure": {
                       "allocationId": "string (分配记录ID)",
-                      "fromUserId": "string (Seller Manager的userId)",
+                      "fromUserId": "string (TeamLeader的userId)",
                       "toUserId": "string (接收者的userId)",
                       "toDepartment": "string (接收者的部门)",
                       "points": "number (分配的点数)",
                       "reason": "string (分配原因，可选)",
                       "allocatedAt": "timestamp",
-                      "status": "string ('completed' | 'cancelled')"
+                      "status": "string ('completed' | 'cancelled')",
+                      "// === 🆕 现金相关字段 ===": "",
+                      "requiresCash": "boolean (是否需要支付现金 - true表示需要现金对沖，false表示赠送)",
+                      "cashAmount": "number (对应的现金金额 RM)",
+                      "allocationType": "string ('allocated' | 'granted' | 'personal') — allocated: EM分配, granted: EM赠送, personal: TL派发",
+                      "sourceRole": "string ('eventManager' | 'teamLeader') — 分配点数的角色来源"
                     },
                     "indexes": [
                       "toUserId",
@@ -989,8 +1008,8 @@
                   "departmentCode": "string (部门代码)",
                   "departmentName": "string (部门名称)",
                   "totalUsers": "number (部门总用户数)",
-                  "totalSellers": "number (Seller 数量)",
-                  "activeSellers": "number (有交易的 Seller 数)",
+                  "totalCustomers": "number (Customer 数量)",
+                  "activeCustomers": "number (有交易的 Customer 数)",
                   "pointsStats": {
                     "totalReceived": "number (部门累计收到点数)",
                     "currentBalance": "number (部门当前点数余额)",
@@ -1022,11 +1041,11 @@
                   "pointsStats.totalRevenue"
                 ]
               },
-              "sellerManagerStats": {
-                "path": "organizations/{organizationId}/events/{eventId}/sellerManagerStats/{sellerManagerId}",
-                "description": "Seller Manager 的统计信息（managedDepartments 存储在 users/{userId}/roleSpecificData/sellerManager 中）",
+              "teamLeaderStats": {
+                "path": "organizations/{organizationId}/events/{eventId}/teamLeaderStats/{teamLeaderId}",
+                "description": "TeamLeader 的统计信息（managedDepartments 存储在 users/{userId}/teamLeader 中）",
                 "documentStructure": {
-                  "sellerManagerId": "string (Seller Manager的userId)",
+                  "teamLeaderId": "string (TeamLeader的userId)",
                   "displayName": "string",
                   "managedUsersCount": "number (管理的用户总数)",
                   "totalAllocations": "number (累计分配次数)",
@@ -1066,7 +1085,7 @@
                   "lastCalculated": "timestamp"
                 },
                 "indexes": [
-                  "sellerManagerId"
+                  "teamLeaderId"
                 ]
               },
               "firestoreArchitectureAddendum": {
@@ -1161,13 +1180,13 @@
               },
               "transactions": {
                 "path": "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
-                "description": "所有交易记录（Seller售出点数给 Customer；Merchant向 Customer 收取点数）",
+                "description": "所有交易记录（TeamLeader分配点数给 Customer；Merchant向 Customer 收取点数）",
                 "documentStructure": {
                   "transactionId": "string (自動生成)",
                   "eventId": "string",
                   "organizationId": "string",
                   "// 交易雙方": "根據類型不同而異",
-                  "sellerId": "string (POINTS_SALE 時使用)",
+                  "teamLeaderId": "string (teamLeader_to_customer 時使用)",
                   "customerId": "string (兩種類型都有)",
                   "amount": "number (交易金额，points)",
                   "status": {
@@ -1212,8 +1231,7 @@
                     "values": [
                       "pointseller_to_customer",
                       "pointseller_card_issuance",
-                      "seller_to_customer",
-                      "sellerManager_to_customer",
+                      "teamLeader_to_customer",
                       "customer_to_merchant",
                       "customer_transfer",
                       "point_card_payment",
@@ -1248,21 +1266,13 @@
                         "cardStatus": "不记名、可流转、客户扫码充值后销毁",
                         "example": "PointSeller 发行 100 点的点数卡，收取 RM 100 现金，客户获得不记名卡片并持有"
                       },
-                      "seller_to_customer": {
-                        "role": "Seller（销售员）",
-                        "description": "Seller 销售分配给他的点数给 Customer，收取现金",
-                        "direction": "Seller → Customer",
-                        "source": "SellerManager 分配给 Seller 的库存点数",
-                        "cloudFunction": "sellerDirectSale",
-                        "example": "Seller 销售 30 点给 Customer，Customer 支付 RM 30 现金，Seller 库存减少 30"
-                      },
-                      "sellerManager_to_customer": {
-                        "role": "SellerManager（点数分配管理员）",
-                        "description": "SellerManager 分配点数给 Customer（通常分配给所属学生），无需收款",
-                        "direction": "SellerManager → Customer",
-                        "source": "SellerManager 权限分配（活动管理员分配给学生）",
-                        "cloudFunction": "grantPointsBySellerManager",
-                        "example": "SellerManager 为学生充值 100 点（作为班级内部福利或奖励）"
+                      "teamLeader_to_customer": {
+                        "role": "TeamLeader（班导/班级负责人）",
+                        "description": "TeamLeader 将点数分配给所管理的 Customer（学生必须购买，强制消费模式），TeamLeader 同步收取现金",
+                        "direction": "TeamLeader → Customer",
+                        "source": "EventManager 预先分配给 TeamLeader 的点数库存",
+                        "cloudFunction": "allocatePointsByTeamLeader",
+                        "example": "TeamLeader 为班级50名学生各分配 100 点，每位学生须缴 RM 100，TeamLeader 负责收款并上交 Finance"
                       },
                       "customer_to_merchant": {
                         "role": "Customer（顾客） & Merchant（摊位）",
@@ -1371,7 +1381,7 @@
                   "transactionType",
                   "merchantId + timestamp (desc)",
                   "customerId + timestamp (desc)",
-                  "sellerId + timestamp (desc)",
+                  "teamLeaderId + timestamp (desc)",
                   "status",
                   "collectedBy + timestamp (desc)",
                   "status + merchantId + timestamp (desc)"
@@ -1379,18 +1389,18 @@
               },
               "cashCollections": {
                 "path": "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
-                "description": "现金收款记录（Seller Manager 从 Seller 收取现金的记录）",
+                "description": "现金收款记录（TeamLeader 从 Customer/学生 收取现金的记录）",
                 "level": "Event Subcollection",
                 "documentStructure": {
                   "collectionId": "string (文档ID)",
-                  "type": "string ('sellerToManager')",
-                  "collectedBy": "string (Seller Manager ID)",
+                  "type": "string ('customerToTeamLeader')",
+                  "collectedBy": "string (TeamLeader ID)",
                   "collectedByName": "string",
-                  "collectedByRole": "string ('sellerManager')",
+                  "collectedByRole": "string ('teamLeader')",
                   "collectedByDepartment": "string",
-                  "submittedBy": "string (Seller ID)",
+                  "submittedBy": "string (Customer/学生 ID)",
                   "submittedByName": "string",
-                  "submittedByRole": "string ('seller')",
+                  "submittedByRole": "string ('customer')",
                   "submittedByDepartment": "string",
                   "amount": "number",
                   "pointsValue": "number",
@@ -1402,8 +1412,8 @@
                   "submittedAt": "timestamp",
                   "confirmedAt": "timestamp",
                   "submissionId": "string",
-                  "sellerId": "string",
-                  "sellerDepartment": "string",
+                  "customerId": "string (缴款学生 Customer ID)",
+                  "customerDepartment": "string",
                   "eventId": "string",
                   "organizationId": "string",
                   "note": "string",
@@ -1413,14 +1423,14 @@
                 "indexes": [
                   "collectedBy",
                   "collectedAt",
-                  "sellerId",
+                  "customerId",
                   "status"
                 ],
-                "securityRules": "Seller Manager 可读写自己的记录; Cashier 和 Event Manager 可读所有记录"
+                "securityRules": "TeamLeader 可读写自己的收款记录; Cashier 和 Event Manager 可读所有记录"
               },
               "cashSubmissions": {
                 "path": "organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId}",
-                "description": "现金上交记录（Seller/SellerManager/PointSeller 上交给 Cashier）",
+                "description": "现金上交记录（TeamLeader/PointSeller 上交给 Cashier）",
                 "level": "Event Subcollection",
                 "documentStructure": {
                   "// === 基本信息 ===": "",
@@ -1429,13 +1439,13 @@
                   "// === 提交方信息 ===": "",
                   "submittedBy": "string (提交者 userId)",
                   "submitterName": "string (提交者姓名)",
-                  "submitterRole": "string (提交者角色：'seller' | 'sellerManager' | 'pointSeller')",
+                  "submitterRole": "string (提交者角色：'teamLeader' | 'pointSeller')",
                   "submitterDepartment": "string (提交者部门，可选)",
                   "submitterPhone": "string (提交者电话)",
                   "// === 接收方信息 ===": "",
-                  "receivedBy": "string (接收者 userId - 可以是SellerManager或Cashier，或null表示待认领池子)",
+                  "receivedBy": "string (接收者 userId - Cashier，或null表示待认领池子)",
                   "receiverName": "string (接收者姓名)",
-                  "receiverRole": "string (接收者角色：'sellerManager' | 'cashier' | null)",
+                  "receiverRole": "string (接收者角色：'cashier' | null)",
                   "receiverPhone": "string (接收者电话)",
                   "// === 金额信息 ===": "",
                   "amount": "number (上交金额 RM)",
@@ -1459,8 +1469,8 @@
                   "// === 包含的销售记录 ===": "",
                   "includedSales": [
                     {
-                      "sellerId": "string (Seller ID，可选)",
-                      "sellerName": "string (Seller 姓名)",
+                      "customerId": "string (缴款 Customer ID，可选)",
+                      "customerName": "string (Customer 姓名)",
                       "amount": "number (金额 RM)",
                       "salesDate": "string (销售日期 YYYY-MM-DD)",
                       "transactionIds": [
@@ -1484,7 +1494,7 @@
                     "eventId": "string (冗余字段)",
                     "organizationId": "string (冗余字段)",
                     "submissionSource": "string ('manual' | 'batch' | 'auto')",
-                    "submissionType": "string ('sellerToManager' | 'managerToFinance' | 'sellerToFinance' | 'pointSellerToFinance')"
+                    "submissionType": "string ('teamLeaderToFinance' | 'pointSellerToFinance')"
                   }
                 },
                 "indexes": [
@@ -1496,7 +1506,7 @@
                 ],
                 "securityRules": {
                   "create": [
-                    "Seller/SellerManager/PointSeller 可以创建自己的上交记录",
+                    "TeamLeader/PointSeller 可以创建自己的上交记录",
                     "submittedBy 必须等于 request.auth.uid"
                   ],
                   "read": [
@@ -1628,13 +1638,10 @@
             "customerPayment": "boolean (已弃用，改用交易密码验证)",
             "customerTransfer": "boolean (已弃用，改用交易密码验证)",
             "pointCardTopup": "boolean (Customer扫点数卡充值，通常为false)",
-            "// --- SellerManager相关 ---": "",
-            "sellerManagerAllocate": "boolean (SellerManager分配点数)",
-            "sellerManagerCollectCash": "boolean (SellerManager收款确认)",
-            "sellerManagerSubmission": "boolean (Seller Manager提交点数时是否需要OTP)",
-            "// --- Seller相关 ---": "",
-            "sellerSellPoints": "boolean (Seller出售点数)",
-            "sellerSubmitCash": "boolean (Seller上缴现金)",
+            "// --- TeamLeader相关 ---": "",
+            "teamLeaderAllocate": "boolean (TeamLeader分配点数给 customer)",
+            "teamLeaderCollectCash": "boolean (TeamLeader收款确认)",
+            "teamLeaderSubmission": "boolean (TeamLeader上交现金给 Finance 时是否需要OTP)",
             "// --- EventManager相关 ---": "",
             "eventManagerBatchAllocate": "boolean (EventManager批量分配)",
             "eventManagerApproval": "boolean (EventManager审批大额操作)",
@@ -1666,21 +1673,13 @@
               },
               "message": "您正在转让 {amount} 点给 {recipient}，请输入验证码确认。"
             },
-            "sellerManagerAllocate": {
-              "description": "SellerManager分配点数",
+            "teamLeaderAllocate": {
+              "description": "TeamLeader分配点数给 Customer",
               "triggerCondition": {
                 "minAmount": 100,
                 "maxAmount": null
               },
               "message": "您正在分配 {amount} 点给 {recipient}，请输入验证码确认。"
-            },
-            "sellerSellPoints": {
-              "description": "Seller出售点数",
-              "triggerCondition": {
-                "minAmount": 50,
-                "maxAmount": null
-              },
-              "message": "您正在售出 {amount} 点，请输入验证码确认。"
             },
             "pointSellerIssueCard": {
               "description": "PointSeller发行点数卡",
@@ -1729,30 +1728,30 @@
             "计算用户的 pointsStats（实时统计）",
             "更新部门的 departmentStats",
             "更新 Event 的 globalPointsStats",
-            "如果用户是 Seller，更新对应 SellerManager 的 stats",
+            "如果用户是 Customer（学生），更新对应 TeamLeader 的 teamLeaderStats",
             "检查是否需要触发收款警示"
           ],
           "relatedFiles": [
             "functions/userStatsFunctions.js"
           ]
         },
-        "onSellerManagerAllocation": {
-          "trigger": "organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId} onCreate",
-          "description": "当 Seller Manager 分配点数时",
-          "scope": "只能分配給 identityTag 為 student 的用戶",
+        "onTeamLeaderAllocation": {
+          "trigger": "organizations/{orgId}/events/{eventId}/users/{teamLeaderId}/pointAllocations/{allocationId} onCreate",
+          "description": "当 TeamLeader 分配点数给 Customer（学生）时",
+          "scope": "只能分配給 identityTag 為 student 的 customer 用戶",
           "tasks": [
             "验证接收者的 identityTag 是否为 'student'",
             "验证分配额度是否超出 maxPerAllocation 限制",
-            "更新接收者的 seller.availablePoints",
+            "更新接收者的 customer.pointsAccount.availablePoints",
             "更新接收者的 pointsStats.totalReceived",
-            "更新接收者的 pointsStats.receivedFromSellerManager",
+            "更新接收者的 pointsStats.receivedFromEventManager（或 receivedFromTeamLeader）",
             "更新部门的 departmentStats",
-            "更新 SellerManager 的 sellerManagerStats",
+            "更新 TeamLeader 的 teamLeaderStats",
             "更新 Event 的 globalPointsStats.totalAllocated",
-            "计算并更新收款警示（仅对 students）"
+            "计算并更新收款警示（仅对 students，强制购买场景）"
           ],
           "relatedFiles": [
-            "functions/sellerManagerFunctions.js"
+            "functions/teamLeaderFunctions.js"
           ]
         },
         "onCashierAllocation": {
@@ -1764,7 +1763,7 @@
             "如果是批量分配，验证 canBatchAllocate 权限",
             "验证批量分配额度是否超出 batchAllocationLimit",
             "验证接收者的 identityTag 不是 'student'",
-            "更新接收者的对应角色 availablePoints（seller/merchant/customer）",
+            "更新接收者的对应角色 availablePoints（merchant/customer）",
             "更新接收者的 pointsStats.totalReceived",
             "更新接收者的 pointsStats.receivedFromCashier",
             "更新 Cashier 的 cashierStats",
@@ -1779,12 +1778,12 @@
           "trigger": "organizations/{orgId}/events/{eventId}/transactions/{transactionId} onCreate",
           "description": "当交易发生时，更新统计",
           "tasks": [
-            "验证 Seller 有足够的点数余额",
-            "更新 Seller 的 seller.availablePoints（减少）",
-            "更新 Seller 的 seller.totalPointsSold（增加）",
-            "更新 Seller 的 seller.totalRevenue（增加）",
-            "更新 Seller 的 seller.pendingCollection（增加待收款）",
-            "更新 Customer/Merchant 的 availablePoints（增加）",
+            "验证 TeamLeader 有足够的点数余额（teamLeader_to_customer 场景）",
+            "更新 TeamLeader 的 pointsStats.currentBalance（减少）",
+            "更新 TeamLeader 的 pointsStats.totalSold（增加）",
+            "更新 TeamLeader 的 pointsStats.totalRevenue（增加应收款）",
+            "更新 TeamLeader 的 pointsStats.pendingCollection（增加待收款）",
+            "更新 Customer 的 customer.pointsAccount.availablePoints（增加）",
             "更新部门的 departmentStats",
             "更新 Event 的 globalPointsStats.totalSold",
             "更新 Event 的 globalPointsStats.totalRevenue",
@@ -1796,10 +1795,10 @@
         },
         "onCashSubmission": {
           "trigger": "organizations/{orgId}/events/{eventId}/cashSubmissions/{submissionId} onCreate",
-          "description": "当现金上交记录创建时（SM 上交给 FM）",
+          "description": "当现金上交记录创建时（TeamLeader 上交给 Cashier/Finance）",
           "tasks": [
-            "验证 Seller Manager 的上交金额",
-            "更新 Seller Manager 的 sellerManagerStats（待上交金额减少）",
+            "验证 TeamLeader 的上交金额",
+            "更新 TeamLeader 的 teamLeaderStats（待上交金额减少）",
             "更新 Cashier 的 cashierStats（待验证金额增加）",
             "创建待验证记录",
             "发送通知给 Cashier"
@@ -1812,15 +1811,15 @@
           "trigger": "organizations/{orgId}/events/{eventId}/cashCollections/{collectionId} onCreate",
           "description": "当现金收款记录创建时",
           "types": [
-            "Seller Manager 从 Student 收款",
+            "TeamLeader 从 Student/Customer 收款",
             "Cashier 直接从 Teacher/Staff 收款"
           ],
           "tasks": [
-            "验证收款人权限（SM 或 FM）",
+            "验证收款人权限（TeamLeader 或 Cashier）",
             "验证金额是否合理（不超过 pendingCollection）",
-            "更新 Seller 的 seller.totalCashCollected",
-            "更新 Seller 的 seller.pendingCollection（减少）",
-            "更新收款人的统计（sellerManagerStats 或 cashierStats）",
+            "更新 Customer 的 pointsStats.totalCollected",
+            "更新 Customer 的 pointsStats.pendingCollection（减少）",
+            "更新 TeamLeader 的 teamLeaderStats（cashStats.confirmedFromCustomers 增加）",
             "更新部门的 departmentStats",
             "更新 Event 的 globalPointsStats.totalCollected",
             "更新收款警示状态"
@@ -1836,10 +1835,10 @@
           "tasks": [
             "验证用户是否为 student",
             "计算待收款比例",
-            "根据 Event.pointAllocationRules.sellerManager.warningThreshold 判断",
-            "更新用户的 seller.collectionAlert",
+            "根据 Event.pointAllocationRules.teamLeader.warningThreshold 判断",
+            "更新用户的 pointsStats.collectionAlert",
             "更新部门的 collectionAlerts",
-            "更新 SellerManager 的 alerts",
+            "更新 TeamLeader 的 alerts",
             "如果达到高风险级别，发送通知"
           ],
           "relatedFiles": [
@@ -1853,7 +1852,7 @@
             "遍历所有 Organization 的所有 Event",
             "重新计算 globalPointsStats",
             "重新计算所有 departmentStats",
-            "重新计算所有 sellerManagerStats",
+            "重新计算所有 teamLeaderStats",
             "重新计算所有 cashierStats",
             "标记 lastCalculated 时间戳",
             "生成每日统计报告"
@@ -2453,11 +2452,11 @@
           "三层权限架构：Platform Admin（平台级）-> Organization（组织级）-> Event（活动级，由 Event Manager 管理）",
           "Platform Admin 权限：可以创建和管理所有 Organization；可以创建 Event 并指定 Event Manager",
           "Event Manager 权限：每个 Event 只有一个 Event Manager；只能管理自己负责的 Event 内的数据；不分配点数；不兼任其他角色；纯监控所有人员数据",
-          "Auditor 权限：纯只读角色，可读取 Event 内所有数据（users、transactions、merchants、departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections）；不可写入任何数据；与 Event Manager 相互制衡",
+          "Auditor 权限：纯只读角色，可读取 Event 内所有数据（users、transactions、merchants、departmentStats、teamLeaderStats、cashierStats、cashSubmissions、cashCollections）；不可写入任何数据；与 Event Manager 相互制衡",
           "完全数据隔离：不同 Organization 和 Event 之间的数据完全隔离",
-          "角色权限：基于用户角色（Platform Admin, Event Manager, Seller Manager, Seller, Merchant, Customer, Finance）控制访问",
+          "角色权限：基于用户角色（Platform Admin, Event Manager, TeamLeader, Merchant, Customer, Finance）控制访问",
           "所有权验证：用户只能访问自己的数据或管理范围内的数据",
-          "Seller Manager 权限：只能管理 managedDepartments 内的用户数据",
+          "TeamLeader 权限：只能管理 managedDepartments 内的用户数据",
           "统计数据保护：统计文档只能由系统（Cloud Functions）写入，用户只读"
         ],
         "ruleExamples": {
@@ -2474,8 +2473,8 @@
             "write": "Platform Admin 可以创建 Event；Event Manager 可以修改自己管理的 Event"
           },
           "organizations/{orgId}/events/{eventId}/users": {
-            "read": "用户可以读取自己的数据；Event Manager 可以读取所有用户；Seller Manager 可以读取 managedDepartments 内的用户",
-            "write": "用户只能更新自己的基本信息；Event Manager 可以创建/更新用户；Seller Manager 可以更新管理范围内的用户"
+            "read": "用户可以读取自己的数据；Event Manager 可以读取所有用户；TeamLeader 可以读取 managedDepartments 内的用户",
+            "write": "用户只能更新自己的基本信息；Event Manager 可以创建/更新用户；TeamLeader 可以更新管理范围内的用户"
           },
           "organizations/{orgId}/events/{eventId}/users/{eventManagerId}": {
             "read": "Event Manager 可以读取自己的数据；Platform Admin 可读；其他用户不可读",
@@ -2483,17 +2482,17 @@
             "note": "Event Manager 通过 roles=['eventManager'] 识别，每个 Event 只能有一个"
           },
           "organizations/{orgId}/events/{eventId}/departmentStats": {
-            "read": "Event Manager 和相关 Seller Manager 可读",
+            "read": "Event Manager 和相关 TeamLeader 可读",
             "write": "仅 Cloud Functions 可写"
           },
           "organizations/{orgId}/events/{eventId}/transactions": {
             "read": "交易双方和 Event Manager 可读；Auditor 可读取所有交易",
-            "write": "Seller/Merchant 可以创建交易；Event Manager 可以修改交易"
+            "write": "TeamLeader/Merchant 可以创建交易；Event Manager 可以修改交易"
           },
           "organizations/{orgId}/events/{eventId}/[所有统计集合]": {
-            "read": "Auditor 可读取 departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections、merchants 所有数据",
+            "read": "Auditor 可读取 departmentStats、teamLeaderStats、cashierStats、cashSubmissions、cashCollections、merchants 所有数据",
             "write": "Auditor 无任何写入权限",
-            "note": "统计集合包括：departmentStats、sellerManagerStats、cashierStats、cashSubmissions、cashCollections"
+            "note": "统计集合包括：departmentStats、teamLeaderStats、cashierStats、cashSubmissions、cashCollections"
           }
         }
       },
@@ -2517,33 +2516,20 @@
           ],
           "note": "contactPerson 与 Event Manager 可以是同一人，也可以是不同人"
         },
-        "sellerManagerAllocatesPoints": {
-          "description": "Seller Manager 分配点数给部门内的 Seller",
+        "teamLeaderAllocatesPoints": {
+          "description": "TeamLeader 分配点数给所管理班级的 Customer（学生，强制购买）",
           "steps": [
-            "1. Seller Manager 在 frontend 输入分配信息",
-            "2. Frontend 调用 Cloud Function: allocatePointsBySellerManager",
+            "1. TeamLeader 在 frontend 输入分配信息（学生 + 点数）",
+            "2. Frontend 调用 Cloud Function: allocatePointsByTeamLeader",
             "3. Cloud Function 验证权限（检查 managedDepartments）",
-            "4. Cloud Function 检查限额（pointAllocationRules.sellerManager.maxPerAllocation）",
-            "5. Cloud Function 创建文档：organizations/{orgId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
-            "6. Firestore 触发器：onSellerManagerAllocation",
-            "7. 更新接收者的 pointsStats",
-            "8. 更新 departmentStats",
-            "9. 更新 sellerManagerStats",
-            "10. 检查收款警示"
-          ]
-        },
-        "sellerSellsToCustomer": {
-          "description": "Seller 售出点数给 Customer",
-          "steps": [
-            "1. Seller 在 frontend 扫描 Customer 二维码，输入点数",
-            "2. Frontend 调用 Cloud Function: createTransaction",
-            "3. Cloud Function 验证：Seller 有足够的点数余额（currentBalance）",
-            "4. Cloud Function 创建交易：organizations/{orgId}/events/{eventId}/transactions/{transactionId}",
-            "5. Firestore 触发器：onTransaction",
-            "6. 更新 Seller 的 pointsStats（减少 currentBalance，增加 totalSold）",
-            "7. 更新 Customer 的 customer.availablePoints（增加）",
-            "8. 更新 departmentStats",
-            "9. 更新 Event.globalPointsStats"
+            "4. Cloud Function 检查限额（pointAllocationRules.teamLeader.maxPerAllocation）",
+            "5. Cloud Function 创建文档：organizations/{orgId}/events/{eventId}/users/{teamLeaderId}/pointAllocations/{allocationId}",
+            "6. Firestore 触发器：onTeamLeaderAllocation",
+            "7. 更新接收者（Customer）的 customer.pointsAccount.availablePoints",
+            "8. 更新接收者的 pointsStats",
+            "9. 更新 departmentStats",
+            "10. 更新 teamLeaderStats",
+            "11. 检查收款警示（学生须缴款）"
           ]
         },
         "customerPaysMerchant": {
@@ -2612,7 +2598,7 @@
       "eventSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{userId}",
         "organizations/{organizationId}/events/{eventId}/departmentStats/{departmentCode}",
-        "organizations/{organizationId}/events/{eventId}/sellerManagerStats/{sellerManagerId}",
+        "organizations/{organizationId}/events/{eventId}/teamLeaderStats/{teamLeaderId}",
         "organizations/{organizationId}/events/{eventId}/cashierStats/{cashierId}",
         "organizations/{organizationId}/events/{eventId}/merchants/{merchantId}",
         "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
@@ -2621,7 +2607,7 @@
         "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}"
       ],
       "userSubcollections": [
-        "organizations/{organizationId}/events/{eventId}/users/{sellerManagerId}/pointAllocations/{allocationId}",
+        "organizations/{organizationId}/events/{eventId}/users/{teamLeaderId}/pointAllocations/{allocationId}",
         "organizations/{organizationId}/events/{eventId}/users/{cashierId}/pointAllocations/{allocationId}"
       ]
     }

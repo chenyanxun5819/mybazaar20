@@ -1,4 +1,4 @@
-require('./loadEnv');
+﻿require('./loadEnv');
 const functions = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
@@ -847,7 +847,7 @@ exports.verifyOtpHttp = onRequest(async (req, res) => {
       // 验证角色
       const userRoles = userData.roles || [];
       const allowedRoles = [
-        'eventManager', 'cashier', 'financeManager', 'sellerManager',
+        'eventManager', 'cashier', 'financeManager', 'teamLeader',
         'merchantManager', 'customerManager',
         'seller', 'merchant', 'customer'
       ];
@@ -862,8 +862,8 @@ exports.verifyOtpHttp = onRequest(async (req, res) => {
       }
 
       // 生成 Custom Token
-      const managedDepartments = userData.sellerManager?.managedDepartments ||
-        userData.roleSpecificData?.sellerManager?.managedDepartments || [];
+      const managedDepartments = userData.teamLeader?.managedDepartments ||
+        userData.roleSpecificData?.teamLeader?.managedDepartments || [];
 
       const customClaims = {
         organizationId, eventId, userId,

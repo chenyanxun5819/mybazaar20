@@ -1,9 +1,9 @@
-/**
+﻿/**
  * submitCashToFinance.js
  * 上交现金到Finance Manager待认领池子
  * 
  * 支持的角色：
- * 1. SellerManager - 上交从学生收集的现金
+ * 1. teamLeader - 上交从学生收集的现金
  * 2. Seller (职员/老师) - 直接上交自己的销售现金
  * 3. PointSeller - 上交点数卡销售现金
  * 
@@ -80,10 +80,8 @@ exports.submitCashToFinance = onCall(
       const roles = userData.roles || [];
       let submitterRole = null;
 
-      if (roles.includes('sellerManager')) {
-        submitterRole = 'sellerManager';
-      } else if (roles.includes('seller')) {
-        submitterRole = 'seller';
+      if (roles.includes('teamLeader')) {
+        submitterRole = 'teamLeader';
       } else if (roles.includes('pointSeller')) {
         submitterRole = 'pointSeller';
       } else {
@@ -122,7 +120,7 @@ exports.submitCashToFinance = onCall(
           confirmedAt: null,
           confirmationNote: '',
           
-          // 包含的收款记录（仅SellerManager）
+          // 包含的收款记录（仅teamLeader）
           includedCollections: includedCollections || [],
           includedSales: includedSales || [],
           
@@ -137,14 +135,14 @@ exports.submitCashToFinance = onCall(
         // 4.2 更新用户统计
         const userDocRef = usersRef.doc(userId);
 
-        if (submitterRole === 'sellerManager') {
-          // SellerManager 统计
+        if (submitterRole === 'teamLeader') {
+          // teamLeader 统计
           // ✅ 修复：上交现金时应该减少 cashOnHand
           transaction.update(userDocRef, {
-            'sellerManager.cashStats.totalSubmitted': FieldValue.increment(amount),
-            'sellerManager.cashStats.pendingSubmission': FieldValue.increment(amount),
-            'sellerManager.cashStats.cashOnHand': FieldValue.increment(-amount), // ✅ 关键修复：减少手上现金
-            'sellerManager.cashStats.lastSubmittedAt': now
+            'teamLeader.cashStats.totalSubmitted': FieldValue.increment(amount),
+            'teamLeader.cashStats.pendingSubmission': FieldValue.increment(amount),
+            'teamLeader.cashStats.cashOnHand': FieldValue.increment(-amount), // ✅ 关键修复：减少手上现金
+            'teamLeader.cashStats.lastSubmittedAt': now
           });
 
           // 4.3 更新收款记录状态（标记为已上交）
@@ -162,14 +160,6 @@ exports.submitCashToFinance = onCall(
               });
             }
           }
-
-        } else if (submitterRole === 'seller') {
-          // Seller 统计
-          transaction.update(userDocRef, {
-            'seller.totalSubmitted': FieldValue.increment(amount),
-            'seller.pendingCollection': FieldValue.increment(-amount), // 减少手上现金
-            'seller.lastSubmittedAt': now
-          });
 
         } else if (submitterRole === 'pointSeller') {
           // PointSeller 统计

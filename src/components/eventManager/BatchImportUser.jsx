@@ -401,7 +401,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
             department: user.department,
             email: user.email || '',
             identityTag: user.identityTag,
-            roles: ['seller', 'customer']
+            roles: ['customer']
           }))
         })
       });

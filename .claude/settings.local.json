@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const fs=require\\('fs'\\); try { JSON.parse\\(fs.readFileSync\\('c:/mybazaar20/firestore最新架构.json','utf8'\\)\\); console.log\\('JSON valid'\\); } catch\\(e\\) { console.error\\('JSON error:', e.message\\); }\")"
+    ]
+  }
+}

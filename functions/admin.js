@@ -312,8 +312,8 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('already-exists', '用户文件已存在');
   }
 
-  // 构建角色数组：super_admin + seller + customer + (可选)merchant
-  const roles = ['super_admin', 'seller', 'customer'];
+  // 构建角色数组：super_admin + customer + (可选)merchant
+  const roles = ['super_admin', 'customer'];
   if (includeMerchant) {
     roles.push('merchant');
   }
@@ -355,16 +355,6 @@ exports.createInitialAdmin = functions.https.onCall(async (data, context) => {
         totalAllocations: 0,
         lastAllocationAt: null,
         totalReclaimed: 0
-      }
-    },
-    seller: {
-      availablePoints: 0,
-      currentSalesAmount: 0,
-      totalPointsSold: 0,
-      capitalSource: {
-        assignedBy: 'self',
-        assignedAt: new Date(),
-        allocationId: null
       }
     },
     customer: {
@@ -945,12 +935,11 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
 
       // 验证角色是否有效
         const validRoles = [
-          'sellerManager',
+          'teamLeader',
           'merchantManager',
           'customerManager',
           'cashier',
           'auditor',
-          'seller',
           'merchant',
           'merchantOwner',
           'merchantAsist',
@@ -1123,8 +1112,8 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       };
 
       // ✅ 7.5. 添加角色特定的顶层字段（与 UserManagement.jsx 一致）
-      if (roles.includes('sellerManager')) {
-        userDoc.sellerManager = {
+      if (roles.includes('teamLeader')) {
+        userDoc.teamLeader = {
           managerId: `SM${Date.now()}`,
           assignedCapital: 0,
           availableCapital: 0,
@@ -1146,16 +1135,6 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
           managerId: `CM${Date.now()}`,
           totalCustomersManaged: 0,
           totalSalesAmount: 0
-        };
-      }
-
-      if (roles.includes('seller')) {
-        userDoc.seller = {
-          sellerId: `SL${Date.now()}`,
-          availablePoints: 0,
-          currentSalesAmount: 0,
-          totalPointsSold: 0,
-          transactions: {}
         };
       }
 
@@ -1260,8 +1239,8 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       };
 
       // 根据角色更新对应的统计
-      if (roles.includes('sellerManager')) {
-        updateData['statistics.totalSellerManagers'] = admin.firestore.FieldValue.increment(1);
+      if (roles.includes('teamLeader')) {
+        updateData['statistics.totalTeamLeaders'] = admin.firestore.FieldValue.increment(1);
       }
       if (roles.includes('merchantManager')) {
         updateData['statistics.totalMerchantManagers'] = admin.firestore.FieldValue.increment(1);
@@ -1274,9 +1253,6 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
       }
       if (roles.includes('customerManager')) {
         updateData['statistics.totalCustomerManagers'] = admin.firestore.FieldValue.increment(1);
-      }
-      if (roles.includes('seller')) {
-        updateData['statistics.totalSellers'] = admin.firestore.FieldValue.increment(1);
       }
       if (roles.includes('customer')) {
         updateData['statistics.totalCustomers'] = admin.firestore.FieldValue.increment(1);
@@ -1533,29 +1509,29 @@ exports.deleteEventHttp = onRequest({ region: 'asia-southeast1' }, async (req, r
         console.error('[deleteEventHttp] Error deleting departmentStats:', err);
       }
 
-      // 8. Delete sellerManagerStats subcollection (新增)
-      console.log('[deleteEventHttp] Starting deletion of sellerManagerStats');
+      // 8. Delete teamLeaderStats subcollection (新增)
+      console.log('[deleteEventHttp] Starting deletion of teamLeaderStats');
       try {
-        const sellerManagerStatsSnapshot = await db
+        const teamLeaderStatsSnapshot = await db
           .collection('organizations').doc(organizationId)
           .collection('events').doc(eventId)
-          .collection('sellerManagerStats')
+          .collection('teamLeaderStats')
           .get();
 
-        if (sellerManagerStatsSnapshot.size > 0) {
+        if (teamLeaderStatsSnapshot.size > 0) {
           const smBatch = db.batch();
           let smBatchOps = 0;
 
-          sellerManagerStatsSnapshot.docs.forEach(doc => {
+          teamLeaderStatsSnapshot.docs.forEach(doc => {
             smBatch.delete(doc.ref);
             smBatchOps++;
           });
 
           await smBatch.commit();
-          console.log(`[deleteEventHttp] Deleted ${smBatchOps} sellerManagerStats documents`);
+          console.log(`[deleteEventHttp] Deleted ${smBatchOps} teamLeaderStats documents`);
         }
       } catch (err) {
-        console.error('[deleteEventHttp] Error deleting sellerManagerStats:', err);
+        console.error('[deleteEventHttp] Error deleting teamLeaderStats:', err);
       }
 
       // 9. Delete cashCollections subcollection (新增)
@@ -2282,7 +2258,7 @@ exports.departmentsHttp = onRequest({ region: 'asia-southeast1' }, async (req, r
         let phoneFromUid = null;
         if (callerUid.includes('_')) {
           const parts = callerUid.split('_');
-          // 格式: role_phone (例如: eventManager_0181234567 或 sellerManager_60181234567)
+          // 格式: role_phone (例如: eventManager_0181234567 或 teamLeader_60181234567)
           phoneFromUid = parts.slice(1).join('_'); // 取 _ 之後的所有內容
         }
 
@@ -2606,7 +2582,7 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
       const departmentIncrements = new Map(); // key lower-case name -> { displayName, count }
       const statIncrements = {
         totalUsers: 0,
-        totalSellerManagers: 0,
+        totalTeamLeaders: 0,
         totalMerchantManagers: 0,
         totalCustomerManagers: 0,
         totalSellers: 0,
@@ -2709,8 +2685,8 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
         };
 
         // ✅ 角色資料：改為頂層字段（與 UserManagement.jsx 一致）
-        if (roles.includes('sellerManager')) {
-          userDoc.sellerManager = {
+        if (roles.includes('teamLeader')) {
+          userDoc.teamLeader = {
             managerId: `SM${Date.now()}`,
             assignedCapital: 0,
             availableCapital: 0,
@@ -2730,15 +2706,6 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
             managerId: `CM${Date.now()}`,
             totalCustomersManaged: 0,
             totalSalesAmount: 0
-          };
-        }
-        if (roles.includes('seller')) {
-          userDoc.seller = {
-            sellerId: `SL${Date.now()}`,
-            availablePoints: 0,
-            currentSalesAmount: 0,
-            totalPointsSold: 0,
-            transactions: {}
           };
         }
         if (roles.includes('customer')) {
@@ -2780,7 +2747,7 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
 
         // 統計累加
         statIncrements.totalUsers++;
-        if (roles.includes('sellerManager')) statIncrements.totalSellerManagers++;
+        if (roles.includes('teamLeader')) statIncrements.totalTeamLeaders++;
         if (roles.includes('merchantManager')) statIncrements.totalMerchantManagers++;
         if (roles.includes('customerManager')) statIncrements.totalCustomerManagers++;
         if (roles.includes('seller')) statIncrements.totalSellers++;
@@ -2934,7 +2901,7 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
 
       // 🆕 Auditor 互斥验证：auditor 不能与其他 manager 角色共存
       // auditor 只能与 seller / customer 共用
-      const auditorIncompatibleRoles = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
+      const auditorIncompatibleRoles = ['teamLeader', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
       if (roles.auditor) {
         const conflict = auditorIncompatibleRoles.filter(r => roles[r]);
         if (conflict.length > 0) {
@@ -2947,11 +2914,10 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
 
       // 分类角色
       if (roles.auditor) { newRoles.push('auditor'); managerRoles.push('auditor'); }       // 🆕
-      if (roles.sellerManager) { newRoles.push('sellerManager'); managerRoles.push('sellerManager'); }
+      if (roles.teamLeader) { newRoles.push('teamLeader'); managerRoles.push('teamLeader'); }
       if (roles.merchantManager) { newRoles.push('merchantManager'); managerRoles.push('merchantManager'); }
       if (roles.customerManager) { newRoles.push('customerManager'); managerRoles.push('customerManager'); }
       if (roles.cashier) { newRoles.push('cashier'); managerRoles.push('cashier'); }
-      if (roles.seller) { newRoles.push('seller'); participantRoles.push('seller'); }
       if (roles.merchantOwner) { newRoles.push('merchantOwner'); participantRoles.push('merchantOwner'); }
       if (roles.merchantAsist) { newRoles.push('merchantAsist'); participantRoles.push('merchantAsist'); }
       if (roles.customer) { newRoles.push('customer'); participantRoles.push('customer'); }
@@ -2963,18 +2929,18 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
         'accountStatus.updatedAt': new Date()
       };
 
-      // 如果勾选了 sellerManager，检查部门唯一性并保存管理部门
-      if (roles.sellerManager) {
-        // 🆕 检查部门唯一性：一个部门只能有一位 Seller Manager
+      // 如果勾选了 teamLeader，检查部门唯一性并保存管理部门
+      if (roles.teamLeader) {
+        // 🆕 检查部门唯一性：一个部门只能有一位 Team Leader
         if (managedDepartments && managedDepartments.length > 0) {
           const usersCol = eventRef.collection('users');
-          const smQuery = await usersCol.where('roles', 'array-contains', 'sellerManager').get();
+          const smQuery = await usersCol.where('roles', 'array-contains', 'teamLeader').get();
           
           for (const dept of managedDepartments) {
             const conflictUser = smQuery.docs.find(doc => {
               if (doc.id === userId) return false; // 跳过正在编辑的本人
               const data = doc.data();
-              const depts = data.sellerManager?.managedDepartments || [];
+              const depts = data.teamLeader?.managedDepartments || [];
               return depts.includes(dept);
             });
             
@@ -2982,21 +2948,21 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
               const conflictData = conflictUser.data();
               const conflictName = conflictData.basicInfo?.chineseName || conflictData.basicInfo?.englishName || '其他管理员';
               return res.status(400).json({
-                error: `部门 "${dept}" 已经由 ${conflictName} 管理。一个部门只能指派一名 Seller Manager。`,
+                error: `部门 "${dept}" 已经由 ${conflictName} 管理。一个部门只能指派一名 Team Leader。`,
                 code: 'department-already-managed'
               });
             }
           }
         }
 
-        updateData['sellerManager.managedDepartments'] = managedDepartments || [];
+        updateData['teamLeader.managedDepartments'] = managedDepartments || [];
 
-        // 如果是新添加的 sellerManager，初始化其他字段
-        if (!previousRoles?.includes('sellerManager')) {
-          updateData['sellerManager.allocatedPoints'] = 0;
-          updateData['sellerManager.returnedPoints'] = 0;
-          updateData['sellerManager.totalPoints'] = 0;
-          updateData['sellerManager.transactions'] = {};
+        // 如果是新添加的 teamLeader，初始化其他字段
+        if (!previousRoles?.includes('teamLeader')) {
+          updateData['teamLeader.allocatedPoints'] = 0;
+          updateData['teamLeader.returnedPoints'] = 0;
+          updateData['teamLeader.totalPoints'] = 0;
+          updateData['teamLeader.transactions'] = {};
         }
       }
 
@@ -3007,12 +2973,6 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
       if (roles.auditor && !previousRoles?.includes('auditor')) {
         additionalUpdateData['auditor.assignedAt'] = new Date();
         additionalUpdateData['auditor.assignedBy'] = callerUid;
-      }
-
-      if (roles.seller && !previousRoles?.includes('seller')) {
-        additionalUpdateData['seller.availablePoints'] = 0;
-        additionalUpdateData['seller.totalPointsSold'] = 0;
-        additionalUpdateData['seller.transactions'] = {};
       }
 
       if (roles.customer && !previousRoles?.includes('customer')) {
@@ -3064,7 +3024,7 @@ exports.updateUserRoles = onRequest({ region: 'asia-southeast1' }, async (req, r
 
 // ========== 分配 / 回收 點數 ==========
 // POST /api/allocatePointsHttp
-// Body: { organizationId, eventId, userId, roleType: 'seller'|'customer', amount, note, idToken }
+// Body: { organizationId, eventId, userId, roleType: 'customer'|'merchant', amount, note, idToken }
 exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST' });
@@ -3079,8 +3039,8 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
       if (!organizationId || !eventId || !userId || !roleType || !amount) {
         return res.status(400).json({ error: '缺少必要參數' });
       }
-      if (roleType !== 'seller') {
-        return res.status(400).json({ error: 'roleType 必須為 seller（分配点数只能给 seller）' });
+      if (!['customer', 'merchant'].includes(roleType)) {
+        return res.status(400).json({ error: 'roleType 必須為 customer 或 merchant' });
       }
       const points = Number(amount);
       if (!Number.isFinite(points) || points <= 0) {
@@ -3098,10 +3058,10 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
       const eventSnap = await eventRef.get();
       if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
 
-      // 權限：接受 custom claims 角色 或 event.admins / eventManager.authUid 或 sellerManager
+      // 權限：接受 custom claims 角色 或 event.admins / eventManager.authUid 或 teamLeader
       let hasPermission = false;
       const decodedRoles = Array.isArray(decoded.roles) ? decoded.roles : [];
-      if (decodedRoles.includes('eventManager') || decodedRoles.includes('sellerManager')) hasPermission = true;
+      if (decodedRoles.includes('eventManager') || decodedRoles.includes('teamLeader')) hasPermission = true;
 
       if (!hasPermission) {
         const eventData = eventSnap.data() || {};
@@ -3141,10 +3101,17 @@ exports.allocatePointsHttp = onRequest({ region: 'asia-southeast1' }, async (req
 
       const batch = db.batch();
 
-      // 更新 seller.availablePoints
+      // 更新 customer.pointsAccount + 🆕 cashAccount
       batch.update(userRef, {
-        'seller.availablePoints': admin.firestore.FieldValue.increment(points),
-        [`seller.transactions.${tsKey}`]: tx,
+        'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(points),
+        'customer.pointsAccount.totalReceived': admin.firestore.FieldValue.increment(points),
+        'customer.pointsAccount.allocatedPoints': admin.firestore.FieldValue.increment(points),
+        // 🆕 更新现金账户：EM分配的点数需要支付现金
+        'customer.cashAccount.totalAllocatedCash': admin.firestore.FieldValue.increment(points),
+        'customer.cashAccount.pendingCash': admin.firestore.FieldValue.increment(points),
+        'customer.cashAccount.emAllocatedCash': admin.firestore.FieldValue.increment(points),
+        'customer.cashAccount.lastAllocatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        [`customer.pointsAccount.transactions.${tsKey}`]: tx,
         'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -3192,7 +3159,7 @@ exports.recallPointsHttp = onRequest({ region: 'asia-southeast1' }, async (req, 
       if (!organizationId || !eventId || !userId || !roleType || !amount) {
         return res.status(400).json({ error: '缺少必要參數' });
       }
-      if (!['seller', 'customer'].includes(roleType)) {
+      if (!['customer', 'merchant'].includes(roleType)) {
         return res.status(400).json({ error: 'roleType 不正確' });
       }
       const points = Number(amount);
@@ -3244,11 +3211,23 @@ exports.recallPointsHttp = onRequest({ region: 'asia-southeast1' }, async (req, 
         note: note || '点数回收'
       };
 
-      await userRef.update({
-        [`${roleType}.availablePoints`]: admin.firestore.FieldValue.increment(-points),
-        [`${roleType}.transactions.${tsKey}`]: tx,
-        'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
-      });
+      const recallUpdate = roleType === 'customer'
+        ? {
+            'customer.pointsAccount.availablePoints': admin.firestore.FieldValue.increment(-points),
+            [`customer.pointsAccount.transactions.${tsKey}`]: tx,
+            // 🆕 同步减少现金账户（回收点数 = 减少应收现金）
+            'customer.cashAccount.totalAllocatedCash': admin.firestore.FieldValue.increment(-points),
+            'customer.cashAccount.pendingCash': admin.firestore.FieldValue.increment(-points),
+            'customer.cashAccount.emAllocatedCash': admin.firestore.FieldValue.increment(-points),
+            'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
+          }
+        : {
+            [`${roleType}.availablePoints`]: admin.firestore.FieldValue.increment(-points),
+            [`${roleType}.transactions.${tsKey}`]: tx,
+            'accountStatus.lastUpdated': admin.firestore.FieldValue.serverTimestamp()
+          };
+
+      await userRef.update(recallUpdate);
 
       return res.status(200).json({ success: true, userId, roleType, amount: -points });
     } catch (error) {
@@ -3391,7 +3370,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           },
           // ❌ 移除 contactPerson 字段
           pointAllocationRules: {
-            sellerManager: {
+            teamLeader: {
               maxPerAllocation: 100,
               enableWarnings: true,
               warningThreshold: 0.3
@@ -3512,11 +3491,6 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           pinLockedUntil: null,
           pinLastChanged: null,
           isPhoneVerified: true
-        },// 初始化 seller 账户
-        seller: {
-          availablePoints: 0,
-          totalPointsSold: 0,
-          transactions: {}
         },
         // 初始化 customer 账户（正确路径：customer.pointsAccount）
         customer: {
@@ -3553,7 +3527,7 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           },
           monitoringScope: {
             canMonitorCashier: true,
-            canMonitorSellerManager: true,
+            canMonitorteamLeader: true,
             canMonitorAllTransactions: true,
             canViewAllStats: true
           }
@@ -3631,10 +3605,10 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
 /**
  * submitCashToFinance Cloud Function
  * 
- * 用途：處理 Seller Manager 上交現金給 Cashier
+ * 用途：處理 Team Leader 上交現金給 Cashier
  * 
  * 為什麼需要這個 Cloud Function？
- * - Firestore Security Rules 不允許 Seller Manager 直接更新 Cashier 的文檔
+ * - Firestore Security Rules 不允許 Team Leader 直接更新 Cashier 的文檔
  * - Cloud Function 使用 Admin SDK，擁有完全權限
  * - 可以實現複雜的驗證和業務邏輯
  * 
@@ -3721,7 +3695,7 @@ exports.submitCashToFinanceHttp = onRequest(
         console.log('  - 收款記錄數:', selectedCollections.length);
         console.log('  - 總金額:', totalAmount);
 
-        // ========== 步驟 3: 驗證調用者是 Seller Manager ==========
+        // ========== 步驟 3: 驗證調用者是 Team Leader ==========
         const db = getDb();
         const smDocRef = db
           .collection('organizations').doc(organizationId)
@@ -3737,13 +3711,13 @@ exports.submitCashToFinanceHttp = onRequest(
         }
 
         const smData = smDoc.data();
-        if (!smData.roles || !smData.roles.includes('sellerManager')) {
+        if (!smData.roles || !smData.roles.includes('teamLeader')) {
           return res.status(403).json({
-            error: '只有 Seller Manager 可以上交現金'
+            error: '只有 Team Leader 可以上交現金'
           });
         }
 
-        console.log('[submitCashToFinance] Seller Manager 驗證通過:', smData.basicInfo?.chineseName);
+        console.log('[submitCashToFinance] Team Leader 驗證通過:', smData.basicInfo?.chineseName);
 
         // ========== 步驟 4: 驗證 Cashier 存在 ==========
         const fmDocRef = db
@@ -3842,7 +3816,7 @@ exports.submitCashToFinanceHttp = onRequest(
           .collection('events').doc(eventId)
           .collection('cashSubmissions').doc();
 
-        const managedDepartments = smData.sellerManager?.managedDepartments || [];
+        const managedDepartments = smData.teamLeader?.managedDepartments || [];
 
         batch.set(submissionRef, {
           submissionId: submissionRef.id,
@@ -3850,8 +3824,8 @@ exports.submitCashToFinanceHttp = onRequest(
 
           // 提交方
           submittedBy: callerUid,
-          submittedByName: smData.basicInfo?.chineseName || 'Seller Manager',
-          submittedByRole: 'sellerManager',
+          submittedByName: smData.basicInfo?.chineseName || 'Team Leader',
+          submittedByRole: 'teamLeader',
           submittedByDepartments: managedDepartments,
 
           // 接收方
@@ -3907,7 +3881,7 @@ exports.submitCashToFinanceHttp = onRequest(
 
         console.log('[submitCashToFinance] 更新 cashCollections:', selectedCollections.length, '筆');
 
-        // 7.3 更新 Seller Manager 的 cashFlow 統計
+        // 7.3 更新 Team Leader 的 cashFlow 統計
         batch.update(smDocRef, {
           'pointsStats.cashFlow.cashHolding': admin.firestore.FieldValue.increment(-totalAmount),
           'pointsStats.cashFlow.submittedToFinance': admin.firestore.FieldValue.increment(totalAmount),
@@ -3915,7 +3889,7 @@ exports.submitCashToFinanceHttp = onRequest(
           'updatedAt': admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log('[submitCashToFinance] 更新 Seller Manager 統計');
+        console.log('[submitCashToFinance] 更新 Team Leader 統計');
 
         // 7.4 更新 Cashier 的統計
         // ✨ 這是關鍵！Admin SDK 有權限更新 Cashier 文檔

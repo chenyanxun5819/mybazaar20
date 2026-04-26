@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 身份标签工具函数 - 方案 B 实现
  * 支持多组织、动态身份标签配置
  */
@@ -13,7 +13,7 @@ export const getIdentityTags = (organization) => {
 
 /**
  * 获取所有「被管理」的身份标签（即 roleType === 'managed'）
- * 这些身份标签需要由某个角色（如 Seller Manager）管理
+ * 这些身份标签需要由某个角色（如 Team Leader）管理
  * 
  * @param {Object} organization - 组织对象
  * @returns {Array} 被管理身份标签数组
@@ -69,7 +69,7 @@ export const isIdentityIndependent = (identityTag, organization) => {
 
 /**
  * 获取管理某个身份标签的角色
- * 例如：如果 'student' 是被管理身份，返回 'sellerManager'
+ * 例如：如果 'student' 是被管理身份，返回 'teamLeader'
  */
 export const getManagerRoleForIdentity = (identityTag, organization) => {
   const config = getIdentityTagConfig(identityTag, organization);
@@ -86,7 +86,7 @@ export const doesRoleManageIdentity = (role, identityTag, organization) => {
 
 /**
  * 获取某个角色管理的所有身份标签
- * 例如：sellerManager 管理 ['student', 'apprentice']
+ * 例如：teamLeader 管理 ['student', 'apprentice']
  */
 export const getIdentitiesForRole = (role, organization) => {
   if (!organization?.identityTags) return [];
@@ -194,10 +194,10 @@ export const generateDefaultIdentityTagConfig = () => {
       isActive: true,
       roleConfig: {
         roleType: 'managed',
-        description: '需要被 Seller Manager 管理的身份'
+        description: '需要被 Team Leader 管理的身份'
       },
       managedByRole: {
-        role: 'sellerManager',
+        role: 'teamLeader',
         policies: {
           requiresApprovalForCash: true,
           calculateCollectionWarning: true,

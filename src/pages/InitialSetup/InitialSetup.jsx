@@ -1,4 +1,4 @@
-/**
+﻿/**
  * InitialSetup.jsx
  * 首次登录初始化设置页面
  * 
@@ -241,10 +241,8 @@ const InitialSetup = () => {
     // 根据角色优先级跳转
     if (roles.includes('customer')) {
       navigate('/customer-dashboard');
-    } else if (roles.includes('seller')) {
-      navigate('/seller-dashboard');
-    } else if (roles.includes('sellerManager')) {
-      navigate('/seller-manager-dashboard');
+    } else if (roles.includes('teamLeader')) {
+      navigate('/team-leader-dashboard');
     } else if (roles.includes('cashier')) {
       navigate('/cashier-dashboard');
     } else if (roles.includes('eventManager')) {

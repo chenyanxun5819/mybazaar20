@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import {
@@ -17,54 +17,11 @@ import {
 import { safeFetch } from '../../services/safeFetch';
 
 // SVG Icons（对齐 EventManagerDashboard 的导入方式）
-import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
-import SellerFiveIcon from '../../assets/seller (5).svg?react';
-import UsersGearIcon from '../../assets/users-gear.svg?react';
-import UserSalaryIcon from '../../assets/user-salary.svg?react';
-import EmployeeManIcon from '../../assets/employee-man.svg?react';
-import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
-import SellerFourIcon from '../../assets/seller (4).svg?react';
-import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
-import UserBagIcon from '../../assets/user-bag.svg?react';
 import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
 
 import PointsManagementIcon from '../../assets/pointsManagement.svg?react';
 import PlusPointsIcon from '../../assets/plusPoints.svg?react';
 import PointsRecycleIcon from '../../assets/pointsRecycle.svg?react';
-
-// 统一的角色配置
-const ROLE_CONFIG = {
-  // 参照 EventManagerDashboard.jsx ROLE_CONFIG（并补齐本页会用到的 customer）
-  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', chineseLabel: '班导师', color: '#f59e0b', icon: ChalkboardUserIcon, category: 'manager' },
-  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', chineseLabel: '商家管理员', color: '#8b5cf6', icon: SellerFiveIcon, category: 'manager' },
-  customerManager: { label: 'CM', fullLabel: 'Customer Manager', chineseLabel: '消费者管理员', color: '#10b981', icon: UsersGearIcon, category: 'manager' },
-  cashier: { label: 'C', fullLabel: 'Cashier', chineseLabel: '收银员', color: '#3b82f6', icon: UserSalaryIcon, category: 'manager' },
-  seller: { label: 'S', fullLabel: 'Seller', chineseLabel: '点数销售员', color: '#ec4899', icon: EmployeeManIcon, category: 'user' },
-  merchantOwner: { label: 'MO', fullLabel: 'Merchant Owner', chineseLabel: '摊主', color: '#84cc16', icon: StoreBuyerIcon, category: 'user' },
-  merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: SellerFourIcon, category: 'user' },
-  pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' },
-  customer: { label: 'CU', fullLabel: 'Customer', chineseLabel: '顾客', color: '#ec4899', icon: UserBagIcon, category: 'user' }
-};
-
-// 列表角色图标排序：customer → seller → manager → 其他
-const sortRolesForDisplay = (roles, roleConfig = ROLE_CONFIG) => {
-  const safeRoles = Array.isArray(roles) ? roles.filter(Boolean) : [];
-
-  const roleKey = (role) => {
-    if (role === 'customer') return 0;
-    if (role === 'seller') return 1;
-    const cfg = roleConfig?.[role];
-    if (cfg?.category === 'manager') return 2;
-    return 3;
-  };
-
-  return [...safeRoles].sort((a, b) => {
-    const ka = roleKey(a);
-    const kb = roleKey(b);
-    if (ka !== kb) return ka - kb;
-    return String(a).localeCompare(String(b));
-  });
-};
 
 const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [users, setUsers] = useState([]);
@@ -76,12 +33,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [showPointsModal, setShowPointsModal] = useState(false);
   const [showRecallModal, setShowRecallModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showBatchRecallModal, setShowBatchRecallModal] = useState(false);
   const [eventData, setEventData] = useState(null);
   const [deptOrderMaps, setDeptOrderMaps] = useState({ byId: {}, byName: {} });
 
   // 🆕 identityTags 相关状态
   const [identityTags, setIdentityTags] = useState([]);
   const [selectedIdentityTag, setSelectedIdentityTag] = useState([]); // 🔄 改为数组支持复选
+  const [selectedIdentityTagRecall, setSelectedIdentityTagRecall] = useState([]); // 🆕 批量回收时的选择
 
   // 点数分配状态
   const [pointsAmount, setPointsAmount] = useState('');
@@ -95,6 +54,10 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 批量分配状态
   const [batchAmount, setBatchAmount] = useState('');
   const [batchNote, setBatchNote] = useState('');
+
+  // 🆕 批量回收状态
+  const [batchRecallAmount, setBatchRecallAmount] = useState('');
+  const [batchRecallNote, setBatchRecallNote] = useState('');
 
   // 🆕 电话号码遮罩函数
   const maskPhone = (phone) => {
@@ -239,6 +202,14 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     setShowBatchModal(true);
   };
 
+  // 🆕 打开批量回收模态框（清空状态）
+  const openBatchRecallModal = () => {
+    setSelectedIdentityTagRecall([]);
+    setBatchRecallAmount('');
+    setBatchRecallNote('');
+    setShowBatchRecallModal(true);
+  };
+
   // 点数分配
   const handleAllocatePoints = async () => {
     if (!pointsAmount || !selectedUser) {
@@ -257,10 +228,10 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       setIsProcessing(true);
 
       let roleType = null;
-      if (selectedUser.roles?.includes('seller')) roleType = 'seller';
+      if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
-        window.mybazaarShowToast('点数分配仅支持 Seller 用户');
+        window.mybazaarShowToast('点数分配仅支持 Customer 用户');
         return;
       }
 
@@ -318,8 +289,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       setIsProcessing(true);
 
       let roleType = null;
-      if (selectedUser.roles?.includes('seller')) roleType = 'seller';
-      else if (selectedUser.roles?.includes('customer')) roleType = 'customer';
+      if (selectedUser.roles?.includes('customer')) roleType = 'customer';
 
       if (!roleType) {
         window.mybazaarShowToast('用户没有可回收点数的角色');
@@ -378,7 +348,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
 
     // 🔧 根据选择的 identityTag 过滤用户
     let targetUsers = users.filter(user =>
-      user.roles?.some(role => ['seller', 'merchant', 'customer'].includes(role))
+      user.roles?.some(role => ['merchant', 'customer'].includes(role))
     );
 
     // 过滤多个 identityTag
@@ -408,17 +378,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       const baseTimestamp = Date.now();
 
       targetUsers.forEach((user, index) => {
-        // 分配点数只能给 seller
-        if (!user.roles?.includes('seller')) return;
-
-        const timestampKey = (baseTimestamp + index).toString();
-        const transaction = {
-          type: 'allocation',
-          amount: points,
-          timestamp: serverTimestamp(),
-          allocatedBy: 'eventManager',
-          note: batchNote || `批量分配 - ${selectedTags}`
-        };
+        if (!user.roles?.includes('customer')) return;
 
         const userRef = doc(
           db,
@@ -428,17 +388,22 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
         );
 
         batch.update(userRef, {
-          'seller.availablePoints': increment(points),
-          [`seller.transactions.${timestampKey}`]: transaction,
+          'customer.pointsAccount.availablePoints': increment(points),
+          'customer.pointsAccount.totalReceived': increment(points),
+          'customer.pointsAccount.allocatedPoints': increment(points),
+          // 🆕 同步更新现金账户：EM批量分配的点数需要支付现金
+          'customer.cashAccount.totalAllocatedCash': increment(points),
+          'customer.cashAccount.pendingCash': increment(points),
+          'customer.cashAccount.emAllocatedCash': increment(points),
+          'customer.cashAccount.lastAllocatedAt': serverTimestamp(),
           'accountStatus.lastUpdated': serverTimestamp()
         });
       });
 
-      // 计算实际被分配的 seller 数量
-      const actualTargetCount = targetUsers.filter(u => u.roles?.includes('seller')).length;
+      const actualTargetCount = targetUsers.filter(u => u.roles?.includes('customer')).length;
 
       if (actualTargetCount === 0) {
-        window.mybazaarShowToast('选定用户中没有 seller 角色，无法分配点数');
+        window.mybazaarShowToast('选定用户中没有 customer 角色，无法分配点数');
         return;
       }
 
@@ -476,15 +441,119 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     }
   };
 
+  // 🆕 批量点数回收（修改为按 identityTag 过滤）
+  const handleBatchRecall = async () => {
+    if (!selectedIdentityTagRecall || selectedIdentityTagRecall.length === 0 || !batchRecallAmount) {
+      window.mybazaarShowToast('请选择至少一个身份标签并输入回收点数');
+      return;
+    }
+
+    const points = parseInt(batchRecallAmount, 10);
+
+    if (isNaN(points) || points <= 0) {
+      window.mybazaarShowToast('请输入有效的点数（大于0）');
+      return;
+    }
+
+    // 🆕 根据选择的 identityTag 过滤用户
+    let targetUsers = users.filter(user =>
+      user.roles?.some(role => ['merchant', 'customer'].includes(role))
+    );
+
+    // 过滤多个 identityTag
+    targetUsers = targetUsers.filter(user =>
+      selectedIdentityTagRecall.includes(user.identityTag) || selectedIdentityTagRecall.includes('all')
+    );
+
+    if (targetUsers.length === 0) {
+      const selectedTags = selectedIdentityTagRecall.map(tagId => getIdentityTagInfo(tagId).label).join('、');
+      window.mybazaarShowToast(`身份标签 "${selectedTags}" 中没有可回收点数的用户`);
+      return;
+    }
+
+    const totalPoints = points * targetUsers.length;
+    const selectedTags = selectedIdentityTagRecall.includes('all') 
+      ? '全部身份' 
+      : selectedIdentityTagRecall.map(tagId => getIdentityTagInfo(tagId).label).join('、');
+
+    if (!confirm(`确认为 ${targetUsers.length} 个用户各回收 ${points.toLocaleString()} 点数？\n身份标签: ${selectedTags}\n总计: ${totalPoints.toLocaleString()} 点数`)) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+
+      const batch = writeBatch(db);
+      const baseTimestamp = Date.now();
+
+      targetUsers.forEach((user, index) => {
+        if (!user.roles?.includes('customer')) return;
+
+        const userRef = doc(
+          db,
+          'organizations', organizationId,
+          'events', eventId,
+          'users', user.id
+        );
+
+        batch.update(userRef, {
+          'customer.pointsAccount.availablePoints': increment(-points),
+          'customer.pointsAccount.totalReceived': increment(-points),
+          'customer.pointsAccount.allocatedPoints': increment(-points),
+          // 🆕 同步减少现金账户：EM批量回收的点数意味着减少应收现金
+          'customer.cashAccount.totalAllocatedCash': increment(-points),
+          'customer.cashAccount.pendingCash': increment(-points),
+          'customer.cashAccount.emAllocatedCash': increment(-points),
+          'accountStatus.lastUpdated': serverTimestamp()
+        });
+      });
+
+      const actualTargetCount = targetUsers.filter(u => u.roles?.includes('customer')).length;
+
+      if (actualTargetCount === 0) {
+        window.mybazaarShowToast('选定用户中没有 customer 角色，无法回收点数');
+        return;
+      }
+
+      // 更新 EventManager 个人统计
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const emRef = doc(db, 'organizations', organizationId, 'events', eventId, 'users', currentUser.uid);
+        batch.update(emRef, {
+          'eventManager.totalRecalls': increment(1),
+          'eventManager.totalPointsRecalled': increment(points * actualTargetCount),
+          'eventManager.lastReclaimedAt': serverTimestamp()
+        });
+      }
+
+      // 更新 Event 层级 roleStats
+      const eventDocRef = doc(db, 'organizations', organizationId, 'events', eventId);
+      batch.update(eventDocRef, {
+        'roleStats.eventManagers.totalRecalls': increment(1),
+        'roleStats.eventManagers.totalPointsRecalled': increment(points * actualTargetCount)
+      });
+
+      await batch.commit();
+
+      window.mybazaarShowToast(`成功为 ${targetUsers.length} 个用户批量回收点数！\n每人: ${points.toLocaleString()}\n总计: ${totalPoints.toLocaleString()}`);
+      setShowBatchRecallModal(false);
+      fetchData();
+      if (onUpdate) onUpdate();
+
+    } catch (error) {
+      console.error('❌ 批量回收失败:', error);
+      window.mybazaarShowToast('批量回收失败: ' + error.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // 🆕 获取用户的点数信息
   const getUserPointsInfo = (user) => {
     let availablePoints = 0;
     let totalPointsSold = 0;
 
-    if (user.seller) {
-      availablePoints += user.seller.availablePoints || 0;
-      totalPointsSold += user.seller.totalPointsSold || 0;
-    }
     if (user.merchant) {
       availablePoints += user.merchant.availablePoints || 0;
       totalPointsSold += user.merchant.totalPointsSold || 0;
@@ -499,14 +568,11 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   // 🆕 根据 identityTag 获取用户数量
   const getUserCountByIdentityTag = (tagId) => {
     if (tagId === 'all') {
-      return users.filter(user =>
-        user.roles?.some(role => ['seller', 'customer'].includes(role))
-      ).length;
+      return users.filter(user => user.roles?.includes('customer')).length;
     }
 
     return users.filter(user =>
-      user.identityTag === tagId &&
-      user.roles?.some(role => ['seller', 'customer'].includes(role))
+      user.identityTag === tagId && user.roles?.includes('customer')
     ).length;
   };
 
@@ -567,6 +633,10 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
             <PosBillIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
             批量分配点数
           </button>
+          <button onClick={openBatchRecallModal} style={styles.batchRecallButton}>
+            <PointsRecycleIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
+            批量回收点数
+          </button>
         </div>
 
         {/* 用户列表 */}
@@ -585,7 +655,6 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   <th style={styles.tableHeaderCell}>身份标签</th>
                   <th style={styles.tableHeaderCell}>部门</th>
                   <th style={styles.tableHeaderCell}>身份ID</th>
-                  <th style={styles.tableHeaderCell}>角色</th>
                   <th style={styles.tableHeaderCell}>现有点数</th>
                   <th style={styles.tableHeaderCell}>已销售点数</th>
                   <th style={styles.tableHeaderCell}>操作</th>
@@ -619,29 +688,6 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                       </td>
                       <td style={styles.tableCell}>
                         {user.identityInfo?.identityId || '-'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        <div style={styles.rolesCell}>
-                          {sortRolesForDisplay(user.roles).map(role => {
-                            const config = ROLE_CONFIG[role];
-                            if (!config) return null;
-                            const RoleIcon = config.icon;
-                            return (
-                              <div
-                                key={role}
-                                style={{
-                                  ...styles.roleBadge,
-                                  backgroundColor: config.color
-                                }}
-                                title={config.fullLabel}
-                              >
-                                {RoleIcon ? (
-                                  <RoleIcon style={{ width: '16px', height: '16px', color: 'white' }} />
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
                       </td>
                       <td style={styles.tableCell}>
                         <span style={styles.pointsValue}>
@@ -903,6 +949,122 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
           </div>
         </div>
       )}
+
+      {/* 🆕 批量回收模态框（按 identityTag） */}
+      {showBatchRecallModal && (
+        <div style={styles.subModal}>
+          <div style={styles.subModalContent}>
+            <h3 style={styles.subModalTitle}>
+              批量回收点数
+            </h3>
+
+            <div style={styles.pointsForm}>
+              {/* 🆕 身份标签选择 */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>选择身份标签 *</label>
+                <div style={styles.identityTagsContainer}>
+                  {/* 全部身份选项 */}
+                  <label style={styles.identityTagOption}>
+                    <input
+                      type="checkbox"
+                      name="identityTagRecall"
+                      value="all"
+                      checked={selectedIdentityTagRecall.includes('all')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIdentityTagRecall(['all']);
+                        } else {
+                          setSelectedIdentityTagRecall([]);
+                        }
+                      }}
+                      style={styles.radio}
+                    />
+                    <div style={styles.identityTagLabel}>
+                      <span style={styles.identityTagName}>全部身份</span>
+                      <span style={styles.identityTagCount}>
+                        ({getUserCountByIdentityTag('all')} 人)
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* 动态 identityTags */}
+                  {identityTags.map(tag => (
+                    <label key={tag.id} style={styles.identityTagOption}>
+                      <input
+                        type="checkbox"
+                        name="identityTagRecall"
+                        value={tag.id}
+                        checked={selectedIdentityTagRecall.includes(tag.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIdentityTagRecall(prev => [...prev, tag.id]);
+                          } else {
+                            setSelectedIdentityTagRecall(prev => prev.filter(id => id !== tag.id));
+                          }
+                        }}
+                        style={styles.radio}
+                      />
+                      <div style={styles.identityTagLabel}>
+                        <span style={styles.identityTagName}>
+                          {tag.name['zh-CN'] || ''} ({tag.name['en'] || tag.name['en-US'] || ''})
+                        </span>
+                        <span style={styles.identityTagCount}>
+                          ({getUserCountByIdentityTag(tag.id)} 人)
+                        </span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>回收点数 *</label>
+                <input
+                  type="number"
+                  value={batchRecallAmount}
+                  onChange={(e) => setBatchRecallAmount(e.target.value)}
+                  placeholder="输入回收点数"
+                  style={styles.input}
+                  min="0"
+                  step="1"
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>备注</label>
+                <textarea
+                  value={batchRecallNote}
+                  onChange={(e) => setBatchRecallNote(e.target.value)}
+                  placeholder="输入回收备注（可选）"
+                  style={styles.textarea}
+                  rows="3"
+                />
+              </div>
+
+              <div style={styles.infoBox}>
+                💡 将为选定身份标签的所有用户回收相同点数
+              </div>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => setShowBatchRecallModal(false)}
+                style={styles.cancelButton}
+                disabled={isProcessing}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleBatchRecall}
+                style={styles.recallButton}
+                disabled={isProcessing}
+              >
+                {isProcessing ? '处理中...' : '确认批量回收'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1038,22 +1200,6 @@ const styles = {
     fontSize: '0.75rem',
     color: '#6b7280',
     textTransform: 'uppercase'
-  },
-  rolesCell: {
-    display: 'flex',
-    gap: '0.35rem',
-    flexWrap: 'wrap'
-  },
-  roleBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '28px',
-    height: '28px',
-    borderRadius: '6px',
-    fontSize: '1rem',
-    color: 'white',
-    fontWeight: '600'
   },
   pointsValue: {
     fontWeight: '600',
@@ -1235,6 +1381,35 @@ const styles = {
     fontWeight: '600',
     color: 'white',
     backgroundColor: '#8b5cf6',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  batchRecallButton: {
+    // 对齐 batchButton 的样式，但使用不同的颜色
+    padding: '0.8rem 1rem',
+    backgroundColor: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: '400',
+    fontSize: '1rem',
+    transition: 'all 0.2s',
+    boxShadow: '0 2px 4px rgba(239, 68, 68, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    whiteSpace: 'nowrap'
+  },
+  recallButton: {
+    flex: 1,
+    padding: '0.75rem',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: 'white',
+    backgroundColor: '#ef4444',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

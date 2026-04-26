@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, auth } from '../../config/firebase';
 import {
@@ -263,7 +263,7 @@ const AuditorDashboard = () => {
   const [merchantRows, setMerchantRows]         = useState([]);
   const [pointSellerRows, setPointSellerRows]   = useState([]);
   const [cashierSellerRows, setCashierSellerRows]     = useState([]); // 非学生seller现金
-  const [cashierSmRows, setCashierSmRows]               = useState([]); // sellerManager现金
+  const [cashierSmRows, setCashierSmRows]               = useState([]); // teamLeader现金
 
   // ────────────────────────────────────────────────────────
   // 鉴权检查
@@ -321,7 +321,7 @@ const AuditorDashboard = () => {
       ] = await Promise.all([
         getDocs(collection(db, ...basePath, 'users')),
         getDocs(collection(db, ...basePath, 'merchants')),
-        getDocs(collection(db, ...basePath, 'sellerManagerStats')),
+        getDocs(collection(db, ...basePath, 'teamLeaderStats')),
         getDocs(collection(db, ...basePath, 'departmentStats')),
         getDocs(query(
           collection(db, ...basePath, 'cashSubmissions'),
@@ -386,8 +386,8 @@ const AuditorDashboard = () => {
     // ⭐ 修正（2026-02-27）：优先从 financeSummary.points.totalSold / globalPointsStats 取值
     // Copilot 错误：原代码仅通过遍历 seller 用户计算，会因数据不一致产生偏差
     const totalSold = pts.totalSold ?? gps.totalSold ??
-      users.filter(u => u.roles?.includes('seller')).reduce((sum, seller) => {
-        return sum + (seller.pointsStats?.totalSold ?? seller.seller?.totalPointsSold ?? 0);
+      users.filter(u => u.roles?.includes('pointSeller')).reduce((sum, ps) => {
+        return sum + (ps.pointsStats?.totalSold ?? ps.pointSeller?.totalPointsSold ?? 0);
       }, 0);
 
     const totalSpent     = pts.totalSpent          ?? 0;
@@ -404,11 +404,11 @@ const AuditorDashboard = () => {
     // ── 现金来源分解 ──
     const cash = fs.cash || {};
     const collectedFromSellers      = cash.collectedFromSellers      ?? 0;
-    const collectedFromSMs          = cash.collectedFromSellerManagers ?? 0;
+    const collectedFromSMs          = cash.collectedFromteamLeaders ?? 0;
     const collectedFromPointSellers = cash.collectedFromPointSellers  ?? 0;
     const totalCollected            = cash.totalCollected             ?? gps.totalCollected ?? 0;
     const pendingFromSellers        = cash.pendingFromSellers         ?? 0;
-    const pendingFromSMs            = cash.pendingFromSellerManagers  ?? 0;
+    const pendingFromSMs            = cash.pendingFromteamLeaders  ?? 0;
     const pendingFromPointSellers   = cash.pendingFromPointSellers    ?? 0;
     const totalPending              = cash.totalPending               ?? gps.pendingCollection ?? 0;
     const expectedFromSales         = cash.expectedFromSales          ?? totalSold;
@@ -443,7 +443,7 @@ const AuditorDashboard = () => {
       totalCollected: c.totalCollected ?? 0,
       count:        c.collectionsCount ?? 0,
       fromSellers:  c.cashSources?.fromSellers        ?? 0,
-      fromSMs:      c.cashSources?.fromSellerManagers ?? 0,
+      fromSMs:      c.cashSources?.fromteamLeaders ?? 0,
       fromPS:       c.cashSources?.fromPointSellers   ?? 0,
       lastCollection: c.lastCollection,
     })).sort((a, b) => b.totalCollected - a.totalCollected);
@@ -467,14 +467,14 @@ const AuditorDashboard = () => {
       totalUsers: st.totalUsers ?? users.length,
 
       // 人员
-      sellerCount:         rs.sellers?.count          ?? countRole('seller'),
-      sellerActiveCount:   rs.sellers?.activeCount    ?? 0,
+      sellerCount:         rs.pointSellers?.count     ?? countRole('pointSeller'),
+      sellerActiveCount:   rs.pointSellers?.activeCount ?? 0,
       customerCount:       rs.customers?.count        ?? countRole('customer'),
       customerActiveCount: rs.customers?.activeCount  ?? 0,
       merchantCount:       rs.merchants?.count        ?? countRole('merchantOwner'),
       merchantActiveCount: rs.merchants?.activeCount  ?? 0,
       merchantAsistCount:  rs.merchantAsists?.count   ?? countRole('merchantAsist'),
-      sellerManagerCount:  rs.sellerManagers?.count   ?? countRole('sellerManager'),
+      teamLeaderCount:  rs.teamLeaders?.count   ?? countRole('teamLeader'),
       cashierCount:        rs.cashiers?.count         ?? countRole('cashier'),
       pointSellerCount:    rs.pointSellers?.count     ?? countRole('pointSeller'),
 
@@ -516,17 +516,17 @@ const AuditorDashboard = () => {
 
   // ── 2. 班导师部门汇总（按班导师分组，含旗下学生销售员明细）──
   const buildDeptModule = (users, smStats, deptStats) => {
-    const sellers        = users.filter(u => u.roles?.includes('seller'));
-    const sellerManagers = users.filter(u => u.roles?.includes('sellerManager'));
+    const sellers        = users.filter(u => u.roles?.includes('pointSeller'));
+    const teamLeaders = users.filter(u => u.roles?.includes('teamLeader'));
 
-    // 建立 sellerManagerStats 映射
+    // 建立 teamLeaderStats 映射
     const smStatMap = {};
     smStats.forEach(s => { smStatMap[s.id] = s; });
 
     // 组装行：每个班导师一行
-    const rows = sellerManagers.map(sm => {
+    const rows = teamLeaders.map(sm => {
       const smStat        = smStatMap[sm.id] || {};
-      const smData        = sm.sellerManager  || {};
+      const smData        = sm.teamLeader  || {};
       const managedDepts  = smData.managedDepartments || [];
       const ps            = smStat.managedPointsStats || {};
       const cashStats     = smData.cashStats           || {};
@@ -541,15 +541,15 @@ const AuditorDashboard = () => {
           sellerName:        s.basicInfo?.chineseName || s.basicInfo?.englishName || '—',
           department:        s.identityInfo?.department || '—',
           identityId:        s.identityInfo?.identityId || '—',
-          currentBalance:    s.pointsStats?.currentBalance  ?? s.seller?.availablePoints  ?? 0,
-          totalSold:         s.pointsStats?.totalSold        ?? s.seller?.totalPointsSold  ?? 0,
-          totalRevenue:      s.pointsStats?.totalRevenue     ?? s.seller?.totalRevenue     ?? 0,
-          totalCollected:    s.pointsStats?.totalCollected   ?? s.seller?.totalCashCollected ?? 0,
-          pendingCollection: s.pointsStats?.pendingCollection ?? s.seller?.pendingCollection ?? 0,
+          currentBalance:    s.pointsStats?.currentBalance  ?? s.pointSeller?.availablePoints  ?? 0,
+          totalSold:         s.pointsStats?.totalSold        ?? s.pointSeller?.totalPointsSold  ?? 0,
+          totalRevenue:      s.pointsStats?.totalRevenue     ?? s.pointSeller?.totalRevenue     ?? 0,
+          totalCollected:    s.pointsStats?.totalCollected   ?? s.pointSeller?.totalCashCollected ?? 0,
+          pendingCollection: s.pointsStats?.pendingCollection ?? s.pointSeller?.pendingCollection ?? 0,
           collectionRate:    s.pointsStats?.collectionRate   ?? 0,
         }));
 
-      // 低收款率预警名单（来自 sellerManagerStats.alerts）
+      // 低收款率预警名单（来自 teamLeaderStats.alerts）
       const alertUsers = alerts.lowCollectionRateUsers || [];
 
       return {
@@ -561,14 +561,14 @@ const AuditorDashboard = () => {
         // 点数分配
         totalAllocations:    smStat.totalAllocations       ?? smData.totalAllocations       ?? 0,
         totalPointsAllocated: smStat.totalPointsAllocated  ?? smData.totalPointsAllocated   ?? 0,
-        // 销售汇总（来自 sellerManagerStats.managedPointsStats）
+        // 销售汇总（来自 teamLeaderStats.managedPointsStats）
         totalSold:           ps.totalSold        ?? 0,
         totalRevenue:        ps.totalRevenue     ?? 0,
         totalCollected:      ps.totalCollected   ?? 0,
         pendingCollection:   ps.pendingCollection ?? 0,
         collectionRate:      ps.collectionRate   ?? 0,
         currentBalance:      ps.currentBalance   ?? 0,
-        // 现金流（来自 users/{id}/sellerManager/cashStats）
+        // 现金流（来自 users/{id}/teamLeader/cashStats）
         receivedFromSellers: cashStats.totalReceivedFromSellers ?? 0,
         confirmedFromSellers: cashStats.confirmedFromSellers    ?? 0,
         pendingFromSellers:  cashStats.pendingFromSellers       ?? 0,
@@ -662,8 +662,8 @@ const AuditorDashboard = () => {
       note:           sub.note || '—',
     }));
 
-    // 表2：sellerManager 的现金上交记录
-    const smSubs = cashSubs.filter(sub => sub.submitterRole === 'sellerManager');
+    // 表2：teamLeader 的现金上交记录
+    const smSubs = cashSubs.filter(sub => sub.submitterRole === 'teamLeader');
 
     const smRows = smSubs.map(sub => ({
       submissionId:   sub.submissionNumber || sub.id,
@@ -707,7 +707,7 @@ const AuditorDashboard = () => {
               ['消费者',       od.customerCount,      od.customerActiveCount],
               ['商家（摊主）', od.merchantCount,      od.merchantActiveCount],
               ['摊位助手',     od.merchantAsistCount, '—'],
-              ['班导师',       od.sellerManagerCount, '—'],
+              ['班导师',       od.teamLeaderCount, '—'],
               ['收银员',       od.cashierCount,       '—'],
               ['点数直售员',   od.pointSellerCount,   '—'],
               ['总用户数',     od.totalUsers,         '—'],
@@ -1019,7 +1019,7 @@ const AuditorDashboard = () => {
               sub={`含助手 ${od.merchantAsistCount} 人`}
               color="#06b6d4"
             />
-            <StatCard label="班导师"     value={fmtInt(od.sellerManagerCount)} color="#f59e0b" />
+            <StatCard label="班导师"     value={fmtInt(od.teamLeaderCount)} color="#f59e0b" />
             <StatCard label="收银员"     value={fmtInt(od.cashierCount)}       color="#3b82f6" />
             <StatCard label="点数直售员" value={fmtInt(od.pointSellerCount)}   color="#f97316" />
           </div>
@@ -1706,9 +1706,9 @@ const AuditorDashboard = () => {
           <DataTable columns={cashierCols} rows={cashierSellerRows} />
         </ModuleCard>
 
-        {/* 表2：sellerManager */}
+        {/* 表2：teamLeader */}
         <ModuleCard
-          title="班导师（SellerManager）现金上交记录"
+          title="班导师（teamLeader）现金上交记录"
           subtitle={`共 ${cashierSmRows.length} 笔，包含班导师汇总上交给收银员的现金`}
         >
           <DataTable columns={smCols} rows={cashierSmRows} />

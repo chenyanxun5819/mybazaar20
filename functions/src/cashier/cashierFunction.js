@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cashier Cloud Functions (v2) - 修复版
  * 修复：使用 authUid 查询用户文档，而不是直接使用 doc(userId)
  */
@@ -83,13 +83,13 @@ exports.confirmCashSubmission = onCall(
         roles: userData.roles
       });
       
-      // 检查是否是 Seller Manager
-      if (!userData.roles || !userData.roles.includes('sellerManager')) {
+      // 检查是否是 Team Leader
+      if (!userData.roles || !userData.roles.includes('teamLeader')) {
         console.warn('[confirmCashSubmission] ⚠️ 权限不足:', {
           userId,
           roles: userData.roles
         });
-        throw new Error('只有 Seller Manager 可以确认收款');
+        throw new Error('只有 Team Leader 可以确认收款');
       }
 
       // ===== 3. 获取上交记录 =====
@@ -115,7 +115,7 @@ exports.confirmCashSubmission = onCall(
         submitterRole: submissionData.submitterRole
       });
 
-      // 验证 receivedBy 是当前 SellerManager
+      // 验证 receivedBy 是当前 teamLeader
       if (submissionData.receivedBy !== userId) {
         console.error('[confirmCashSubmission] ❌ 不是接收人');
         throw new Error('您不是此笔现金的接收人');
@@ -125,12 +125,6 @@ exports.confirmCashSubmission = onCall(
       if (submissionData.status !== 'pending') {
         console.error('[confirmCashSubmission] ❌ 状态不是pending:', submissionData.status);
         throw new Error(`此记录状态为${submissionData.status}，无法确认`);
-      }
-
-      // 验证是 Seller 提交的
-      if (submissionData.submitterRole !== 'seller') {
-        console.error('[confirmCashSubmission] ❌ 提交者不是Seller');
-        throw new Error('只能确认Seller提交的现金');
       }
 
       console.log('[confirmCashSubmission] ✅ 验证通过，开始确认收款');
@@ -148,7 +142,7 @@ exports.confirmCashSubmission = onCall(
           'metadata.updatedAt': now
         });
 
-        // 4.2 更新 SellerManager.cashStats 统计（完全匹配JSON架构）
+        // 4.2 更新 teamLeader.cashStats 统计（完全匹配JSON架构）
         const userDocRef = db
           .collection('organizations').doc(orgId)
           .collection('events').doc(eventId)
@@ -156,13 +150,13 @@ exports.confirmCashSubmission = onCall(
 
         transaction.update(userDocRef, {
           // 减少待收款
-          'sellerManager.cashStats.pendingFromSellers': FieldValue.increment(-amount),
+          'teamLeader.cashStats.pendingFromSellers': FieldValue.increment(-amount),
           // 增加已确认收款
-          'sellerManager.cashStats.confirmedFromSellers': FieldValue.increment(amount),
+          'teamLeader.cashStats.confirmedFromSellers': FieldValue.increment(amount),
           // 增加持有现金
-          'sellerManager.cashStats.cashOnHand': FieldValue.increment(amount),
+          'teamLeader.cashStats.cashOnHand': FieldValue.increment(amount),
           // 更新最后确认时间
-          'sellerManager.cashStats.lastConfirmedAt': now
+          'teamLeader.cashStats.lastConfirmedAt': now
         });
 
         // 4.3 同步建立 cashCollections（將已確認的現金寫入 cashCollections，供 SubmitCash.jsx 讀取）
@@ -177,7 +171,7 @@ exports.confirmCashSubmission = onCall(
             sellerName: submissionData.submitterName || '未知',
             amount: submissionData.amount || 0,
             collectedAt: now,
-            collectedBy: userId, // SellerManager who confirmed
+            collectedBy: userId, // teamLeader who confirmed
             status: 'collected',
             submittedToFinance: false,
             notes: submissionData.note || '',

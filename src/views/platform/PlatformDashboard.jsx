@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { db, functions, storage } from '../../config/firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth } from '../../config/firebase';
@@ -901,7 +901,7 @@ const EventCard = ({ event, organization, onReload }) => {
       `  • 所有元数据 (部门等)\n` +
       `  • 所有点数分配记录 (pointAllocations)\n` +
       `  • 所有部门统计 (departmentStats)\n` +
-      `  • 所有 Seller Manager 统计 (sellerManagerStats)\n` +
+      `  • 所有 Team Leader 统计 (teamLeaderStats)\n` +
       `  • Event Manager 信息\n` +
       `  • 更新组织统计数据\n\n` +
       `⚠️ 此操作无法撤销！`
@@ -1397,7 +1397,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
         if (configPath === 'roleConfig.roleType' && value === 'managed') {
           if (!updatedTag.managedByRole) {
             updatedTag.managedByRole = {
-              role: 'sellerManager',
+              role: 'teamLeader',
               policies: {
                 requiresApprovalForCash: true,
                 calculateCollectionWarning: true,
@@ -1662,7 +1662,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                         <div>
                           <label style={{...styles.tagLabel, fontSize: '0.875rem'}}>由谁管理 *</label>
                           <select
-                            value={tag.managedByRole?.role || 'sellerManager'}
+                            value={tag.managedByRole?.role || 'teamLeader'}
                             onChange={(e) => handleUpdateRoleConfig(tag.id, 'managedByRole.role', e.target.value)}
                             style={{
                               ...styles.tagInput,
@@ -1671,7 +1671,7 @@ const EditIdentityTagsModal = ({ organization, onClose, onSuccess }) => {
                             }}
                             disabled={submitting}
                           >
-                            <option value="sellerManager">Seller Manager</option>
+                            <option value="teamLeader">Team Leader</option>
                             <option value="departmentManager">Department Manager</option>
                             <option value="teamManager">Team Manager</option>
                           </select>
@@ -1876,10 +1876,10 @@ const CreateOrganizationModal = ({ onClose, onSuccess }) => {
           isActive: true,
           roleConfig: {
             roleType: 'managed',
-            description: '需要被 Seller Manager 管理的身份'
+            description: '需要被 Team Leader 管理的身份'
           },
           managedByRole: {
-            role: 'sellerManager',
+            role: 'teamLeader',
             policies: {
               requiresApprovalForCash: true,
               calculateCollectionWarning: true,

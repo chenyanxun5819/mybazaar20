@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ========================================
  * Platform Settings 初始化脚本
  * ========================================
@@ -149,13 +149,13 @@ const platformSettings = {
     customerTransfer: false,       // Customer转让点数给其他Customer
     pointCardTopup: false,         // Customer扫点数卡充值（通常不需要）
     
-    // --- SellerManager 相关场景 ---
-    sellerManagerAllocate: false,      // SellerManager分配点数给Seller
-    sellerManagerCollectCash: false,   // SellerManager收款确认
+    // --- teamLeader 相关场景 ---
+    teamLeaderAllocate: false,      // teamLeader分配点数给Seller
+    teamLeaderCollectCash: false,   // teamLeader收款确认
     
     // --- Seller 相关场景 ---
     sellerSellPoints: false,       // Seller售出点数给Customer
-    sellerSubmitCash: false,       // Seller上缴现金给SellerManager
+    sellerSubmitCash: false,       // Seller上缴现金给teamLeader
     
     // --- PointSeller 相关场景 ---
     pointSellerIssueCard: false,       // PointSeller发行点数卡
@@ -205,9 +205,9 @@ const platformSettings = {
       message: '您正在使用点数卡充值 {amount} 点，请输入验证码确认。'
     },
     
-    // SellerManager 分配点数
-    sellerManagerAllocate: {
-      description: 'SellerManager分配点数给Seller',
+    // teamLeader 分配点数
+    teamLeaderAllocate: {
+      description: 'teamLeader分配点数给Seller',
       triggerCondition: {
         minAmount: 100,      // 100点以上触发
         maxAmount: null
@@ -215,9 +215,9 @@ const platformSettings = {
       message: '您正在分配 {amount} 点给 {recipientName}（{department}），请输入验证码确认。'
     },
     
-    // SellerManager 收款确认
-    sellerManagerCollectCash: {
-      description: 'SellerManager从Seller收取现金',
+    // teamLeader 收款确认
+    teamLeaderCollectCash: {
+      description: 'teamLeader从Seller收取现金',
       triggerCondition: {
         minAmount: 50,       // 50 RM以上触发
         maxAmount: null
@@ -237,7 +237,7 @@ const platformSettings = {
     
     // Seller 上缴现金
     sellerSubmitCash: {
-      description: 'Seller上缴现金给SellerManager',
+      description: 'Seller上缴现金给teamLeader',
       triggerCondition: {
         minAmount: 50,
         maxAmount: null
@@ -386,7 +386,7 @@ async function initializePlatformSettings() {
     const scenarios = platformSettings.otpRequired;
     const groups = {
       'Customer': ['customerPayment', 'customerTransfer', 'pointCardTopup'],
-      'SellerManager': ['sellerManagerAllocate', 'sellerManagerCollectCash'],
+      'teamLeader': ['teamLeaderAllocate', 'teamLeaderCollectCash'],
       'Seller': ['sellerSellPoints', 'sellerSubmitCash'],
       'PointSeller': ['pointSellerIssueCard', 'pointSellerReceiveCash'],
       'EventManager': ['eventManagerBatchAllocate', 'eventManagerApproval'],

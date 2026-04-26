@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../config/firebase';
 import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
@@ -16,12 +16,10 @@ import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 �
 import { safeFetch } from '../../services/safeFetch'; // 🆕 用于调用 Cloud Functions
 import UsersIcon from '../../assets/users.svg?react';
 import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
-import SellerFiveIcon from '../../assets/seller (5).svg?react';
 import UsersGearIcon from '../../assets/users-gear.svg?react';
 import UserSalaryIcon from '../../assets/user-salary.svg?react';
 import EmployeeManIcon from '../../assets/employee-man.svg?react';
 import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
-import SellerFourIcon from '../../assets/seller (4).svg?react';
 import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
 import leaveIcon from '../../assets/leave.svg';
 import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
@@ -35,22 +33,20 @@ import AuditorIcon from '../../assets/auditor.svg?react'; // 🆕 稽核人员�
 
 // 🆕 角色配置
 const ROLE_CONFIG = {
-  sellerManager: { label: 'SM', fullLabel: 'Seller Manager', chineseLabel: '班导师', color: '#f59e0b', icon: ChalkboardUserIcon, category: 'manager' },
-  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', chineseLabel: '商家管理员', color: '#8b5cf6', icon: SellerFiveIcon, category: 'manager' },
+  teamLeader: { label: 'SM', fullLabel: 'Team Leader', chineseLabel: '班导师', color: '#f59e0b', icon: ChalkboardUserIcon, category: 'manager' },
+  merchantManager: { label: 'MM', fullLabel: 'Merchant Manager', chineseLabel: '商家管理员', color: '#8b5cf6', icon: StoreBuyerIcon, category: 'manager' },
   customerManager: { label: 'CM', fullLabel: 'Customer Manager', chineseLabel: '消费者管理员', color: '#10b981', icon: UsersGearIcon, category: 'manager' },
   cashier: { label: 'C', fullLabel: 'Cashier', chineseLabel: '收银员', color: '#3b82f6', icon: UserSalaryIcon, category: 'manager' },
-  seller: { label: 'S', fullLabel: 'Seller', chineseLabel: '点数销售员', color: '#ec4899', icon: EmployeeManIcon, category: 'user' },
   merchantOwner: { label: 'MO', fullLabel: 'Merchant Owner', chineseLabel: '摊主', color: '#84cc16', icon: StoreBuyerIcon, category: 'user' },
-  merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: SellerFourIcon, category: 'user' },
+  merchantAsist: { label: 'MA', fullLabel: 'Merchant Assistant', chineseLabel: '摊位助手', color: '#a3e635', icon: EmployeeManIcon, category: 'user' },
   pointSeller: { label: 'PS', fullLabel: 'Point Seller', chineseLabel: '点数直售员', color: '#f97316', icon: MoneyCheckEditIcon, category: 'user' },
   auditor: { label: 'AU', fullLabel: 'Auditor', chineseLabel: '稽核人员', color: '#6366f1', icon: AuditorIcon, category: 'manager' }
 };
 
 const STAT_ICONS = {
   totalUsers: UsersIcon,
-  totalSellerManagers: ChalkboardUserIcon,
+  totalTeamLeaders: ChalkboardUserIcon,
   totalCashiers: UserSalaryIcon,
-  totalSellers: EmployeeManIcon,
   totalMerchants: StoreBuyerIcon,
   totalAllocatedPoints: PosBillIcon,
   totalGrantedPoints: FreeIcon
@@ -83,16 +79,15 @@ const renderIcon = (icon, { alt, size = 20, color, style } = {}) => {
   return icon;
 };
 
-// 列表角色图标排序：customer → seller → manager → 其他
+// 列表角色图标排序：customer → manager → 其他
 const sortRolesForDisplay = (roles, roleConfig = ROLE_CONFIG) => {
   const safeRoles = Array.isArray(roles) ? roles.filter(Boolean) : [];
 
   const roleKey = (role) => {
     if (role === 'customer') return 0;
-    if (role === 'seller') return 1;
     const cfg = roleConfig?.[role];
-    if (cfg?.category === 'manager') return 2;
-    return 3;
+    if (cfg?.category === 'manager') return 1;
+    return 2;
   };
 
   return [...safeRoles].sort((a, b) => {
@@ -120,13 +115,12 @@ const EventManagerDashboard = () => {
   const [statistics, setStatistics] = useState({
     totalUsers: 0,
     totalEventManagers: 0,
-    totalSellerManagers: 0,
+    totalTeamLeaders: 0,
     totalMerchantManagers: 0,
     totalCustomerManagers: 0,
     totalCashiers: 0,
-    totalSellers: 0,
     totalMerchants: 0,
-    totalAllocatedPoints: 0,  // 分配给 seller 的点数总额
+    totalAllocatedPoints: 0,
     totalGrantedPoints: 0     // 赠送给 customer 的点数总额
   });
   const [showUserList, setShowUserList] = useState(false);
@@ -161,11 +155,10 @@ const EventManagerDashboard = () => {
 
   // 🆕 角色选择状态
   const [selectedRoles, setSelectedRoles] = useState({
-    sellerManager: false,
+    teamLeader: false,
     merchantManager: false,
     customerManager: false,
     cashier: false,
-    seller: false,
     merchantOwner: false,
     merchantAsist: false,
     customer: false,
@@ -173,7 +166,7 @@ const EventManagerDashboard = () => {
     auditor: false
   });
 
-  // 🆕 Seller Manager 管理部门
+  // 🆕 Team Leader 管理部门
   const [managedDepartments, setManagedDepartments] = useState([]);
 
   // 🆕 部门列表
@@ -188,21 +181,19 @@ const EventManagerDashboard = () => {
     部门: true,
     身份ID: true,
     角色: true,
-    可消费点数: true,
-    可销售点数: true,
-    已销售点数: true
+    可消费点数: true
   });
 
-  // 🆕 計算已被其他 Seller Manager 佔用的部門
+  // 🆕 計算已被其他 Team Leader 佔用的部門
   const takenDepartments = useMemo(() => {
     const taken = {};
     users.forEach(u => {
       // 跳過正在編輯的本人
       if (u.id === editingUser?.id) return;
 
-      // 檢查該用戶是否為 Seller Manager 且有管理的部門
-      if (u.roles?.includes('sellerManager') && u.sellerManager?.managedDepartments) {
-        u.sellerManager.managedDepartments.forEach(dept => {
+      // 檢查該用戶是否為 Team Leader 且有管理的部門
+      if (u.roles?.includes('teamLeader') && u.teamLeader?.managedDepartments) {
+        u.teamLeader.managedDepartments.forEach(dept => {
           taken[dept] = u.basicInfo?.chineseName || u.basicInfo?.englishName || '其他管理员';
         });
       }
@@ -235,11 +226,10 @@ const EventManagerDashboard = () => {
 
     // 🆕 初始化角色选择
     setSelectedRoles({
-      sellerManager: user.roles?.includes('sellerManager') || false,
+      teamLeader: user.roles?.includes('teamLeader') || false,
       merchantManager: user.roles?.includes('merchantManager') || false,
       customerManager: user.roles?.includes('customerManager') || false,
       cashier: user.roles?.includes('cashier') || false,
-      seller: user.roles?.includes('seller') || false,
       merchantOwner: user.roles?.includes('merchantOwner') || false,
       merchantAsist: user.roles?.includes('merchantAsist') || false,
       customer: user.roles?.includes('customer') || false,
@@ -248,7 +238,7 @@ const EventManagerDashboard = () => {
     });
 
     // 🆕 初始化管理部门
-    setManagedDepartments(user.sellerManager?.managedDepartments || []);
+    setManagedDepartments(user.teamLeader?.managedDepartments || []);
 
     setShowEditModal(true);
   };
@@ -284,7 +274,7 @@ const EventManagerDashboard = () => {
 
     // 🆕 验证角色组合
     const hasEventManager = editingUser.roles?.includes('eventManager') || false;
-    const hasOtherManagerRoles = selectedRoles.sellerManager ||
+    const hasOtherManagerRoles = selectedRoles.teamLeader ||
       selectedRoles.merchantManager ||
       selectedRoles.customerManager ||
       selectedRoles.cashier ||
@@ -303,29 +293,29 @@ const EventManagerDashboard = () => {
 
     // 🚫 Event Manager 不能同时拥有其他 manager 角色
     if (hasEventManager && hasOtherManagerRoles) {
-      window.mybazaarShowToast('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Seller + Customer\n❌ Event Manager + Seller Manager\n❌ Event Manager + Cashier\n❌ Event Manager + Auditor');
+      window.mybazaarShowToast('Event Manager 不能同时拥有其他 manager 角色\n\n允许的角色组合：\n✅ Event Manager + Customer\n❌ Event Manager + Team Leader\n❌ Event Manager + Cashier\n❌ Event Manager + Auditor');
       return;
     }
 
-    // 🆕 如果勾选了 sellerManager 但没有选择管理部门，提示用户
-    if (selectedRoles.sellerManager && managedDepartments.length === 0) {
-      if (!confirm('您勾选了 Seller Manager 角色但未选择管理部门。\n是否继续？（该用户将无法管理任何部门）')) {
+    // 🆕 如果勾选了 teamLeader 但没有选择管理部门，提示用户
+    if (selectedRoles.teamLeader && managedDepartments.length === 0) {
+      if (!confirm('您勾选了 Team Leader 角色但未选择管理部门。\n是否继续？（该用户将无法管理任何部门）')) {
         return;
       }
     }
 
     // 🆕 Auditor 互斥验证：不能与其他 manager 角色共存
-    const auditorIncompatible = selectedRoles.sellerManager || selectedRoles.merchantManager ||
+    const auditorIncompatible = selectedRoles.teamLeader || selectedRoles.merchantManager ||
       selectedRoles.customerManager || selectedRoles.cashier || selectedRoles.pointSeller;
     if (selectedRoles.auditor && auditorIncompatible) {
       window.mybazaarShowToast(
         '稽核人员（Auditor）不能与以下角色共存：\n' +
-        '❌ Auditor + Seller Manager\n' +
+        '❌ Auditor + Team Leader\n' +
         '❌ Auditor + Merchant Manager\n' +
         '❌ Auditor + Customer Manager\n' +
         '❌ Auditor + Cashier\n' +
         '❌ Auditor + Point Seller\n\n' +
-        '✅ Auditor 只能与 Seller / Customer 共用'
+        '✅ Auditor 只能与 Customer 共用'
       );
       return;
     }
@@ -395,7 +385,7 @@ const EventManagerDashboard = () => {
           eventId,
           userId: editingUser.id,
           roles: selectedRoles,
-          managedDepartments: selectedRoles.sellerManager ? managedDepartments : [],
+          managedDepartments: selectedRoles.teamLeader ? managedDepartments : [],
           previousRoles: editingUser.roles || [],
           idToken
         })
@@ -421,11 +411,10 @@ const EventManagerDashboard = () => {
             'currentUser',
             'eventManagerInfo',
             'eventManagerLogin',
-            'sellerManagerInfo',
+            'teamLeaderInfo',
             'cashierInfo',
             'merchantOwnerInfo',
             'merchantAsistInfo',
-            'sellerInfo',
             'customerInfo'
           ];
           keysToClear.forEach((key) => localStorage.removeItem(key));
@@ -642,11 +631,10 @@ const EventManagerDashboard = () => {
           let stats = {
             totalUsers: usersSnapshot.size,
             totalEventManagers: 0,
-            totalSellerManagers: 0,
+            totalTeamLeaders: 0,
             totalMerchantManagers: 0,
             totalCustomerManagers: 0,
             totalCashiers: 0,
-            totalSellers: 0,
             totalMerchants: 0,
             totalAllocatedPoints: 0,
             totalGrantedPoints: 0
@@ -665,10 +653,9 @@ const EventManagerDashboard = () => {
               stats.totalGrantedPoints = userData.eventManager?.totalPointsGranted || 0;
             }
             if (userData.roles?.includes('cashier')) stats.totalCashiers++;
-            if (userData.roles?.includes('sellerManager')) stats.totalSellerManagers++;
+            if (userData.roles?.includes('teamLeader')) stats.totalTeamLeaders++;
             if (userData.roles?.includes('merchantManager')) stats.totalMerchantManagers++;
             if (userData.roles?.includes('customerManager')) stats.totalCustomerManagers++;
-            if (userData.roles?.includes('seller')) stats.totalSellers++;
           });
           // 商家数量从 roleStats.merchants.count 读取（firestore最新架构.json 第301行）
           stats.totalMerchants = eventInfo.roleStats?.merchants?.count || 0;
@@ -778,12 +765,12 @@ const EventManagerDashboard = () => {
             bValue = b.identityInfo?.identityId || '';
             break;
           case 'availablePoints':
-            aValue = a.seller?.availablePoints || 0;
-            bValue = b.seller?.availablePoints || 0;
+            aValue = a.customer?.pointsAccount?.availablePoints || 0;
+            bValue = b.customer?.pointsAccount?.availablePoints || 0;
             break;
           case 'totalPointsSold':
-            aValue = a.seller?.totalPointsSold || 0;
-            bValue = b.seller?.totalPointsSold || 0;
+            aValue = a.customer?.pointsAccount?.totalReceived || 0;
+            bValue = b.customer?.pointsAccount?.totalReceived || 0;
             break;
           case 'createdAt':
             aValue = a.accountStatus?.createdAt?.toDate?.() || new Date(0);
@@ -851,8 +838,8 @@ const EventManagerDashboard = () => {
         />
         <StatCard
           title="班导师"
-          value={statistics.totalSellerManagers}
-          icon={STAT_ICONS.totalSellerManagers}
+          value={statistics.totalTeamLeaders}
+          icon={STAT_ICONS.totalTeamLeaders}
           color="#f59e0b"
         />
         <StatCard
@@ -860,12 +847,6 @@ const EventManagerDashboard = () => {
           value={statistics.totalCashiers}
           icon={STAT_ICONS.totalCashiers}
           color="#3b82f6"
-        />
-        <StatCard
-          title="点数销售员"
-          value={statistics.totalSellers}
-          icon={STAT_ICONS.totalSellers}
-          color="#ec4899"
         />
         <StatCard
           title="商家"
@@ -989,11 +970,10 @@ const EventManagerDashboard = () => {
             >
               <option value="all">全部角色</option>
               <option value="eventManager">Event Manager</option>
-              <option value="sellerManager">班导师</option>
+              <option value="teamLeader">班导师</option>
               <option value="merchantManager">商家管理员</option>
               <option value="customerManager">消费者管理员</option>
               <option value="cashier">收银员</option>
-              <option value="seller">点数销售员</option>
               <option value="merchantOwner">摊主</option>
               <option value="merchantAsist">摊位助手</option>
               <option value="pointSeller">点数直售员</option>
@@ -1132,23 +1112,6 @@ const EventManagerDashboard = () => {
                   {visibleColumns.角色 && (
                     <th style={styles.tableHeaderCell}>角色</th>
                   )}
-                  {visibleColumns.可销售点数 && (
-                    <th
-                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
-                      onClick={() => handleSort('availablePoints')}
-                    >
-                      可销售点数 {sortConfig.key === 'availablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                  )}
-
-                  {visibleColumns.已销售点数 && (
-                    <th
-                      style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
-                      onClick={() => handleSort('totalPointsSold')}
-                    >
-                      已销售点数 {sortConfig.key === 'totalPointsSold' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                  )}
                   {visibleColumns.可消费点数 && (
                     <th
                       style={{ ...styles.tableHeaderCell, cursor: 'pointer' }}
@@ -1211,18 +1174,6 @@ const EventManagerDashboard = () => {
                             );
                           })}
                         </div>
-                      </td>
-                    )}
-                    {visibleColumns.可销售点数 && (
-                      <td style={styles.tableCell}>
-                        <span style={styles.pointsValue}>
-                          {user.seller?.availablePoints || 0}
-                        </span>
-                      </td>
-                    )}
-                    {visibleColumns.已销售点数 && (
-                      <td style={styles.tableCell}>
-                        {user.seller?.totalPointsSold || 0}
                       </td>
                     )}
                     {visibleColumns.可消费点数 && (
@@ -1606,7 +1557,7 @@ const EventManagerDashboard = () => {
                         }
 
                         // 🆕 auditor 互斥：勾选 auditor → 清除所有不兼容的 manager 角色
-                        const auditorIncompatibleList = ['sellerManager', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
+                        const auditorIncompatibleList = ['teamLeader', 'merchantManager', 'customerManager', 'cashier', 'pointSeller'];
                         if (roleId === 'auditor' && newRoles.auditor) {
                           auditorIncompatibleList.forEach(r => { newRoles[r] = false; });
                         }
@@ -1633,11 +1584,11 @@ const EventManagerDashboard = () => {
                 </div>
               </div>
 
-              {/* 🆕 Seller Manager 管理部门 */}
-              {selectedRoles.sellerManager && (
+              {/* 🆕 Team Leader 管理部门 */}
+              {selectedRoles.teamLeader && (
                 <div style={styles.managedDepartmentsSection}>
                   <div style={styles.sectionTitle}>
-                    🏢 管理的部门 (Seller Manager)
+                    🏢 管理的部门 (Team Leader)
                   </div>
                   <div style={styles.departmentsGrid}>
                     {departments.map(dept => {

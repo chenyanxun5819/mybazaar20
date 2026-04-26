@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -20,11 +20,10 @@ const ProtectedRoute = ({ allowedRoles = [], children }) => {
     const segments = location.pathname.split('/').filter(Boolean);
     const roleSeg = (segments[0] || '').toLowerCase();
     const knownRolePaths = new Set([
-      'seller',
       'merchant',
       'customer',
       'event-manager',
-      'seller-manager',
+      'team-leader',
       'cashier',
       'customer-manager',
       'merchant-manager',

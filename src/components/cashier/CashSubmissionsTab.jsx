@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CashSubmissionsTab.jsx
  * Cashier 查看和确认现金上交记录
  * 
@@ -187,8 +187,7 @@ const CashSubmissionsTab = ({ organizationId, eventId, cashierUid }) => {
   // 获取角色显示
   const getRoleDisplay = (role) => {
     const roleMap = {
-      seller: 'Seller (销售员)',
-      sellerManager: 'Seller Manager (销售经理)',
+      teamLeader: 'Team Leader (销售经理)',
       pointSeller: 'Point Seller (点数卡销售员)'
     };
     return roleMap[role] || role;

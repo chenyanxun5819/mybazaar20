@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { auth, functions } from '../../config/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -160,28 +160,24 @@ const InitialPasswordSetup = () => {
     let dashboardPath = '/';
 
     if (isMobile) {
-      // Mobile 优先级: seller > merchantOwner/merchantAsist > customer
-      if (roles.includes('seller')) {
-        dashboardPath = `/seller/${orgEventCode}/dashboard`;
-      } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
+      // Mobile 优先级: merchantOwner/merchantAsist > customer
+      if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
         dashboardPath = `/merchant/${orgEventCode}/dashboard`;
       } else if (roles.includes('customer')) {
         dashboardPath = `/customer/${orgEventCode}/dashboard`;
       }
     } else {
-      // Desktop 优先级: eventManager > cashier > sellerManager > merchantManager > customerManager
+      // Desktop 优先级: eventManager > cashier > teamLeader > merchantManager > customerManager
       if (roles.includes('eventManager')) {
         dashboardPath = `/event-manager/${orgEventCode}/dashboard`;
       } else if (roles.includes('cashier')) {
         dashboardPath = `/cashier/${orgEventCode}/dashboard`;
-      } else if (roles.includes('sellerManager')) {
-        dashboardPath = `/seller-manager/${orgEventCode}/dashboard`;
+      } else if (roles.includes('teamLeader')) {
+        dashboardPath = `/team-leader/${orgEventCode}/dashboard`;
       } else if (roles.includes('merchantManager')) {
         dashboardPath = `/merchant-manager/${orgEventCode}/dashboard`;
       } else if (roles.includes('customerManager')) {
         dashboardPath = `/customer-manager/${orgEventCode}/dashboard`;
-      } else if (roles.includes('seller')) {
-        dashboardPath = `/seller/${orgEventCode}/dashboard`;
       } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
         dashboardPath = `/merchant/${orgEventCode}/dashboard`;
       } else if (roles.includes('customer')) {

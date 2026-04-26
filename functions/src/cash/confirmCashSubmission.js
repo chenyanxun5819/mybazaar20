@@ -1,11 +1,11 @@
-/**
+﻿/**
  * confirmCashSubmission.js
- * SellerManager确认收到学生Seller的现金
+ * teamLeader确认收到学生Seller的现金
  * 
  * 架构对应：
- * - sellerManager.cashStats.pendingFromSellers (待确认)
- * - sellerManager.cashStats.confirmedFromSellers (已确认)
- * - sellerManager.cashStats.cashOnHand (持有现金)
+ * - teamLeader.cashStats.pendingFromSellers (待确认)
+ * - teamLeader.cashStats.confirmedFromSellers (已确认)
+ * - teamLeader.cashStats.cashOnHand (持有现金)
  * - cashSubmissions.status: pending → confirmed
  * 
  * @version 1.0
@@ -51,7 +51,7 @@ exports.confirmCashSubmission = onCall(
     const authUid = auth.uid;
 
     try {
-      // ===== 2. 查询SellerManager文档 =====
+      // ===== 2. 查询teamLeader文档 =====
       const usersRef = db
         .collection('organizations').doc(orgId)
         .collection('events').doc(eventId)
@@ -68,7 +68,7 @@ exports.confirmCashSubmission = onCall(
         authTokenKeys: auth.token ? Object.keys(auth.token) : []
       });
 
-      console.log('[confirmCashSubmission] 📊 查询SellerManager，authUid:', authUid);
+      console.log('[confirmCashSubmission] 📊 查询teamLeader，authUid:', authUid);
 
       // ----- 更魯棒的查找流程（不修改前端/AuthContext） -----
       // 優先嘗試 docId (可能為 claims.userId 或 phone_xxx)，再 fallback 到 where('authUid', authUid)
@@ -92,25 +92,25 @@ exports.confirmCashSubmission = onCall(
           let snap = await eventUsersRef.doc(candidateId).get();
           if (snap.exists) {
             smDoc = snap;
-            console.log('[confirmCashSubmission] 找到 SellerManager by event users doc:', candidateId);
+            console.log('[confirmCashSubmission] 找到 teamLeader by event users doc:', candidateId);
             break;
           }
           // org-level
           snap = await orgUsersRef.doc(candidateId).get();
           if (snap.exists) {
             smDoc = snap;
-            console.log('[confirmCashSubmission] 找到 SellerManager by org users doc:', candidateId);
+            console.log('[confirmCashSubmission] 找到 teamLeader by org users doc:', candidateId);
             break;
           }
           // root-level
           snap = await rootUsersRef.doc(candidateId).get();
           if (snap.exists) {
             smDoc = snap;
-            console.log('[confirmCashSubmission] 找到 SellerManager by root users doc:', candidateId);
+            console.log('[confirmCashSubmission] 找到 teamLeader by root users doc:', candidateId);
             break;
           }
 
-          console.log('[confirmCashSubmission] SellerManager doc not found for id (all paths):', candidateId);
+          console.log('[confirmCashSubmission] teamLeader doc not found for id (all paths):', candidateId);
         } catch (err) {
           console.warn('[confirmCashSubmission] 嘗試以 docId 讀取失敗 (忽略):', candidateId, err && err.message);
         }
@@ -123,14 +123,14 @@ exports.confirmCashSubmission = onCall(
           let qSnap = await eventUsersRef.where('authUid', '==', authUid).limit(1).get();
           if (!qSnap.empty) {
             smDoc = qSnap.docs[0];
-            console.log('[confirmCashSubmission] 找到 SellerManager by event users query:', smDoc.id);
+            console.log('[confirmCashSubmission] 找到 teamLeader by event users query:', smDoc.id);
           }
           // org-level query
           if (!smDoc) {
             qSnap = await orgUsersRef.where('authUid', '==', authUid).limit(1).get();
             if (!qSnap.empty) {
               smDoc = qSnap.docs[0];
-              console.log('[confirmCashSubmission] 找到 SellerManager by org users query:', smDoc.id);
+              console.log('[confirmCashSubmission] 找到 teamLeader by org users query:', smDoc.id);
             }
           }
           // root-level query
@@ -138,7 +138,7 @@ exports.confirmCashSubmission = onCall(
             qSnap = await rootUsersRef.where('authUid', '==', authUid).limit(1).get();
             if (!qSnap.empty) {
               smDoc = qSnap.docs[0];
-              console.log('[confirmCashSubmission] 找到 SellerManager by root users query:', smDoc.id);
+              console.log('[confirmCashSubmission] 找到 teamLeader by root users query:', smDoc.id);
             }
           }
         } catch (err) {
@@ -173,15 +173,15 @@ exports.confirmCashSubmission = onCall(
       const smData = smDoc.data();
       const smId = smDoc.id;
 
-      console.log('[confirmCashSubmission] ✅ 找到SellerManager:', {
+      console.log('[confirmCashSubmission] ✅ 找到teamLeader:', {
         smId,
         roles: smData.roles
       });
 
-      // 验证是SellerManager角色
-      if (!smData.roles || !smData.roles.includes('sellerManager')) {
-        console.error('[confirmCashSubmission] ❌ 不是SellerManager角色');
-        throw new Error('只有SellerManager可以确认收款');
+      // 验证是teamLeader角色
+      if (!smData.roles || !smData.roles.includes('teamLeader')) {
+        console.error('[confirmCashSubmission] ❌ 不是teamLeader角色');
+        throw new Error('只有teamLeader可以确认收款');
       }
 
       // ===== 3. 查询submission记录 =====
@@ -221,12 +221,6 @@ exports.confirmCashSubmission = onCall(
         throw new Error(`此记录状态为${submissionData.status}，无法确认`);
       }
 
-      // 验证是Seller提交的
-      if (submissionData.submitterRole !== 'seller') {
-        console.error('[confirmCashSubmission] ❌ 提交者不是Seller');
-        throw new Error('只能确认Seller提交的现金');
-      }
-
       console.log('[confirmCashSubmission] ✅ 验证通过，开始确认收款');
 
       // ===== 5. 使用事务更新数据 =====
@@ -244,21 +238,21 @@ exports.confirmCashSubmission = onCall(
 
         console.log('[confirmCashSubmission] ✅ 已更新submission状态');
 
-        // 5.2 更新SellerManager.cashStats统计（完全匹配JSON架构）
+        // 5.2 更新teamLeader.cashStats统计（完全匹配JSON架构）
         const smDocRef = usersRef.doc(smId);
 
         transaction.update(smDocRef, {
           // 减少待收款
-          'sellerManager.cashStats.pendingFromSellers': FieldValue.increment(-amount),
+          'teamLeader.cashStats.pendingFromCustomers': FieldValue.increment(-amount),
           // 增加已确认收款
-          'sellerManager.cashStats.confirmedFromSellers': FieldValue.increment(amount),
+          'teamLeader.cashStats.confirmedFromCustomers': FieldValue.increment(amount),
           // 增加持有现金
-          'sellerManager.cashStats.cashOnHand': FieldValue.increment(amount),
+          'teamLeader.cashStats.cashOnHand': FieldValue.increment(amount),
           // 更新最后确认时间
-          'sellerManager.cashStats.lastConfirmedAt': now
+          'teamLeader.cashStats.lastConfirmedAt': now
         });
 
-        console.log('[confirmCashSubmission] ✅ 已更新SellerManager.cashStats');
+        console.log('[confirmCashSubmission] ✅ 已更新teamLeader.cashStats');
 
         return {
           success: true,

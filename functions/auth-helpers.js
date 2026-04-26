@@ -1,4 +1,4 @@
-// auth-helpers.js
+﻿// auth-helpers.js
 // 可复用的权限验证辅助函数
 
 const admin = require('firebase-admin');
@@ -79,13 +79,13 @@ async function verifyEventManagerFromRequest(request, organizationId, eventId) {
 }
 
 /**
- * 验证用户是否是指定活动的 Seller Manager
+ * 验证用户是否是指定活动的 Team Leader
  * @param {string} uid - 用户 UID
  * @param {string} organizationId - 组织 ID
  * @param {string} eventId - 活动 ID
  * @returns {Promise<{success: boolean, managedDepartments?: string[], error?: string}>}
  */
-async function verifySellerManagerAuth(uid, organizationId, eventId) {
+async function verifyteamLeaderAuth(uid, organizationId, eventId) {
   try {
     // 获取活动文档
     const eventRef = admin.firestore()
@@ -97,18 +97,18 @@ async function verifySellerManagerAuth(uid, organizationId, eventId) {
       return { success: false, error: '活动不存在' };
     }
 
-    // 检查用户是否在 sellerManagers 列表中
+    // 检查用户是否在 teamLeaders 列表中
     const eventData = eventDoc.data();
-    const sellerManagers = eventData.sellerManagers || [];
+    const teamLeaders = eventData.teamLeaders || [];
     
-    const manager = sellerManagers.find(sm => sm.userId === uid);
+    const manager = teamLeaders.find(sm => sm.userId === uid);
     
     if (!manager) {
-      console.log('[Auth] ❌ 权限不足，用户不是 Seller Manager');
-      return { success: false, error: '需要 Seller Manager 权限' };
+      console.log('[Auth] ❌ 权限不足，用户不是 Team Leader');
+      return { success: false, error: '需要 Team Leader 权限' };
     }
 
-    console.log('[Auth] ✅ Seller Manager 权限验证通过');
+    console.log('[Auth] ✅ Team Leader 权限验证通过');
     console.log('[Auth] 管理部门:', manager.managedDepartments);
     
     return { 
@@ -150,6 +150,6 @@ async function verifyPlatformAdminAuth(uid) {
 module.exports = {
   verifyEventManagerAuth,
   verifyEventManagerFromRequest,
-  verifySellerManagerAuth,
+  verifyteamLeaderAuth,
   verifyPlatformAdminAuth
 };

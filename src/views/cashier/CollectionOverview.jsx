@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Collection Overview Component
  * Tab 1: 收款概览 - 显示统计卡片、待确认收款和待认领池子
  */
@@ -48,8 +48,7 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
   // 角色翻译
   const getRoleLabel = (role) => {
     const roleMap = {
-      seller: 'Seller',
-      sellerManager: 'Seller Manager',
+      teamLeader: 'Team Leader',
       pointSeller: 'Point Seller'
     };
     return roleMap[role] || role;
@@ -58,8 +57,7 @@ const CollectionOverview = ({ statistics, pendingSubmissions, onRefresh, onClaim
   // 获取角色图标
   const getRoleIcon = (role) => {
     const iconMap = {
-      seller: '🛍️',
-      sellerManager: '👨‍🏫',
+      teamLeader: '👨‍🏫',
       pointSeller: '💳'
     };
     return iconMap[role] || '👤';

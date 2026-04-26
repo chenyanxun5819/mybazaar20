@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -6,12 +6,10 @@ import { safeFetch } from '../../services/safeFetch';
 
 // 🆕 导入角色对应的 SVG 图标
 import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
-import SellerFiveIcon from '../../assets/seller (5).svg?react';
 import UsersGearIcon from '../../assets/users-gear.svg?react';
 import UserSalaryIcon from '../../assets/user-salary.svg?react';
 import EmployeeManIcon from '../../assets/employee-man.svg?react';
 import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
-import SellerFourIcon from '../../assets/seller (4).svg?react';
 import UsersIcon from '../../assets/users.svg?react';
 import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
 import AuditorIcon from '../../assets/auditor.svg?react';
@@ -22,7 +20,7 @@ import AuditorIcon from '../../assets/auditor.svg?react';
  * 
  * @param {string} organizationId - 组织 ID
  * @param {string} eventId - 活动 ID
- * @param {string} callerRole - 调用者角色 (eventManager, sellerManager, merchantManager, customerManager)
+ * @param {string} callerRole - 调用者角色 (eventManager, teamLeader, merchantManager, customerManager)
  * @param {function} onClose - 关闭回调
  * @param {function} onSuccess - 成功回调
  */
@@ -125,8 +123,8 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
   // 根据 callerRole 获取可见的角色选项
   const getRoleOptions = () => {
     const allRoles = {
-      sellerManager: {
-        value: 'sellerManager',
+      teamLeader: {
+        value: 'teamLeader',
         label: '班导师',
         description: '班导师 - 管理学生销售员和点数分配',
         icon: ChalkboardUserIcon,
@@ -136,7 +134,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         value: 'merchantManager',
         label: '商家管理员',
         description: '商家管理员 - 管理商家和 QR Code',
-        icon: SellerFiveIcon,
+        icon: StoreBuyerIcon,
         color: '#8b5cf6'
       },
       customerManager: {
@@ -153,13 +151,6 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         icon: UserSalaryIcon,
         color: '#3b82f6'
       },
-      seller: {
-        value: 'seller',
-        label: '点数销售员',
-        description: '点数销售员 - 销售固本给顾客',
-        icon: EmployeeManIcon,
-        color: '#ec4899'
-      },
       merchantOwner: {
         value: 'merchantOwner',
         label: '商家摊主',
@@ -171,7 +162,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
         value: 'merchantAsist',
         label: '摊位助手',
         description: '摊位助手 - 协助摊主收款',
-        icon: SellerFourIcon,
+        icon: EmployeeManIcon,
         color: '#a3e635'
       },
       customer: {

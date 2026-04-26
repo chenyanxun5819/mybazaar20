@@ -1,4 +1,4 @@
-// src/contexts/AuthContext.jsx
+﻿// src/contexts/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -210,7 +210,7 @@ export const AuthProvider = ({ children }) => {
             chineseName: data.chineseName,
             phoneNumber: data.phoneNumber
           },
-          sellerManager: data.managedDepartments ? {
+          teamLeader: data.managedDepartments ? {
             managedDepartments: data.managedDepartments
           } : undefined,
           // ⭐ 添加 merchantOwner 和 merchantAsist 特定数据
@@ -315,8 +315,8 @@ export const AuthProvider = ({ children }) => {
       return `/event-manager/${orgEventCode}/dashboard`;
     }
     
-    if (roles.includes('sellerManager')) {
-      return `/seller-manager/${orgEventCode}/dashboard`;
+    if (roles.includes('teamLeader')) {
+      return `/team-leader/${orgEventCode}/dashboard`;
     }
     
     // ⭐⭐⭐ Cashier 导航 ⭐⭐⭐
@@ -335,10 +335,6 @@ export const AuthProvider = ({ children }) => {
     
     if (roles.includes('customer')) {
       return `/customer/${orgEventCode}/dashboard`;
-    }
-    
-    if (roles.includes('seller')) {
-      return `/seller/${orgEventCode}/dashboard`;
     }
     
     // ⭐ merchantOwner 和 merchantAsist 共用同一个 Dashboard
@@ -383,8 +379,8 @@ export const AuthProvider = ({ children }) => {
           const hasBasicInfo = userProfile && userProfile.userId && userProfile.roles;
           
           // 🔧 关键修复：检查数据完整性
-          const needsIdentityTag = userProfile?.roles?.some(role => 
-            ['seller', 'customer', 'merchantOwner', 'merchantAsist'].includes(role)
+          const needsIdentityTag = userProfile?.roles?.some(role =>
+            ['customer', 'merchantOwner', 'merchantAsist'].includes(role)
           );
           const hasIdentityTag = !!userProfile?.identityTag;
           
@@ -554,8 +550,8 @@ export const AuthProvider = ({ children }) => {
       setClaims(null);
       
       // 清除 localStorage
-      ['sellerInfo', 'merchantOwnerInfo', 'merchantAsistInfo', 'customerInfo', 'eventManagerInfo', 
-       'sellerManagerInfo', 'cashierInfo', 
+      ['merchantOwnerInfo', 'merchantAsistInfo', 'customerInfo', 'eventManagerInfo',
+       'teamLeaderInfo', 'cashierInfo',
        // ⭐ 兼容旧版：同时清除旧的 merchantInfo
        'merchantInfo'].forEach(key => {
         localStorage.removeItem(key);
@@ -585,12 +581,11 @@ export const AuthProvider = ({ children }) => {
       'eventManager',
       'event_manager',
       'cashier',      // ⭐ Cashier
-      'sellerManager',
+      'teamLeader',
       'merchantManager',
       'customerManager',
       'merchantOwner',  // ⭐ 修改：merchant → merchantOwner
       'merchantAsist',  // ⭐ 新增：merchantAsist
-      'seller',
       'customer'
     ];
     

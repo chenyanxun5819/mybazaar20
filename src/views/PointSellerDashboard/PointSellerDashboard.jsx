@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PointSeller Dashboard
  * 点数卡销售员控制台
  * 
@@ -189,7 +189,7 @@ const PointSellerDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 登出处理（與 SellerManager 相同的行為）
+  // 登出处理（與 teamLeader 相同的行為）
   const handleLogout = async () => {
     try {
       await signOut(auth);

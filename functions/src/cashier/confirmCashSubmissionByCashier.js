@@ -1,6 +1,6 @@
-/**
+﻿/**
  * confirmCashSubmissionByCashier.js
- * Cashier 确认 PointSeller/Seller/SellerManager 的现金上交
+ * Cashier 确认 PointSeller/Seller/teamLeader 的现金上交
  * 
  * 功能：
  * 1. 验证 Cashier 交易密码
@@ -149,21 +149,12 @@ exports.confirmCashSubmissionByCashier = onCall({ region: 'asia-southeast1' }, a
           'activityData.updatedAt': now
         });
 
-      } else if (submitterRole === 'seller') {
-        // Seller 统计更新
+      } else if (submitterRole === 'teamLeader') {
+        // teamLeader 统计更新
         transaction.update(submitterRef, {
-          'seller.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
-          'seller.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
-          'seller.statistics.lastSubmissionAt': now,
-          'activityData.updatedAt': now
-        });
-
-      } else if (submitterRole === 'sellerManager') {
-        // SellerManager 统计更新
-        transaction.update(submitterRef, {
-          'sellerManager.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
-          'sellerManager.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
-          'sellerManager.statistics.lastSubmissionAt': now,
+          'teamLeader.statistics.totalSubmitted': admin.firestore.FieldValue.increment(amount),
+          'teamLeader.statistics.submissionCount': admin.firestore.FieldValue.increment(1),
+          'teamLeader.statistics.lastSubmissionAt': now,
           'activityData.updatedAt': now
         });
       }

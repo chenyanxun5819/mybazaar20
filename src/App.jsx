@@ -1,4 +1,4 @@
-// src/App.jsx
+﻿// src/App.jsx
 import { useEffect } from 'react';
 import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
@@ -14,10 +14,9 @@ import ProtectedRoute from './components/guards/ProtectedRoute';
 import { EventProvider } from './contexts/EventContext';
 import { AuthProvider } from './contexts/AuthContext';
 import EventManagerDashboard from './views/eventManager/EventManagerDashboard.jsx';
-import SellerManagerDashboard from './views/sellerManager/SellerManagerDashboard';
+import TeamLeaderDashboard from './views/teamLeader/TeamLeaderDashboard';
 import CashierDashboard from './views/cashier/CashierDashboard';
 import MerchantManagerDashboard from './views/merchantManager/MerchantManagerDashboard';
-import SellerDashboard from './views/sellerDashboard/SellerDashboard';
 import MerchantDashboard from './views/merchant/MerchantDashboard';
 import CustomerDashboard from './views/customer/CustomerDashboard';
 import PointSellerDashboard from './views/PointSellerDashboard/PointSellerDashboard';
@@ -30,7 +29,7 @@ import CustomerTransfer from './views/customer/CustomerTransfer';
 import CustomerTransactions from './views/customer/CustomerTransactions';
 import PointCardTopup from './views/customer/PointCardTopup';
 import InitialPasswordSetup from './views/auth/InitialPasswordSetup';
-import SellerManagerPhone from './views/phone/sellerManager/SellerManagerPhone';
+import TeamLeaderPhone from './views/phone/teamLeader/TeamLeaderPhone';
 
 // 手机版首页：根据角色自动跳转
 const PhoneHome = () => {
@@ -48,10 +47,8 @@ const PhoneHome = () => {
     const roles = userProfile.roles || [];
     const code = eventSlug;
 
-    if (roles.includes('sellerManager')) {
-      navigate(`/phone/seller-manager/${code}/dashboard`, { replace: true });
-    } else if (roles.includes('seller')) {
-      navigate(`/seller/${code}/dashboard`, { replace: true });
+    if (roles.includes('teamLeader')) {
+      navigate(`/phone/team-leader/${code}/dashboard`, { replace: true });
     } else if (roles.includes('pointSeller')) {
       navigate(`/pointseller/${code}/dashboard`, { replace: true });
     } else if (roles.includes('merchantOwner') || roles.includes('merchantAsist')) {
@@ -216,13 +213,13 @@ function App() {
         </MobileGuard>
       } />
 
-      {/* 📱 手机版 Seller Manager */}
-      <Route path="/phone/seller-manager/:orgEventCode/dashboard" element={
+      {/* 📱 手机版 Team Leader */}
+      <Route path="/phone/team-leader/:orgEventCode/dashboard" element={
         <MobileGuard>
           <EventProvider>
             <AuthProvider>
-              <ProtectedRoute allowedRoles={["sellerManager"]}>
-                <SellerManagerPhone />
+              <ProtectedRoute allowedRoles={["teamLeader"]}>
+                <TeamLeaderPhone />
               </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
@@ -289,12 +286,12 @@ function App() {
       } />
 
       {/* 🆕 Manager Dashboards - Desktop 版本 */}
-      <Route path="/seller-manager/:orgEventCode/dashboard" element={
+      <Route path="/team-leader/:orgEventCode/dashboard" element={
         <DesktopGuard>
           <EventProvider>
             <AuthProvider>
-              <ProtectedRoute allowedRoles={["sellerManager"]}>
-                <SellerManagerDashboard />
+              <ProtectedRoute allowedRoles={["teamLeader"]}>
+                <TeamLeaderDashboard />
               </ProtectedRoute>
             </AuthProvider>
           </EventProvider>
@@ -335,18 +332,6 @@ function App() {
             </AuthProvider>
           </EventProvider>
         </DesktopGuard>
-      } />
-
-      {/* 🆕 普通用户 Dashboards - Mobile 版本 */}
-      {/* ✅ 修改：带 orgEventCode 的 Seller 路由现在直接使用 SellerDashboard */}
-      <Route path="/seller/:orgEventCode/dashboard" element={
-        <EventProvider>
-          <AuthProvider>
-            <ProtectedRoute allowedRoles={["seller", "pointSeller"]}>
-              <SellerDashboard />
-            </ProtectedRoute>
-          </AuthProvider>
-        </EventProvider>
       } />
 
       {/* Point Seller Dashboard */}
@@ -442,17 +427,6 @@ function App() {
             </AuthProvider>
           </EventProvider>
         </MobileGuard>
-      } />
-
-      {/* ✅ 保留：简易路由（用于测试或直接访问） */}
-      <Route path="/seller" element={
-        <EventProvider>
-          <AuthProvider>
-            <ProtectedRoute allowedRoles={["seller"]}>
-              <SellerDashboard />
-            </ProtectedRoute>
-          </AuthProvider>
-        </EventProvider>
       } />
 
       {/* 🆕 Auditor 稽核人员仪表板 - Desktop 版本 */}
