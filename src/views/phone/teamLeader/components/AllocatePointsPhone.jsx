@@ -2,6 +2,7 @@
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { auth, db } from '../../../../config/firebase';
 import { safeFetch } from '../../../../services/safeFetch';
+import TransactionPinDialog from '../../../../components/common/TransactionPinDialog';
 
 /**
  * AllocatePointsPhone - 手机版分配点数
@@ -32,6 +33,8 @@ const AllocatePointsPhone = ({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pendingSubmitData, setPendingSubmitData] = useState(null);
 
   // 加载 Customers 数据
   useEffect(() => {
@@ -81,26 +84,42 @@ const AllocatePointsPhone = ({
     return name.toLowerCase().includes(term) || dept.toLowerCase().includes(term);
   });
 
-  // 处理销售
-  const handleSubmit = async () => {
+  // 验证表单
+  const validateForm = () => {
     if (!selectedCustomer) {
       setError('请先选择一位学生');
-      return;
+      return null;
     }
     if (!amount || parseFloat(amount) <= 0) {
       setError('请输入有效点数');
-      return;
+      return null;
     }
     const pts = parseFloat(amount);
     if (isNaN(pts)) {
       setError('点数必须是数字');
-      return;
+      return null;
     }
     if (pts > maxPerAllocation) {
       setError(`单次最多 ${maxPerAllocation} 点`);
-      return;
+      return null;
     }
+    return pts;
+  };
 
+  // 显示 PIN 对话框
+  const handleShowPinDialog = () => {
+    const pts = validateForm();
+    if (pts !== null) {
+      setError('');
+      setPendingSubmitData({ pts });
+      setShowPinDialog(true);
+    }
+  };
+
+  // 确认 PIN 后执行销售
+  const handleConfirmPinAndSell = async (pin) => {
+    if (!pendingSubmitData) return;
+    
     setSubmitting(true);
     setError('');
     setSuccessMessage('');
@@ -120,7 +139,7 @@ const AllocatePointsPhone = ({
           organizationId,
           eventId,
           recipientId: selectedCustomer.id,
-          points: pts,
+          points: pendingSubmitData.pts,
           allocationType: 'personal',
           notes: notes || ''
         })
@@ -150,9 +169,11 @@ const AllocatePointsPhone = ({
       }
 
       const customerName = selectedCustomer.basicInfo?.chineseName || selectedCustomer.basicInfo?.englishName;
-      setSuccessMessage(`✅ 成功销售 ${pts} 点给 ${customerName}（收现金 RM ${pts}）`);
+      setSuccessMessage(`✅ 成功销售 ${pendingSubmitData.pts} 点给 ${customerName}（收现金 RM ${pendingSubmitData.pts}）`);
       setAmount('');
       setNotes('');
+      setShowPinDialog(false);
+      setPendingSubmitData(null);
 
       setTimeout(() => {
         setSuccessMessage('');
@@ -161,6 +182,8 @@ const AllocatePointsPhone = ({
     } catch (err) {
       console.error('[AllocatePointsPhone] 销售失败:', err);
       setError(err.message || '销售失败，请重试');
+      setShowPinDialog(false);
+      setPendingSubmitData(null);
     } finally {
       setSubmitting(false);
     }
@@ -286,13 +309,29 @@ const AllocatePointsPhone = ({
           </button>
           <button
             style={{...styles.submitButton, opacity: submitting ? 0.5 : 1}}
-            onClick={handleSubmit}
+            onClick={handleShowPinDialog}
             disabled={submitting}
           >
             {submitting ? '处理中...' : `确认销售 ${amount || 0} 点`}
           </button>
         </div>
       </div>
+
+      {/* PIN 验证对话框 */}
+      {showPinDialog && (
+        <TransactionPinDialog
+          title="🔐 确认销售密码"
+          message={`请输入交易密码来确认销售 ${pendingSubmitData?.pts || 0} 点给 ${selectedCustomer.basicInfo?.chineseName || selectedCustomer.basicInfo?.englishName || '学生'}`}
+          onConfirm={async (pin) => {
+            await handleConfirmPinAndSell(pin);
+          }}
+          onCancel={() => {
+            setShowPinDialog(false);
+            setPendingSubmitData(null);
+          }}
+          confirmButtonText="✅ 确认销售"
+        />
+      )}
     </div>
   );
 };

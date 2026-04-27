@@ -302,24 +302,6 @@ const CustomerListPhone = ({ userInfo, onAllocate }) => {
           confirmButtonText="✅ 确认收款"
         />
       )}
-
-      {/* PIN 验证对话框 - 分配点数 */}
-      {showPinDialog?.type === 'allocate' && (
-        <TransactionPinDialog
-          title="🔐 确认分配密码"
-          message="请输入交易密码来确认分配点数"
-          onConfirm={async (pin) => {
-            try {
-              onAllocate?.(showPinDialog.customer);
-              setShowPinDialog(null);
-            } catch (err) {
-              throw new Error(err.message || '分配失败');
-            }
-          }}
-          onCancel={() => setShowPinDialog(null)}
-          confirmButtonText="✅ 确认分配"
-        />
-      )}
     </div>
   );
 };
@@ -383,7 +365,7 @@ const CustomerCard = ({ customer, onAllocate, onConfirmPayment, isConfirming, on
           </button>
         )}
         <button
-          onClick={() => onShowPinDialog('allocate', customer)}
+          onClick={() => onAllocate(customer)}
           style={{
             ...styles.actionBtn,
             background: '#f59e0b'
