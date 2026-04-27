@@ -11,7 +11,9 @@
  * @version 2026-04-26
  * @date 2026-04-26
  */
-import { useManagedUsers } from '../../../hooks/teamLeader';
+import { useEffect, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
 
 const OverviewStats = ({
   organizationId,
@@ -21,16 +23,64 @@ const OverviewStats = ({
   eventData,
   userInfo
 }) => {
-  // 获取管理的学生列表
-  const { users, loading: usersLoading } = useManagedUsers(
-    organizationId,
-    eventId,
-    teamLeaderId
-  );
+  const [customers, setCustomers] = useState([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
+
+  const effectiveManagedDepartments = Array.isArray(managedDepartments) && managedDepartments.length > 0
+    ? managedDepartments
+    : (userInfo?.teamLeader?.managedDepartments || userInfo?.managedDepartments || []);
+
+  useEffect(() => {
+    if (!organizationId || !eventId || !teamLeaderId) {
+      setCustomers([]);
+      setCustomersLoading(false);
+      return;
+    }
+
+    if (!Array.isArray(effectiveManagedDepartments) || effectiveManagedDepartments.length === 0) {
+      setCustomers([]);
+      setCustomersLoading(false);
+      return;
+    }
+
+    setCustomersLoading(true);
+
+    const usersRef = collection(
+      db,
+      `organizations/${organizationId}/events/${eventId}/users`
+    );
+
+    const customerQuery = query(
+      usersRef,
+      where('roles', 'array-contains', 'customer')
+    );
+
+    const unsubscribe = onSnapshot(
+      customerQuery,
+      (snapshot) => {
+        const nextCustomers = snapshot.docs
+          .map((docSnapshot) => ({
+            id: docSnapshot.id,
+            ...docSnapshot.data()
+          }))
+          .filter((customer) => effectiveManagedDepartments.includes(customer.identityInfo?.department || ''));
+
+        setCustomers(nextCustomers);
+        setCustomersLoading(false);
+      },
+      (error) => {
+        console.error('[OverviewStats] 加载 customers 失败:', error);
+        setCustomers([]);
+        setCustomersLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [organizationId, eventId, teamLeaderId, effectiveManagedDepartments]);
 
   // 计算现金相关统计
   const calculateCashStats = () => {
-    if (!users || users.length === 0) {
+    if (!customers || customers.length === 0) {
       return {
         totalAllocatedCash: 0,
         pendingCash: 0,
@@ -55,8 +105,8 @@ const OverviewStats = ({
       studentsNoCash: 0
     };
 
-    users.forEach(student => {
-      const cashAccount = student.cashAccount || {};
+    customers.forEach((customer) => {
+      const cashAccount = customer.customer?.cashAccount || {};
       const totalAllocated = cashAccount.totalAllocatedCash || 0;
       const pending = cashAccount.pendingCash || 0;
       const confirmed = cashAccount.confirmedCash || 0;
@@ -86,9 +136,10 @@ const OverviewStats = ({
   };
 
   const cashStats = calculateCashStats();
+  const teamLeaderCashStats = userInfo?.teamLeader?.cashStats || {};
 
   // 加载状态
-  if (usersLoading) {
+  if (customersLoading) {
     return (
       <div style={styles.emptyState}>
         <div style={styles.emptyIcon}>⏳</div>
@@ -209,7 +260,7 @@ const OverviewStats = ({
           <StatusCard
             icon="📚"
             title="总学生数"
-            value={String(users?.length || 0)}
+            value={String(customers?.length || 0)}
             color="#6b7280"
           />
           <StatusCard
@@ -242,25 +293,25 @@ const OverviewStats = ({
             <div style={styles.tlCashRow}>
               <span style={styles.tlCashLabel}>待确认收款</span>
               <span style={{ ...styles.tlCashValue, color: '#f59e0b' }}>
-                RM {(userInfo?.teamLeader?.cashStats?.pendingFromCustomers || 0).toLocaleString()}
+                RM {(teamLeaderCashStats.pendingFromCustomers || 0).toLocaleString()}
               </span>
             </div>
             <div style={styles.tlCashRow}>
               <span style={styles.tlCashLabel}>已确认收到</span>
               <span style={{ ...styles.tlCashValue, color: '#10b981' }}>
-                RM {(userInfo?.teamLeader?.cashStats?.confirmedFromCustomers || 0).toLocaleString()}
+                RM {(teamLeaderCashStats.confirmedFromCustomers || 0).toLocaleString()}
               </span>
             </div>
             <div style={styles.tlCashRow}>
               <span style={styles.tlCashLabel}>当前持有</span>
               <span style={{ ...styles.tlCashValue, color: '#3b82f6', fontSize: '1.5rem', fontWeight: 'bold' }}>
-                RM {(userInfo?.teamLeader?.cashStats?.cashOnHand || 0).toLocaleString()}
+                RM {(teamLeaderCashStats.cashOnHand || 0).toLocaleString()}
               </span>
             </div>
             <div style={styles.tlCashRow}>
               <span style={styles.tlCashLabel}>已上交</span>
               <span style={{ ...styles.tlCashValue, color: '#8b5cf6' }}>
-                RM {(userInfo?.teamLeader?.cashStats?.totalSubmitted || 0).toLocaleString()}
+                RM {(teamLeaderCashStats.totalSubmitted || 0).toLocaleString()}
               </span>
             </div>
           </div>

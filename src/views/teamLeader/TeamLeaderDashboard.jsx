@@ -10,7 +10,6 @@ import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 �
 import AllocatePoints from './components/AllocatePoints';
 import CustomerList from './components/CustomerList'; // ✅ 改为 CustomerList
 import OverviewStats from './components/OverviewStats';
-import CollectCash from './components/CollectCash';
 import SubmitCash from './components/SubmitCash';
 import TeamLeaderTransactions from './components/TeamLeaderTransactions';
 
@@ -18,8 +17,8 @@ import TeamLeaderTransactions from './components/TeamLeaderTransactions';
  * Team Leader Dashboard (修复版 v2.1)
  * 
  * 🔧 关键修复：
- * 1. SellerList 的 prop 名称从 currentUser 改为 userInfo（第632行）
- * 2. 增强 console.log 输出，便于诊断 sellers 为空的问题
+ * 1. CustomerList 的 prop 名称从 currentUser 改为 userInfo（第632行）
+ * 2. 增强 console.log 输出，便于诊断 customers 为空的问题
  * 3. 添加详细的调试信息
  * 
  * @version 2.1
@@ -71,11 +70,11 @@ const TeamLeaderDashboard = () => {
   const [departmentStats, setDepartmentStats] = useState([]);
   const [managedUsersStats, setManagedUsersStats] = useState(null);
 
-  const [sellers, setSellers] = useState([]);
-  const [loadingSellers, setLoadingSellers] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
 
   const [showAllocatePoints, setShowAllocatePoints] = useState(false);
-  const [selectedSeller, setSelectedSeller] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
 
   // 标签页管理
   const [activeTab, setActiveTab] = useState('overview');
@@ -149,57 +148,57 @@ const TeamLeaderDashboard = () => {
 
   useEffect(() => {
     let unsubscribeStats = null;
-    let unsubscribeSellers = null;
+    let unsubscribeCustomers = null;
 
     if (currentUser && eventId) {
-      unsubscribeSellers = loadSellers();
+      unsubscribeCustomers = loadCustomers();
     }
 
     return () => {
       if (typeof unsubscribeStats === 'function') unsubscribeStats();
-      if (typeof unsubscribeSellers === 'function') unsubscribeSellers();
+      if (typeof unsubscribeCustomers === 'function') unsubscribeCustomers();
     };
   }, [currentUser, eventId]);
 
-  const loadSellers = () => {
+  const loadCustomers = () => {
     if (!currentUser || !eventId) {
-      console.warn('[loadSellers] ⚠️ 缺少必要参数:', { currentUser: !!currentUser, eventId });
+      console.warn('[loadCustomers] ⚠️ 缺少必要参数:', { currentUser: !!currentUser, eventId });
       return;
     }
 
     try {
-      setLoadingSellers(true);
+      setLoadingCustomers(true);
 
       // 🔧 修复：更详细的调试输出
-      console.log('[loadSellers] 🔍 开始查询 Sellers');
-      console.log('[loadSellers] organizationId:', currentUser.organizationId);
-      console.log('[loadSellers] eventId:', eventId);
-      console.log('[loadSellers] managedDepartments:', currentUser.managedDepartments);
+      console.log('[loadCustomers] 🔍 开始查询 Customers');
+      console.log('[loadCustomers] organizationId:', currentUser.organizationId);
+      console.log('[loadCustomers] eventId:', eventId);
+      console.log('[loadCustomers] managedDepartments:', currentUser.managedDepartments);
 
       if (!Array.isArray(currentUser.managedDepartments) || currentUser.managedDepartments.length === 0) {
-        console.warn('[loadSellers] ⚠️ 没有管理的部门，将返回空列表');
-        console.warn('[loadSellers] 💡 这是正常的，如果您刚被创建为 Team Leader 但还未分配部门');
-        setSellers([]);
-        setLoadingSellers(false);
+        console.warn('[loadCustomers] ⚠️ 没有管理的部门，将返回空列表');
+        console.warn('[loadCustomers] 💡 这是正常的，如果您刚被创建为 Team Leader 但还未分配部门');
+        setCustomers([]);
+        setLoadingCustomers(false);
         return;
       }
 
-      console.log(`[loadSellers] 📊 管理 ${currentUser.managedDepartments.length} 个部门:`, currentUser.managedDepartments);
+      console.log(`[loadCustomers] 📊 管理 ${currentUser.managedDepartments.length} 个部门:`, currentUser.managedDepartments);
 
       // Firestore 查询路径
       const collectionPath = `organizations/${currentUser.organizationId}/events/${eventId}/users`;
-      console.log('[loadSellers] 📂 查询路径:', collectionPath);
+      console.log('[loadCustomers] 📂 查询路径:', collectionPath);
 
-      // ✅ 只使用 array-contains 查询
+      // ✅ 只使用 array-contains 查询（查询 customer 角色）
       const q = query(
         collection(db, collectionPath),
-        where('roles', 'array-contains', 'pointSeller')
+        where('roles', 'array-contains', 'customer')
       );
 
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
-          console.log(`[loadSellers] 📥 收到快照更新，共 ${snapshot.size} 条记录`);
+          console.log(`[loadCustomers] 📥 收到快照更新，共 ${snapshot.size} 条记录`);
 
           const list = [];
           let totalCount = 0;
@@ -211,14 +210,14 @@ const TeamLeaderDashboard = () => {
 
             // 🔧 添加详细的调试信息
             if (totalCount === 1) {
-              console.log('[loadSellers] 📋 第一条记录样本:');
+              console.log('[loadCustomers] 📋 第一条记录样本:');
               console.log('  - userId:', doc.id);
               console.log('  - roles:', data.roles);
               console.log('  - identityInfo.department:', data.identityInfo?.department);
               console.log('  - basicInfo.chineseName:', data.basicInfo?.chineseName);
             }
 
-            // ✅ 客户端过滤：只保留管理范围内的 sellers
+            // ✅ 客户端过滤：只保留管理范围内的 customers
             if (currentUser.managedDepartments &&
               data.identityInfo?.department &&
               currentUser.managedDepartments.includes(data.identityInfo.department)) {
@@ -233,9 +232,9 @@ const TeamLeaderDashboard = () => {
               
               // 🔧 记录为什么被过滤
               if (totalCount <= 3) { // 只记录前3条，避免日志太多
-                console.log(`[loadSellers] ⚠️ 记录 ${doc.id} 被过滤:`);
+                console.log(`[loadCustomers] ⚠️ 记录 ${doc.id} 被过滤:`);
                 console.log('  - 原因: department 不在 managedDepartments 中');
-                console.log('  - seller department:', data.identityInfo?.department);
+                console.log('  - customer department:', data.identityInfo?.department);
                 console.log('  - managed departments:', currentUser.managedDepartments);
               }
             }
@@ -248,28 +247,28 @@ const TeamLeaderDashboard = () => {
             return timeB - timeA;
           });
 
-          console.log(`[loadSellers] ✅ 查询完成:`);
+          console.log(`[loadCustomers] ✅ 查询完成:`);
           console.log(`  - 数据库总记录: ${totalCount}`);
           console.log(`  - 符合条件: ${list.length}`);
           console.log(`  - 被过滤: ${filteredOutCount}`);
 
           if (list.length === 0 && totalCount > 0 && import.meta.env.DEV) {
-            console.info('[loadSellers] 调试信息: 数据库有 seller，但没有一个在您管理的部门中');
-            console.info('[loadSellers] 可能原因:');
-            console.info('  1. sellers 的 department 字段与 managedDepartments 不匹配');
-            console.info('  2. Event Manager 还未将 sellers 分配到您管理的部门');
+            console.info('[loadCustomers] 调试信息: 数据库有 customer，但没有一个在您管理的部门中');
+            console.info('[loadCustomers] 可能原因:');
+            console.info('  1. customers 的 department 字段与 managedDepartments 不匹配');
+            console.info('  2. Event Manager 还未将 customers 分配到您管理的部门');
             console.info('  3. department 字段路径不正确（应该是 identityInfo.department）');
           }
 
           if (list.length > 0) {
-            console.log('[loadSellers] 📊 前3条记录预览:');
-            list.slice(0, 3).forEach((seller, idx) => {
-              console.log(`  ${idx + 1}. ${seller.basicInfo?.chineseName} (${seller.identityInfo?.department})`);
+            console.log('[loadCustomers] 📊 前3条记录预览:');
+            list.slice(0, 3).forEach((customer, idx) => {
+              console.log(`  ${idx + 1}. ${customer.basicInfo?.chineseName} (${customer.identityInfo?.department})`);
             });
           }
 
-          setSellers(list);
-          setLoadingSellers(false);
+          setCustomers(list);
+          setLoadingCustomers(false);
 
           // ✅ 聚合数据
           const aggregatedStats = aggregateManagedUsersStats(list);
@@ -279,32 +278,32 @@ const TeamLeaderDashboard = () => {
           setDepartmentStats(aggregatedDepts);
         },
         (error) => {
-          console.error('[loadSellers] ❌ 监听失败:', error);
-          console.error('[loadSellers] 错误详情:', error.code, error.message);
+          console.error('[loadCustomers] ❌ 监听失败:', error);
+          console.error('[loadCustomers] 错误详情:', error.code, error.message);
           
           if (error.code === 'permission-denied') {
-            console.error('[loadSellers] 🔒 权限被拒绝，请检查 Firestore Security Rules');
+            console.error('[loadCustomers] 🔒 权限被拒绝，请检查 Firestore Security Rules');
           }
           
-          setSellers([]);
-          setLoadingSellers(false);
+          setCustomers([]);
+          setLoadingCustomers(false);
         }
       );
 
       return unsubscribe;
 
     } catch (error) {
-      console.error('[loadSellers] ❌ 设置查询异常:', error);
-      setSellers([]);
-      setLoadingSellers(false);
+      console.error('[loadCustomers] ❌ 设置查询异常:', error);
+      setCustomers([]);
+      setLoadingCustomers(false);
     }
   };
 
   /**
-   * 聚合被管理的 Sellers 的统计数据
+   * 聚合被管理的 Customers 的统计数据
    */
-  const aggregateManagedUsersStats = (sellersList) => {
-    if (!Array.isArray(sellersList) || sellersList.length === 0) {
+  const aggregateManagedUsersStats = (customersList) => {
+    if (!Array.isArray(customersList) || customersList.length === 0) {
       return {
         totalUsers: 0,
         activeUsers: 0,
@@ -325,14 +324,14 @@ const TeamLeaderDashboard = () => {
     let usersWithWarnings = 0;
     let highRiskUsers = 0;
 
-    sellersList.forEach(seller => {
+    customersList.forEach(customer => {
       totalUsers++;
 
-      const sellerPoints = seller.pointSeller || {};
-      const balance = sellerPoints.availablePoints || 0;
-      const revenue = sellerPoints.totalRevenue || 0;
-      const collected = sellerPoints.totalCashCollected || 0;
-      const pending = sellerPoints.pendingCollection || 0;
+      const customerPoints = customer.customer?.pointsAccount || {};
+      const balance = customerPoints.availablePoints || 0;
+      const revenue = customerPoints.totalReceived || 0;
+      const collected = (customer.customer?.cashAccount?.confirmedCash) || 0;
+      const pending = (customer.customer?.cashAccount?.pendingCash) || 0;
 
       if (revenue > 0 || balance > 0) {
         activeUsers++;
@@ -343,7 +342,7 @@ const TeamLeaderDashboard = () => {
       totalCollected += collected;
       pendingCollection += pending;
 
-      const collectionAlert = seller.collectionAlert || {};
+      const collectionAlert = customer.collectionAlert || {};
       if (collectionAlert.hasWarning) {
         usersWithWarnings++;
       }
@@ -370,15 +369,15 @@ const TeamLeaderDashboard = () => {
   /**
    * 按部门聚合统计数据
    */
-  const aggregateDepartmentStats = (sellersList) => {
-    if (!Array.isArray(sellersList) || sellersList.length === 0) {
+  const aggregateDepartmentStats = (customersList) => {
+    if (!Array.isArray(customersList) || customersList.length === 0) {
       return [];
     }
 
     const deptMap = {};
 
-    sellersList.forEach(seller => {
-      const dept = seller.identityInfo?.department || '未分配';
+    customersList.forEach(customer => {
+      const dept = customer.identityInfo?.department || '未分配';
 
       if (!deptMap[dept]) {
         deptMap[dept] = {
@@ -397,11 +396,11 @@ const TeamLeaderDashboard = () => {
       const d = deptMap[dept];
       d.totalCount++;
 
-      const sellerPoints = seller.pointSeller || {};
-      const balance = sellerPoints.availablePoints || 0;
-      const revenue = sellerPoints.totalRevenue || 0;
-      const collected = sellerPoints.totalCashCollected || 0;
-      const pending = sellerPoints.pendingCollection || 0;
+      const customerPoints = customer.customer?.pointsAccount || {};
+      const balance = customerPoints.availablePoints || 0;
+      const revenue = customerPoints.totalReceived || 0;
+      const collected = (customer.customer?.cashAccount?.confirmedCash) || 0;
+      const pending = (customer.customer?.cashAccount?.pendingCash) || 0;
 
       if (revenue > 0 || balance > 0) {
         d.activeCount++;
@@ -412,7 +411,7 @@ const TeamLeaderDashboard = () => {
       d.totalCollected += collected;
       d.pendingCollection += pending;
 
-      const collectionAlert = seller.collectionAlert || {};
+      const collectionAlert = customer.collectionAlert || {};
       if (collectionAlert.hasWarning) {
         d.usersWithWarnings++;
       }
@@ -444,9 +443,9 @@ const TeamLeaderDashboard = () => {
     return deptArray;
   };
 
-  const handleAllocatePoints = (seller) => {
-    console.log('[SM Dashboard] 选择 Seller 进行分配:', seller);
-    setSelectedSeller(seller);
+  const handleAllocatePoints = (customer) => {
+    console.log('[TL Dashboard] 选择 Customer 进行分配:', customer);
+    setSelectedCustomer(customer);
     setShowAllocatePoints(true);
   };
 
@@ -480,7 +479,7 @@ const TeamLeaderDashboard = () => {
 
   const safeCurrentUser = currentUser || {};
   const safeEventData = eventData || {};
-  const safeSellers = Array.isArray(sellers) ? sellers : [];
+  const safeCustomers = Array.isArray(customers) ? customers : [];
   const safeManagedUsersStats = managedUsersStats || {};
   const safeDepartmentStats = Array.isArray(departmentStats) ? departmentStats : [];
 
@@ -538,15 +537,6 @@ const TeamLeaderDashboard = () => {
         <button
           style={{
             ...styles.tab,
-            ...(activeTab === 'collect' ? styles.activeTab : {})
-          }}
-          onClick={() => setActiveTab('collect')}
-        >
-          💵 收取现金
-        </button>
-        <button
-          style={{
-            ...styles.tab,
             ...(activeTab === 'submit' ? styles.activeTab : {})
           }}
           onClick={() => setActiveTab('submit')}
@@ -556,9 +546,9 @@ const TeamLeaderDashboard = () => {
         <button
           style={{
             ...styles.tab,
-            ...(activeTab === 'sellers' ? styles.activeTab : {})
+            ...(activeTab === 'customers' ? styles.activeTab : {})
           }}
-          onClick={() => setActiveTab('sellers')}
+          onClick={() => setActiveTab('customers')}
         >
           👥 学生清单
         </button>
@@ -587,24 +577,14 @@ const TeamLeaderDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'collect' && (
-          <div style={styles.section}>
-            <CollectCash
-              userInfo={safeCurrentUser}
-              eventData={safeEventData}
-              sellers={safeSellers}
-            />
-          </div>
-        )}
-
         {activeTab === 'submit' && (
           <SubmitCash userInfo={safeCurrentUser} eventData={safeEventData} />
         )}
 
-        {activeTab === 'sellers' && (
+        {activeTab === 'customers' && (
           <div>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>👥 学生列表 ({safeSellers.length})</h2>
+              <h2 style={styles.sectionTitle}>👥 学生列表 ({safeCustomers.length})</h2>
               <div style={styles.actionsBar}>
                 <button style={styles.refreshButton}>
                   🔄 数据实时更新中
@@ -615,14 +595,14 @@ const TeamLeaderDashboard = () => {
               </div>
             </div>
 
-            {loadingSellers ? (
+            {loadingCustomers ? (
               <div style={styles.loadingCard}>
                 <div style={styles.spinner}></div>
                 <p>加载学生列表...</p>
               </div>
             ) : (
               <CustomerList
-                customers={safeSellers}
+                customers={safeCustomers}
                 selectedDepartment={null}
                 onSelectCustomer={handleAllocatePoints}
                 onConfirmPayment={null}
@@ -645,19 +625,19 @@ const TeamLeaderDashboard = () => {
       </div>
 
       {/* Allocate Points Modal */}
-      {showAllocatePoints && selectedSeller && (
+      {showAllocatePoints && selectedCustomer && (
         <AllocatePoints
-          seller={selectedSeller}
+          customer={selectedCustomer}
           teamLeader={safeCurrentUser}
           organizationId={safeCurrentUser.organizationId}
           eventId={eventId}
           maxPerAllocation={maxPerAllocation}
           onClose={() => {
             setShowAllocatePoints(false);
-            setSelectedSeller(null);
+            setSelectedCustomer(null);
           }}
           onSuccess={() => {
-            console.log('[SM Dashboard] 点数分配成功，数据将自动更新');
+            console.log('[TL Dashboard] 点数分配成功，数据将自动更新');
           }}
         />
       )}

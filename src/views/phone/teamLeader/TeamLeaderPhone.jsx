@@ -8,13 +8,11 @@ import { useEvent } from '../../../contexts/EventContext';
 import DashboardHeader from '../../../components/common/DashboardHeader';
 import DashboardFooter from '../../../components/common/DashboardFooter';
 import OverviewStatsPhone from './components/OverviewStatsPhone';
-import SellerListPhone from './components/SellerListPhone';
-import CollectCashPhone from './components/CollectCashPhone';
+import CustomerListPhone from './components/SellerListPhone';
 import SubmitCashPhone from './components/SubmitCashPhone';
 import AllocatePointsPhone from './components/AllocatePointsPhone';
 import ChartHistogramIcon from '../../../assets/chart-histogram.svg?react';
 import WorkshopIcon from '../../../assets/workshop.svg?react';
-import HandHoldingUsdIcon from '../../../assets/hand-holding-usd.svg?react';
 import PersonalFinanceIcon from '../../../assets/personal-finance.svg?react';
 
 const TeamLeaderPhone = () => {
@@ -76,7 +74,6 @@ const TeamLeaderPhone = () => {
   const tabs = [
     { key: 'overview',  label: '总览',    Icon: ChartHistogramIcon },
     { key: 'sellers',   label: '学生清单', Icon: WorkshopIcon },
-    { key: 'collect',   label: '收款',    Icon: HandHoldingUsdIcon },
     { key: 'submit',    label: '上交现金', Icon: PersonalFinanceIcon },
   ];
 
@@ -164,7 +161,7 @@ const TeamLeaderPhone = () => {
         )}
 
         {activeTab === 'sellers' && !selectedSeller && (
-          <SellerListPhone
+          <CustomerListPhone
             userInfo={safeCurrentUser}
             onAllocate={(seller) => setSelectedSeller(seller)}
           />
@@ -173,17 +170,10 @@ const TeamLeaderPhone = () => {
         {activeTab === 'sellers' && selectedSeller && (
           <AllocatePointsPhone
             userInfo={safeCurrentUser}
-            selectedSeller={selectedSeller}
-            onSelectSeller={setSelectedSeller}
+            selectedCustomer={selectedSeller}
+            onSelectCustomer={setSelectedSeller}
             organizationId={safeCurrentUser.organizationId}
             eventId={eventId}
-          />
-        )}
-
-        {activeTab === 'collect' && (
-          <CollectCashPhone
-            userInfo={safeCurrentUser}
-            eventData={safeEventData}
           />
         )}
 

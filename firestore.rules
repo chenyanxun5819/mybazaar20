@@ -56,7 +56,8 @@ service cloud.firestore {
      * ✨ 检查用户是否是 Seller Manager（从 Custom Claims 读取）
      */
     function isSellerManager(orgId, eventId) {
-      return isInContext(orgId, eventId) && hasRole('sellerManager');
+      return isInContext(orgId, eventId) &&
+           (hasRole('sellerManager') || hasRole('teamLeader'));
     }
     
     /**
@@ -87,7 +88,7 @@ service cloud.firestore {
     function managesDepartment(orgId, eventId, departmentCode) {
       return isAuthenticated() && 
              isInContext(orgId, eventId) &&
-             hasRole('sellerManager') &&
+           (hasRole('sellerManager') || hasRole('teamLeader')) &&
              request.auth.token.managedDepartments != null &&
              departmentCode in request.auth.token.managedDepartments;
     }
@@ -97,7 +98,21 @@ service cloud.firestore {
      */
     function isManagedBy(orgId, eventId, sellerId, managerId) {
       let seller = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(sellerId)).data;
-      return seller.managedBy.hasAny([managerId]);
+        return seller.managedBy != null && seller.managedBy.hasAny([managerId]);
+      }
+
+      /**
+       * 检查 Team Leader / Seller Manager 是否可管理该用户
+       * 兼容旧的 managedBy 关系与新的 managedDepartments + department 模型
+       */
+      function canManageUser(orgId, eventId, userId) {
+        let managedUser = get(/databases/$(database)/documents/organizations/$(orgId)/events/$(eventId)/users/$(userId)).data;
+        return managedUser != null && (
+                 isManagedBy(orgId, eventId, userId, request.auth.token.userId) ||
+                 (managedUser.identityInfo != null &&
+                  managedUser.identityInfo.department != null &&
+                  managesDepartment(orgId, eventId, managedUser.identityInfo.department))
+               );
     }
     
     /**
@@ -202,17 +217,17 @@ service cloud.firestore {
                            onlyAllowedFields(['basicInfo', 'updatedAt']) &&
                            !request.resource.data.basicInfo.diff(resource.data.basicInfo)
                              .affectedKeys().hasAny(['passwordHash', 'passwordSalt', 'transactionPinHash', 'transactionPinSalt', 'pinHash', 'pinSalt'])) ||
-                           // 允許 Seller Manager 更新自己的現金統計（收款/上交等），僅限 pointsStats 與時間戳
+                           // 允许 Team Leader / Seller Manager 更新自己的现金统计（收款/上交等）
                            (isSellerManager(organizationId, eventId) &&
                             request.auth.token.userId == userId &&
-                            onlyAllowedFields(['pointsStats', 'updatedAt'])) ||
+                            onlyAllowedFields(['teamLeader', 'pointsStats', 'updatedAt'])) ||
                            (isEventManager(organizationId, eventId) &&
                             // Event Manager 不能修改自己的 roles
                             !(request.auth.token.userId == userId && 
                               request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles']))) ||
                            (isSellerManager(organizationId, eventId) && 
-                            isManagedBy(organizationId, eventId, userId, request.auth.token.userId) &&
-                            onlyAllowedFields(['seller', 'pointsStats', 'updatedAt'])) ||
+                            canManageUser(organizationId, eventId, userId) &&
+                            onlyAllowedFields(['customer', 'seller', 'cashAccount', 'pointsStats', 'updatedAt'])) ||
                            (isAuthenticated() && 
                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seller', 'updatedAt'])) ||
                            (isAuthenticated() && 
@@ -270,8 +285,9 @@ service cloud.firestore {
                           isAuditor(organizationId, eventId) ||
                           isSellerManager(organizationId, eventId));
 
-          // 统一由 Cloud Functions（Admin SDK）写入，前端不允许直接改写
-          allow create, update, delete: if false;
+          // Team Leader / Seller Manager 可创建收款记录；修改与删除仍仅允许后端处理
+          allow create: if isSellerManager(organizationId, eventId);
+          allow update, delete: if false;
         }
         
         // ========================================================================

@@ -285,6 +285,15 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
       return;
     }
 
+    // 🆕 验证：检查用户是否有足够的点数
+    const availablePoints = selectedUser.customer?.pointsAccount?.availablePoints || 0;
+    if (availablePoints < points) {
+      window.mybazaarShowToast(
+        `⚠️ 点数不足！\n\n用户: ${selectedUser.basicInfo?.chineseName || '未知用户'}\n现有点数: ${availablePoints.toLocaleString()}\n要回收: ${points.toLocaleString()}\n\n❌ 为防止点数变成负数，回收已暂停。\n请减少回收点数。`
+      );
+      return;
+    }
+
     try {
       setIsProcessing(true);
 
@@ -468,6 +477,35 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
     if (targetUsers.length === 0) {
       const selectedTags = selectedIdentityTagRecall.map(tagId => getIdentityTagInfo(tagId).label).join('、');
       window.mybazaarShowToast(`身份标签 "${selectedTags}" 中没有可回收点数的用户`);
+      return;
+    }
+
+    // 🆕 验证：检查所有目标用户是否有足够的点数
+    const insufficientUsers = [];
+    targetUsers.forEach(user => {
+      if (!user.roles?.includes('customer')) return;
+      const availablePoints = user.customer?.pointsAccount?.availablePoints || 0;
+      if (availablePoints < points) {
+        insufficientUsers.push({
+          name: user.basicInfo?.chineseName || '未知用户',
+          phone: user.basicInfo?.phoneNumber || '-',
+          available: availablePoints,
+          toRecall: points
+        });
+      }
+    });
+
+    // 🆕 如果有用户点数不足，显示警告
+    if (insufficientUsers.length > 0) {
+      let warningMsg = `⚠️ 发现 ${insufficientUsers.length} 个用户的点数不足以完成回收操作：\n\n`;
+      insufficientUsers.slice(0, 5).forEach(user => {
+        warningMsg += `• ${user.name} (${user.phone})\n  现有: ${user.available.toLocaleString()} 点，要回收: ${user.toRecall.toLocaleString()} 点\n`;
+      });
+      if (insufficientUsers.length > 5) {
+        warningMsg += `\n... 及其他 ${insufficientUsers.length - 5} 个用户`;
+      }
+      warningMsg += `\n\n❌ 为防止点数变成负数，回收已暂停。\n请修改回收点数或更换身份标签。`;
+      window.mybazaarShowToast(warningMsg);
       return;
     }
 

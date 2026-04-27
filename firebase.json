@@ -111,8 +111,8 @@
         "function": "createEventByPlatformAdminHttp"
       },
       {
-        "source": "/api/allocatePointsBySellerManager",
-        "function": "allocatePointsBySellerManagerHttp"
+        "source": "/api/allocatePointsByteamLeader",
+        "function": "allocatePointsByTeamLeaderHttp"
       },
       {
         "source": "/api/submitCashToFinanceHttp",

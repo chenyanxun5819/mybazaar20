@@ -5,8 +5,8 @@ import { safeFetch } from '../../../services/safeFetch';
  * Allocate Points Modal (简化版 - 只销售点数)
  * 
  * @description
- * Team Leader 销售点数给 Seller（收现金）
- * - Seller 付现金购买点数
+ * Team Leader 销售点数给 Customer（收现金）
+ * - Customer 付现金购买点数
  * - 更新 customer.pointsAccount.availablePoints
  * - 记录现金收入
  * 
@@ -15,7 +15,7 @@ import { safeFetch } from '../../../services/safeFetch';
  */
 
 const AllocatePoints = ({
-  seller,
+  customer,
   teamLeader,
   organizationId,
   eventId,
@@ -29,18 +29,18 @@ const AllocatePoints = ({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const sellerData = seller.seller || {};
-  const collectionAlert = seller.collectionAlert || {};
-  const sellerName = seller.basicInfo?.chineseName || seller.basicInfo?.englishName || 'N/A';
+  const customerData = customer.seller || {};
+  const collectionAlert = customer.collectionAlert || {};
+  const customerName = customer.basicInfo?.chineseName || customer.basicInfo?.englishName || 'N/A';
 
   // 统计数据
   const pointsStats = {
-    personalBalance: seller.customer?.pointsAccount?.availablePoints || 0, // 消费余额
-    totalRevenue: sellerData.totalRevenue || 0,
-    totalCollected: sellerData.totalCashCollected || 0,
-    pendingCollection: (sellerData.totalRevenue || 0) - (sellerData.totalCashCollected || 0),
-    collectionRate: (sellerData.totalRevenue || 0) > 0
-      ? (sellerData.totalCashCollected || 0) / (sellerData.totalRevenue || 0)
+    personalBalance: customer.customer?.pointsAccount?.availablePoints || 0, // 消費余额
+    totalRevenue: customerData.totalRevenue || 0,
+    totalCollected: customerData.totalCashCollected || 0,
+    pendingCollection: (customerData.totalRevenue || 0) - (customerData.totalCashCollected || 0),
+    collectionRate: (customerData.totalRevenue || 0) > 0
+      ? (customerData.totalCashCollected || 0) / (customerData.totalRevenue || 0)
       : 0
   };
 
@@ -91,7 +91,7 @@ const AllocatePoints = ({
       const requestBody = {
         organizationId: organizationId,
         eventId: eventId,
-        recipientId: seller.id,
+        recipientId: customer.id,
         points: parseFloat(amount),
         allocationType: 'personal',
         notes: notes || ''
@@ -121,7 +121,7 @@ const AllocatePoints = ({
       console.log('[AllocatePoints] ✅ 直接销售成功', result);
 
       setSuccessMessage(
-        `成功销售 ${parseFloat(amount)} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！（收现金 RM ${parseFloat(amount)}）`
+        `成功销售 ${parseFloat(amount)} 点给 ${customer.basicInfo?.chineseName || customer.basicInfo?.englishName}！（收现金 RM ${parseFloat(amount)}）`
       );
 
       // 重置表单
@@ -160,8 +160,8 @@ const AllocatePoints = ({
     e?.preventDefault?.();
 
     // 验证输入
-    if (!seller || !seller.id) {
-      setError('无效的 Seller 对象');
+    if (!customer || !customer.id) {
+      setError('无效的 Customer 对象');
       return;
     }
 
@@ -187,8 +187,8 @@ const AllocatePoints = ({
 
     try {
       console.log('[AllocatePoints] 开始销售点数', {
-        recipientId: seller.id,
-        recipientName: seller.basicInfo?.chineseName,
+        recipientId: customer.id,
+        recipientName: customer.basicInfo?.chineseName,
         points: pointsNumber
       });
 
@@ -204,7 +204,7 @@ const AllocatePoints = ({
       const requestBody = {
         organizationId: organizationId,
         eventId: eventId,
-        recipientId: seller.id,
+        recipientId: customer.id,
         points: pointsNumber,
         allocationType: 'personal', // 固定为 personal（收现金）
         notes: notes || ''
@@ -234,7 +234,7 @@ const AllocatePoints = ({
       console.log('[AllocatePoints] ✅ 销售成功', result);
 
       setSuccessMessage(
-        `成功销售 ${pointsNumber} 点给 ${seller.basicInfo?.chineseName || seller.basicInfo?.englishName}！（收现金 RM ${pointsNumber}）`
+        `成功销售 ${pointsNumber} 点给 ${customer.basicInfo?.chineseName || customer.basicInfo?.englishName}！（收现金 RM ${pointsNumber}）`
       );
 
       // 重置表单
@@ -315,19 +315,19 @@ const AllocatePoints = ({
           </button>
         </div>
 
-        {/* Seller 信息 */}
-        <div style={styles.sellerInfo}>
+        {/* Customer 信息 */}
+        <div style={styles.customerInfo}>
           <div style={styles.avatar}>
-            {(sellerName[0] || '?').toUpperCase()}
+            {(customerName[0] || '?').toUpperCase()}
           </div>
-          <div style={styles.sellerDetails}>
-            <div style={styles.sellerName}>{sellerName}</div>
-            <div style={styles.sellerMeta}>
+          <div style={styles.customerDetails}>
+            <div style={styles.customerName}>{customerName}</div>
+            <div style={styles.customerMeta}>
               <span style={styles.identityTag}>
-                {getIdentityIcon(seller.identityTag)} {getIdentityText(seller.identityTag)}
+                {getIdentityIcon(customer.identityTag)} {getIdentityText(customer.identityTag)}
               </span>
               <span style={styles.department}>
-                🏫 {seller.identityInfo?.department || '未分配部门'}
+                🏫 {customer.identityInfo?.department || '未分配部门'}
               </span>
             </div>
           </div>
@@ -449,7 +449,7 @@ const AllocatePoints = ({
               <div style={styles.previewTitle}>📋 交易预览</div>
               <div style={styles.previewRow}>
                 <span>接收者:</span>
-                <span>{sellerName}</span>
+                <span>{customerName}</span>
               </div>
               <div style={styles.previewRow}>
                 <span>销售点数:</span>
@@ -598,7 +598,7 @@ const styles = {
     borderRadius: '8px',
     transition: 'all 0.2s'
   },
-  sellerInfo: {
+  customerInfo: {
     display: 'flex',
     gap: '1rem',
     padding: '1rem',
@@ -618,19 +618,19 @@ const styles = {
     fontSize: '1.5rem',
     fontWeight: 'bold'
   },
-  sellerDetails: {
+  customerDetails: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center'
   },
-  sellerName: {
+  customerName: {
     fontSize: '1.125rem',
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: '0.25rem'
   },
-  sellerMeta: {
+  customerMeta: {
     display: 'flex',
     gap: '0.75rem',
     fontSize: '0.875rem'

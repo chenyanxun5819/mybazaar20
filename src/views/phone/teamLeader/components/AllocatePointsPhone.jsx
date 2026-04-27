@@ -1,58 +1,90 @@
-﻿import { useState } from 'react';
-import { auth } from '../../../../config/firebase';
+﻿import { useState, useEffect } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { auth, db } from '../../../../config/firebase';
 import { safeFetch } from '../../../../services/safeFetch';
-import { useManagedUsers } from '../../../../hooks/teamLeader';
 
 /**
- * AllocatePointsPhone
+ * AllocatePointsPhone - 手机版分配点数
  *
- * 手机版分配点数（销售点数给卖家，收取现金）。
- *
- * 两种使用模式：
- *   1. 从「卖家」tab 点击「分配点数」跳过来 → selectedSeller 已设定
- *   2. 直接进入「分配」tab → 先选卖家，再操作
- *
- * Props:
- *   userInfo         - Team Leader 用户信息
- *   selectedSeller   - 外部传入的预选 seller（可为 null）
- *   onSelectSeller   - 更新外部预选 seller 的回调
- *   organizationId
- *   eventId
- *   maxPerAllocation
+ * Team Leader 销售点数给 Customer（收现金）
+ * - 直接从 Firestore 查询 customer
+ * - 读取 customer.pointsAccount.availablePoints（新模型）
+ * - 调用 /api/allocatePointsByteamLeader
  */
 const AllocatePointsPhone = ({
   userInfo,
-  selectedSeller,
-  onSelectSeller,
+  selectedCustomer,
+  onSelectCustomer,
   organizationId,
   eventId,
-  maxPerAllocation = 100
+  maxPerAllocation = 100,
+  onClose
 }) => {
   const orgId = userInfo?.organizationId;
-  const smId = userInfo?.userId;
+  const teamLeaderId = userInfo?.userId;
+  const managedDepartments = userInfo?.managedDepartments || [];
 
-  const { users, loading: usersLoading } = useManagedUsers(orgId, eventId, smId);
-
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // 加载 Customers 数据
+  useEffect(() => {
+    if (!orgId || !eventId || !Array.isArray(managedDepartments) || managedDepartments.length === 0) {
+      setCustomers([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    const usersRef = collection(db, `organizations/${orgId}/events/${eventId}/users`);
+    const customerQuery = query(
+      usersRef,
+      where('roles', 'array-contains', 'customer')
+    );
+
+    const unsubscribe = onSnapshot(
+      customerQuery,
+      (snapshot) => {
+        const list = snapshot.docs
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+          .filter(c => managedDepartments.includes(c.identityInfo?.department || ''));
+
+        setCustomers(list);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('[AllocatePointsPhone] 加载失败:', err);
+        setCustomers([]);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [orgId, eventId, managedDepartments]);
+
   const quickAmounts = [10, 20, 50, 100, 200, 500].filter(a => a <= maxPerAllocation);
 
-  const filteredUsers = (users || []).filter(u => {
-    const name =
-      (u.basicInfo?.chineseName || '') + (u.basicInfo?.englishName || '');
-    const dept = u.identityInfo?.department || '';
+  const filteredCustomers = (customers || []).filter(c => {
+    const name = (c.basicInfo?.chineseName || '') + (c.basicInfo?.englishName || '');
+    const dept = c.identityInfo?.department || '';
     const term = searchTerm.toLowerCase();
     return name.toLowerCase().includes(term) || dept.toLowerCase().includes(term);
   });
 
+  // 处理销售
   const handleSubmit = async () => {
-    if (!selectedSeller) {
-      setError('请先选择一位卖家');
+    if (!selectedCustomer) {
+      setError('请先选择一位学生');
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {
@@ -60,10 +92,16 @@ const AllocatePointsPhone = ({
       return;
     }
     const pts = parseFloat(amount);
-    if (isNaN(pts)) { setError('点数必须是数字'); return; }
-    if (pts > maxPerAllocation) { setError(`单次最多 ${maxPerAllocation} 点`); return; }
+    if (isNaN(pts)) {
+      setError('点数必须是数字');
+      return;
+    }
+    if (pts > maxPerAllocation) {
+      setError(`单次最多 ${maxPerAllocation} 点`);
+      return;
+    }
 
-    setLoading(true);
+    setSubmitting(true);
     setError('');
     setSuccessMessage('');
 
@@ -81,40 +119,58 @@ const AllocatePointsPhone = ({
         body: JSON.stringify({
           organizationId,
           eventId,
-          recipientId: selectedSeller.id,
+          recipientId: selectedCustomer.id,
           points: pts,
           allocationType: 'personal',
           notes: notes || ''
         })
       });
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message || '销售失败');
+      // 先检查响应状态
+      if (!response.ok) {
+        // 尝试解析错误信息
+        let errorMsg = `HTTP ${response.status}: 销售失败`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error?.message || errorData.message || errorMsg;
+        } catch (parseErr) {
+          // 如果响应不是 JSON，使用状态码信息
+          console.warn('[AllocatePointsPhone] 无法解析错误响应:', response.status, response.statusText);
+        }
+        throw new Error(errorMsg);
+      }
 
-      const sellerName =
-        selectedSeller.basicInfo?.chineseName ||
-        selectedSeller.basicInfo?.englishName;
-      setSuccessMessage(`✅ 成功销售 ${pts} 点给 ${sellerName}（收现金 RM ${pts}）`);
+      // 解析成功响应
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseErr) {
+        console.error('[AllocatePointsPhone] 解析成功响应失败:', parseErr);
+        throw new Error('服务器响应格式错误');
+      }
+
+      const customerName = selectedCustomer.basicInfo?.chineseName || selectedCustomer.basicInfo?.englishName;
+      setSuccessMessage(`✅ 成功销售 ${pts} 点给 ${customerName}（收现金 RM ${pts}）`);
       setAmount('');
       setNotes('');
 
       setTimeout(() => {
         setSuccessMessage('');
-        onSelectSeller?.(null);
+        onSelectCustomer?.(null);
       }, 2500);
     } catch (err) {
-      console.error('[AllocatePhone] 销售失败:', err);
+      console.error('[AllocatePointsPhone] 销售失败:', err);
       setError(err.message || '销售失败，请重试');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  // ===== 如果还没选 seller，显示选择列表 =====
-  if (!selectedSeller) {
+  // 如果还没选 customer，显示选择列表
+  if (!selectedCustomer) {
     return (
       <div style={styles.container}>
-        <p style={styles.hint}>请先从列表选择一位卖家来分配点数</p>
+        <p style={styles.hint}>请选择一位学生来分配点数</p>
 
         <input
           type="text"
@@ -124,33 +180,31 @@ const AllocatePointsPhone = ({
           style={styles.searchInput}
         />
 
-        {usersLoading ? (
+        {loading ? (
           <div style={styles.centered}><p style={{ color: '#6b7280' }}>加载中...</p></div>
-        ) : filteredUsers.length === 0 ? (
-          <div style={styles.centered}><p style={{ color: '#9ca3af' }}>没有符合的卖家</p></div>
+        ) : filteredCustomers.length === 0 ? (
+          <div style={styles.centered}><p style={{ color: '#9ca3af' }}>没有符合的学生</p></div>
         ) : (
           <div style={styles.pickList}>
-            {filteredUsers.map(seller => {
-              const name =
-                seller.basicInfo?.chineseName ||
-                seller.basicInfo?.englishName ||
-                '未知';
-              const dept = seller.identityInfo?.department || '-';
-              const balance = seller.pointSeller?.availablePoints || 0;
+            {filteredCustomers.map(customer => {
+              const name = customer.basicInfo?.chineseName || customer.basicInfo?.englishName || '未知';
+              const dept = customer.identityInfo?.department || '-';
+              const availablePoints = customer.customer?.pointsAccount?.availablePoints || 0;
               return (
                 <button
-                  key={seller.id}
+                  key={customer.id}
                   style={styles.pickItem}
-                  onClick={() => { onSelectSeller?.(seller); setSearchTerm(''); }}
+                  onClick={() => { onSelectCustomer?.(customer); setSearchTerm(''); }}
                 >
                   <div style={styles.pickAvatar}>
                     {(name[0] || '?').toUpperCase()}
                   </div>
                   <div style={styles.pickInfo}>
                     <div style={styles.pickName}>{name}</div>
-                    <div style={styles.pickMeta}>🏫 {dept} &nbsp;·&nbsp; 余额: {balance.toLocaleString()} 点</div>
+                    <div style={styles.pickDept}>{dept}</div>
+                    <div style={styles.pickBalance}>可用: {availablePoints.toLocaleString()} 点</div>
                   </div>
-                  <span style={styles.pickArrow}>›</span>
+                  <div style={styles.pickArrow}>›</div>
                 </button>
               );
             })}
@@ -160,150 +214,98 @@ const AllocatePointsPhone = ({
     );
   }
 
-  // ===== 已选 seller：显示分配表单 =====
-  const sellerName =
-    selectedSeller.basicInfo?.chineseName ||
-    selectedSeller.basicInfo?.englishName ||
-    '未知';
-  const sellerData = selectedSeller.seller || {};
-  const balance = selectedSeller.customer?.pointsAccount?.availablePoints || 0;
-  const revenue = sellerData.totalRevenue || 0;
-  const collected = sellerData.totalCashCollected || 0;
-  const collectionRate = revenue > 0 ? collected / revenue : 0;
-  const expectedBalance = balance + (parseFloat(amount) || 0);
-  const hasWarning = sellerData.collectionAlert?.hasWarning;
+  // 已选 customer，显示分配表单
+  const customerName = selectedCustomer.basicInfo?.chineseName || selectedCustomer.basicInfo?.englishName || '未知';
+  const availablePoints = selectedCustomer.customer?.pointsAccount?.availablePoints || 0;
 
   return (
     <div style={styles.container}>
-      {/* 已选卖家卡片 */}
-      <div style={styles.sellerCard}>
-        <div style={styles.sellerAvatar}>
-          {(sellerName[0] || '?').toUpperCase()}
+      <div style={styles.header}>
+        <button style={styles.backButton} onClick={() => onSelectCustomer?.(null)}>‹ 返回</button>
+        <h2 style={styles.headerTitle}>分配点数</h2>
+      </div>
+
+      <div style={styles.customerCard}>
+        <div style={styles.customerName}>{customerName}</div>
+        <div style={styles.customerInfo}>
+          学号: {selectedCustomer.identityInfo?.identityId || '-'}
         </div>
-        <div style={styles.sellerInfo}>
-          <div style={styles.sellerName}>{sellerName}</div>
-          <div style={styles.sellerDept}>
-            🏫 {selectedSeller.identityInfo?.department || '未分配部门'}
-          </div>
+        <div style={styles.customerBalance}>
+          当前可用: <strong>{availablePoints.toLocaleString()} 点</strong>
         </div>
-        <button
-          style={styles.changeBtn}
-          onClick={() => { onSelectSeller?.(null); setAmount(''); setError(''); setSuccessMessage(''); }}
-        >
-          返回
-        </button>
       </div>
 
-      {/* 收款警示 */}
-      {hasWarning && (
-        <div style={styles.warningBox}>
-          ⚠️ 待收款 RM {(sellerData.collectionAlert?.pendingAmount || 0).toLocaleString()}
-        </div>
-      )}
-
-      {/* 当前余额摘要 */}
-      <div style={styles.balanceRow}>
-        <span style={styles.balanceLabel}>当前余额</span>
-        <span style={styles.balanceValue}>{balance.toLocaleString()} 点</span>
-      </div>
-      <div style={styles.balanceRow}>
-        <span style={styles.balanceLabel}>收款率</span>
-        <span style={{
-          ...styles.balanceValue,
-          color: collectionRate >= 0.8 ? '#10b981' : collectionRate >= 0.5 ? '#f59e0b' : '#ef4444'
-        }}>
-          {Math.round(collectionRate * 100)}%
-        </span>
-      </div>
-
-      {/* 快速金额 */}
-      <div style={styles.quickGrid}>
-        {quickAmounts.map(a => (
-          <button
-            key={a}
-            style={{
-              ...styles.quickBtn,
-              ...(amount === a.toString() ? styles.quickBtnActive : {})
-            }}
-            onClick={() => { setAmount(a.toString()); setError(''); }}
-            disabled={loading}
-          >
-            {a}
-          </button>
-        ))}
-      </div>
-
-      {/* 自定义输入 */}
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>
-          点数 <span style={{ color: '#ef4444' }}>*</span>
-          <span style={styles.labelHint}>（上限 {maxPerAllocation}，需收现金 RM {amount || 0}）</span>
-        </label>
-        <input
-          type="number"
-          inputMode="numeric"
-          value={amount}
-          onChange={e => { setAmount(e.target.value.replace(/[^\d.]/g, '')); setError(''); }}
-          placeholder="输入点数..."
-          style={{ ...styles.input, ...(error ? styles.inputError : {}) }}
-          disabled={loading}
-        />
-      </div>
-
-      {/* 备注 */}
-      <div style={styles.inputGroup}>
-        <label style={styles.label}>备注（可选）</label>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="添加备注..."
-          rows={2}
-          style={styles.textarea}
-          disabled={loading}
-        />
-      </div>
-
-      {/* 预览 */}
-      {amount && parseFloat(amount) > 0 && (
-        <div style={styles.preview}>
-          <div style={styles.previewRow}>
-            <span>销售后余额</span>
-            <strong style={{ color: '#10b981', fontSize: '1.125rem' }}>
-              {expectedBalance.toLocaleString()} 点
-            </strong>
-          </div>
-          <div style={{ ...styles.previewRow, ...styles.cashRow }}>
-            <span style={{ fontWeight: '600', color: '#92400e' }}>💵 收取现金</span>
-            <strong style={{ color: '#92400e', fontSize: '1.25rem' }}>
-              RM {parseFloat(amount).toLocaleString()}
-            </strong>
-          </div>
-        </div>
-      )}
-
-      {/* 错误 / 成功 */}
       {error && <div style={styles.errorBox}>{error}</div>}
       {successMessage && <div style={styles.successBox}>{successMessage}</div>}
 
-      {/* 提交 */}
-      <button
-        style={{
-          ...styles.submitBtn,
-          opacity: loading ? 0.6 : 1,
-          cursor: loading ? 'not-allowed' : 'pointer'
-        }}
-        onClick={handleSubmit}
-        disabled={loading}
-      >
-        {loading ? '处理中...' : '💰 直接销售（收现金）'}
-      </button>
+      <div style={styles.form}>
+        <label style={styles.label}>分配点数</label>
+        <input
+          type="number"
+          placeholder="输入点数"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          style={styles.input}
+          min="1"
+          max={maxPerAllocation}
+          disabled={submitting}
+        />
+
+        <div style={styles.quickButtons}>
+          {quickAmounts.map(amt => (
+            <button
+              key={amt}
+              style={{
+                ...styles.quickBtn,
+                ...(amount === amt.toString() ? styles.quickBtnActive : {})
+              }}
+              onClick={() => setAmount(amt.toString())}
+              disabled={submitting}
+            >
+              {amt}
+            </button>
+          ))}
+        </div>
+
+        <label style={styles.label}>备注（可选）</label>
+        <textarea
+          placeholder="输入备注..."
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          style={styles.textarea}
+          disabled={submitting}
+        />
+
+        <div style={styles.actionButtons}>
+          <button
+            style={styles.cancelButton}
+            onClick={() => onSelectCustomer?.(null)}
+            disabled={submitting}
+          >
+            取消
+          </button>
+          <button
+            style={{...styles.submitButton, opacity: submitting ? 0.5 : 1}}
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? '处理中...' : `确认销售 ${amount || 0} 点`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
 
 const styles = {
-  container: { paddingBottom: '1.5rem' },
-  centered: { textAlign: 'center', padding: '2rem', color: '#6b7280' },
+  container: {
+    paddingBottom: '1.5rem'
+  },
+  centered: {
+    textAlign: 'center',
+    padding: '2rem',
+    color: '#6b7280'
+  },
   hint: {
     fontSize: '0.875rem',
     color: '#6b7280',
@@ -320,7 +322,11 @@ const styles = {
     boxSizing: 'border-box',
     outline: 'none'
   },
-  pickList: { display: 'flex', flexDirection: 'column', gap: '0.625rem' },
+  pickList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.625rem'
+  },
   pickItem: {
     display: 'flex',
     alignItems: 'center',
@@ -346,172 +352,169 @@ const styles = {
     fontWeight: 'bold',
     flexShrink: 0
   },
-  pickInfo: { flex: 1 },
-  pickName: { fontSize: '0.9375rem', fontWeight: '600', color: '#1f2937', marginBottom: '0.2rem' },
-  pickMeta: { fontSize: '0.75rem', color: '#9ca3af' },
-  pickArrow: { fontSize: '1.25rem', color: '#d1d5db' },
+  pickInfo: {
+    flex: 1
+  },
+  pickName: {
+    fontSize: '0.9375rem',
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: '0.2rem'
+  },
+  pickDept: {
+    fontSize: '0.75rem',
+    color: '#9ca3af'
+  },
+  pickBalance: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+    marginTop: '0.1rem'
+  },
+  pickArrow: {
+    fontSize: '1.25rem',
+    color: '#d1d5db'
+  },
 
-  sellerCard: {
+  header: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.75rem',
+    marginBottom: '1rem'
+  },
+  backButton: {
+    padding: '0.5rem 0.75rem',
+    background: '#f3f4f6',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '1.25rem',
+    color: '#374151'
+  },
+  headerTitle: {
+    margin: 0,
+    fontSize: '1.125rem',
+    fontWeight: '700',
+    color: '#1f2937',
+    flex: 1
+  },
+
+  customerCard: {
     background: '#f0f9ff',
     border: '1.5px solid #bfdbfe',
     borderRadius: '12px',
     padding: '0.875rem',
-    marginBottom: '0.875rem'
+    marginBottom: '1rem'
   },
-  sellerAvatar: {
-    width: '44px',
-    height: '44px',
-    borderRadius: '10px',
-    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.25rem',
-    fontWeight: 'bold',
-    flexShrink: 0
+  customerName: {
+    fontSize: '1rem',
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: '0.25rem'
   },
-  sellerInfo: { flex: 1 },
-  sellerName: { fontSize: '1rem', fontWeight: '700', color: '#1e3a8a', marginBottom: '0.2rem' },
-  sellerDept: { fontSize: '0.8125rem', color: '#3b82f6' },
-  changeBtn: {
-    padding: '0.375rem 0.875rem',
-    background: 'white',
-    border: '1.5px solid #bfdbfe',
-    borderRadius: '8px',
-    fontSize: '0.8125rem',
-    fontWeight: '600',
-    color: '#3b82f6',
-    cursor: 'pointer'
-  },
-  warningBox: {
-    background: '#fef3c7',
-    border: '1px solid #fbbf24',
-    color: '#92400e',
-    padding: '0.625rem 0.875rem',
-    borderRadius: '8px',
-    fontSize: '0.875rem',
-    fontWeight: '500',
-    marginBottom: '0.875rem'
-  },
-  balanceRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    background: '#f9fafb',
-    padding: '0.5rem 0.75rem',
-    borderRadius: '8px',
+  customerInfo: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
     marginBottom: '0.5rem'
   },
-  balanceLabel: { fontSize: '0.875rem', color: '#6b7280' },
-  balanceValue: { fontSize: '1rem', fontWeight: '700', color: '#1f2937' },
-  quickGrid: {
+  customerBalance: {
+    fontSize: '0.875rem',
+    color: '#1f2937'
+  },
+
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem'
+  },
+  label: {
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#374151'
+  },
+  input: {
+    padding: '0.75rem 1rem',
+    border: '1.5px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '1rem',
+    outline: 'none'
+  },
+  quickButtons: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '0.5rem',
-    marginTop: '0.875rem',
-    marginBottom: '0.875rem'
+    marginBottom: '0.5rem'
   },
   quickBtn: {
-    padding: '0.75rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '10px',
+    padding: '0.5rem',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
     background: 'white',
-    fontSize: '1rem',
+    fontSize: '0.8125rem',
     fontWeight: '600',
-    color: '#374151',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    color: '#6b7280',
+    transition: 'all 0.2s'
   },
   quickBtnActive: {
-    borderColor: '#f59e0b',
-    background: '#fef3c7',
-    color: '#92400e'
+    background: '#dbeafe',
+    borderColor: '#3b82f6',
+    color: '#1e40af'
   },
-  inputGroup: { marginBottom: '0.875rem' },
-  label: {
-    display: 'block',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: '0.375rem'
-  },
-  labelHint: { fontWeight: '400', color: '#9ca3af', marginLeft: '0.375rem' },
-  input: {
-    width: '100%',
-    padding: '0.875rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '10px',
-    fontSize: '1.125rem',
-    boxSizing: 'border-box',
-    outline: 'none'
-  },
-  inputError: { borderColor: '#ef4444' },
   textarea: {
-    width: '100%',
-    padding: '0.75rem',
-    border: '2px solid #e5e7eb',
-    borderRadius: '10px',
-    fontSize: '0.9375rem',
-    boxSizing: 'border-box',
-    resize: 'vertical',
-    fontFamily: 'inherit',
-    outline: 'none'
-  },
-  preview: {
-    background: '#f0f9ff',
-    border: '1.5px solid #bfdbfe',
-    borderRadius: '10px',
-    padding: '0.875rem',
-    marginBottom: '0.875rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem'
-  },
-  previewRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    fontSize: '0.9375rem',
-    color: '#374151'
-  },
-  cashRow: {
-    marginTop: '0.25rem',
-    padding: '0.625rem',
-    background: '#fef3c7',
-    borderRadius: '8px'
-  },
-  errorBox: {
-    background: '#fee2e2',
-    color: '#991b1b',
-    padding: '0.75rem',
+    padding: '0.75rem 1rem',
+    border: '1.5px solid #e5e7eb',
     borderRadius: '8px',
     fontSize: '0.875rem',
-    marginBottom: '0.875rem',
-    border: '1px solid #fecaca'
+    fontFamily: 'inherit',
+    outline: 'none',
+    minHeight: '60px',
+    resize: 'vertical'
+  },
+
+  errorBox: {
+    padding: '0.75rem 1rem',
+    background: '#fee2e2',
+    border: '1px solid #fca5a5',
+    borderRadius: '8px',
+    color: '#7f1d1d',
+    fontSize: '0.875rem',
+    fontWeight: '500'
   },
   successBox: {
-    background: '#d1fae5',
-    color: '#065f46',
-    padding: '0.75rem',
+    padding: '0.75rem 1rem',
+    background: '#dcfce7',
+    border: '1px solid #86efac',
     borderRadius: '8px',
+    color: '#166534',
     fontSize: '0.875rem',
-    marginBottom: '0.875rem',
-    border: '1px solid #6ee7b7'
+    fontWeight: '500'
   },
-  submitBtn: {
-    display: 'block',
-    margin: '0 auto',
-    padding: '0.875rem 2.5rem',
-    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-    color: 'white',
+
+  actionButtons: {
+    display: 'flex',
+    gap: '0.75rem'
+  },
+  cancelButton: {
+    flex: 1,
+    padding: '0.75rem 1.5rem',
+    background: '#f3f4f6',
     border: 'none',
-    borderRadius: '12px',
-    fontSize: '1rem',
-    fontWeight: '700',
-    cursor: 'pointer'
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: '#6b7280'
+  },
+  submitButton: {
+    flex: 1,
+    padding: '0.75rem 1.5rem',
+    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    color: 'white'
   }
 };
 
