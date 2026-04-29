@@ -1,0 +1,27 @@
+{
+  "name": "mybazaar-otp-forwarder",
+  "version": "1.0.0",
+  "description": "OTP Forwarding Service for MyBazaar - Forwards OTP requests from Cloud Functions to 360 SMS API with static IP",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "NODE_ENV=development node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "otp",
+    "sms",
+    "360",
+    "mybazaar",
+    "forwarder"
+  ],
+  "author": "MyBazaar",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mybazaar/otp-forwarder"
+  }
+}

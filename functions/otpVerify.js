@@ -8,6 +8,7 @@ const {
 } = require('firebase-functions/params');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
+const http = require('http');
 const https = require('https');
 
 // ===========================================
@@ -31,6 +32,12 @@ const DEV_OTP_CODE_PARAM = defineString('DEV_OTP_CODE', { default: '223344' });
 const SMS_PROVIDER_PARAM = defineString('SMS_PROVIDER', { default: '' });
 const API_BASE_URL_360_PARAM = defineString('API_BASE_URL_360', {
   default: 'https://sms.360.my/gw/bulk360/v3_0/send.php',
+});
+const OTP_FORWARDER_URL_PARAM = defineString('OTP_FORWARDER_URL', {
+  default: 'http://34.123.222.228:3000/otp',
+});
+const OTP_FORWARDER_SHARED_TOKEN_PARAM = defineString('OTP_FORWARDER_SHARED_TOKEN', {
+  default: '',
 });
 
 function resolveSmsProvider(explicitProvider, runtimeConfig) {
@@ -116,6 +123,18 @@ function getRuntimeSmsConfig() {
         API_BASE_URL_360_PARAM,
         process.env.API_BASE_URL_360 || 'https://sms.360.my/gw/bulk360/v3_0/send.php'
       ) || 'https://sms.360.my/gw/bulk360/v3_0/send.php'
+    ).trim(),
+    otpForwarderUrl: String(
+      readParamValue(
+        OTP_FORWARDER_URL_PARAM,
+        process.env.OTP_FORWARDER_URL || 'http://34.123.222.228:3000/otp'
+      ) || 'http://34.123.222.228:3000/otp'
+    ).trim(),
+    otpForwarderSharedToken: String(
+      readParamValue(
+        OTP_FORWARDER_SHARED_TOKEN_PARAM,
+        process.env.OTP_FORWARDER_SHARED_TOKEN || ''
+      ) || ''
     ).trim(),
   };
 
@@ -238,7 +257,104 @@ function sendSmsVia360(phoneNumber, message, runtimeConfig) {
   });
 }
 
+/**
+ * 使用 OTP Forwarder 發送 SMS（新方式，推薦）
+ * 
+ * 轉發至 WordPress VM 上運行的 OTP Forwarder Service
+ * - Forwarder 有靜態 IP (34.123.222.228)
+ * - 365 白名單只需要加入 Forwarder 的 IP
+ */
+function sendSmsViaForwarder(phoneNumber, message, runtimeConfig) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!runtimeConfig.otpForwarderUrl) {
+        reject(new Error('缺少 OTP Forwarder URL，请设置 OTP_FORWARDER_URL'));
+        return;
+      }
 
+      const payload = JSON.stringify({
+        phoneNumber,
+        message
+      });
+
+      const forwarderUrl = new URL(runtimeConfig.otpForwarderUrl);
+      // 根據 URL scheme 選擇正確的 http/https module
+      const isHttps = forwarderUrl.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+
+      const options = {
+        hostname: forwarderUrl.hostname,
+        port: forwarderUrl.port || (isHttps ? 443 : 80),
+        path: forwarderUrl.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          'User-Agent': 'MyBazaar-CloudFunctions/1.0'
+        },
+        timeout: 10000
+      };
+
+      if (runtimeConfig.otpForwarderSharedToken) {
+        options.headers['X-OTP-Forwarder-Token'] = runtimeConfig.otpForwarderSharedToken;
+      }
+
+      console.log('[sendSmsViaForwarder] 轉發 SMS 到', {
+        forwarder: runtimeConfig.otpForwarderUrl,
+        phoneNumber,
+        messageLength: message.length,
+        protocol: isHttps ? 'HTTPS' : 'HTTP',
+        hasSharedToken: !!runtimeConfig.otpForwarderSharedToken
+      });
+
+      const req = httpModule.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            if (result.code === 200 || result.code === '200') {
+              console.log('[sendSmsViaForwarder] ✅ Forwarder 成功轉發');
+              resolve(result);
+            } else if (result.error) {
+              const providerError = new Error(`OTP Forwarder error: ${result.error}`);
+              providerError.provider = 'forwarder';
+              providerError.providerCode = result.code;
+              providerError.providerDesc = result.error;
+              reject(providerError);
+            } else {
+              const providerError = new Error(`360 API error (code=${result.code}): ${result.desc || data}`);
+              providerError.provider = '360';
+              providerError.providerCode = Number(result.code);
+              providerError.providerDesc = result.desc || '';
+              providerError.providerBalance = result.balance;
+              providerError.providerCurrency = result.currency;
+              reject(providerError);
+            }
+          } catch (e) {
+            reject(new Error(`Failed to parse Forwarder response: ${data}`));
+          }
+        });
+      });
+
+      req.on('error', (error) => { 
+        console.error('[sendSmsViaForwarder] ❌ 轉發失敗:', error.message);
+        reject(error); 
+      });
+
+      req.on('timeout', () => {
+        console.error('[sendSmsViaForwarder] ❌ 轉發超時');
+        req.destroy();
+        reject(new Error('OTP Forwarder 請求超時'));
+      });
+
+      req.write(payload);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
 
 // ===========================================
 // 🔐 OTP 工具函数
@@ -519,9 +635,9 @@ exports.sendOtpHttp = onRequest({ secrets: [SMS_SECRETS, API_KEY_360_SECRET, API
         }
 
         if (smsProvider === '360') {
-          console.log('[sendOtpHttp] 使用 360 API');
-          const result = await sendSmsVia360(phoneNumber, smsMessage, runtimeConfig);
-          console.log('[sendOtpHttp] ✅ SMS 发送成功（360）:', result);
+          console.log('[sendOtpHttp] 使用 OTP Forwarder 轉發到 360 API');
+          const result = await sendSmsViaForwarder(phoneNumber, smsMessage, runtimeConfig);
+          console.log('[sendOtpHttp] ✅ SMS 發送成功（Forwarder）:', result);
 
         } else {
           console.warn('[sendOtpHttp] ⚠️ 未知的 SMS_PROVIDER:', smsProvider);
