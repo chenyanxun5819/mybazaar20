@@ -2147,7 +2147,8 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
     emIdentityTag: '',
     emIdentityId: '',          // ✅ 新增
     emDepartment: '',
-    emPosition: ''             // ✅ 新增 position 字段
+    emPosition: '',            // ✅ 新增 position 字段
+    emRfidCardNumber: ''       // 🆕 新增 RFID 卡號
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -2252,7 +2253,8 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
             identityTag: formData.emIdentityTag,
             identityId: formData.emIdentityId,
             department: formData.emDepartment,
-            position: formData.emPosition || '活动负责人'  // ✅ position 字段
+            position: formData.emPosition || '活动负责人',  // ✅ position 字段
+            rfidCardNumber: formData.emRfidCardNumber || ''  // 🆕 RFID 卡號
           }
         })
       });
@@ -2555,6 +2557,29 @@ const CreateEventModal = ({ organization, onClose, onSuccess }) => {
                   display: 'block'
                 }}>
                   选填：Event Manager 的职位（默认为"活动负责人"）
+                </small>
+              </div>
+            </div>
+
+            {/* RFID 卡號 */}
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>RFID 卡號</label>
+                <input
+                  type="text"
+                  name="emRfidCardNumber"
+                  value={formData.emRfidCardNumber}
+                  onChange={handleChange}
+                  placeholder="例如：RFID20250101001（可选）"
+                  style={styles.input}
+                />
+                <small style={{
+                  fontSize: '12px',
+                  color: '#666',
+                  marginTop: '5px',
+                  display: 'block'
+                }}>
+                  選填：為 Event Manager 綁定 RFID 卡（Event Manager 無法自行修改，只能由平台管理員在建立時設置）
                 </small>
               </div>
             </div>

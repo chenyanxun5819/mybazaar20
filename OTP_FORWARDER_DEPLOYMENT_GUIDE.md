@@ -389,7 +389,6 @@ firebase functions:log
 
 | 方案 | 月成本 | 優點 | 缺點 |
 |------|-------|------|------|
-| Cloud NAT | RM145 | 完全託管 | 太貴，固定費用 |
 | OTP Forwarder | RM0（附加到現有 VM） | 最便宜，共用現有資源 | 需要管理 |
 | Dedicated VPS | RM30-50 | 獨立服務 | 額外成本 |
 

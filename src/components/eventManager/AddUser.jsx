@@ -30,6 +30,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
     englishName: '',
     chineseName: '',
     email: '',
+    rfidCardNumber: '',
     identityTag: '', // ✨ 不再设置默认值
     department: '',
     identityId: '', // ✨ 新增：学号/工号
@@ -293,6 +294,7 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
             englishName: formData.englishName,
             chineseName: formData.chineseName,
             email: formData.email || '', // ✅ email 改为可选，空字符串也可以
+            rfidCardNumber: formData.rfidCardNumber || '',
             identityTag: formData.identityTag,
             department: formData.department,
             identityId: formData.identityId, // ✨ 新增：传递 identityId
@@ -430,6 +432,19 @@ const AddUser = ({ organizationId, eventId, callerRole, onClose, onSuccess }) =>
                 />
                 <span style={styles.hint}>可选填</span>
               </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>RFID 卡号</label>
+              <input
+                type="text"
+                value={formData.rfidCardNumber}
+                onChange={(e) => setFormData({ ...formData, rfidCardNumber: e.target.value })}
+                style={styles.input}
+                placeholder="如: RFID20240101001"
+                disabled={loading}
+              />
+              <span style={styles.hint}>可选，填写后会同步建立 RFID 卡资料</span>
             </div>
           </div>
 

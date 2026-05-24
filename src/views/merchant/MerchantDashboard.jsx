@@ -399,7 +399,6 @@ const MerchantDashboard = () => {
             />
           )}
 
-
           {currentTab === 'transactions' && (
             <MerchantTransactions
               merchant={merchant}

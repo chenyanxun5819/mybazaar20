@@ -30,6 +30,8 @@ import CustomerTransactions from './views/customer/CustomerTransactions';
 import PointCardTopup from './views/customer/PointCardTopup';
 import InitialPasswordSetup from './views/auth/InitialPasswordSetup';
 import TeamLeaderPhone from './views/phone/teamLeader/TeamLeaderPhone';
+// ✅ 新增：导入 RFID 支付页面
+import RfidPaymentPage from './views/merchant/RfidPaymentPage';
 
 // 手机版首页：根据角色自动跳转
 const PhoneHome = () => {
@@ -355,6 +357,19 @@ function App() {
             </AuthProvider>
           </EventProvider>
         </MobileGuard>
+      } />
+
+      {/* 🆕 RFID 支付页面 - 桌机版本 */}
+      <Route path="/merchant/:orgEventCode/rfid-payment" element={
+        <DesktopGuard>
+          <EventProvider>
+            <AuthProvider>
+              <ProtectedRoute allowedRoles={["merchantOwner", "merchantAsist"]}>
+                <RfidPaymentPage />
+              </ProtectedRoute>
+            </AuthProvider>
+          </EventProvider>
+        </DesktopGuard>
       } />
 
       {/* ✅ Customer Dashboard */}

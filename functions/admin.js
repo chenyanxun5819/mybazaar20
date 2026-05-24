@@ -885,6 +885,7 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
         englishName,
         chineseName = '',
         email,
+        rfidCardNumber = '',
         identityTag = 'staff',
         department = '',
         identityId = '',
@@ -1089,7 +1090,17 @@ exports.createUserByEventManagerHttp = onRequest({ region: 'asia-southeast1' }, 
           pinFailedAttempts: 0,            // ← 新增
           pinLockedUntil: null,            // ← 新增
           pinLastChanged: null,            // ← 新增
-          isPhoneVerified: true
+          isPhoneVerified: true,
+          ...(rfidCardNumber && String(rfidCardNumber).trim() ? {
+            rfidCard: {
+              rfidId: String(rfidCardNumber).trim(),
+              cardNumber: String(rfidCardNumber).trim(),
+              status: 'active',
+              lastUsedAt: null,
+              totalRfidSpent: 0,
+              createdAt: now
+            }
+          } : {})
 
         },
         identityInfo: identityInfo,
@@ -2608,7 +2619,8 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
           identityTag = 'staff',
           department = '',
           roles = [],
-          identityId = ''
+          identityId = '',
+          rfidCardNumber = ''  // ← 新增：可选的 RFID 卡号
         } = raw || {};
 
         // 驗證
@@ -2675,6 +2687,18 @@ exports.batchImportUsersHttp = onRequest({ region: 'asia-southeast1' }, async (r
             pinFailedAttempts: 0,            // ← 新增
             pinLockedUntil: null,            // ← 新增
             pinLastChanged: null,            // ← 新增
+
+            // RFID 卡信息（可选）
+            ...(rfidCardNumber && String(rfidCardNumber).trim() ? {
+              rfidCard: {
+                rfidId: String(rfidCardNumber).trim(),
+                cardNumber: String(rfidCardNumber).trim(),
+                status: 'active',
+                lastUsedAt: null,
+                totalRfidSpent: 0,
+                createdAt: now
+              }
+            } : {}),
 
             isPhoneVerified: true
           },
@@ -3490,7 +3514,17 @@ exports.createEventByPlatformAdminHttp = onRequest({ region: 'asia-southeast1' }
           pinFailedAttempts: 0,
           pinLockedUntil: null,
           pinLastChanged: null,
-          isPhoneVerified: true
+          isPhoneVerified: true,
+
+          // 🆕 RFID 卡资料（Platform Admin 在建立 Event 时初始化）
+          rfidCard: eventManagerInfo.rfidCardNumber ? {
+            rfidId: eventManagerInfo.rfidCardNumber,
+            cardNumber: eventManagerInfo.rfidCardNumber,
+            status: 'active',
+            createdAt: now,
+            lastUsedAt: null,
+            totalRfidSpent: 0
+          } : null
         },
         // 初始化 customer 账户（正确路径：customer.pointsAccount）
         customer: {

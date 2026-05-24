@@ -87,6 +87,9 @@ const { createMerchantHttp } = require('./src/merchant/createMerchantHttp');
 const { updateMerchantHttp } = require('./src/merchant/updateMerchantHttp');
 const { deleteMerchantHttp } = require('./src/merchant/deleteMerchantHttp');
 const { toggleMerchantStatusHttp } = require('./src/merchant/toggleMerchantStatusHttp');
+
+// 導入 RFID 支付相關 callable 函式
+const { processRfidPayment } = require('./processRfidPayment');
 // 导出现有函数
 exports.checkAdminExists = checkAdminExists;
 exports.createInitialAdmin = createInitialAdmin;
@@ -192,6 +195,9 @@ exports.createMerchantHttp = createMerchantHttp;
 exports.updateMerchantHttp = updateMerchantHttp;
 exports.deleteMerchantHttp = deleteMerchantHttp;
 exports.toggleMerchantStatusHttp = toggleMerchantStatusHttp;
+
+// RFID 支付相關 callable 函式
+exports.processRfidPayment = processRfidPayment;
 
 // CORS 中间件配置
 const allowedOrigins = [

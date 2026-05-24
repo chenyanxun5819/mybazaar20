@@ -134,7 +134,6 @@ Malaysian SMS Gateway
 
 | 方案 | 月成本 | 部署狀態 |
 |------|-------|--------|
-| Cloud NAT | RM145 | 棄用 |
 | 外部 VPS | RM30-50 | 備選 |
 | **OTP Forwarder** | **RM0** | ✅ **已實施** |
 

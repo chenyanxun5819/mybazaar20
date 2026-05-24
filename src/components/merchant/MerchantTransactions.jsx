@@ -194,6 +194,24 @@ const TransactionCard = ({ transaction, onRefund, userRole, currentUserId }) => 
         <span className="amount-unit">点</span>
       </div>
 
+      {/* Transaction Type Label (🆕 RFID) */}
+      {showTransactionTypeLabel && transaction.transactionType === 'rfid_card_payment' && (
+        <div style={{
+          padding: '0.5rem 0.75rem',
+          backgroundColor: '#fef3c7',
+          borderRadius: '6px',
+          fontSize: '0.875rem',
+          fontWeight: '500',
+          color: '#92400e',
+          marginBottom: '0.75rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          🎫 RFID 支付
+        </div>
+      )}
+
       {/* Details */}
       <div className="transaction-details">
         <div className="detail-row">
@@ -303,6 +321,8 @@ const TransactionCard = ({ transaction, onRefund, userRole, currentUserId }) => 
  * @param {string} props.eventId - 活动 ID
  * @param {string} props.userRole - 用户角色 (merchantOwner | merchantAsist)
  * @param {string} props.currentUserId - 当前用户 ID（用于 merchantAsist 筛选）
+ * @param {string} props.filterByTransactionType - 🆕 按交易类型过滤 ('rfid_card_payment' | null)
+ * @param {boolean} props.showTransactionTypeLabel - 🆕 是否显示交易类型标签
  */
 const MerchantTransactions = ({ 
   merchant, 
@@ -310,7 +330,9 @@ const MerchantTransactions = ({
   eventId, 
   userRole,
   currentUserId,
-  summaryCardBackgrounds = null
+  summaryCardBackgrounds = null,
+  filterByTransactionType = null,
+  showTransactionTypeLabel = false
 }) => {
   const [currentTab, setCurrentTab] = useState('pending');
   const [pendingPayments, setPendingPayments] = useState([]);
@@ -476,6 +498,9 @@ const MerchantTransactions = ({
           // 3. 如果是 merchantAsist，只显示自己确认的交易
           if (userRole === 'merchantAsist' && data.collectedBy !== currentUserId) return;
           
+          // 🆕 4. 如果指定了交易类型过滤，仅显示该类型
+          if (filterByTransactionType && data.transactionType !== filterByTransactionType) return;
+          
           transactions.push({
             id: doc.id,
             ...data
@@ -490,7 +515,7 @@ const MerchantTransactions = ({
     );
 
     return () => unsubscribe();
-  }, [merchant?.id, organizationId, eventId, userRole, currentUserId]);
+  }, [merchant?.id, organizationId, eventId, userRole, currentUserId, filterByTransactionType]);
 
   // ============================================
   // ⭐ 3. 监听所有交易

@@ -7,11 +7,31 @@ export const useDeviceDetect = () => {
   useEffect(() => {
     const checkDevice = () => {
       const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      // 主要：基于 User Agent 判断
       const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
       const isMobileUA = mobileRegex.test(userAgent);
-      const isSmallScreen = window.innerWidth <= 768;
       
-      setIsMobile(isMobileUA || isSmallScreen);
+      // 次要：如果 UA 不是手机，但屏幕太小，才判定为手机
+      // （这样可以避免桌机上缩小窗口被误判）
+      let isMobileScreen = false;
+      if (!isMobileUA && window.innerWidth <= 600) {
+        // 严格的屏幕宽度检查：只有非常小的窗口才被认为是移动设备
+        // （避免在桌机上打开小窗口就被判定为手机）
+        isMobileScreen = true;
+      }
+      
+      const finalIsMobile = isMobileUA || isMobileScreen;
+      
+      // 🔍 詳細的診斷日誌
+      console.log('[useDeviceDetect] 設備檢測結果:', {
+        userAgent: userAgent.slice(0, 100) + '...',
+        isMobileUA,
+        windowWidth: window.innerWidth,
+        isMobileScreen,
+        finalIsMobile
+      });
+      
+      setIsMobile(finalIsMobile);
     };
 
     checkDevice();

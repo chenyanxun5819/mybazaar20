@@ -54,7 +54,7 @@ const CustomerTransactions = ({ embedded = false }) => {
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   
   // 筛选和排序
-  const [filterType, setFilterType] = useState('all'); // all | payment | transfer_out | transfer_in | topup
+  const [filterType, setFilterType] = useState('all'); // all | payment | transfer_out | transfer_in | topup | rfid
   const [sortOrder, setSortOrder] = useState('desc'); // desc | asc
   
   // 详情
@@ -122,7 +122,7 @@ const CustomerTransactions = ({ embedded = false }) => {
       console.log('[CustomerTransactions] 开始加载交易记录...');
 
       // 查询与该Customer相关的交易
-      // 包括：付款给Merchant、转出、转入、点数卡充值
+      // 包括：付款给Merchant、转出、转入、点数卡充值、🆕 RFID支付
       const queries = [
         // 1. 付款给Merchant
         query(
@@ -153,6 +153,14 @@ const CustomerTransactions = ({ embedded = false }) => {
           transactionsRef,
           where('customerId', '==', customerData.userId),
           where('transactionType', '==', 'point_card_topup'),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        ),
+        // 🆕 5. RFID卡支付
+        query(
+          transactionsRef,
+          where('customerId', '==', customerData.userId),
+          where('transactionType', '==', 'rfid_card_payment'),
           orderBy('timestamp', 'desc'),
           limit(50)
         )
@@ -210,6 +218,8 @@ const CustomerTransactions = ({ embedded = false }) => {
                  tx.toUser?.userId === customerData.userId;
         } else if (filterType === 'topup') {
           return tx.transactionType === 'point_card_topup';
+        } else if (filterType === 'rfid') {
+          return tx.transactionType === 'rfid_card_payment';
         }
         return true;
       });
@@ -237,6 +247,8 @@ const CustomerTransactions = ({ embedded = false }) => {
       }
     } else if (transaction.transactionType === 'point_card_topup') {
       return { label: '点数卡充值', icon: walletMoneyIcon, iconColor: '#2196F3', color: '#2196F3' };
+    } else if (transaction.transactionType === 'rfid_card_payment') {
+      return { label: 'RFID支付', icon: paidIcon, iconColor: '#FF9800', color: '#FF9800' };
     }
     return { label: '未知', icon: calculatorBillIcon, iconColor: '#999', color: '#999' };
   };
@@ -336,6 +348,7 @@ const CustomerTransactions = ({ embedded = false }) => {
           <option value="transfer_out">转出</option>
           <option value="transfer_in">转入</option>
           <option value="topup">充值</option>
+          <option value="rfid">🎫 RFID支付</option>
         </select>
 
         <div style={styles.headerRight}>

@@ -149,6 +149,7 @@ const EventManagerDashboard = () => {
     chineseName: '',
     englishName: '',
     phoneNumber: '',
+    rfidCardNumber: '',
     identityId: '',
     department: '' // 🆕 部门
   });
@@ -177,6 +178,7 @@ const EventManagerDashboard = () => {
     序号: true,
     姓名: true,
     电话: true,
+    RFID卡号: true,
     身份标签: true,
     部门: true,
     身份ID: true,
@@ -220,6 +222,7 @@ const EventManagerDashboard = () => {
       chineseName: user.basicInfo?.chineseName || '',
       englishName: user.basicInfo?.englishName || '',
       phoneNumber: user.basicInfo?.phoneNumber || '',
+      rfidCardNumber: user.basicInfo?.rfidCard?.cardNumber || user.basicInfo?.rfidCard?.rfidId || '',
       identityId: user.identityInfo?.identityId || '',
       department: user.identityInfo?.department || '' // 🆕 初始化部门
     });
@@ -366,6 +369,14 @@ const EventManagerDashboard = () => {
         'basicInfo.chineseName': editForm.chineseName.trim(),
         'basicInfo.englishName': editForm.englishName.trim(),
         'basicInfo.phoneNumber': editForm.phoneNumber.trim(),
+        'basicInfo.rfidCard': editForm.rfidCardNumber.trim() ? {
+          rfidId: editForm.rfidCardNumber.trim(),
+          cardNumber: editForm.rfidCardNumber.trim(),
+          status: editingUser.basicInfo?.rfidCard?.status || 'active',
+          lastUsedAt: editingUser.basicInfo?.rfidCard?.lastUsedAt || null,
+          totalRfidSpent: editingUser.basicInfo?.rfidCard?.totalRfidSpent || 0,
+          createdAt: editingUser.basicInfo?.rfidCard?.createdAt || new Date()
+        } : null,
         'identityInfo.identityId': editForm.identityId.trim(),
         'identityInfo.department': editForm.department || '', // 🆕 更新部门
         'accountStatus.lastModifiedAt': new Date()
@@ -737,6 +748,8 @@ const EventManagerDashboard = () => {
         user.basicInfo?.chineseName?.toLowerCase().includes(search) ||
         user.basicInfo?.englishName?.toLowerCase().includes(search) ||
         user.basicInfo?.phoneNumber?.includes(search) ||
+        user.basicInfo?.rfidCard?.rfidId?.toLowerCase().includes(search) ||
+        user.basicInfo?.rfidCard?.cardNumber?.toLowerCase().includes(search) ||
         user.identityInfo?.identityId?.toLowerCase().includes(search) ||
         user.identityInfo?.department?.toLowerCase().includes(search)
       );
@@ -988,7 +1001,7 @@ const EventManagerDashboard = () => {
             </label>
             <input
               type="text"
-              placeholder="搜索姓名、电话、身份ID、部门..."
+              placeholder="搜索姓名、电话、RFID卡号、身份ID、部门..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -1090,6 +1103,9 @@ const EventManagerDashboard = () => {
                       电话 {sortConfig.key === 'phoneNumber' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
+                  {visibleColumns.RFID卡号 && (
+                    <th style={styles.tableHeaderCell}>RFID 卡号</th>
+                  )}
                   {visibleColumns.身份标签 && (
                     <th style={styles.tableHeaderCell}>身份标签</th>
                   )}
@@ -1144,6 +1160,9 @@ const EventManagerDashboard = () => {
                     )}
                     {visibleColumns.电话 && (
                       <td style={styles.tableCell}>{maskPhone(user.basicInfo?.phoneNumber)}</td>
+                    )}
+                    {visibleColumns.RFID卡号 && (
+                      <td style={styles.tableCell}>{user.basicInfo?.rfidCard?.cardNumber || user.basicInfo?.rfidCard?.rfidId || '-'}</td>
                     )}
                     {visibleColumns.身份标签 && (
                       <td style={styles.tableCell}>{user.identityTag || '-'}</td>
@@ -1494,6 +1513,22 @@ const EventManagerDashboard = () => {
                 />
                 <div style={styles.formHint}>
                   马来西亚手机号格式: 01X-XXXXXXXX (10-11位数字)
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>
+                  RFID 卡号
+                </label>
+                <input
+                  type="text"
+                  value={editForm.rfidCardNumber}
+                  onChange={(e) => setEditForm({ ...editForm, rfidCardNumber: e.target.value })}
+                  style={styles.formInput}
+                  placeholder="请输入 RFID 卡号"
+                />
+                <div style={styles.formHint}>
+                  可选，留空则不绑定 RFID 卡
                 </div>
               </div>
 

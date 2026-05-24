@@ -94,21 +94,21 @@ Merchant 输入购物金额
 
 #### **阶段 1：Firestore 数据架构**（后端）
 
-| 新增内容 | 说明 | 关键字段 |
+| 修改内容 | 说明 | 关键字段 |
 |---------|------|--------|
-| **rfidDevices** 集合 | RFID 扫描器设备管理 | `deviceId`, `deviceName`, `status`, `apiKey` |
-| **customerRfidCards** 集合 | 客户 RFID 卡与 ID 映射 | `rfidId`, `customerId`, `cardNumber`, `cardHolderName`, `status` |
-| **transactions** 扩充 | 新增交易类型 | `transactionType: 'rfid_card_payment'`, `rfidId`, `deviceId` |
+| **Customer.basicInfo** 扩充 | 添加 RFID 卡信息到客户基本信息 | `rfidCard: { rfidId, cardNumber, status, ... }` |
+| **merchants** 扩充 | 添加 RFID 功能标记 | `hasRfidCapability: boolean` |
+| **transactions** 扩充 | 新增交易类型 | `transactionType: 'rfid_card_payment'`, `rfidId` |
 
 **数据流向**：
 ```
-RFID 卡 (rfidId) 
+输入 RFID ID (rfidId)
     ↓
-customerRfidCards 表 (查询 customerId)
+查询 users/{customerId} 获取 customer.basicInfo.rfidCard
     ↓
-users 集合 (获取客户点数余额)
+验证 RFID 卡状态和客户点数余额
     ↓
-创建 transaction 记录
+创建 transaction 记录并立即扣款
 ```
 
 ---
@@ -126,9 +126,11 @@ users 集合 (获取客户点数余额)
 
 **验证步骤**:
 1. ✅ 用户身份验证（Custom Claims）
-2. ✅ RFID 卡存在且状态为 'active'
-3. ✅ 客户点数余额 ≥ 购物金额
-4. ✅ Firestore Transaction 原子性扣款
+2. ✅ merchant.hasRfidCapability = true（商家已启用RFID功能）
+3. ✅ 从 customer 文档的 basicInfo.rfidCard 查询 RFID 卡信息
+4. ✅ 验证 RFID 卡存在且状态为 'active'
+5. ✅ 客户点数余额 ≥ 购物金额
+6. ✅ Firestore Transaction 原子性扣款
 
 **返回字段**:
 ```javascript
@@ -219,48 +221,54 @@ users 集合 (获取客户点数余额)
 
 ### **Firestore 数据结构**
 
-#### **新增 1：rfidDevices 集合**
+#### **修改 1：Customer.basicInfo 扩充**
 ```
-organizations/{orgId}/events/{eventId}/rfidDevices/{deviceId}
+users/{userId}/basicInfo
 {
-  deviceId: "string",          // RFID 扫描器 ID
-  deviceName: "string",        // 如 "摊位A收银机"
-  deviceType: "string",        // 'fixed' 固定 | 'mobile' 移动
-  merchantId: "string",        // 可选，限制设备使用范围
-  status: "string",            // 'active' | 'inactive'
-  apiKey: "string",            // 设备认证密钥
-  lastUsedAt: "timestamp",
-  createdAt: "timestamp",
-  createdBy: "string"
+  phoneNumber: "string",
+  englishName: "string",
+  chineseName: "string",
+  email: "string",
+  isPhoneVerified: "boolean",
+  // === 🆕 RFID 卡信息 ===
+  rfidCard: {
+    rfidId: "string (RFID卡唯一标识ID)",
+    cardNumber: "string (卡号末位，如 '****1234'，用于隐私展示)",
+    status: "string ('active' | 'inactive' | 'blocked')",
+    issuedAt: "timestamp (发卡时间)",
+    issuedBy: "string (发卡人 UID，通常为 eventManager)",
+    blockedAt: "timestamp (禁用时间，可选)",
+    blockedBy: "string (禁用人 UID，可选)",
+    blockReason: "string (禁用原因，可选)",
+    lastUsedAt: "timestamp (最后一次RFID支付的时间)",
+    totalRfidTransactions: "number (使用该卡RFID支付的总次数)",
+    totalRfidSpent: "number (使用该卡RFID支付的总点数)"
+  }
 }
 ```
 
-#### **新增 2：customerRfidCards 集合**
+#### **修改 2：Merchant 扩充**
 ```
-organizations/{orgId}/events/{eventId}/customerRfidCards/{rfidId}
+merchants/{merchantId}
 {
-  rfidId: "string",            // 文档 ID，同时是卡的唯一标识
-  customerId: "string",        // 关联的 Customer UID
-  cardNumber: "string",        // 卡号末位，如 "****1234"
-  cardHolderName: "string",    // 持卡人名字
-  status: "string",            // 'active' | 'inactive' | 'blocked'
-  issuedAt: "timestamp",
-  issuedBy: "string",
-  blockedAt: "timestamp",      // 禁用时间
-  blockedBy: "string",
-  blockReason: "string"
+  merchantId: "string",
+  merchantCode: "string",
+  merchantOwnerId: "string",
+  stallName: "string",
+  // === 🆕 RFID 功能标记 ===
+  hasRfidCapability: "boolean (该摊位是否配备RFID扫码功能)",
+  // 其他字段...
 }
 ```
 
-#### **修改：transactions 集合**
+#### **修改 3：transactions 集合**
 ```javascript
 {
   transactionType: "rfid_card_payment",  // 新增类型
   
   // RFID 特有字段
-  rfidId: "string",            // RFID 卡 ID
-  cardNumber: "string",        // 卡号末位
-  deviceId: "string",          // 扫描设备 ID（审计用）
+  rfidId: "string",            // RFID 卡 ID（来自 customer.basicInfo.rfidCard.rfidId）
+  cardNumber: "string",        // 卡号末位（来自 customer.basicInfo.rfidCard.cardNumber）
   
   // 标准字段（继承现有）
   customerId: "string",
@@ -300,25 +308,21 @@ organizations/{orgId}/events/{eventId}/customerRfidCards/{rfidId}
 
 ---
 
-### **需要你确认的 5 个问题**
+### **需要你确认的问题**
 
 1. **RFID 卡创建流程**：由谁创建 RFID 卡与客户的绑定？
    - Option A: Event Manager 后台批量导入
    - Option B: Customer 自行输入卡号（注册时）
    - Option C: 首次使用 RFID 时自动创建
 
-2. **设备管理**：是否需要限制每个商家只能用特定的 RFID 设备？
-   - 是 → 需要在 `processRfidPayment` 中检查 device 所有权
-   - 否 → 任何商家都可以用任何设备
-
-3. **前端优先语言**：支持哪种语言？
+2. **前端优先语言**：支持哪种语言？
    - 中文、英文、还是多语言？
 
-4. **支付失败后重试**：失败的交易是否允许重试？
+3. **支付失败后重试**：失败的交易是否允许重试？
    - 是 → 需要幂等性设计
    - 否 → 只能刷新页面重新开始
 
-5. **失败/取消记录显示**：Customer 的消费记录中是否显示失败或取消的 RFID 交易？
+4. **失败/取消记录显示**：Customer 的消费记录中是否显示失败或取消的 RFID 交易？
    - 显示全部（含失败）
    - 仅显示成功的
 

@@ -94,8 +94,12 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
     cashier: (code) => `/cashier/${code}/dashboard`,
     auditor: (code) => `/auditor/${code}/dashboard`,
     pointSeller: (code) => `/pointseller/${code}/dashboard`,
-    merchantOwner: (code) => `/merchant/${code}/dashboard`,
-    merchantAsist: (code) => `/merchant/${code}/dashboard`,
+    merchantOwner: (code) => isMobile
+      ? `/merchant/${code}/dashboard`
+      : `/merchant/${code}/rfid-payment`,
+    merchantAsist: (code) => isMobile
+      ? `/merchant/${code}/dashboard`
+      : `/merchant/${code}/rfid-payment`,
     customer: (code) => `/customer/${code}/dashboard`
   };
 
@@ -148,9 +152,9 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
   ));
 
   // 设备过滤规则（按你的要求）
-  // - Desktop: 只显示 manager + cashier
-  // - : 只显示非 manager（手机角色），并包含 pointSeller
-  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'teamLeader', 'merchantManager', 'customerManager', 'cashier', 'auditor'];
+  // - Desktop: manager roles + merchant roles（包括RFID支付）
+  // - Mobile: 只显示非 manager（手机角色），并包含 pointSeller
+  const desktopOnlyRoles = ['platformAdmin', 'eventManager', 'teamLeader', 'merchantManager', 'customerManager', 'cashier', 'auditor', 'merchantOwner', 'merchantAsist'];
   const mobileOnlyRoles = ['customer', 'merchantOwner', 'merchantAsist', 'pointSeller', 'teamLeader'];
 
   const deviceFilteredRoles = (resolvedAvailableRoles || []).filter((role) =>
@@ -208,6 +212,21 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
       setDisplayRole(actualCurrentRole);
     }
   };
+
+  /**
+   * 导航到 RFID 支付页面
+   */
+  const handleRfidPaymentNavigation = () => {
+    if (!resolvedOrgEventCode) {
+      console.warn('[RoleSwitcher] orgEventCode 缺少，无法导航到 RFID 支付页面');
+      return;
+    }
+    navigate(`/merchant/${resolvedOrgEventCode}/rfid-payment`);
+    setIsOpen(false);
+  };
+
+  // 检查当前用户是否可以访问 RFID 支付（必须是 merchantOwner 或 merchantAsist，且在桌机上）
+  const canAccessRfidPayment = !isMobile && (displayRole === 'merchantOwner' || displayRole === 'merchantAsist');
 
   const computeAlign = () => {
     if (typeof window === 'undefined' || !containerRef.current) return;
@@ -320,6 +339,24 @@ const RoleSwitcher = ({ currentRole, availableRoles, orgEventCode, userInfo }) =
                 </button>
               );
             })}
+            
+            {/* RFID 快捷选项 */}
+            {canAccessRfidPayment && (
+              <>
+                <div style={styles.separator} />
+                <button
+                  style={styles.rfidQuickAction}
+                  onClick={handleRfidPaymentNavigation}
+                  title="进入 RFID 卡片支付"
+                >
+                  <span style={{ fontSize: '1.25rem' }}>💳</span>
+                  <div style={styles.rfidActionInfo}>
+                    <div style={styles.rfidActionLabel}>RFID 卡片支付</div>
+                    <div style={styles.rfidActionDescription}>快速处理卡片支付</div>
+                  </div>
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -417,6 +454,38 @@ const styles = {
     fontSize: '0.95rem',
     fontWeight: '500',
     color: '#1f2937'
+  },
+  separator: {
+    height: '1px',
+    background: '#e5e7eb',
+    margin: '0.5rem 0'
+  },
+  rfidQuickAction: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    width: '100%',
+    padding: '0.875rem 1.25rem',
+    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+    border: 'none',
+    borderBottom: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    textAlign: 'left'
+  },
+  rfidActionInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem'
+  },
+  rfidActionLabel: {
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    color: '#92400e'
+  },
+  rfidActionDescription: {
+    fontSize: '0.75rem',
+    color: '#b45309'
   }
 };
 

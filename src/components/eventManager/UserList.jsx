@@ -206,6 +206,8 @@ const UserList = ({ organizationId, eventId, onClose }) => {
         user.basicInfo?.chineseName?.toLowerCase().includes(search) ||
         user.basicInfo?.phoneNumber?.includes(search) ||  // ✅ 用完整号码搜索
         user.basicInfo?.email?.toLowerCase().includes(search) ||
+        user.basicInfo?.rfidCard?.rfidId?.toLowerCase().includes(search) ||
+        user.basicInfo?.rfidCard?.cardNumber?.toLowerCase().includes(search) ||
         user.identityInfo?.identityId?.toLowerCase().includes(search) ||
         user.identityInfo?.department?.toLowerCase().includes(search)
       );
@@ -439,6 +441,9 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                     <th style={styles.th} onClick={() => toggleSort('phone')}>
                       手机号 <SortIcon field="phone" />
                     </th>
+                    <th style={styles.th}>
+                      RFID 卡号
+                    </th>
                     {/* 🆕 点数相关列 */}
                     <th style={styles.th} onClick={() => toggleSort('availablePoints')}>
                       已有点数 <SortIcon field="availablePoints" />
@@ -509,6 +514,12 @@ const UserList = ({ organizationId, eventId, onClose }) => {
                               </button>
                             )}
                           </div>
+                        </td>
+
+                        <td style={styles.td}>
+                          <span style={styles.rfidText}>
+                            {user.basicInfo?.rfidCard?.cardNumber || user.basicInfo?.rfidCard?.rfidId || '-'}
+                          </span>
                         </td>
 
                         {/* 🆕 已有点数 */}
@@ -808,6 +819,15 @@ const styles = {
   phoneText: {
     fontFamily: 'monospace',
     fontSize: '0.875rem'
+  },
+  rfidText: {
+    fontFamily: 'monospace',
+    fontSize: '0.8rem',
+    color: '#92400e',
+    backgroundColor: '#fef3c7',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '6px',
+    whiteSpace: 'nowrap'
   },
   phoneToggleButton: {
     padding: '0.25rem 0.5rem',

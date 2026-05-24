@@ -175,6 +175,8 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
         mapping.email = index;
       } else if (normalized.includes('身份') || normalized.includes('标签') || normalized.includes('tag')) {
         mapping.identityTag = index;
+      } else if (normalized.includes('rfid') || normalized.includes('卡号') || normalized.includes('cardnumber')) {
+        mapping.rfidCardNumber = index;
       }
     });
     
@@ -244,11 +246,13 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       ['中文名', '可选', '用户的中文姓名', '张三'],
       ['电话号码*', '必填', '马来西亚手机号码', '0123456789'],
       ['身份标签*', '必填', 'student/teacher/staff/parent', 'student'],
+      ['RFID卡号', '可选', 'RFID卡唯一标识ID', 'RFID20240101001'],
       [''],
       ['重要提示：'],
       ['1. 必填字段不能为空'],
       ['2. 电话号码支持多种格式'],
-      ['3. 支持任意列顺序，自动识别']
+      ['3. RFID卡号可选，仅组织内部人员可能有'],
+      ['4. 支持任意列顺序，自动识别']
     ];
 
     const instructionsWS = XLSX.utils.aoa_to_sheet(instructionsData);
@@ -259,12 +263,12 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       { wch: 25 }
     ];
 
-    // ✅ 使用您的格式：部门、学号/工号、英文名、中文名、电话号码、身份标签
+    // ✅ 使用您的格式：部门、学号/工号、英文名、中文名、电话号码、身份标签、RFID卡号
     const userData = [
-      ['部门*', '学号/工号', '英文名*', '中文名', '电话号码*', '身份标签*'],
-      ['1年A班', '2024001', 'John Doe', '张三', '0123456789', 'student'],
-      ['行政部', 'T2024001', 'Jane Smith', '李四', '0198765432', 'teacher'],
-      ['', '', '', '', '', ''],
+      ['部门*', '学号/工号', '英文名*', '中文名', '电话号码*', '身份标签*', 'RFID卡号'],
+      ['1年A班', '2024001', 'John Doe', '张三', '0123456789', 'student', 'RFID20240101001'],
+      ['行政部', 'T2024001', 'Jane Smith', '李四', '0198765432', 'teacher', ''],
+      ['', '', '', '', '', '', ''],
     ];
 
     const dataWS = XLSX.utils.aoa_to_sheet(userData);
@@ -274,7 +278,8 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
       { wch: 15 },
       { wch: 12 },
       { wch: 15 },
-      { wch: 12 }
+      { wch: 12 },
+      { wch: 18 }
     ];
 
     const wb = XLSX.utils.book_new();
@@ -330,7 +335,8 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
             phoneNumber: mapping.phoneNumber !== undefined ? (row[mapping.phoneNumber] || '') : '',
             department: mapping.department !== undefined ? (row[mapping.department] || '') : '',
             email: mapping.email !== undefined ? (row[mapping.email] || '') : '',
-            identityTag: mapping.identityTag !== undefined ? (row[mapping.identityTag] || 'student') : 'student'
+            identityTag: mapping.identityTag !== undefined ? (row[mapping.identityTag] || 'student') : 'student',
+            rfidCardNumber: mapping.rfidCardNumber !== undefined ? (row[mapping.rfidCardNumber] || '') : ''
           }))
           .filter(user => user.englishName || user.phoneNumber);
 
@@ -401,6 +407,7 @@ const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
             department: user.department,
             email: user.email || '',
             identityTag: user.identityTag,
+            rfidCardNumber: user.rfidCardNumber || '',
             roles: ['customer']
           }))
         })

@@ -118,13 +118,21 @@ export const EventProvider = ({ children }) => {
         if (['merchant','customer','pointseller'].includes(first)) {
           const orgEvent = segments[1];
           const third = segments[2]?.toLowerCase();
-          // 支持 /customer/:orgEventCode/dashboard, /customer/:orgEventCode/register, 等
-          if (orgEvent && third && ['dashboard','register','payment','transfer','topup','transactions'].includes(third)) {
+          const allowedCustomerActions = ['dashboard','register','payment','transfer','topup','transactions'];
+          const allowedMerchantActions = ['dashboard', 'rfid-payment'];
+          const allowedPointSellerActions = ['dashboard'];
+
+          const isSupportedRoute =
+            (first === 'customer' && allowedCustomerActions.includes(third)) ||
+            (first === 'merchant' && allowedMerchantActions.includes(third)) ||
+            (first === 'pointseller' && allowedPointSellerActions.includes(third));
+
+          if (orgEvent && third && isSupportedRoute) {
             const idx = orgEvent.indexOf('-');
             if (idx > 0) {
               parsedOrgCode = orgEvent.substring(0, idx);
               parsedEventCode = orgEvent.substring(idx + 1);
-              platform = 'phone';
+              platform = first === 'merchant' && third === 'rfid-payment' ? 'desktop' : 'phone';
             }
           }
         }
@@ -184,11 +192,11 @@ export const EventProvider = ({ children }) => {
 
       if (!parsedOrgCode || !parsedEventCode) {
         console.warn('[EventContext] URL 格式无法识别！: ' + urlPath);
-        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(merchant|customer|pointseller)/:orgEventCode/(dashboard|register|payment|...) 或 /(manager-type|auditor)/:orgEventCode/dashboard');
+        console.log('[EventContext] 预期格式: /login/:orgEventCode 或 /orgCode-eventCode/platform 或 /(merchant|customer|pointseller)/:orgEventCode/(dashboard|register|payment|...|rfid-payment) 或 /(manager-type|auditor)/:orgEventCode/dashboard');
         const hints = [
           'URL 格式不正确，请使用正确的链接',
           '例如: /login/xhessbn-2025 或 /pointseller/xhessbn-2025/dashboard 或 /customer/xhessbn-2025/register',
-          '或 /cashier/xhessbn-2025/dashboard 或 /auditor/xhessbn-2025/dashboard',
+          '或 /merchant/xhessbn-2025/rfid-payment 或 /cashier/xhessbn-2025/dashboard 或 /auditor/xhessbn-2025/dashboard',
           '',
           '可能原因：',
           '• 复制的链接缺少组织或活动代号（orgCode-eventCode）',

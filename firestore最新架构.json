@@ -1,9 +1,20 @@
 {
   "firestoreArchitecture": {
     "description": "MyBazaar 慈善义卖管理系统 - Firestore 数据架构（完全正确版）",
-    "version": "2026-04-25-v22",
-    "lastUpdated": "2026-04-25",
+    "version": "2026-05-20-v24",
+    "lastUpdated": "2026-05-20",
     "architectureChanges": {
+      "version_2026-05-20-v24": [
+        "🎫 新增 RFID 卡购物功能（摊位收款新方式）",
+        "📍 新增 rfidDevices 集合：管理 RFID 扫描设备（固定式或移动设备）",
+        "💳 新增 customerRfidCards 集合：记录 RFID 卡与 Customer 的映射关系",
+        "🛒 transactions 新增交易类型：rfid_card_payment（RFID 卡直接购物）",
+        "☁️ 新增 processRfidPayment Cloud Function：Merchant 通过 RFID 卡扣款（立即模式，无需 Customer 确认）",
+        "☁️ 新增 queryCustomerByRfid Cloud Function：前端预加载客户信息（用于 RFID 收款页面）",
+        "🔒 Security Rules 新增 RFID 集合权限：rfidDevices 仅 eventManager 管理，customerRfidCards 仅 eventManager 和 customer 可读",
+        "⚛️ 新增 RfidPaymentPage.jsx：RFID 购物收款页面（仅 merchantOwner/merchantAsist 可访问）",
+        "⚛️ CustomerTransactions.jsx 扩充：支持 RFID 卡购物交易的查询和显示"
+      ],
       "version_2026-04-26-v23": [
         "💰 Customer.cashAccount 新增现金账户（用于追踪应收现金）",
         "💰 Customer.cashAccount 字段：totalAllocatedCash（应收总额）、pendingCash（待支付）、confirmedCash（已支付）",
@@ -589,6 +600,15 @@
                     "englishName": "string (英文名)",
                     "chineseName": "string (中文名)",
                     "email": "string (邮箱，可选)",
+                    "rfidCard": {
+                      "description": "用户绑定的 RFID 卡资料（可选；前端输入栏位名为 rfidCardNumber，但实际存储为 basicInfo.rfidCard 对象）",
+                      "rfidId": "string (RFID 卡唯一标识，通常与输入的 rfidCardNumber 相同)",
+                      "cardNumber": "string (显示用卡号，当前实现通常与 rfidId 相同)",
+                      "status": "string ('active' | 'inactive' | 'blocked')",
+                      "lastUsedAt": "timestamp | null (最后使用时间)",
+                      "totalRfidSpent": "number (该卡累计消费点数)",
+                      "createdAt": "timestamp (绑定创建时间)"
+                    },
                     "isPhoneVerified": "boolean (电话是否验证)",
                     "COMMENT_TRANSACTION_PIN": "========== 交易密码相关字段 ==========",
                     "transactionPinHash": "string (交易密码的哈希值，6位数字，使用 bcrypt)",
@@ -1236,9 +1256,10 @@
                       "customer_transfer",
                       "point_card_payment",
                       "point_card_topup",
-                      "free_grant"
+                      "free_grant",
+                      "rfid_card_payment"
                     ],
-                    "description": "9 种交易类型的详细说明",
+                    "description": "10 种交易类型的详细说明",
                     "detailedDefinitions": {
                       "pointseller_to_customer": {
                         "role": "PointSeller（点数直销员）",
@@ -1320,6 +1341,24 @@
                         "cloudFunction": "grantPointsByEventManager",
                         "globalStatsUpdate": "更新 events.globalPointsStats.emTotalGranted / totalSold / currentCirculation",
                         "example": "活动管理员赠送 5 点给参加者作为参与奖"
+                      },
+                      "rfid_card_payment": {
+                        "role": "Merchant（摊位）通过 RFID 扫描收款",
+                        "description": "Merchant 通过扫描 Customer 的 RFID 卡直接从客户账户扣款（无需客户确认）",
+                        "direction": "RFID Card Customer → Merchant",
+                        "source": "Customer 账户可用点数",
+                        "cloudFunction": "processRfidPayment",
+                        "requiresRole": "merchantOwner | merchantAsist",
+                        "paymentFlow": "立即扣款模式（扫卡后立即从客户点数扣款，类似刷卡消费）",
+                        "storedFields": {
+                          "rfidId": "string (RFID卡ID，来自 customerRfidCards 文档)",
+                          "cardNumber": "string (卡号末位，如 '****1234'，用于隐私展示)",
+                          "customerId": "string (客户UID，从 rfidId 查询获得)",
+                          "customerName": "string (客户名字，用于商家快速识别)",
+                          "deviceId": "string (扫描设备ID，可选，用于审计追踪)"
+                        },
+                        "example": "Merchant 用 RFID 扫描器扫描 Customer 的卡，输入 100 点，后端立即扣款并增加商家收入",
+                        "differences": "与 customer_to_merchant 的区别：(1) 客户无需输入交易密码；(2) 立即处理，无待确认环节；(3) 摊位主动发起，顾客被动接受"
                       }
                     }
                   },
@@ -1715,6 +1754,77 @@
           "所有Event共享此配置",
           "Platform Admin通过专门的管理页面修改",
           "前端应缓存此配置以减少读取"
+        ]
+      },
+      "rfidDevices": {
+        "path": "organizations/{orgId}/events/{eventId}/rfidDevices/{deviceId}",
+        "description": "RFID 扫描设备管理（支持固定和移动设备）",
+        "level": "Event",
+        "documentStructure": {
+          "deviceId": "string (RFID扫描器唯一ID，文档ID)",
+          "deviceName": "string (设备昵称，如'摊位A收银机')",
+          "deviceType": "string ('fixed' 固定摊位设备 | 'mobile' 移动手持设备)",
+          "merchantId": "string (可选，限制设备仅供特定商家使用，留空表示任何商家可用)",
+          "status": "string ('active' 正常 | 'inactive' 停用)",
+          "apiKey": "string (设备认证密钥，用于验证扫描请求合法性)",
+          "lastUsedAt": "timestamp (最后使用时间)",
+          "lastUsedBy": "string (最后使用者UID，可选)",
+          "createdAt": "timestamp",
+          "createdBy": "string (Platform Admin/Event Manager UID)",
+          "updatedAt": "timestamp",
+          "updatedBy": "string"
+        },
+        "indexes": [
+          "status",
+          "merchantId",
+          "lastUsedAt"
+        ],
+        "securityRules": {
+          "read": "eventManager, platformAdmin (仅查询已关联的merchants)",
+          "write": "仅 platformAdmin 和 eventManager"
+        },
+        "notes": [
+          "设备 API Key 用于后端验证 RFID 扫描请求的合法性",
+          "merchantId 留空时允许该设备被多个商家使用（共享设备模式）",
+          "status='inactive' 的设备不能用于扫描支付"
+        ]
+      },
+      "customerRfidCards": {
+        "path": "organizations/{orgId}/events/{eventId}/customerRfidCards/{rfidId}",
+        "description": "RFID 卡与 Customer 的映射关系（客户身份卡记录）",
+        "level": "Event",
+        "documentStructure": {
+          "rfidId": "string (RFID卡唯一标识，文档ID，由系统生成或输入)",
+          "customerId": "string (关联的 Customer UID)",
+          "cardNumber": "string (卡号显示名，如 '****1234'，用于隐私展示)",
+          "cardHolderName": "string (持卡人名字，用于收款页面快速识别)",
+          "status": "string ('active' 启用 | 'inactive' 停用 | 'blocked' 禁用)",
+          "// === 发卡信息 ===": "",
+          "issuedAt": "timestamp (发卡时间)",
+          "issuedBy": "string (发卡人 UID，通常为 eventManager)",
+          "// === 禁用信息 ===": "",
+          "blockedAt": "timestamp (禁用时间，可选)",
+          "blockedBy": "string (禁用人 UID，可选)",
+          "blockReason": "string (禁用原因，如 '卡遗失' 或 '客户要求禁用')",
+          "// === 使用统计 ===": "",
+          "lastUsedAt": "timestamp (最后一次用于购物的时间)",
+          "totalTransactions": "number (使用该卡完成的总交易数)",
+          "totalSpent": "number (使用该卡消费的总点数)"
+        },
+        "indexes": [
+          "customerId",
+          "status",
+          "lastUsedAt"
+        ],
+        "securityRules": {
+          "read": "eventManager + 绑定的 customer 本人",
+          "write": "仅 eventManager 可修改 (创建/禁用/启用)"
+        },
+        "notes": [
+          "一个 Customer 可以绑定多张 RFID 卡（如备用卡）",
+          "status='blocked' 的卡不能用于支付，但记录保留用于审计",
+          "lastUsedAt 和 totalTransactions 由 processRfidPayment 自动更新",
+          "cardNumber 只显示末位几位，保护客户隐私"
         ]
       }
     },
@@ -2444,6 +2554,133 @@
           ],
           "schedule": "0 0 * * * (cron: 每天 00:00 MYT)",
           "notes": "使用 Cloud Scheduler 触发，确保每日准时重置"
+        },
+        "processRfidPayment": {
+          "name": "processRfidPayment",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "Merchant 通过扫描 RFID 卡直接从客户账户扣款（立即模式，无需客户确认）",
+          "permissions": "仅 merchantOwner 或 merchantAsist 可调用",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "rfidId": "string (RFID卡ID)",
+            "amount": "number (购物金额，点数)",
+            "merchantId": "string (商家ID)",
+            "deviceId": "string (扫描设备ID，可选，用于审计)",
+            "notes": "string (备注，可选)"
+          },
+          "validation": [
+            "1. 验证调用者身份（必须是 merchantOwner 或 merchantAsist）",
+            "2. 验证调用者拥有 merchantId（检查 merchant 的 ownership 或 merchantAsists 数组）",
+            "3. 查询 customerRfidCards/{rfidId}：",
+            "   a. 卡必须存在",
+            "   b. 卡状态必须是 'active'（不能是 'inactive' 或 'blocked'）",
+            "4. 获取对应的 customerId",
+            "5. 查询 Customer 账户：",
+            "   a. 验证客户存在",
+            "   b. 检查 availablePoints >= amount（点数余额充足）",
+            "6. 验证 merchant 存在",
+            "7. 检查金额有效性（amount > 0）"
+          ],
+          "logic": [
+            "1. 使用 Firestore Transaction 保证原子性：",
+            "   a. 从客户账户扣款：",
+            "      - users/{customerId}.pointsAccount.currentPoints -= amount",
+            "      - users/{customerId}.pointsAccount.totalSpent += amount",
+            "      - users/{customerId}.pointsAccount.merchantPaymentCount += 1",
+            "   b. 增加商家收入：",
+            "      - merchants/{merchantId}.revenueStats.totalRevenue += amount",
+            "      - merchants/{merchantId}.revenueStats.transactionCount += 1",
+            "      - merchants/{merchantId}.dailyRevenue.today += amount",
+            "      - merchants/{merchantId}.dailyRevenue.todayTransactionCount += 1",
+            "      - merchants/{merchantId}.revenueStats.lastTransactionAt = now",
+            "   c. 创建 transaction 文档：",
+            "      - transactionId: 自动生成",
+            "      - transactionType: 'rfid_card_payment'",
+            "      - customerId, merchantId, merchantName, amount, timestamp = now",
+            "      - rfidId, cardNumber (末位), deviceId",
+            "      - collectedBy: callerId（收款商家UID）",
+            "      - collectorRole: 'merchantOwner' 或 'merchantAsist'",
+            "      - status: 'completed'（立即完成）",
+            "      - notes: 用户提供的备注",
+            "   d. 更新收款人统计（若为 merchantAsist）：",
+            "      - 若 collectorRole='merchantAsist'，更新该员工的统计",
+            "   e. 更新 RFID 卡使用统计：",
+            "      - customerRfidCards/{rfidId}.lastUsedAt = now",
+            "      - customerRfidCards/{rfidId}.totalTransactions += 1",
+            "      - customerRfidCards/{rfidId}.totalSpent += amount",
+            "2. 返回成功结果"
+          ],
+          "returns": {
+            "success": "boolean (true)",
+            "transactionId": "string (交易ID)",
+            "customerId": "string (客户UID)",
+            "cardholderName": "string (持卡人名字)",
+            "previousBalance": "number (扣款前余额)",
+            "newBalance": "number (扣款后余额)",
+            "amount": "number (扣款金额)",
+            "timestamp": "string (ISO 8601时间戳)",
+            "message": "string (提示信息)"
+          },
+          "errors": [
+            "unauthenticated: 未登录",
+            "permission-denied: 无权限调用（不是 merchantOwner/merchantAsist）",
+            "not-found: RFID卡不存在 或 客户不存在 或 商家不存在",
+            "failed-precondition: 卡被禁用、余额不足、商家无效",
+            "invalid-argument: 金额无效（<=0 或非数字）"
+          ],
+          "notes": [
+            "此函数采用'立即扣款'模式，无需客户确认（类似刷卡消费）",
+            "与 processCustomerPayment 的主要区别：RFID 是被动消费，Customer 无需输入交易密码",
+            "所有数据更新通过单一 Transaction 完成，保证原子性",
+            "如果 merchant 同时是 merchantOwner，优先用 merchantOwner 的角色"
+          ]
+        },
+        "queryCustomerByRfid": {
+          "name": "queryCustomerByRfid",
+          "trigger": "HTTP Callable",
+          "region": "asia-southeast1",
+          "description": "根据 RFID ID 查询客户信息（用于 RFID 收款页面预加载）",
+          "permissions": "仅 merchantOwner 或 merchantAsist 可调用",
+          "parameters": {
+            "organizationId": "string (组织ID)",
+            "eventId": "string (活动ID)",
+            "rfidId": "string (RFID卡ID)"
+          },
+          "validation": [
+            "1. 验证调用者身份（必须是 merchantOwner 或 merchantAsist）",
+            "2. 查询 customerRfidCards/{rfidId}：",
+            "   a. 卡必须存在",
+            "3. 获取对应的 customerId",
+            "4. 查询 Customer 账户：",
+            "   a. 验证客户存在"
+          ],
+          "logic": [
+            "1. 读取 customerRfidCards/{rfidId}",
+            "2. 读取 users/{customerId}",
+            "3. 返回客户相关信息"
+          ],
+          "returns": {
+            "success": "boolean (true)",
+            "customerId": "string",
+            "cardholderName": "string (持卡人名字)",
+            "cardNumber": "string (卡号末位，如 '****1234')",
+            "currentBalance": "number (当前可用点数)",
+            "cardStatus": "string ('active' | 'inactive' | 'blocked')",
+            "lastTransactionTime": "string (最后交易时间，ISO 8601格式，可选)",
+            "lastTransactionAmount": "number (最后交易金额，可选)"
+          },
+          "errors": [
+            "unauthenticated: 未登录",
+            "permission-denied: 无权限调用",
+            "not-found: RFID卡或客户不存在"
+          ],
+          "notes": [
+            "此函数用于前端快速查询，不涉及扣款操作",
+            "可以被频繁调用（如 RFID 输入框变化事件）",
+            "返回的数据应在前端缓存以减少 Firestore 读取"
+          ]
         }
       },
       "securityRules": {
@@ -2604,7 +2841,9 @@
         "organizations/{organizationId}/events/{eventId}/transactions/{transactionId}",
         "organizations/{organizationId}/events/{eventId}/cashCollections/{collectionId}",
         "organizations/{organizationId}/events/{eventId}/cashSubmissions/{submissionId}",
-        "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}"
+        "organizations/{organizationId}/events/{eventId}/departments/{departmentCode}",
+        "organizations/{organizationId}/events/{eventId}/rfidDevices/{deviceId}",
+        "organizations/{organizationId}/events/{eventId}/customerRfidCards/{rfidId}"
       ],
       "userSubcollections": [
         "organizations/{organizationId}/events/{eventId}/users/{teamLeaderId}/pointAllocations/{allocationId}",
