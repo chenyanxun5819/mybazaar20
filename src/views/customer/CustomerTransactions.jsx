@@ -401,6 +401,7 @@ const CustomerTransactions = ({ embedded = false }) => {
             {filteredTransactions.map(tx => {
               const typeInfo = getTransactionTypeLabel(tx);
               const isNegative = tx.transactionType === 'customer_to_merchant' ||
+                                tx.transactionType === 'rfid_card_payment' ||
                                 (tx.transactionType === 'customer_transfer' && 
                                  tx.fromUser?.userId === customerData.userId);
 
@@ -507,6 +508,7 @@ const CustomerTransactions = ({ embedded = false }) => {
               {/* 金额 */}
               {(() => {
                 const isNegative = selectedTransaction.transactionType === 'customer_to_merchant' ||
+                                  selectedTransaction.transactionType === 'rfid_card_payment' ||
                                   (selectedTransaction.transactionType === 'customer_transfer' && 
                                    selectedTransaction.fromUser?.userId === customerData.userId);
                 return (

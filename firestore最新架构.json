@@ -13,7 +13,9 @@
         "☁️ 新增 queryCustomerByRfid Cloud Function：前端预加载客户信息（用于 RFID 收款页面）",
         "🔒 Security Rules 新增 RFID 集合权限：rfidDevices 仅 eventManager 管理，customerRfidCards 仅 eventManager 和 customer 可读",
         "⚛️ 新增 RfidPaymentPage.jsx：RFID 购物收款页面（仅 merchantOwner/merchantAsist 可访问）",
-        "⚛️ CustomerTransactions.jsx 扩充：支持 RFID 卡购物交易的查询和显示"
+        "⚛️ CustomerTransactions.jsx 扩充：支持 RFID 卡购物交易的查询和显示",
+        "🎯 架构决策：Customer 数据统一存储在 users/{userId}.customer，不需要独立 customers 子集合",
+        "🔄 RfidPaymentPage 与 CustomerPayment 扣款路径保持一致：均读取 users/{userId}.customer.pointsAccount.availablePoints"
       ],
       "version_2026-04-26-v23": [
         "💰 Customer.cashAccount 新增现金账户（用于追踪应收现金）",

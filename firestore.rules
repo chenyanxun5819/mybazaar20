@@ -415,6 +415,32 @@ service cloud.firestore {
            */
           allow delete: if isEventManager(organizationId, eventId);
         }
+
+        // ========================================================================
+        // Customers (客户资料与点数账户)
+        // ========================================================================
+
+        match /customers/{customerId} {
+          /**
+           * 读取规则：
+           * 1. 客户本人可以读取自己的记录
+           * 2. Event Manager 可以读取所有客户记录
+           * 3. Merchant Owner / Merchant Asist 可以读取，用于 RFID 支付查找客户
+           * 4. Cashier / Auditor 也可读取，用于收款与审计
+           */
+          allow read: if isAuthenticated() && (
+                         request.auth.token.userId == customerId ||
+                         isEventManager(organizationId, eventId) ||
+                         isCashier(organizationId, eventId) ||
+                         isAuditor(organizationId, eventId) ||
+                         (isInContext(organizationId, eventId) && (hasRole('merchantOwner') || hasRole('merchantAsist')))
+                       );
+
+          /**
+           * 写入规则：仅 Cloud Functions 或 Event Manager
+           */
+          allow create, update, delete: if isEventManager(organizationId, eventId);
+        }
         
         // ========================================================================
         // Department Stats (部门统计 - Event 级别集合)

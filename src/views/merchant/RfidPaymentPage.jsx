@@ -101,7 +101,8 @@ const RfidPaymentPage = () => {
       console.log('[RfidPaymentPage] 查询 RFID:', rfid);
 
       // 查询用户集合，匹配 basicInfo.rfidCard.rfidId
-      const usersRef = collection(db, 'organizations', organizationId, 'users');
+      // ✅ 正确路径：organizations/{organizationId}/events/{eventId}/users
+      const usersRef = collection(db, 'organizations', organizationId, 'events', eventId, 'users');
       const q = query(
         usersRef,
         where('basicInfo.rfidCard.rfidId', '==', rfid)
@@ -123,32 +124,20 @@ const RfidPaymentPage = () => {
         return;
       }
 
-      // 获取客户点数账户信息
-      const customerRef = doc(
-        db,
-        'organizations',
-        organizationId,
-        'events',
-        eventId,
-        'customers',
-        userDoc.id
-      );
-      const customerDoc = await getDoc(customerRef);
-
-      if (!customerDoc.exists()) {
-        setError('❌ 客户在本活动中未注册');
+      // ✅ 直接从 users/{userId} 读取客户点数信息（与 CustomerPayment 路径一致）
+      if (!userData.customer) {
+        setError('❌ 客户账户信息不完整');
         return;
       }
 
-      const customer = customerDoc.data();
       setCustomerData({
         userId: userDoc.id,
         basicInfo: userData.basicInfo,
-        customer: customer,
+        customer: userData.customer,
         rfidCard: userData.basicInfo.rfidCard
       });
 
-      console.log('[RfidPaymentPage] 找到客户:', customer.basicInfo?.chineseName);
+      console.log('[RfidPaymentPage] 找到客户:', userData.basicInfo?.chineseName);
       setStep('confirm');
     } catch (err) {
       console.error('[RfidPaymentPage] 查询错误:', err);
@@ -189,24 +178,64 @@ const RfidPaymentPage = () => {
   };
 
   /**
-   * 确认金额，进入 PIN 输入
+   * 确认金额，直接执行 RFID 支付（无需交易密码）
    */
-  const handleConfirmAmount = () => {
+  const handleConfirmAmount = async () => {
     if (!validateAmount()) {
       return;
     }
 
-    setPendingTransaction({
+    const txData = {
       customerId: customerData.userId,
       rfidId: customerData.rfidCard.rfidId,
       amount: parseFloat(amount),
       customerName: customerData.basicInfo?.chineseName || customerData.basicInfo?.englishName,
       merchantName: merchant?.stallName
-    });
+    };
+    setPendingTransaction(txData);
 
-    setStep('pin');
-    setTransactionPin('');
-    setPinError('');
+    // RFID 支付无需交易密码（立即扣款模式）
+    console.log('[RfidPaymentPage] ========== 执行 RFID 支付 ==========');
+    setLoading(true);
+    setError(null);
+    setStep('processing');
+
+    try {
+      console.log('[RfidPaymentPage] 调用 processRfidPayment...');
+      const processRfidPaymentFn = httpsCallable(functions, 'processRfidPayment');
+      const result = await processRfidPaymentFn({
+        customerId: txData.customerId,
+        merchantId: merchant.id,
+        rfidId: txData.rfidId,
+        amount: txData.amount,
+        organizationId: organizationId,
+        eventId: eventId
+      });
+      console.log('[RfidPaymentPage] 支付成功:', result.data);
+      if (refreshStats) {
+        setTimeout(() => refreshStats(), 1000);
+      }
+      setStep('success');
+      setTimeout(() => {
+        setStep('rfid');
+        setRfidInput('');
+        setAmount('');
+        setCustomerData(null);
+        setPendingTransaction(null);
+        setTransactionPin('');
+      }, 3000);
+    } catch (err) {
+      console.error('[RfidPaymentPage] 支付错误:', err);
+      if (err.code === 'INSUFFICIENT_BALANCE') {
+        setError('❌ 余额不足，支付失败');
+        setStep('confirm');
+      } else {
+        setError(`❌ 支付失败: ${err.message || '未知错误'}`);
+        setStep('error');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   /**
