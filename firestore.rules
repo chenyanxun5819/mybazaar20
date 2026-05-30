@@ -466,17 +466,18 @@ service cloud.firestore {
         }
         
         // ========================================================================
-        // Seller Manager Stats (SM 统计 - Event 级别集合)
+        // Team Leader Stats (TeamLeader/SM 统计 - Event 级别集合)
         // ========================================================================
         
-        match /sellerManagerStats/{sellerManagerId} {
+        match /teamLeaderStats/{teamLeaderId} {
           /**
            * 读取规则：
-           * 1. Seller Manager 可以读取自己的统计
-           * 2. Event Manager 可以读取所有 SM 统计
-           * 3. Cashier 可以读取所有 SM 统计
+           * 1. Team Leader / Seller Manager 可以读取自己的统计
+           * 2. Event Manager 可以读取所有统计
+           * 3. Cashier 可以读取所有统计
+           * 4. Auditor 可以读取所有统计（审计用途）
            */
-          allow read: if (isAuthenticated() && request.auth.token.userId == sellerManagerId) ||
+          allow read: if (isAuthenticated() && request.auth.token.userId == teamLeaderId) ||
                          isEventManager(organizationId, eventId) ||
                          isCashier(organizationId, eventId) ||
                          isAuditor(organizationId, eventId);

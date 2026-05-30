@@ -262,8 +262,7 @@ const AuditorDashboard = () => {
   const [deptRows, setDeptRows]                 = useState([]);      // 部门汇总（按SM分组）
   const [merchantRows, setMerchantRows]         = useState([]);
   const [pointSellerRows, setPointSellerRows]   = useState([]);
-  const [cashierSellerRows, setCashierSellerRows]     = useState([]); // 非学生seller现金
-  const [cashierSmRows, setCashierSmRows]               = useState([]); // teamLeader现金
+  const [cashierSmRows, setCashierSmRows]       = useState([]); // teamLeader现金
 
   // ────────────────────────────────────────────────────────
   // 鉴权检查
@@ -398,17 +397,15 @@ const AuditorDashboard = () => {
     //   "Seller 持有未售点数" 与 "系统剩余点数" 的含义，不适用于开放式系统
     // 正确做法：仅使用 Firestore 维护的 remainingInSystem，无值则显示 0
     const remainingSystem    = pts.remainingInSystem ?? 0;
-    // 单独计算 Seller 持有点数（已分配但尚未售出），用于流通漏斗显示
-    const sellerHeldPoints   = totalAllocated - totalSold;
+    // 单独计算 TeamLeader 持有点数（已分配但尚未分配给学生），用于流通漏斗显示
+    const teamLeaderHeldPoints   = totalAllocated - totalSold;
 
     // ── 现金来源分解 ──
     const cash = fs.cash || {};
-    const collectedFromSellers      = cash.collectedFromSellers      ?? 0;
-    const collectedFromSMs          = cash.collectedFromteamLeaders ?? 0;
+    const collectedFromTeamLeaders  = cash.collectedFromTeamLeaders  ?? 0;
     const collectedFromPointSellers = cash.collectedFromPointSellers  ?? 0;
     const totalCollected            = cash.totalCollected             ?? gps.totalCollected ?? 0;
-    const pendingFromSellers        = cash.pendingFromSellers         ?? 0;
-    const pendingFromSMs            = cash.pendingFromteamLeaders  ?? 0;
+    const pendingFromTeamLeaders    = cash.pendingFromTeamLeaders     ?? 0;
     const pendingFromPointSellers   = cash.pendingFromPointSellers    ?? 0;
     const totalPending              = cash.totalPending               ?? gps.pendingCollection ?? 0;
     const expectedFromSales         = cash.expectedFromSales          ?? totalSold;
@@ -442,8 +439,7 @@ const AuditorDashboard = () => {
       name:         c.managerName      || '—',
       totalCollected: c.totalCollected ?? 0,
       count:        c.collectionsCount ?? 0,
-      fromSellers:  c.cashSources?.fromSellers        ?? 0,
-      fromSMs:      c.cashSources?.fromteamLeaders ?? 0,
+      fromTeamLeaders: c.cashSources?.fromTeamLeaders ?? 0,
       fromPS:       c.cashSources?.fromPointSellers   ?? 0,
       lastCollection: c.lastCollection,
     })).sort((a, b) => b.totalCollected - a.totalCollected);
@@ -481,14 +477,14 @@ const AuditorDashboard = () => {
       // 点数流通
       totalAllocated, totalSold, totalSpent, totalFromCards,
       remainingSystem,
-      sellerHeldPoints,    // ⭐ 新增：Seller 持有但尚未售出的点数
+      teamLeaderHeldPoints,
       currentCirculation: gps.currentCirculation ?? 0,
       totalRevenue: gps.totalRevenue ?? totalSold,
 
       // 现金来源分解
       expectedFromSales, expectedFromCards, totalExpected,
-      collectedFromSellers, collectedFromSMs, collectedFromPointSellers, totalCollected,
-      pendingFromSellers, pendingFromSMs, pendingFromPointSellers, totalPending,
+      collectedFromTeamLeaders, collectedFromPointSellers, totalCollected,
+      pendingFromTeamLeaders, pendingFromPointSellers, totalPending,
       outstandingCash,
 
       // 对账
@@ -514,9 +510,9 @@ const AuditorDashboard = () => {
     });
   };
 
-  // ── 2. 班导师部门汇总（按班导师分组，含旗下学生销售员明细）──
+  // ── 2. 班导师部门汇总（按班导师分组，含旗下学生消费者明细）──
   const buildDeptModule = (users, smStats, deptStats) => {
-    const sellers        = users.filter(u => u.roles?.includes('pointSeller'));
+    const managedCustomers = users.filter(u => u.roles?.includes('customer'));
     const teamLeaders = users.filter(u => u.roles?.includes('teamLeader'));
 
     // 建立 teamLeaderStats 映射
@@ -533,20 +529,22 @@ const AuditorDashboard = () => {
       const alerts        = smStat.alerts              || {};
       const deptBreakdown = smStat.departmentBreakdown || [];
 
-      // 旗下学生销售员明细（展开用）
-      const sellerDetail = sellers
-        .filter(s => managedDepts.includes(s.identityInfo?.department))
-        .map(s => ({
-          sellerId:          s.id,
-          sellerName:        s.basicInfo?.chineseName || s.basicInfo?.englishName || '—',
-          department:        s.identityInfo?.department || '—',
-          identityId:        s.identityInfo?.identityId || '—',
-          currentBalance:    s.pointsStats?.currentBalance  ?? s.pointSeller?.availablePoints  ?? 0,
-          totalSold:         s.pointsStats?.totalSold        ?? s.pointSeller?.totalPointsSold  ?? 0,
-          totalRevenue:      s.pointsStats?.totalRevenue     ?? s.pointSeller?.totalRevenue     ?? 0,
-          totalCollected:    s.pointsStats?.totalCollected   ?? s.pointSeller?.totalCashCollected ?? 0,
-          pendingCollection: s.pointsStats?.pendingCollection ?? s.pointSeller?.pendingCollection ?? 0,
-          collectionRate:    s.pointsStats?.collectionRate   ?? 0,
+      // 旗下学生消费者明细（展开用）
+      const sellerDetail = managedCustomers
+        .filter(c => managedDepts.includes(c.identityInfo?.department))
+        .map(c => ({
+          sellerId:      c.id,
+          sellerName:    c.basicInfo?.chineseName || c.basicInfo?.englishName || '—',
+          department:    c.identityInfo?.department || '—',
+          identityId:    c.identityInfo?.identityId || '—',
+          currentBalance: c.customer?.pointsAccount?.availablePoints ?? 0,
+          totalAllocated: c.customer?.pointsAccount?.allocatedPoints  ?? 0,
+          totalCashOwed:  c.customer?.cashAccount?.totalAllocatedCash ?? 0,
+          confirmedCash:  c.customer?.cashAccount?.confirmedCash      ?? 0,
+          pendingCash:    c.customer?.cashAccount?.pendingCash        ?? 0,
+          collectionRate: c.customer?.cashAccount?.totalAllocatedCash > 0
+            ? (c.customer.cashAccount.confirmedCash ?? 0) / c.customer.cashAccount.totalAllocatedCash
+            : 0,
         }));
 
       // 低收款率预警名单（来自 teamLeaderStats.alerts）
@@ -569,9 +567,9 @@ const AuditorDashboard = () => {
         collectionRate:      ps.collectionRate   ?? 0,
         currentBalance:      ps.currentBalance   ?? 0,
         // 现金流（来自 users/{id}/teamLeader/cashStats）
-        receivedFromSellers: cashStats.totalReceivedFromSellers ?? 0,
-        confirmedFromSellers: cashStats.confirmedFromSellers    ?? 0,
-        pendingFromSellers:  cashStats.pendingFromSellers       ?? 0,
+        receivedFromCustomers:  cashStats.totalReceivedFromCustomers ?? 0,
+        confirmedFromCustomers: cashStats.confirmedFromCustomers     ?? 0,
+        pendingFromCustomers:   cashStats.pendingFromCustomers       ?? 0,
         cashOnHand:          cashStats.cashOnHand               ?? 0,
         totalSubmitted:      cashStats.totalSubmitted           ?? 0,
         pendingSubmission:   cashStats.pendingSubmission        ?? 0,
@@ -635,34 +633,9 @@ const AuditorDashboard = () => {
     setPointSellerRows(rows);
   };
 
-  // ── 5. Cashier 现金收取（两张独立表）──
+  // ── 5. Cashier 现金收取（仅班导师上交）──
   const buildCashierModule = (users, cashSubs) => {
-    // 建立 userId → identityTag 映射
-    const userTagMap = {};
-    users.forEach(u => { userTagMap[u.id] = u.identityTag; });
-
-    // 表1：非学生 seller 的现金上交记录
-    // submitterRole === 'seller' 且 submitter 的 identityTag !== 'student'
-    const nonStudentSubs = cashSubs.filter(sub =>
-      sub.submitterRole === 'seller' &&
-      userTagMap[sub.submittedBy] !== 'student'
-    );
-
-    const sellerRows = nonStudentSubs.map(sub => ({
-      submissionId:   sub.submissionNumber || sub.id,
-      submitterName:  sub.submitterName   || '—',
-      submitterPhone: maskPhone(sub.submitterPhone),
-      department:     sub.submitterDepartment || '—',
-      amount:         sub.amount ?? 0,
-      receiverName:   sub.receiverName    || '—',
-      receiverRole:   sub.receiverRole    || '—',
-      status:         sub.status,
-      submittedAt:    sub.submittedAt,
-      confirmedAt:    sub.confirmedAt,
-      note:           sub.note || '—',
-    }));
-
-    // 表2：teamLeader 的现金上交记录
+    // 表：teamLeader 的现金上交记录
     const smSubs = cashSubs.filter(sub => sub.submitterRole === 'teamLeader');
 
     const smRows = smSubs.map(sub => ({
@@ -683,7 +656,6 @@ const AuditorDashboard = () => {
       note:           sub.note            || '—',
     }));
 
-    setCashierSellerRows(sellerRows);
     setCashierSmRows(smRows);
   };
 
@@ -718,31 +690,30 @@ const AuditorDashboard = () => {
             name: '点数流通',
             headers: ['项目', '数值', '备注'],
             rows: [
-              ['总分配点数（EM已分配）',             od.totalAllocated,   ''],
-              ['EM 直接发放给 Seller',               od.emTotalAllocated, `共 ${od.emAllocCount} 次`],
-              ['EM 赠送给 Customer（free_grant）',   od.emTotalGranted,   `共 ${od.emGrantCount} 次`],
-              ['已售出点数（Seller→Customer）',       od.totalSold,        ''],
-              ['Seller 持有点数（已分配未售出）',     od.sellerHeldPoints, '= 总分配 - 已售出'],
-              ['已消费点数（Customer→商家）',         od.totalSpent,       '实时更新'],
-              ['点数卡发行点数',                     od.pointsFromCards,  `共 ${od.cardsIssued} 张`],
-              ['当前流通点数',                       od.currentCirculation,''],
-              ['累计销售额 RM',                      fmt(od.totalRevenue), ''],
+              ['总分配点数（EM已分配）',                          od.totalAllocated,        ''],
+              ['EM 直接发放给 TeamLeader',                       od.emTotalAllocated,      `共 ${od.emAllocCount} 次`],
+              ['EM 赠送给 Customer（free_grant）',               od.emTotalGranted,        `共 ${od.emGrantCount} 次`],
+              ['已分配给学生（TeamLeader → Customer）',          od.totalSold,             ''],
+              ['TeamLeader 持有点数（已分配未分配给学生）',       od.teamLeaderHeldPoints,  '= 总分配 - 已分配给学生'],
+              ['已消费点数（Customer→商家）',                    od.totalSpent,            '实时更新'],
+              ['点数卡发行点数',                                 od.pointsFromCards,       `共 ${od.cardsIssued} 张`],
+              ['当前流通点数',                                   od.currentCirculation,    ''],
+              ['累计销售额 RM',                                  fmt(od.totalRevenue),     ''],
             ]
           },
           {
             name: '现金收取',
             headers: ['项目', '预期 RM', '已收 RM', '待收 RM'],
             rows: [
-              ['Seller 销售',      fmt(od.expectedFromSales),  fmt(od.collectedFromSellers), fmt(od.pendingFromSellers)],
-              ['点数卡',           fmt(od.expectedFromCards),  fmt(od.cashFromCards),        fmt(od.pendingFromPointSellers)],
-              ['班导师汇总',       '—',                        fmt(od.collectedFromSMs),     fmt(od.pendingFromSMs)],
-              ['合计',             fmt(od.totalExpected),      fmt(od.totalCollected),       fmt(od.totalPending)],
-              ['未收款（差额）',   '—',                        '—',                          fmt(od.outstandingCash)],
-              ['整体收款率',       '—',                        fmtPct(od.collectionRate),    '—'],
-              ['销售收款率',       '—',                        fmtPct(od.salesCollectionRate), '—'],
-              ['点数卡收款率',     '—',                        fmtPct(od.cardCollectionRate), '—'],
-              ['对账差异 RM',      '—',                        fmt(od.discrepancy),          '—'],
-              ['是否平衡',         '—',                        od.isBalanced ? '✅ 是' : '❌ 否', '—'],
+              ['班导师汇总',   fmt(od.expectedFromSales),  fmt(od.collectedFromTeamLeaders), fmt(od.pendingFromTeamLeaders)],
+              ['点数卡',       fmt(od.expectedFromCards),  fmt(od.cashFromCards),             fmt(od.pendingFromPointSellers)],
+              ['合计',         fmt(od.totalExpected),      fmt(od.totalCollected),            fmt(od.totalPending)],
+              ['未收款（差额）','—',                        '—',                               fmt(od.outstandingCash)],
+              ['整体收款率',   '—',                        fmtPct(od.collectionRate),         '—'],
+              ['销售收款率',   '—',                        fmtPct(od.salesCollectionRate),    '—'],
+              ['点数卡收款率', '—',                        fmtPct(od.cardCollectionRate),     '—'],
+              ['对账差异 RM',  '—',                        fmt(od.discrepancy),               '—'],
+              ['是否平衡',     '—',                        od.isBalanced ? '✅ 是' : '❌ 否', '—'],
             ]
           },
           {
@@ -761,10 +732,10 @@ const AuditorDashboard = () => {
           },
           {
             name: 'Cashier收款分布',
-            headers: ['收银员', '总收款 RM', '收款笔数', '来自Seller RM', '来自班导师 RM', '来自点数直售员 RM'],
+            headers: ['收银员', '总收款 RM', '收款笔数', '来自班导师 RM', '来自点数直售员 RM'],
             rows: od.cashierBreakdown.map(c => [
               c.name, fmt(c.totalCollected), c.count,
-              fmt(c.fromSellers), fmt(c.fromSMs), fmt(c.fromPS)
+              fmt(c.fromTeamLeaders), fmt(c.fromPS)
             ])
           },
           {
@@ -793,15 +764,15 @@ const AuditorDashboard = () => {
             fmt(r.cashOnHand), fmt(r.totalSubmitted), fmt(r.pendingSubmission), r.alertCount
           ])
         };
-        // Sheet 2：学生销售员明细
+        // Sheet 2：学生消费者明细
         const sellerDetailSheet = {
-          name: '学生销售员明细',
-          headers: ['班导师', '班级', '姓名', '学号', '持有点数', '售出点数', '销售额 RM', '已收款 RM', '待收款 RM', '收款率'],
+          name: '学生消费者明细',
+          headers: ['班导师', '班级', '姓名', '学号', '可用点数', '应付点数', '应付 RM', '已付 RM', '待付 RM', '收款率'],
           rows: deptRows.flatMap(r =>
             r.sellerDetail.map(s => [
               r.smName, s.department, s.sellerName, s.identityId,
-              s.currentBalance, s.totalSold,
-              fmt(s.totalRevenue), fmt(s.totalCollected), fmt(s.pendingCollection), fmtPct(s.collectionRate)
+              s.currentBalance, s.totalAllocated,
+              fmt(s.totalCashOwed), fmt(s.confirmedCash), fmt(s.pendingCash), fmtPct(s.collectionRate)
             ])
           )
         };
@@ -843,15 +814,6 @@ const AuditorDashboard = () => {
       }
 
       if (tab === 'cashier') {
-        const sheetSeller = {
-          name: '非学生Seller现金',
-          headers: ['流水号', '姓名', '电话', '部门', '上交金额 RM', '接收人', '接收角色', '状态', '上交时间', '确认时间', '备注'],
-          rows: cashierSellerRows.map(r => [
-            r.submissionId, r.submitterName, r.submitterPhone, r.department,
-            fmt(r.amount), r.receiverName, r.receiverRole,
-            r.status, fmtDateTime(r.submittedAt), fmtDateTime(r.confirmedAt), r.note
-          ])
-        };
         const sheetSm = {
           name: '班导师现金',
           headers: ['流水号', '班导师姓名', '电话', '班级', '上交金额 RM', '现金 RM', '转账 RM', '支票 RM', '接收人', '状态', '上交时间', '确认时间', '备注'],
@@ -862,7 +824,7 @@ const AuditorDashboard = () => {
             fmtDateTime(r.submittedAt), fmtDateTime(r.confirmedAt), r.note
           ])
         };
-        await exportToExcel([sheetSeller, sheetSm], `${eventName}-现金收取-${dateStr}.xlsx`);
+        await exportToExcel([sheetSm], `${eventName}-现金收取-${dateStr}.xlsx`);
       }
     } finally {
       setExporting(false);
@@ -1037,17 +999,17 @@ const AuditorDashboard = () => {
               {/* ⭐ 修正（2026-02-27）：开放式系统，progress bar 以各步骤最大值为参考
                   不能全部用 totalAllocated 作 max，会造成误解  */}
               {[
-                { label: '① EM 已分配（→ Seller）',         value: od.totalAllocated,    color: '#6366f1',
+                { label: '① EM 已分配（→ TeamLeader）',         value: od.totalAllocated,       color: '#6366f1',
                   max: od.totalAllocated, note: `直接发放 ${fmtInt(od.emTotalAllocated)} 点（共 ${od.emAllocCount} 次）` },
-                { label: '② Seller 已持有（未售）',          value: od.sellerHeldPoints,  color: '#a855f7',
-                  max: od.totalAllocated, note: '= 总分配 - 已售出' },
-                { label: '③ EM 赠送（→ Customer）',          value: od.emTotalGranted,    color: '#f43f5e',
+                { label: '② TeamLeader 已持有（未分配给学生）',  value: od.teamLeaderHeldPoints,  color: '#a855f7',
+                  max: od.totalAllocated, note: '= 总分配 - 已分配给学生' },
+                { label: '③ EM 赠送（→ Customer）',              value: od.emTotalGranted,        color: '#f43f5e',
                   max: od.totalAllocated, note: `共 ${od.emGrantCount} 次` },
-                { label: '④ 已售出（Seller → Customer）',    value: od.totalSold,         color: '#10b981',
+                { label: '④ 已分配给学生（TeamLeader → Customer）', value: od.totalSold,          color: '#10b981',
                   max: od.totalAllocated, note: '' },
-                { label: '⑤ 已消费（Customer → 商家）',      value: od.totalSpent,        color: '#8b5cf6',
+                { label: '⑤ 已消费（Customer → 商家）',           value: od.totalSpent,           color: '#8b5cf6',
                   max: Math.max(od.totalSold, od.totalSpent, 1), note: '实时更新' },
-                { label: '⑥ 点数卡发行',                     value: od.pointsFromCards,   color: '#f59e0b',
+                { label: '⑥ 点数卡发行',                          value: od.pointsFromCards,      color: '#f59e0b',
                   max: od.totalAllocated, note: `共 ${od.cardsIssued} 张` },
               ].map((item, i) => (
                 <div key={i} style={{ marginBottom: '1rem' }}>
@@ -1067,13 +1029,13 @@ const AuditorDashboard = () => {
 
             {/* 右：EM 点数操作与销售汇总 */}
             <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '1rem' }}>
-              <Row label="EM 直接发放"         value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
-              <Row label="发放次数"             value={`${od.emAllocCount} 次`} />
-              <Row label="EM 赠送点数"         value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
-              <Row label="赠送次数"             value={`${od.emGrantCount} 次`} />
+              <Row label="EM 直接发放"          value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
+              <Row label="发放次数"              value={`${od.emAllocCount} 次`} />
+              <Row label="EM 赠送点数"          value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
+              <Row label="赠送次数"              value={`${od.emGrantCount} 次`} />
               <Divider />
-              <Row label="Seller 持有（未售）" value={`${fmtInt(od.sellerHeldPoints)} 点`} valueColor="#a855f7" />
-              <Row label="Customer 已消费"     value={`${fmtInt(od.totalSpent)} 点`}        valueColor="#8b5cf6" bold />
+              <Row label="TeamLeader 持有（未分配）" value={`${fmtInt(od.teamLeaderHeldPoints)} 点`} valueColor="#a855f7" />
+              <Row label="Customer 已消费"      value={`${fmtInt(od.totalSpent)} 点`}        valueColor="#8b5cf6" bold />
               <Divider />
               <Row label="累计销售额"           value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
               <Row label="发行卡数"             value={`${fmtInt(od.cardsIssued)} 张`} />
@@ -1118,18 +1080,11 @@ const AuditorDashboard = () => {
               <tbody>
                 {[
                   {
-                    label: '🎫 Seller 销售',
+                    label: '� 班导师汇总',
                     expected: od.expectedFromSales,
-                    collected: od.collectedFromSellers,
-                    pending: od.pendingFromSellers,
-                    outstanding: od.expectedFromSales - od.collectedFromSellers - od.pendingFromSellers
-                  },
-                  {
-                    label: '🏫 班导师汇总',
-                    expected: 0,
-                    collected: od.collectedFromSMs,
-                    pending: od.pendingFromSMs,
-                    outstanding: -od.collectedFromSMs - od.pendingFromSMs
+                    collected: od.collectedFromTeamLeaders,
+                    pending: od.pendingFromTeamLeaders,
+                    outstanding: od.expectedFromSales - od.collectedFromTeamLeaders - od.pendingFromTeamLeaders
                   },
                   {
                     label: '🎟 点数卡',
@@ -1233,10 +1188,8 @@ const AuditorDashboard = () => {
                 { key: 'totalCollected', label: '总收款 RM', align: 'right',
                   render: r => <span style={{ fontWeight: '700', color: '#10b981' }}>RM {fmt(r.totalCollected)}</span> },
                 { key: 'count',          label: '收款笔数', align: 'right' },
-                { key: 'fromSellers',    label: '来自Seller RM', align: 'right',
-                  render: r => `RM ${fmt(r.fromSellers)}` },
-                { key: 'fromSMs',        label: '来自班导师 RM', align: 'right',
-                  render: r => `RM ${fmt(r.fromSMs)}` },
+                { key: 'fromTeamLeaders', label: '来自班导师 RM', align: 'right',
+                  render: r => `RM ${fmt(r.fromTeamLeaders)}` },
                 { key: 'fromPS',         label: '来自点数直售员 RM', align: 'right',
                   render: r => `RM ${fmt(r.fromPS)}` },
                 { key: 'lastCollection', label: '最后收款时间',
@@ -1343,13 +1296,13 @@ const AuditorDashboard = () => {
         {/* ══ 汇总卡片 ══ */}
         <ModuleCard
           title="班导师汇总"
-          subtitle={`共 ${deptRows.length} 位班导师 · ${totals.students} 位学生销售员`}
+          subtitle={`共 ${deptRows.length} 位班导师 · ${totals.students} 位学生消费者`}
           onExport={() => handleExport('department')}
           exporting={exporting}
         >
           <div style={styles.statsGrid}>
-            <StatCard label="班导师人数"   value={fmtInt(totals.teachers)}             color="#f59e0b" />
-            <StatCard label="管辖学生人数" value={fmtInt(totals.students)}             color="#ec4899" />
+            <StatCard label="班导师人数"     value={fmtInt(totals.teachers)}           color="#f59e0b" />
+            <StatCard label="管辖学生人数"   value={fmtInt(totals.students)}           color="#ec4899" />
             <StatCard label="累计分配点数" value={fmtInt(totals.allocated)}            color="#6366f1" />
             <StatCard label="累计销售额"   value={`RM ${fmt(totals.revenue)}`}         color="#10b981" />
             <StatCard label="已收款"       value={`RM ${fmt(totals.collected)}`}       color="#3b82f6" />
@@ -1404,7 +1357,7 @@ const AuditorDashboard = () => {
         )}
 
         {/* ══ 班导师明细主表（可展开） ══ */}
-        <ModuleCard title="班导师明细" subtitle="点击行展开查看旗下学生销售员">
+        <ModuleCard title="班导师明细" subtitle="点击行展开查看旗下学生消费者">
           {deptRows.length === 0 ? (
             <p style={{ color: '#9ca3af', textAlign: 'center', padding: '2rem' }}>暂无数据</p>
           ) : (
@@ -1488,16 +1441,16 @@ const AuditorDashboard = () => {
                           {/* 次标题行 */}
                           <tr style={{ background: '#f5f3ff' }}>
                             <td colSpan={2} style={{ padding: '0.4rem 1.5rem', fontSize: '0.75rem', color: '#7c3aed', fontWeight: '600' }}>
-                              学生销售员明细（{row.sellerDetail.length} 人）
+                              学生消费者明细（{row.sellerDetail.length} 人）
                             </td>
                             <td colSpan={11} style={{ padding: '0.4rem 0.85rem', fontSize: '0.75rem', color: '#9ca3af' }}>
-                              学号 · 班级 · 持有点数 · 售出点数 · 销售额 · 已收款 · 待收款 · 收款率
+                              学号 · 班级 · 可用点数 · 应付点数 · 应付 RM · 已付 RM · 待付 RM · 收款率
                             </td>
                           </tr>
                           {row.sellerDetail.length === 0 ? (
                             <tr style={{ background: '#f5f3ff' }}>
                               <td colSpan={13} style={{ padding: '0.5rem 1.5rem', color: '#9ca3af', fontSize: '0.82rem' }}>
-                                暂无学生销售员
+                                暂无学生消费者
                               </td>
                             </tr>
                           ) : (
@@ -1519,14 +1472,14 @@ const AuditorDashboard = () => {
                                 <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: '#6366f1' }}>
                                   {fmtInt(s.currentBalance)}
                                 </td>
+                                <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: '#a855f7' }}>
+                                  {fmtInt(s.totalAllocated)}
+                                </td>
                                 <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: '#10b981' }}>
-                                  {fmt(s.totalRevenue)}
+                                  {fmt(s.confirmedCash)}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: '#3b82f6' }}>
-                                  {fmt(s.totalCollected)}
-                                </td>
-                                <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: s.pendingCollection > 0 ? '#f59e0b' : '#6b7280' }}>
-                                  {fmt(s.pendingCollection)}
+                                <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', color: s.pendingCash > 0 ? '#f59e0b' : '#6b7280' }}>
+                                  {fmt(s.pendingCash)}
                                 </td>
                                 <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right' }}>
                                   <span style={{ color: rateColor(s.collectionRate) }}>
@@ -1643,29 +1596,10 @@ const AuditorDashboard = () => {
     );
   };
 
-  // ── Tab 5：Cashier 现金收取（两张独立表）──
+  // ── Tab 5：Cashier 现金收取（班导师上交）──
   const renderCashier = () => {
-    const sellerTotal = cashierSellerRows.reduce((s, r) => s + r.amount, 0);
     const smTotal     = cashierSmRows.reduce((s, r) => s + r.amount, 0);
-
-    const sellerConfirmed = cashierSellerRows.filter(r => r.status === 'confirmed').reduce((s, r) => s + r.amount, 0);
-    const smConfirmed     = cashierSmRows.filter(r => r.status === 'confirmed').reduce((s, r) => s + r.amount, 0);
-
-    const cashierCols = [
-      { key: 'submissionId',   label: '流水号' },
-      { key: 'submitterName',  label: '姓名' },
-      { key: 'submitterPhone', label: '电话' },
-      { key: 'department',     label: '部门' },
-      { key: 'amount',         label: '上交金额 RM', align: 'right',
-        render: r => <span style={{ fontWeight: '600', color: '#10b981' }}>RM {fmt(r.amount)}</span> },
-      { key: 'receiverName',   label: '接收人' },
-      { key: 'status',         label: '状态',
-        render: r => <StatusBadge status={r.status} /> },
-      { key: 'submittedAt',    label: '上交时间',
-        render: r => fmtDateTime(r.submittedAt) },
-      { key: 'confirmedAt',    label: '确认时间',
-        render: r => fmtDateTime(r.confirmedAt) },
-    ];
+    const smConfirmed = cashierSmRows.filter(r => r.status === 'confirmed').reduce((s, r) => s + r.amount, 0);
 
     const smCols = [
       { key: 'submissionId',   label: '流水号' },
@@ -1688,28 +1622,19 @@ const AuditorDashboard = () => {
         {/* 汇总 */}
         <ModuleCard title="现金收取汇总">
           <div style={styles.statsGrid}>
-            <StatCard label="非学生Seller 上交合计"   value={`RM ${fmt(sellerTotal)}`}   color="#ec4899"
-              sub={`已确认 RM ${fmt(sellerConfirmed)} / ${cashierSellerRows.length} 笔`} />
-            <StatCard label="班导师 上交合计"          value={`RM ${fmt(smTotal)}`}        color="#f59e0b"
+            <StatCard label="班导师 上交合计" value={`RM ${fmt(smTotal)}`} color="#f59e0b"
               sub={`已确认 RM ${fmt(smConfirmed)} / ${cashierSmRows.length} 笔`} />
-            <StatCard label="合计上交"                 value={`RM ${fmt(sellerTotal + smTotal)}`} color="#6366f1" />
+            <StatCard label="已确认金额"      value={`RM ${fmt(smConfirmed)}`}          color="#10b981" />
+            <StatCard label="待确认金额"      value={`RM ${fmt(smTotal - smConfirmed)}`} color={smTotal - smConfirmed > 0 ? '#f59e0b' : '#6b7280'} />
           </div>
         </ModuleCard>
 
-        {/* 表1：非学生 seller */}
-        <ModuleCard
-          title="非学生 Seller 现金上交记录"
-          subtitle={`共 ${cashierSellerRows.length} 笔，identityTag ≠ student 的 Seller`}
-          onExport={() => handleExport('cashier')}
-          exporting={exporting}
-        >
-          <DataTable columns={cashierCols} rows={cashierSellerRows} />
-        </ModuleCard>
-
-        {/* 表2：teamLeader */}
+        {/* 班导师上交记录 */}
         <ModuleCard
           title="班导师（teamLeader）现金上交记录"
-          subtitle={`共 ${cashierSmRows.length} 笔，包含班导师汇总上交给收银员的现金`}
+          subtitle={`共 ${cashierSmRows.length} 笔`}
+          onExport={() => handleExport('cashier')}
+          exporting={exporting}
         >
           <DataTable columns={smCols} rows={cashierSmRows} />
         </ModuleCard>
