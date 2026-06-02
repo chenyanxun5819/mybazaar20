@@ -29,7 +29,7 @@ const AllocatePoints = ({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const customerData = customer.seller || {};
+  const customerData = customer.pointsStats || {};
   const collectionAlert = customer.collectionAlert || {};
   const customerName = customer.basicInfo?.chineseName || customer.basicInfo?.englishName || 'N/A';
 
@@ -37,10 +37,10 @@ const AllocatePoints = ({
   const pointsStats = {
     personalBalance: customer.customer?.pointsAccount?.availablePoints || 0, // 消費余额
     totalRevenue: customerData.totalRevenue || 0,
-    totalCollected: customerData.totalCashCollected || 0,
-    pendingCollection: (customerData.totalRevenue || 0) - (customerData.totalCashCollected || 0),
+    totalCollected: customerData.totalCollected || 0,
+    pendingCollection: (customerData.totalRevenue || 0) - (customerData.totalCollected || 0),
     collectionRate: (customerData.totalRevenue || 0) > 0
-      ? (customerData.totalCashCollected || 0) / (customerData.totalRevenue || 0)
+      ? (customerData.totalCollected || 0) / (customerData.totalRevenue || 0)
       : 0
   };
 
@@ -143,124 +143,6 @@ const AllocatePoints = ({
         errorMessage = '登录已过期，请重新登录';
       } else if (err.message.includes('权限')) {
         errorMessage = '您没有权限执行此操作';
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * 验证并提交分配
-   */
-  const handleSubmit = async (e) => {
-    e?.preventDefault?.();
-
-    // 验证输入
-    if (!customer || !customer.id) {
-      setError('无效的 Customer 对象');
-      return;
-    }
-
-    if (!amount || parseFloat(amount) <= 0) {
-      setError('请输入有效的点数');
-      return;
-    }
-
-    const pointsNumber = parseFloat(amount);
-    if (isNaN(pointsNumber)) {
-      setError('点数必须是数字');
-      return;
-    }
-
-    if (pointsNumber > maxPerAllocation) {
-      setError(`单次分配不能超过 ${maxPerAllocation}`);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      console.log('[AllocatePoints] 开始销售点数', {
-        recipientId: customer.id,
-        recipientName: customer.basicInfo?.chineseName,
-        points: pointsNumber
-      });
-
-      // 获取 Firebase Auth Token
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('未登录，请重新登录');
-      }
-
-      const token = await user.getIdToken();
-
-      // 准备请求数据（固定使用 personal 类型）
-      const requestBody = {
-        organizationId: organizationId,
-        eventId: eventId,
-        recipientId: customer.id,
-        points: pointsNumber,
-        allocationType: 'personal', // 固定为 personal（收现金）
-        notes: notes || ''
-      };
-
-      console.log('[AllocatePoints] 请求数据:', requestBody);
-
-      // 调用 Cloud Function
-      const response = await safeFetch('/api/allocatePointsByteamLeader', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      // 处理响应
-      const result = await response.json();
-
-      if (!response.ok) {
-        const errorMessage = result.error?.message || '销售失败';
-        throw new Error(errorMessage);
-      }
-
-      // 成功处理
-      console.log('[AllocatePoints] ✅ 销售成功', result);
-
-      setSuccessMessage(
-        `成功销售 ${pointsNumber} 点给 ${customer.basicInfo?.chineseName || customer.basicInfo?.englishName}！（收现金 RM ${pointsNumber}）`
-      );
-
-      // 重置表单
-      setAmount('');
-      setNotes('');
-
-      // 2秒后关闭弹窗
-      setTimeout(() => {
-        setSuccessMessage(null);
-        onSuccess?.();
-        onClose?.();
-      }, 2000);
-
-    } catch (err) {
-      console.error('[AllocatePoints] ❌ 销售失败:', err);
-
-      let errorMessage = '销售失败';
-
-      if (err.message.includes('未登录')) {
-        errorMessage = '登录已过期，请重新登录';
-      } else if (err.message.includes('权限')) {
-        errorMessage = '您没有权限执行此操作';
-      } else if (err.message.includes('限额')) {
-        errorMessage = err.message;
-      } else if (err.message.includes('管理范围')) {
-        errorMessage = '该用户不在您的管理范围内';
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -382,7 +264,7 @@ const AllocatePoints = ({
         </div>
 
         {/* 表单 */}
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form onSubmit={(e) => { e.preventDefault(); handleDirectSale(); }} style={styles.form}>
           {/* 点数输入 */}
           <div style={styles.formGroup}>
             <label style={styles.label}>

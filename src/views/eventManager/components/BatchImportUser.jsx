@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { db } from '../../config/firebase';
-import { safeFetch } from '../../services/safeFetch';
-import { getAllowedIdentityTagsForImport } from '../../utils/identityTagUtils';
+import { db } from '../../../config/firebase';
+import { safeFetch } from '../../../services/safeFetch';
+import { getAllowedIdentityTagsForImport } from '../../../utils/identityTagUtils';
 
 const BatchImportUser = ({ organizationId, eventId, onClose, onSuccess }) => {
   const [importMode, setImportMode] = useState('upload');

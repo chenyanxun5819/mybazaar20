@@ -1,13 +1,13 @@
 ﻿import { useState, useEffect } from 'react';
-import { db } from '../../config/firebase';
+import { db } from '../../../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import chalkboardUserIcon from '../../assets/chalkboard-user.svg';
-import usersGearIcon from '../../assets/users-gear.svg';
-import userSalaryIcon from '../../assets/user-salary.svg';
-import employeeManIcon from '../../assets/employee-man.svg';
-import storeBuyerIcon from '../../assets/store-buyer.svg';
-import moneyCheckEditIcon from '../../assets/money-check-edit (1).svg';
-import userBagIcon from '../../assets/user-bag.svg';
+import chalkboardUserIcon from '../../../assets/chalkboard-user.svg';
+import usersGearIcon from '../../../assets/users-gear.svg';
+import userSalaryIcon from '../../../assets/user-salary.svg';
+import employeeManIcon from '../../../assets/employee-man.svg';
+import storeBuyerIcon from '../../../assets/store-buyer.svg';
+import moneyCheckEditIcon from '../../../assets/money-check-edit (1).svg';
+import userBagIcon from '../../../assets/user-bag.svg';
 
 const UserList = ({ organizationId, eventId, onClose }) => {
   // 状态管理

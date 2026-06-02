@@ -1,4 +1,4 @@
-﻿const admin = require('firebase-admin');
+const admin = require('firebase-admin');
 const { updateUserCustomClaims } = require('./custom_claims_helper');  // ✅ 新增：Custom Claims 辅助函数
 const functions = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
@@ -3966,3 +3966,280 @@ exports.submitCashToFinanceHttp = onRequest(
     });
   }
 );
+
+// ============================================================================
+// 攤位名冊批量匯入 (Optimized: parallel Auth + batch Firestore writes, timeout 300s)
+// POST /api/importStallRosterHttp
+// Body: { organizationId, eventId, stalls: [{ stallName, owner: {phoneNumber, chineseName?, englishName?}, asists: [...] }] }
+// 權限：同 batchImportUsersHttp（eventManager claim / event.admins phone / admin_uids）
+// ============================================================================
+exports.importStallRosterHttp = onRequest({ region: 'asia-southeast1', timeoutSeconds: 300 }, async (req, res) => {
+  corsHandler(req, res, async () => {
+    if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST' });
+
+    try {
+      const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+      const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring('Bearer '.length) : null;
+      const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+      const { organizationId, eventId, stalls } = body;
+      const effectiveToken = body.idToken || tokenFromHeader;
+
+      if (!organizationId || !eventId || !Array.isArray(stalls) || stalls.length === 0)
+        return res.status(400).json({ error: '缺少必要參數或 stalls 為空' });
+      if (!effectiveToken) return res.status(401).json({ error: '需要登录' });
+
+      // ── Verify token ──────────────────────────────────────────────────────
+      let decoded;
+      try { decoded = await admin.auth().verifyIdToken(effectiveToken); } catch (e) { return res.status(401).json({ error: '身份验证失败' }); }
+      const callerUid = decoded.uid;
+
+      const db = getDb();
+      const orgRef = db.collection('organizations').doc(organizationId);
+      const eventRef = orgRef.collection('events').doc(eventId);
+      const eventSnap = await eventRef.get();
+      if (!eventSnap.exists) return res.status(404).json({ error: '活动不存在' });
+
+      // ── Permission check ──────────────────────────────────────────────────
+      const eventData = eventSnap.data() || {};
+      const eventOrgCode = eventData.orgCode;
+      const eventCode = eventData.eventCode;
+      const decodedRoles = Array.isArray(decoded.roles) ? decoded.roles : [];
+      let hasPermission = false;
+      if (!hasPermission && decodedRoles.includes('eventManager')) hasPermission = true;
+      if (!hasPermission && eventData.eventManager?.authUid === callerUid) hasPermission = true;
+      if (!hasPermission) {
+        const normalizePhoneCore = (p) => { if (!p) return ''; let d = String(p).replace(/[^0-9]/g, ''); if (d.startsWith('60') && d.length > 9) d = d.substring(2); if (d.startsWith('0')) d = d.substring(1); return d; };
+        const phoneFromUid = callerUid.startsWith('eventManager_') ? callerUid.replace('eventManager_', '') : callerUid.startsWith('phone_') ? callerUid.replace('phone_', '') : null;
+        if (phoneFromUid) {
+          const coreCaller = normalizePhoneCore(phoneFromUid);
+          for (const adm of (Array.isArray(eventData.admins) ? eventData.admins : [])) {
+            if (coreCaller && coreCaller === normalizePhoneCore(adm?.phone || adm?.phoneNumber || '')) { hasPermission = true; break; }
+          }
+        }
+      }
+      if (!hasPermission) { const snap = await db.collection('admin_uids').doc(callerUid).get(); if (snap.exists) hasPermission = true; }
+      if (!hasPermission) return res.status(403).json({ error: '需要 Event Manager 权限' });
+
+      // ── Helpers ────────────────────────────────────────────────────────────
+      const normalizeE164 = (raw) => {
+        if (!raw) return null;
+        let s = String(raw).replace(/\D/g, '');
+        if (s.startsWith('60')) return '+' + s;
+        if (s.startsWith('0')) return '+60' + s.slice(1);
+        if (s.length >= 9) return '+60' + s;
+        return null;
+      };
+      const e164ToAuthUid = (e164) => 'phone_' + e164.replace(/[^0-9]/g, '');
+      const now = new Date();
+      const errors = [];
+      let createdUsers = 0;
+      let updatedUsers = 0;
+      let createdMerchants = 0;
+
+      // ── Step 1: Collect + validate all stalls and phones ─────────────────
+      // phoneInfoMap: e164 → { chineseName, englishName, roles: Set }
+      const phoneInfoMap = new Map();
+      const validStalls = [];
+
+      for (const stall of stalls) {
+        const { stallName, owner, asists = [] } = stall || {};
+        if (!stallName || !owner?.phoneNumber) {
+          errors.push({ stallName: stallName || '(未命名)', reason: '缺少 stallName 或 owner.phoneNumber' });
+          continue;
+        }
+        const ownerE164 = normalizeE164(owner.phoneNumber);
+        if (!ownerE164) { errors.push({ stallName, reason: `攤主電話格式無效: ${owner.phoneNumber}` }); continue; }
+
+        if (!phoneInfoMap.has(ownerE164)) phoneInfoMap.set(ownerE164, { chineseName: owner.chineseName || '', englishName: owner.englishName || '', roles: new Set() });
+        phoneInfoMap.get(ownerE164).roles.add('merchantOwner');
+
+        const validAsistE164s = [];
+        for (const asist of asists) {
+          const asistE164 = normalizeE164(asist?.phoneNumber);
+          if (!asistE164) { errors.push({ stallName, reason: `助理電話格式無效: ${asist?.phoneNumber}` }); continue; }
+          if (!phoneInfoMap.has(asistE164)) phoneInfoMap.set(asistE164, { chineseName: asist.chineseName || '', englishName: asist.englishName || '', roles: new Set() });
+          phoneInfoMap.get(asistE164).roles.add('merchantAsist');
+          validAsistE164s.push(asistE164);
+        }
+        validStalls.push({ stallName, ownerE164, asistE164s: validAsistE164s });
+      }
+
+      if (validStalls.length === 0)
+        return res.status(400).json({ success: false, errors, message: '沒有有效攤位資料' });
+
+      console.log(`[importStallRosterHttp] 開始處理: ${validStalls.length} 個攤位, ${phoneInfoMap.size} 個唯一電話`);
+
+      // ── Step 2: Parallel Auth getUser / createUser for ALL phones ─────────
+      const e164ToUid = new Map(); // e164 → { authUid, isNew }
+      await Promise.all([...phoneInfoMap.entries()].map(async ([e164, info]) => {
+        const authUid = e164ToAuthUid(e164);
+        try {
+          await admin.auth().getUser(authUid);
+          e164ToUid.set(e164, { authUid, isNew: false });
+        } catch (e) {
+          if (e.code === 'auth/user-not-found') {
+            try {
+              await admin.auth().createUser({ uid: authUid, phoneNumber: e164, displayName: info.chineseName || info.englishName || '', disabled: false });
+              e164ToUid.set(e164, { authUid, isNew: true });
+            } catch (ce) { errors.push({ phone: e164, reason: '建立 Auth 失敗: ' + ce.message }); }
+          } else { errors.push({ phone: e164, reason: '查詢 Auth 失敗: ' + e.message }); }
+        }
+      }));
+
+      console.log(`[importStallRosterHttp] Auth 完成: 新建=${[...e164ToUid.values()].filter(v => v.isNew).length}, 既有=${[...e164ToUid.values()].filter(v => !v.isNew).length}`);
+
+      // ── Step 3: Parallel read existing Firestore user docs ────────────────
+      const usersCol = eventRef.collection('users');
+      const existingUids = [...e164ToUid.values()].filter(v => !v.isNew).map(v => v.authUid);
+      const existingDataMap = new Map();
+      if (existingUids.length > 0) {
+        const snaps = await Promise.all(existingUids.map(uid => usersCol.doc(uid).get()));
+        snaps.forEach(d => { if (d.exists) existingDataMap.set(d.id, d.data()); });
+      }
+
+      // ── Step 4: Batch write new user docs ─────────────────────────────────
+      const newEntries = [...e164ToUid.entries()].filter(([, v]) => v.isNew);
+      if (newEntries.length > 0) {
+        const batch = db.batch();
+        for (const [e164, { authUid }] of newEntries) {
+          const info = phoneInfoMap.get(e164) || {};
+          const roles = [...(info.roles || new Set())];
+          const userDoc = {
+            userId: authUid, authUid, roles, identityTag: 'external',
+            basicInfo: { phoneNumber: e164, chineseName: info.chineseName || '', englishName: info.englishName || '', hasDefaultPassword: false, isFirstLogin: false, passwordLastChanged: null, transactionPinHash: null, transactionPinSalt: null, pinFailedAttempts: 0, pinLockedUntil: null, pinLastChanged: null, isPhoneVerified: true },
+            identityInfo: { identityId: `ext_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`, identityName: '外部人員', identityNameEn: 'External', department: '未分配' },
+            activityData: { joinedAt: now, lastActiveAt: now, participationStatus: 'active' },
+            accountStatus: { status: 'active', mustChangePassword: false, createdAt: now, updatedAt: now },
+            metadata: { registrationSource: 'stall_roster_import', operatorUid: callerUid }
+          };
+          if (roles.includes('merchantOwner')) userDoc.merchantOwner = { merchantId: null, stallName: null, assignedAt: null, assignedBy: null, permissions: { canViewAllTransactions: true, canEditProfile: true, canToggleStatus: true, canRefundTransactions: true, canCancelPending: true, canManageAsists: true }, statistics: { totalRevenue: 0, transactionCount: 0, totalCollected: 0, asistsCollected: 0, lastSyncAt: null } };
+          if (roles.includes('merchantAsist')) userDoc.merchantAsist = { merchantId: null, merchantOwnerId: null, stallName: null, permissions: { canCollectPayments: true, canViewOwnTransactions: true, canCancelPending: true, cannotViewAllTransactions: true, cannotEditProfile: true, cannotRefund: true }, statistics: { totalCollected: 0, transactionCount: 0, lastCollectionAt: null, todayCollected: 0, todayTransactionCount: 0 }, assignmentInfo: { assignedAt: null, assignedBy: null, isActive: true } };
+          batch.set(usersCol.doc(authUid), userDoc);
+          createdUsers++;
+        }
+        await batch.commit();
+        console.log(`[importStallRosterHttp] 新用戶批次寫入完成: ${newEntries.length}`);
+
+        // Custom claims in parallel (non-blocking)
+        if (eventOrgCode && eventCode) {
+          await Promise.all(newEntries.map(async ([, { authUid }]) => {
+            try { await updateUserCustomClaims(authUid, eventOrgCode, eventCode, 'add'); } catch (e) { console.warn('[importStallRosterHttp] claims fail:', e.message); }
+          }));
+        }
+      }
+
+      // ── Step 5: Update existing user docs in parallel ─────────────────────
+      const existingEntries = [...e164ToUid.entries()].filter(([, v]) => !v.isNew);
+      if (existingEntries.length > 0) {
+        await Promise.all(existingEntries.map(async ([e164, { authUid }]) => {
+          const info = phoneInfoMap.get(e164) || {};
+          const existingData = existingDataMap.get(authUid) || {};
+          const roles = [...(info.roles || new Set())];
+          const payload = { updatedAt: now, roles: admin.firestore.FieldValue.arrayUnion(...roles) };
+          if (roles.includes('merchantOwner') && !existingData.merchantOwner) payload.merchantOwner = { merchantId: null, stallName: null, assignedAt: null, assignedBy: null, permissions: { canViewAllTransactions: true, canEditProfile: true, canToggleStatus: true, canRefundTransactions: true, canCancelPending: true, canManageAsists: true }, statistics: { totalRevenue: 0, transactionCount: 0, totalCollected: 0, asistsCollected: 0, lastSyncAt: null } };
+          if (roles.includes('merchantAsist') && !existingData.merchantAsist) payload.merchantAsist = { merchantId: null, merchantOwnerId: null, stallName: null, permissions: { canCollectPayments: true, canViewOwnTransactions: true, canCancelPending: true, cannotViewAllTransactions: true, cannotEditProfile: true, cannotRefund: true }, statistics: { totalCollected: 0, transactionCount: 0, lastCollectionAt: null, todayCollected: 0, todayTransactionCount: 0 }, assignmentInfo: { assignedAt: null, assignedBy: null, isActive: true } };
+          await usersCol.doc(authUid).update(payload);
+          updatedUsers++;
+        }));
+        console.log(`[importStallRosterHttp] 既有用戶更新完成: ${existingEntries.length}`);
+      }
+
+      // ── Step 6: Reserve ALL merchant codes in one transaction ─────────────
+      const startSeq = await db.runTransaction(async tx => {
+        const evSnap = await tx.get(eventRef);
+        const cur = evSnap.data()?.roleStats?.merchants?.lastMerchantSeq || 0;
+        tx.update(eventRef, { 'roleStats.merchants.lastMerchantSeq': cur + validStalls.length });
+        return cur + 1;
+      });
+
+      // ── Step 7: Batch create merchant docs + write-backs ──────────────────
+      const merchantsCol = eventRef.collection('merchants');
+      const BATCH_LIMIT = 450;
+      let batchW = db.batch();
+      let batchOps = 0;
+
+      const flushBatch = async () => {
+        if (batchOps > 0) { await batchW.commit(); batchW = db.batch(); batchOps = 0; }
+      };
+
+      for (let i = 0; i < validStalls.length; i++) {
+        const { stallName, ownerE164, asistE164s } = validStalls[i];
+        const ownerUidInfo = e164ToUid.get(ownerE164);
+        if (!ownerUidInfo) { errors.push({ stallName, reason: '攤主 Auth 建立失敗，跳過' }); continue; }
+        const ownerUid = ownerUidInfo.authUid;
+        const asistUids = asistE164s.map(e => e164ToUid.get(e)?.authUid).filter(Boolean);
+
+        const merchantRef = merchantsCol.doc();
+        const merchantId = merchantRef.id;
+        const merchantCode = 'M' + String(startSeq + i).padStart(3, '0');
+
+        batchW.set(merchantRef, {
+          merchantId, merchantCode, stallName,
+          merchantOwnerId: ownerUid,
+          merchantAsists: asistUids,
+          merchantAsistsCount: asistUids.length,
+          description: '',
+          contactInfo: { phone: ownerE164, email: '', note: '' },
+          qrCodeData: { type: 'MERCHANT_PAYMENT', version: '1.0', merchantId, eventId, organizationId, generatedAt: now },
+          revenueStats: { totalRevenue: 0, transactionCount: 0, lastTransactionAt: null, averageTransactionAmount: 0, ownerCollectedRevenue: 0, asistsCollectedRevenue: 0 },
+          dailyRevenue: { today: 0, todayTransactionCount: 0, todayOwnerCollected: 0, todayAsistsCollected: 0, lastResetAt: null },
+          operationStatus: { isActive: true, lastStatusChange: now, pauseReason: '' },
+          metadata: { createdAt: now, updatedAt: now, createdBy: callerUid, lastUpdatedBy: callerUid, isDeleted: false }
+        });
+        batchOps++;
+
+        batchW.update(usersCol.doc(ownerUid), {
+          'merchantOwner.merchantId': merchantId,
+          'merchantOwner.stallName': stallName,
+          'merchantOwner.assignedAt': now,
+          'merchantOwner.assignedBy': callerUid,
+          updatedAt: now
+        });
+        batchOps++;
+
+        for (const asistUid of asistUids) {
+          batchW.update(usersCol.doc(asistUid), {
+            'merchantAsist.merchantId': merchantId,
+            'merchantAsist.merchantOwnerId': ownerUid,
+            'merchantAsist.stallName': stallName,
+            'merchantAsist.assignmentInfo.assignedAt': now,
+            'merchantAsist.assignmentInfo.assignedBy': callerUid,
+            'merchantAsist.assignmentInfo.isActive': true,
+            updatedAt: now
+          });
+          batchOps++;
+        }
+
+        if (batchOps >= BATCH_LIMIT) await flushBatch();
+        createdMerchants++;
+      }
+      await flushBatch();
+      console.log(`[importStallRosterHttp] Merchant docs + write-backs 完成: ${createdMerchants}`);
+
+      // ── Step 8: Update event stats ─────────────────────────────────────────
+      const eventUpdatePayload = { updatedAt: now };
+      if (createdMerchants > 0) {
+        eventUpdatePayload['roleStats.merchants.count'] = admin.firestore.FieldValue.increment(createdMerchants);
+        eventUpdatePayload['statistics.totalMerchantOwners'] = admin.firestore.FieldValue.increment(createdMerchants);
+      }
+      if (createdUsers > 0) {
+        eventUpdatePayload['statistics.totalUsers'] = admin.firestore.FieldValue.increment(createdUsers);
+      }
+      await eventRef.update(eventUpdatePayload);
+
+      console.log(`[importStallRosterHttp] ✅ 完成: 攤位=${createdMerchants}, 新用戶=${createdUsers}, 更新用戶=${updatedUsers}, 錯誤=${errors.length}`);
+      return res.status(200).json({
+        success: true,
+        createdMerchants,
+        createdUsers,
+        updatedUsers,
+        errors,
+        message: `攤位名冊匯入完成：${createdMerchants} 個攤位，${createdUsers} 位新建用戶，${updatedUsers} 位更新用戶`
+      });
+
+    } catch (e) {
+      console.error('[importStallRosterHttp] Error:', e);
+      return res.status(500).json({ error: e && e.message ? e.message : '內部錯誤' });
+    }
+  });
+});

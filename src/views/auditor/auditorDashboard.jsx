@@ -377,6 +377,15 @@ const AuditorDashboard = () => {
     const st  = event.statistics         || {};
 
     const countRole = (role) => users.filter(u => u.roles?.includes(role)).length;
+    const countTag  = (tag)  => users.filter(u => u.identityTag === tag).length;
+
+    // ── identityTag 人员分布 ──
+    const studentCount   = countTag('student');
+    const teacherCount   = countTag('teacher');
+    const staffCount     = countTag('staff');
+    const parentCount    = countTag('parent');
+    const volunteerCount = countTag('volunteer');
+    const externalCount  = countTag('external');
 
     // ── 点数流通 ──
     const pts = fs.points || {};
@@ -397,8 +406,12 @@ const AuditorDashboard = () => {
     //   "Seller 持有未售点数" 与 "系统剩余点数" 的含义，不适用于开放式系统
     // 正确做法：仅使用 Firestore 维护的 remainingInSystem，无值则显示 0
     const remainingSystem    = pts.remainingInSystem ?? 0;
-    // 单独计算 TeamLeader 持有点数（已分配但尚未分配给学生），用于流通漏斗显示
-    const teamLeaderHeldPoints   = totalAllocated - totalSold;
+    // ⭐ 修正（2026-05-31）：TL 直销模式下不经过 EM 预分配，totalAllocated 不写入，
+    //   旧公式 (totalAllocated - totalSold) 必然产生负数。
+    //   改为加总每位 TeamLeader 的 pointsStats.currentBalance（实时库存余额）。
+    const teamLeaderHeldPoints = users
+      .filter(u => u.roles?.includes('teamLeader'))
+      .reduce((sum, u) => sum + (u.pointsStats?.currentBalance ?? 0), 0);
 
     // ── 现金来源分解 ──
     const cash = fs.cash || {};
@@ -462,7 +475,9 @@ const AuditorDashboard = () => {
       emPhone:   em.phoneNumber || '—',
       totalUsers: st.totalUsers ?? users.length,
 
-      // 人员
+      // 人员 - identityTag
+      studentCount, teacherCount, staffCount, parentCount, volunteerCount, externalCount,
+      // 人员 - roles
       sellerCount:         rs.pointSellers?.count     ?? countRole('pointSeller'),
       sellerActiveCount:   rs.pointSellers?.activeCount ?? 0,
       customerCount:       rs.customers?.count        ?? countRole('customer'),
@@ -470,7 +485,7 @@ const AuditorDashboard = () => {
       merchantCount:       rs.merchants?.count        ?? countRole('merchantOwner'),
       merchantActiveCount: rs.merchants?.activeCount  ?? 0,
       merchantAsistCount:  rs.merchantAsists?.count   ?? countRole('merchantAsist'),
-      teamLeaderCount:  rs.teamLeaders?.count   ?? countRole('teamLeader'),
+      teamLeaderCount:     rs.teamLeaders?.count      ?? countRole('teamLeader'),
       cashierCount:        rs.cashiers?.count         ?? countRole('cashier'),
       pointSellerCount:    rs.pointSellers?.count     ?? countRole('pointSeller'),
 
@@ -962,28 +977,43 @@ const AuditorDashboard = () => {
           onExport={() => handleExport('overview')}
           exporting={exporting}
         >
-          <div style={styles.statsGrid}>
-            <StatCard
-              label="点数销售员"
-              value={fmtInt(od.sellerCount)}
-              sub={od.sellerActiveCount > 0 ? `活跃 ${od.sellerActiveCount} 人` : undefined}
-              color="#ec4899"
-            />
-            <StatCard
-              label="消费者"
-              value={fmtInt(od.customerCount)}
-              sub={od.customerActiveCount > 0 ? `活跃 ${od.customerActiveCount} 人` : undefined}
-              color="#84cc16"
-            />
-            <StatCard
-              label="商家（摊主）"
-              value={fmtInt(od.merchantCount)}
-              sub={`含助手 ${od.merchantAsistCount} 人`}
-              color="#06b6d4"
-            />
-            <StatCard label="班导师"     value={fmtInt(od.teamLeaderCount)} color="#f59e0b" />
-            <StatCard label="收银员"     value={fmtInt(od.cashierCount)}       color="#3b82f6" />
-            <StatCard label="点数直售员" value={fmtInt(od.pointSellerCount)}   color="#f97316" />
+          {/* 第一行：identityTag 身份分布 */}
+          <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>身份类别</div>
+          <div style={{ padding: '1rem 0.65rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+              {[
+                { label: '学生', v: od.studentCount },
+                { label: '老师', v: od.teacherCount },
+                { label: '职员', v: od.staffCount },
+                { label: '家长', v: od.parentCount },
+                { label: '义工', v: od.volunteerCount },
+                { label: '外部', v: od.externalCount },
+              ].flatMap((item, i, arr) => [
+                <div key={item.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{item.label} <span style={{ fontSize: '0.85rem', fontWeight: 400, opacity: 0.85 }}>{fmtInt(item.v)}人</span></span>
+                </div>,
+                ...(i < arr.length - 1 ? [<div key={`id${i}`} style={{ width: '1px', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'stretch', margin: '0 0.25rem' }} />] : []),
+              ])}
+            </div>
+          </div>
+          {/* 第二行：roles 角色分布 */}
+          <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>系统角色</div>
+          <div style={{ padding: '1rem 0.65rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(33,150,243,0.3)', color: '#fff', background: 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+              {[
+                { label: '班导师',     v: od.teamLeaderCount },
+                { label: '消费者',     v: od.customerCount,   sub: od.customerActiveCount > 0 ? `活跃 ${od.customerActiveCount}` : null },
+                { label: '商家（摊主）', v: od.merchantCount,   sub: od.merchantAsistCount > 0 ? `助手 ${od.merchantAsistCount}` : null },
+                { label: '收银员',     v: od.cashierCount },
+                { label: '点数直售员', v: od.pointSellerCount },
+              ].flatMap((item, i, arr) => [
+                <div key={item.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{item.label} <span style={{ fontSize: '0.85rem', fontWeight: 400, opacity: 0.85 }}>{fmtInt(item.v)}人</span></span>
+                  {item.sub && <span style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '0.2rem' }}>{item.sub}</span>}
+                </div>,
+                ...(i < arr.length - 1 ? [<div key={`rd${i}`} style={{ width: '1px', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'stretch', margin: '0 0.25rem' }} />] : []),
+              ])}
+            </div>
           </div>
         </ModuleCard>
 
@@ -996,50 +1026,52 @@ const AuditorDashboard = () => {
               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 点数流向
               </div>
-              {/* ⭐ 修正（2026-02-27）：开放式系统，progress bar 以各步骤最大值为参考
-                  不能全部用 totalAllocated 作 max，会造成误解  */}
-              {[
-                { label: '① EM 已分配（→ TeamLeader）',         value: od.totalAllocated,       color: '#6366f1',
-                  max: od.totalAllocated, note: `直接发放 ${fmtInt(od.emTotalAllocated)} 点（共 ${od.emAllocCount} 次）` },
-                { label: '② TeamLeader 已持有（未分配给学生）',  value: od.teamLeaderHeldPoints,  color: '#a855f7',
-                  max: od.totalAllocated, note: '= 总分配 - 已分配给学生' },
-                { label: '③ EM 赠送（→ Customer）',              value: od.emTotalGranted,        color: '#f43f5e',
-                  max: od.totalAllocated, note: `共 ${od.emGrantCount} 次` },
-                { label: '④ 已分配给学生（TeamLeader → Customer）', value: od.totalSold,          color: '#10b981',
-                  max: od.totalAllocated, note: '' },
-                { label: '⑤ 已消费（Customer → 商家）',           value: od.totalSpent,           color: '#8b5cf6',
-                  max: Math.max(od.totalSold, od.totalSpent, 1), note: '实时更新' },
-                { label: '⑥ 点数卡发行',                          value: od.pointsFromCards,      color: '#f59e0b',
-                  max: od.totalAllocated, note: `共 ${od.cardsIssued} 张` },
-              ].map((item, i) => (
-                <div key={i} style={{ marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.82rem', color: '#374151' }}>{item.label}</span>
-                    <span style={{ fontWeight: '700', color: item.color, fontSize: '0.95rem' }}>
-                      {fmtInt(item.value)}
-                    </span>
+              {/* progress bar 以全局最大值为共同基准，各渠道独立，不形成累加漏斗 */}
+              {(() => {
+                const flowRef = Math.max(od.totalSold || 0, od.totalAllocated || 0, od.teamLeaderHeldPoints || 0, od.totalSpent || 0, 1);
+                return [
+                  { label: '① EM 直接分配（→ Customer，需付款）',        value: od.totalAllocated,       color: '#6366f1',
+                    note: `共 ${od.emAllocCount} 次` },
+                  { label: '② EM 赠送（→ Customer，免费）',              value: od.emTotalGranted,       color: '#f43f5e',
+                    note: `共 ${od.emGrantCount} 次（已计入④）` },
+                  { label: '③ TL 当前持有余额',                           value: od.teamLeaderHeldPoints, color: '#a855f7',
+                    note: '各班导师 pointsStats.currentBalance 之和' },
+                  { label: '④ 已售出 / 发放（TL + PS + EM → Customer）', value: od.totalSold,            color: '#10b981',
+                    note: 'TL 直销 + PS 直销/发卡 + EM 赠送' },
+                  { label: '⑤ 已消费（Customer → 商家）',                value: od.totalSpent,           color: '#8b5cf6',
+                    note: '实时更新' },
+                  { label: '⑥ 点数卡发行（已计入④）',                    value: od.pointsFromCards,      color: '#f59e0b',
+                    note: `共 ${od.cardsIssued} 张` },
+                ].map((item, i) => (
+                  <div key={i} style={{ marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.82rem', color: '#374151' }}>{item.label}</span>
+                      <span style={{ fontWeight: '700', color: item.color, fontSize: '0.95rem' }}>
+                        {fmtInt(item.value)}
+                      </span>
+                    </div>
+                    {item.note && (
+                      <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: '0.2rem' }}>{item.note}</div>
+                    )}
+                    <ProgressBar value={item.value} max={flowRef} color={item.color} />
                   </div>
-                  {item.note && (
-                    <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: '0.2rem' }}>{item.note}</div>
-                  )}
-                  <ProgressBar value={item.value} max={item.max} color={item.color} />
-                </div>
-              ))}
+                ));
+              })()}
             </div>
 
             {/* 右：EM 点数操作与销售汇总 */}
             <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '1rem' }}>
-              <Row label="EM 直接发放"          value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#a855f7" bold />
-              <Row label="发放次数"              value={`${od.emAllocCount} 次`} />
-              <Row label="EM 赠送点数"          value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
+              <Row label="EM 直接分配（→ Customer）" value={`${fmtInt(od.emTotalAllocated)} 点`} valueColor="#6366f1" bold />
+              <Row label="分配次数"              value={`${od.emAllocCount} 次`} />
+              <Row label="EM 赠送点数"           value={`${fmtInt(od.emTotalGranted)} 点`}   valueColor="#f43f5e" bold />
               <Row label="赠送次数"              value={`${od.emGrantCount} 次`} />
               <Divider />
-              <Row label="TeamLeader 持有（未分配）" value={`${fmtInt(od.teamLeaderHeldPoints)} 点`} valueColor="#a855f7" />
-              <Row label="Customer 已消费"      value={`${fmtInt(od.totalSpent)} 点`}        valueColor="#8b5cf6" bold />
+              <Row label="TL 当前持有余额"        value={`${fmtInt(od.teamLeaderHeldPoints)} 点`} valueColor="#a855f7" />
+              <Row label="Customer 已消费"       value={`${fmtInt(od.totalSpent)} 点`}        valueColor="#8b5cf6" bold />
               <Divider />
-              <Row label="累计销售额"           value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
-              <Row label="发行卡数"             value={`${fmtInt(od.cardsIssued)} 张`} />
-              <Row label="点数卡发行点数"       value={fmtInt(od.pointsFromCards)} />
+              <Row label="累计销售额"            value={`RM ${fmt(od.totalRevenue)}`}  bold valueColor="#10b981" />
+              <Row label="发行卡数"              value={`${fmtInt(od.cardsIssued)} 张`} />
+              <Row label="点数卡发行点数"        value={fmtInt(od.pointsFromCards)} />
             </div>
           </div>
         </ModuleCard>

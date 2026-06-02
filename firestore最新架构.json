@@ -505,7 +505,7 @@
                 "// === 点数统计 ===": "",
                 "points": {
                   "totalAllocated": "number (总分配点数)",
-                  "totalSold": "number (总销售点数 - Seller 售给 Customer)",
+                  "totalSold": "number (总销售点数 - TeamLeader 直销给 Customer，或 PointSeller 直销/发卡给 Customer)",
                   "totalSpent": "number (总消费点数 - Customer 在 Merchant 消费)",
                   "totalFromPointCards": "number (点数卡发行总点数)",
                   "remainingInSystem": "number (系统中剩余点数)"
@@ -1291,10 +1291,10 @@
                       },
                       "teamLeader_to_customer": {
                         "role": "TeamLeader（班导/班级负责人）",
-                        "description": "TeamLeader 将点数分配给所管理的 Customer（学生必须购买，强制消费模式），TeamLeader 同步收取现金",
+                        "description": "TeamLeader 将点数直接分配给所管理的 Customer（学生必须购买，强制消费模式），TeamLeader 同步收取现金",
                         "direction": "TeamLeader → Customer",
-                        "source": "EventManager 预先分配给 TeamLeader 的点数库存",
-                        "cloudFunction": "allocatePointsByTeamLeader",
+                        "source": "TeamLeader 直接派发（无需 EM 预先分配库存，按需生成，写入 globalPointsStats.totalSold）",
+                        "cloudFunction": "allocatePointsByTeamLeader（HTTP直销路径）",
                         "example": "TeamLeader 为班级50名学生各分配 100 点，每位学生须缴 RM 100，TeamLeader 负责收款并上交 Finance"
                       },
                       "customer_to_merchant": {
@@ -1567,7 +1567,7 @@
                   "现金上交是整个系统的关键流程",
                   "状态变更必须记录时间戳",
                   "Cashier 确认后更新各项统计",
-                  "支持部分上交（一个 Seller 可以分多次上交）",
+                  "支持部分上交（TeamLeader / PointSeller 可以分多次上交）",
                   "includedSales 提供详细追溯"
                 ]
               },

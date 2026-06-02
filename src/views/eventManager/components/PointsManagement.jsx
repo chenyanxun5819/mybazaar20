@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { db } from '../../config/firebase';
+import { db } from '../../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import {
   collection,
@@ -14,14 +14,14 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 
-import { safeFetch } from '../../services/safeFetch';
+import { safeFetch } from '../../../services/safeFetch';
 
 // SVG Icons（对齐 EventManagerDashboard 的导入方式）
-import PosBillIcon from '../../assets/point-of-sale-bill.svg?react';
+import PosBillIcon from '../../../assets/point-of-sale-bill.svg?react';
 
-import PointsManagementIcon from '../../assets/pointsManagement.svg?react';
-import PlusPointsIcon from '../../assets/plusPoints.svg?react';
-import PointsRecycleIcon from '../../assets/pointsRecycle.svg?react';
+import PointsManagementIcon from '../../../assets/pointsManagement.svg?react';
+import PlusPointsIcon from '../../../assets/plusPoints.svg?react';
+import PointsRecycleIcon from '../../../assets/pointsRecycle.svg?react';
 
 const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
   const [users, setUsers] = useState([]);
@@ -779,6 +779,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   type="number"
                   value={pointsAmount}
                   onChange={(e) => setPointsAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   placeholder="输入分配点数"
                   style={styles.input}
                   min="0"
@@ -833,6 +834,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   type="number"
                   value={recallAmount}
                   onChange={(e) => setRecallAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   placeholder="输入回收点数"
                   style={styles.input}
                   min="0"
@@ -945,6 +947,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   type="number"
                   value={batchAmount}
                   onChange={(e) => setBatchAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   placeholder="输入分配点数"
                   style={styles.input}
                   min="0"
@@ -1061,6 +1064,7 @@ const PointsManagement = ({ organizationId, eventId, onClose, onUpdate }) => {
                   type="number"
                   value={batchRecallAmount}
                   onChange={(e) => setBatchRecallAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   placeholder="输入回收点数"
                   style={styles.input}
                   min="0"

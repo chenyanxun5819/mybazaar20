@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
-import { safeFetch } from '../../services/safeFetch';
+import { safeFetch } from '../../../services/safeFetch';
 
 const DepartmentManagement = ({ organizationId, eventId, onClose }) => {
   const [departments, setDepartments] = useState([]);

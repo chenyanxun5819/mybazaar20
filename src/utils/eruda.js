@@ -61,16 +61,40 @@ export const enableEruda = async () => {
 };
 
 export const disableEruda = () => {
-  if (!canUseDom() || !window.eruda) return;
+  if (!canUseDom()) return;
 
   try {
-    if (window.eruda.destroy) {
-      window.eruda.destroy();
+    const eruda = window.eruda;
+    if (!eruda) {
+      window.__MYBAZAAR_ERUDA_ENABLED__ = false;
+      return;
+    }
+
+    // 安全地检查 destroy 方法是否存在且可调用
+    if (typeof eruda.destroy === 'function') {
+      try {
+        eruda.destroy();
+      } catch (destroyError) {
+        console.debug('[Eruda] destroy 调用异常（已忽略）:', destroyError?.message);
+      }
+    }
+    
+    // 尝试隐藏面板作为备选方案
+    if (typeof eruda.hide === 'function') {
+      try {
+        eruda.hide();
+      } catch (hideError) {
+        console.debug('[Eruda] hide 调用异常（已忽略）:', hideError?.message);
+      }
     }
   } catch (error) {
-    console.warn('[Eruda] 关闭失败:', error?.message || error);
+    console.debug('[Eruda] 关闭过程出现异常（已忽略）:', error?.message || error);
   } finally {
     window.__MYBAZAAR_ERUDA_ENABLED__ = false;
+    // 清理引用，防止内存泄漏
+    if (window.eruda && !window.eruda.destroy) {
+      delete window.eruda;
+    }
   }
 };
 

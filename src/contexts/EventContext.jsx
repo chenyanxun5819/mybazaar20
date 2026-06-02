@@ -1,6 +1,6 @@
 ﻿// src/contexts/EventContext.jsx
 // ✅ 已更新：添加对 Manager 路由和 Login 路由的支持
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { db } from '../config/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { safeFetch } from '../services/safeFetch';
@@ -25,6 +25,9 @@ export const EventProvider = ({ children }) => {
   const [event, setEvent] = useState(null);
   const [orgCode, setOrgCode] = useState(null);
   const [eventCode, setEventCode] = useState(null);
+  
+  // ✅ 新增：用于管理异步操作生命周期，允许在卸载或登出时取消
+  const abortControllerRef = useRef(null);
 
   const withTimeout = (promise, ms, label) => {
     let timeoutId;
@@ -49,38 +52,18 @@ export const EventProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    // ✅ 新增：为这个 provider 实例创建 AbortController
+    abortControllerRef.current = new AbortController();
     parseUrlAndLoadData();
-  }, []);
-
-  // ✅ 动态更新 favicon 和页面标题（跟随 Event Logo）
-  useEffect(() => {
-    if (!event) return;
-
-    // 更新页面标题
-    const eventName = event.eventName?.['zh-CN'] || event.eventName?.['en-US'] || event.eventCode || 'MyBazaar';
-    document.title = `${eventName} - MyBazaar`;
-
-    // 更新 favicon
-    const logoUrl = event.logoUrl;
-    if (logoUrl) {
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.head.appendChild(link);
-      }
-      link.href = logoUrl;
-    }
-  }, [event]);
-
-  useEffect(() => {
-    const enabled = Boolean(event?.erudaSettings?.enabled);
-    syncErudaVisibility(enabled);
 
     return () => {
+      // ✅ 新增：卸载时取消所有进行中的操作
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       syncErudaVisibility(false);
     };
-  }, [event?.erudaSettings?.enabled]);
+  }, []);
 
   const parseUrlAndLoadData = async () => {
     try {

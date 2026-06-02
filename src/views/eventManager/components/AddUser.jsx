@@ -1,18 +1,18 @@
 ﻿import { useState, useEffect } from 'react';
-import { db } from '../../config/firebase';
+import { db } from '../../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { safeFetch } from '../../services/safeFetch';
+import { safeFetch } from '../../../services/safeFetch';
 
 // 🆕 导入角色对应的 SVG 图标
-import ChalkboardUserIcon from '../../assets/chalkboard-user.svg?react';
-import UsersGearIcon from '../../assets/users-gear.svg?react';
-import UserSalaryIcon from '../../assets/user-salary.svg?react';
-import EmployeeManIcon from '../../assets/employee-man.svg?react';
-import StoreBuyerIcon from '../../assets/store-buyer.svg?react';
-import UsersIcon from '../../assets/users.svg?react';
-import MoneyCheckEditIcon from '../../assets/money-check-edit (1).svg?react';
-import AuditorIcon from '../../assets/auditor.svg?react';
+import ChalkboardUserIcon from '../../../assets/chalkboard-user.svg?react';
+import UsersGearIcon from '../../../assets/users-gear.svg?react';
+import UserSalaryIcon from '../../../assets/user-salary.svg?react';
+import EmployeeManIcon from '../../../assets/employee-man.svg?react';
+import StoreBuyerIcon from '../../../assets/store-buyer.svg?react';
+import UsersIcon from '../../../assets/users.svg?react';
+import MoneyCheckEditIcon from '../../../assets/money-check-edit (1).svg?react';
+import AuditorIcon from '../../../assets/auditor.svg?react';
 
 /**
  * 通用的用户创建组件

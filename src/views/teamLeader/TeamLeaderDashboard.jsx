@@ -451,14 +451,28 @@ const TeamLeaderDashboard = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      // 第一步：清理本地存储和状态，停止所有监听器
+      console.log('[SM Dashboard] 开始登出流程...');
+      
+      // 立即清空状态以停止所有正在进行的操作
+      setCustomers([]);
+      setTeamMembers([]);
+      setTransactions([]);
+      
+      // 清理本地存储
       localStorage.removeItem('teamLeaderInfo');
       localStorage.removeItem('currentUser');
-      console.log('[SM Dashboard] 用户已登出');
+      
+      // 第二步：退出 Firebase 认证
+      await signOut(auth);
+      
+      console.log('[SM Dashboard] 用户已成功登出');
+      
+      // 第三步：导航回登录页
       navigate(`/login/${orgEventCode}`);
     } catch (error) {
-      console.error('[SM Dashboard] 登出失败:', error);
-      window.mybazaarShowToast('登出失败，请重试');
+      console.error('[SM Dashboard] 登出失败:', error.message || error);
+      window.mybazaarShowToast?.('登出失败，请重试');
     }
   };
 

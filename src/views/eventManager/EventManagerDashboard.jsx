@@ -5,11 +5,12 @@ import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore'
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext'; // 🆕 導入 AuthContext
 import { useEvent } from '../../contexts/EventContext'; // 🆕 導入 EventContext
-import AddUser from '../../components/eventManager/AddUser'; // 🆕 通用组件
-import BatchImportUser from '../../components/eventManager/BatchImportUser'; // 🆕 批量导入
-import UserList from '../../components/eventManager/UserList';
-import PointsManagement from '../../components/eventManager/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
-import DepartmentManagement from '../../components/eventManager/DepartmentManagement'; // 部门管理
+import AddUser from './components/AddUser'; // 🆕 通用组件
+import BatchImportUser from './components/BatchImportUser'; // 🆕 批量导入
+import StallRosterImportModal from './components/StallRosterImportModal'; // 攤位名冊匯入
+import UserList from './components/UserList';
+import PointsManagement from './components/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
+import DepartmentManagement from './components/DepartmentManagement'; // 部门管理
 import RoleSwitcher from '../../components/common/RoleSwitcher'; // 🆕 角色切换器
 import DashboardHeader from '../../components/common/DashboardHeader'; // 🆕 导入共用 header
 import DashboardFooter from '../../components/common/DashboardFooter'; // 🆕 导入共用 footer
@@ -112,6 +113,7 @@ const EventManagerDashboard = () => {
   const [eventId, setEventId] = useState('');
   const [showAddUser, setShowAddUser] = useState(false); // 🆕
   const [showBatchImport, setShowBatchImport] = useState(false); // 🆕 批量导入
+  const [showStallRosterImport, setShowStallRosterImport] = useState(false); // 攤位名冊匯入
   const [statistics, setStatistics] = useState({
     totalUsers: 0,
     totalEventManagers: 0,
@@ -183,7 +185,9 @@ const EventManagerDashboard = () => {
     部门: true,
     身份ID: true,
     角色: true,
-    可消费点数: true
+    可消费点数: true,
+    管理部门: true,
+    攤位名稱: true
   });
 
   // 🆕 計算已被其他 Team Leader 佔用的部門
@@ -900,6 +904,15 @@ const EventManagerDashboard = () => {
           <UsersMedicalIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
           批量导入用户
         </button>
+        {/* 攤位名冊匯入按鈕 */}
+        <button
+          style={styles.primaryButton}
+          onClick={() => setShowStallRosterImport(true)}
+          title="攤位名冊匯入"
+        >
+          <UsersMedicalIcon style={{ width: '20px', height: '20px', marginRight: '0.5rem' }} />
+          攤位名冊匯入
+        </button>
         <button
           style={styles.primaryButton}
           onClick={() => setShowDepartmentManagement(true)}
@@ -1018,7 +1031,7 @@ const EventManagerDashboard = () => {
           </div>
 
           {/* 列显示选择器 */}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', zIndex: 100 }}>
             <button
               onClick={() => setShowColumnSelector(!showColumnSelector)}
               style={{
@@ -1050,7 +1063,7 @@ const EventManagerDashboard = () => {
                 padding: '1rem',
                 minWidth: '200px',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                zIndex: 10
+                zIndex: 1000
               }}>
                 {Object.keys(visibleColumns).map(column => (
                   <label key={column} style={{
@@ -1136,6 +1149,12 @@ const EventManagerDashboard = () => {
                       可消费点数 {sortConfig.key === 'customerAvailablePoints' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
                   )}
+                  {visibleColumns.管理部门 && (
+                    <th style={styles.tableHeaderCell}>管理部门</th>
+                  )}
+                  {visibleColumns.攤位名稱 && (
+                    <th style={styles.tableHeaderCell}>摊位名称</th>
+                  )}
                   <th style={styles.tableHeaderCell}>操作</th>
                 </tr>
               </thead>
@@ -1200,6 +1219,22 @@ const EventManagerDashboard = () => {
                         <span style={styles.pointsValue}>
                           {user.customer?.pointsAccount?.availablePoints || 0}
                         </span>
+                      </td>
+                    )}
+                    {visibleColumns.管理部门 && (
+                      <td style={styles.tableCell}>
+                        {user.roles?.includes('teamLeader') && user.teamLeader?.managedDepartments?.length > 0
+                          ? user.teamLeader.managedDepartments.join(', ')
+                          : '-'}
+                      </td>
+                    )}
+                    {visibleColumns.攤位名稱 && (
+                      <td style={styles.tableCell}>
+                        {user.roles?.includes('merchantOwner')
+                          ? (user.merchantOwner?.stallName || '-')
+                          : user.roles?.includes('merchantAsist')
+                            ? (user.merchantAsist?.stallName || '-')
+                            : '-'}
                       </td>
                     )}
                     <td style={styles.tableCell}>
@@ -1299,6 +1334,16 @@ const EventManagerDashboard = () => {
         />
       )}
 
+      {/* 攤位名冊匯入 */}
+      {showStallRosterImport && (
+        <StallRosterImportModal
+          organizationId={organizationId}
+          eventId={eventId}
+          onClose={() => setShowStallRosterImport(false)}
+          onSuccess={loadDashboardData}
+        />
+      )}
+
       {/* 🔄 重命名：UserManagement → PointsManagement */}
       {showUserManagement && (
         <PointsManagement
@@ -1394,6 +1439,7 @@ const EventManagerDashboard = () => {
                   type="number"
                   value={grantAmount}
                   onChange={(e) => setGrantAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   style={styles.formInput}
                   placeholder="请输入赠送点数"
                   min="1"
