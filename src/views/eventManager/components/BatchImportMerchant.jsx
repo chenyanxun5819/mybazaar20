@@ -86,7 +86,7 @@ const parseRosterExcel = async (file) => {
 
     if (normalizedRole === 'merchantOwner') {
       if (stallsMap[stallName].owner) {
-        globalErrors.push(`攤位「${stallName}」有多個 merchantOwner（第${stallsMap[stallName].owner.lineNo}行 & 第${lineNo}行），每攤位只能有一位`);
+        globalErrors.push(`攤位「${stallName}」已有 merchantOwner，重複定義：${phoneNumber}`);
       } else {
         stallsMap[stallName].owner = person;
       }
@@ -125,7 +125,7 @@ const downloadTemplate = async () => {
 // ================================================================
 // 主組件
 // ================================================================
-const StallRosterImportModal = ({ organizationId, eventId, onClose, onSuccess }) => {
+const BatchImportMerchant = ({ organizationId, eventId, onClose, onSuccess }) => {
   const [step, setStep] = useState(1); // 1=上傳, 2=預覽, 3=結果
   const [file, setFile] = useState(null);
   const [stallsMap, setStallsMap] = useState({});
@@ -258,35 +258,53 @@ const StallRosterImportModal = ({ organizationId, eventId, onClose, onSuccess })
     }
   };
 
-  // ── Step 3 動作 ────────────────────────────────────────────
+  // ── Step 2 動作 ────────────────────────────────────────────
   const handleImport = async () => {
     setImporting(true);
     try {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
 
-      const stallsArray = Object.values(stallsMap).map(({ stallName, owner, asists }) => ({
+      const stalls = Object.values(stallsMap).map(({ stallName, owner, asists }) => ({
         stallName,
-        owner: { phoneNumber: owner.phoneNumber, chineseName: owner.chineseName, englishName: owner.englishName },
-        asists: asists.map(({ phoneNumber, chineseName, englishName }) => ({ phoneNumber, chineseName, englishName }))
+        owner,
+        asists
       }));
 
       const response = await safeFetch('/api/importStallRosterHttp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-        body: JSON.stringify({ organizationId, eventId, stalls: stallsArray })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          stalls
+        })
       });
 
-      const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || `匯入失敗（HTTP ${response.status}）`);
+        const errorText = await response.text();
+        let errorMessage = `匯入失敗（HTTP ${response.status}）`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          if (response.status === 502 || response.status === 504) {
+            errorMessage = '服務器處理超時，請稍後重試';
+          }
+        }
+        throw new Error(errorMessage);
       }
 
+      const result = await response.json();
       setImportResult(result);
       setStep(3);
       if (onSuccess) onSuccess();
     } catch (err) {
-      window.mybazaarShowToast?.(`匯入失敗：${err.message}`);
+      console.error('匯入失敗:', err);
+      setParseErrors([err.message]);
     } finally {
       setImporting(false);
     }
@@ -325,6 +343,7 @@ const StallRosterImportModal = ({ organizationId, eventId, onClose, onSuccess })
                   <li>每個攤位 <strong>必須有且只有一位</strong> merchantOwner，助理最多 5 名</li>
                   <li>電話格式：馬來西亞號碼，如 <code>0123456789</code> 或 <code>+60123456789</code></li>
                   <li>不存在的電話號碼將自動建立新帳號（identityTag = external）</li>
+                  <li>新建立的帳號將自動新增 <strong>customer 角色</strong>，可直接參與消費交易</li>
                 </ul>
               </div>
 
@@ -498,4 +517,4 @@ const StallRosterImportModal = ({ organizationId, eventId, onClose, onSuccess })
   );
 };
 
-export default StallRosterImportModal;
+export default BatchImportMerchant;

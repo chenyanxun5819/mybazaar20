@@ -4089,7 +4089,7 @@ exports.importStallRosterHttp = onRequest({ region: 'asia-southeast1', timeoutSe
       console.log(`[importStallRosterHttp] Auth 完成: 新建=${[...e164ToUid.values()].filter(v => v.isNew).length}, 既有=${[...e164ToUid.values()].filter(v => !v.isNew).length}`);
 
       // ── Step 3: Parallel read existing Firestore user docs ────────────────
-      const usersCol = eventRef.collection('users');
+      const usersCol = db.collection('users'); // ✅ 使用全局 /users collection，不是 event subcollection
       const existingUids = [...e164ToUid.values()].filter(v => !v.isNew).map(v => v.authUid);
       const existingDataMap = new Map();
       if (existingUids.length > 0) {
@@ -4103,14 +4103,54 @@ exports.importStallRosterHttp = onRequest({ region: 'asia-southeast1', timeoutSe
         const batch = db.batch();
         for (const [e164, { authUid }] of newEntries) {
           const info = phoneInfoMap.get(e164) || {};
-          const roles = [...(info.roles || new Set())];
+          const roles = [...(info.roles || new Set()), 'customer']; // ✅ 新增 customer 角色
           const userDoc = {
             userId: authUid, authUid, roles, identityTag: 'external',
             basicInfo: { phoneNumber: e164, chineseName: info.chineseName || '', englishName: info.englishName || '', hasDefaultPassword: false, isFirstLogin: false, passwordLastChanged: null, transactionPinHash: null, transactionPinSalt: null, pinFailedAttempts: 0, pinLockedUntil: null, pinLastChanged: null, isPhoneVerified: true },
             identityInfo: { identityId: `ext_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`, identityName: '外部人員', identityNameEn: 'External', department: '未分配' },
             activityData: { joinedAt: now, lastActiveAt: now, participationStatus: 'active' },
             accountStatus: { status: 'active', mustChangePassword: false, createdAt: now, updatedAt: now },
-            metadata: { registrationSource: 'stall_roster_import', operatorUid: callerUid }
+            metadata: { registrationSource: 'stall_roster_import', operatorUid: callerUid },
+            // ✅ 初始化 customer 子物件
+            customer: {
+              pointsAccount: {
+                availablePoints: 0,
+                reservedPoints: 0,
+                totalReceived: 0,
+                totalSpent: 0,
+                totalTransferredOut: 0,
+                totalTransferredIn: 0,
+                allocatedPoints: 0,
+                grantedPoints: 0
+              },
+              cashAccount: {
+                totalAllocatedCash: 0,
+                pendingCash: 0,
+                confirmedCash: 0,
+                emAllocatedCash: 0,
+                tlAllocatedCash: 0,
+                lastAllocatedAt: null,
+                lastConfirmedAt: null
+              },
+              qrCodeData: {
+                type: 'CUSTOMER_RECEIVE_POINTS',
+                version: '1.0',
+                userId: authUid,
+                eventId: eventId,
+                organizationId: organizationId,
+                generatedAt: now
+              },
+              stats: {
+                transactionCount: 0,
+                merchantPaymentCount: 0,
+                merchantsVisited: [],
+                pointCardsRedeemed: 0,
+                pointCardsTopupAmount: 0,
+                transfersSent: 0,
+                transfersReceived: 0,
+                lastActivityAt: null
+              }
+            }
           };
           if (roles.includes('merchantOwner')) userDoc.merchantOwner = { merchantId: null, stallName: null, assignedAt: null, assignedBy: null, permissions: { canViewAllTransactions: true, canEditProfile: true, canToggleStatus: true, canRefundTransactions: true, canCancelPending: true, canManageAsists: true }, statistics: { totalRevenue: 0, transactionCount: 0, totalCollected: 0, asistsCollected: 0, lastSyncAt: null } };
           if (roles.includes('merchantAsist')) userDoc.merchantAsist = { merchantId: null, merchantOwnerId: null, stallName: null, permissions: { canCollectPayments: true, canViewOwnTransactions: true, canCancelPending: true, cannotViewAllTransactions: true, cannotEditProfile: true, cannotRefund: true }, statistics: { totalCollected: 0, transactionCount: 0, lastCollectionAt: null, todayCollected: 0, todayTransactionCount: 0 }, assignmentInfo: { assignedAt: null, assignedBy: null, isActive: true } };
@@ -4135,10 +4175,22 @@ exports.importStallRosterHttp = onRequest({ region: 'asia-southeast1', timeoutSe
           const info = phoneInfoMap.get(e164) || {};
           const existingData = existingDataMap.get(authUid) || {};
           const roles = [...(info.roles || new Set())];
+          // ✅ 新增 customer 角色（如果還沒有）
+          if (!roles.includes('customer')) roles.push('customer');
           const payload = { updatedAt: now, roles: admin.firestore.FieldValue.arrayUnion(...roles) };
           if (roles.includes('merchantOwner') && !existingData.merchantOwner) payload.merchantOwner = { merchantId: null, stallName: null, assignedAt: null, assignedBy: null, permissions: { canViewAllTransactions: true, canEditProfile: true, canToggleStatus: true, canRefundTransactions: true, canCancelPending: true, canManageAsists: true }, statistics: { totalRevenue: 0, transactionCount: 0, totalCollected: 0, asistsCollected: 0, lastSyncAt: null } };
           if (roles.includes('merchantAsist') && !existingData.merchantAsist) payload.merchantAsist = { merchantId: null, merchantOwnerId: null, stallName: null, permissions: { canCollectPayments: true, canViewOwnTransactions: true, canCancelPending: true, cannotViewAllTransactions: true, cannotEditProfile: true, cannotRefund: true }, statistics: { totalCollected: 0, transactionCount: 0, lastCollectionAt: null, todayCollected: 0, todayTransactionCount: 0 }, assignmentInfo: { assignedAt: null, assignedBy: null, isActive: true } };
-          await usersCol.doc(authUid).update(payload);
+          // ✅ 初始化 customer 子物件（如果還沒有）
+          if (!existingData.customer) {
+            payload.customer = {
+              pointsAccount: { availablePoints: 0, reservedPoints: 0, totalReceived: 0, totalSpent: 0, totalTransferredOut: 0, totalTransferredIn: 0, allocatedPoints: 0, grantedPoints: 0 },
+              cashAccount: { totalAllocatedCash: 0, pendingCash: 0, confirmedCash: 0, emAllocatedCash: 0, tlAllocatedCash: 0, lastAllocatedAt: null, lastConfirmedAt: null },
+              qrCodeData: { type: 'CUSTOMER_RECEIVE_POINTS', version: '1.0', userId: authUid, eventId: eventId, organizationId: organizationId, generatedAt: now },
+              stats: { transactionCount: 0, merchantPaymentCount: 0, merchantsVisited: [], pointCardsRedeemed: 0, pointCardsTopupAmount: 0, transfersSent: 0, transfersReceived: 0, lastActivityAt: null }
+            };
+          }
+          // ✅ 使用 .set(..., { merge: true }) 而不是 .update()，以處理文檔不存在的情況
+          await usersCol.doc(authUid).set(payload, { merge: true });
           updatedUsers++;
         }));
         console.log(`[importStallRosterHttp] 既有用戶更新完成: ${existingEntries.length}`);

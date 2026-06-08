@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext'; // 🆕 導入 AuthContext
 import { useEvent } from '../../contexts/EventContext'; // 🆕 導入 EventContext
 import AddUser from './components/AddUser'; // 🆕 通用组件
 import BatchImportUser from './components/BatchImportUser'; // 🆕 批量导入
-import StallRosterImportModal from './components/StallRosterImportModal'; // 攤位名冊匯入
+import BatchImportMerchant from './components/BatchImportMerchant'; // 攤位名冊匯入
 import UserList from './components/UserList';
 import PointsManagement from './components/PointsManagement'; // 🔄 重命名：UserManagement → PointsManagement
 import DepartmentManagement from './components/DepartmentManagement'; // 部门管理
@@ -1336,7 +1336,7 @@ const EventManagerDashboard = () => {
 
       {/* 攤位名冊匯入 */}
       {showStallRosterImport && (
-        <StallRosterImportModal
+        <BatchImportMerchant
           organizationId={organizationId}
           eventId={eventId}
           onClose={() => setShowStallRosterImport(false)}
