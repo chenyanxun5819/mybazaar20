@@ -147,6 +147,10 @@
         "function": "importStallRosterHttp"
       },
       {
+        "source": "/api/importStallRosterUsersHttp",
+        "function": "importStallRosterUsersHttp"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

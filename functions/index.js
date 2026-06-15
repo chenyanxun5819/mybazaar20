@@ -18,7 +18,7 @@ if (!admin.apps.length) {
 
 // 导入现有模块
 const { checkAdminExists, createInitialAdmin, setProjectInfo, getTotalCapital, getAssignedCapitalSum, createManager,
-  createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp, importStallRosterHttp } = require('./admin');
+  createUserByEventManagerHttp, deleteEventHttp, checkDuplicateUsers, addDepartment, deleteDepartment, reorderDepartments, departmentsHttp, batchImportUsersHttp, updateUserRoles, createEventByPlatformAdmin, createEventByPlatformAdminHttp, allocatePointsHttp, recallPointsHttp, submitCashToFinanceHttp, importStallRosterHttp, importStallRosterUsersHttp } = require('./admin');
 const { loginUniversalHttp } = require('./auth/loginUniversalHttp');
 const { resolveOrgEventHttp } = require('./auth/resolveOrgEventHttp');
 const { sendOtpHttp, verifyOtpHttp } = require('./otpVerify');
@@ -107,6 +107,7 @@ exports.departmentsHttp = departmentsHttp;
 exports.batchImportUsersHttp = batchImportUsersHttp;
 exports.updateUserRoles = updateUserRoles;
 exports.importStallRosterHttp = importStallRosterHttp;
+exports.importStallRosterUsersHttp = importStallRosterUsersHttp;
 exports.allocatePointsHttp = allocatePointsHttp;
 exports.recallPointsHttp = recallPointsHttp;
 exports.loginUniversalHttp = loginUniversalHttp;

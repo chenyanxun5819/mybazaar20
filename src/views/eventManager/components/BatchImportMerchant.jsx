@@ -34,10 +34,13 @@ const parseRosterExcel = async (file) => {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
+  console.log('[parseRosterExcel] 總行數:', rows.length);
   if (rows.length < 2) throw new Error('檔案內容為空，請確認格式正確');
 
   // 找列標頭（第一列）
   const headerRow = rows[0].map((h) => String(h).trim().toLowerCase());
+  console.log('[parseRosterExcel] 檢測到的表頭:', headerRow);
+  
   const colIdx = {
     phoneNumber: headerRow.findIndex((h) => /phone|電話|电话/.test(h)),
     stallName:   headerRow.findIndex((h) => /stall|攤位|摊位/.test(h)),
@@ -45,6 +48,8 @@ const parseRosterExcel = async (file) => {
     chineseName: headerRow.findIndex((h) => /chinese|中文|中名/.test(h)),
     englishName: headerRow.findIndex((h) => /english|英文|英名/.test(h)),
   };
+
+  console.log('[parseRosterExcel] 列索引:', colIdx);
 
   if (colIdx.phoneNumber < 0) throw new Error('找不到「電話 / Phone」列，請使用標準模板');
   if (colIdx.stallName < 0) throw new Error('找不到「攤位名稱 / Stall Name」列，請使用標準模板');
@@ -99,6 +104,16 @@ const parseRosterExcel = async (file) => {
   Object.values(stallsMap).forEach(({ stallName, owner, asists }) => {
     if (!owner) globalErrors.push(`攤位「${stallName}」缺少 merchantOwner`);
     if (asists.length > 5) globalErrors.push(`攤位「${stallName}」助理超過 5 名（目前 ${asists.length} 名）`);
+  });
+
+  console.log('[parseRosterExcel] 解析完成:', {
+    攤位數: Object.keys(stallsMap).length,
+    錯誤數: globalErrors.length,
+    攤位詳情: Object.values(stallsMap).map(s => ({
+      攤位: s.stallName,
+      攤主: s.owner?.phoneNumber,
+      助理數: s.asists.length
+    }))
   });
 
   return { stallsMap, errors: globalErrors };
@@ -235,24 +250,39 @@ const BatchImportMerchant = ({ organizationId, eventId, onClose, onSuccess }) =>
   const handleFileChange = (e) => {
     const f = e.target.files?.[0];
     if (f) {
+      console.log('[BatchImportMerchant] 選擇文件:', f.name, '大小:', f.size, 'bytes');
       setFile(f);
       setParseErrors([]);
       setStallsMap({});
+      setStep(1); // 確保回到步驟1
     }
+    // 重置 input，允許重新選擇同一個文件
+    e.target.value = '';
   };
 
   const handleParse = async () => {
     if (!file) return;
     setParseLoading(true);
+    setParseErrors([]); // 清空之前的错误
+    console.log('[BatchImportMerchant] 開始解析文件:', file.name);
     try {
       const { stallsMap: sm, errors } = await parseRosterExcel(file);
+      console.log('[BatchImportMerchant] 解析結果:', { 
+        攤位數量: Object.keys(sm).length, 
+        錯誤數量: errors.length,
+        攤位列表: Object.keys(sm)
+      });
       setStallsMap(sm);
       setParseErrors(errors);
       if (errors.length === 0 && Object.keys(sm).length > 0) {
+        console.log('[BatchImportMerchant] ✅ 解析成功，進入預覽步驟');
         setStep(2);
+      } else {
+        console.warn('[BatchImportMerchant] ⚠️ 解析失敗或無數據:', errors);
       }
     } catch (err) {
-      setParseErrors([err.message]);
+      console.error('[BatchImportMerchant] ❌ 解析異常:', err);
+      setParseErrors([`解析失敗: ${err.message}`]);
     } finally {
       setParseLoading(false);
     }
@@ -261,17 +291,30 @@ const BatchImportMerchant = ({ organizationId, eventId, onClose, onSuccess }) =>
   // ── Step 2 動作 ────────────────────────────────────────────
   const handleImport = async () => {
     setImporting(true);
+    setParseErrors([]); // 清空之前的错误
+    console.log('[BatchImportMerchant] 開始匯入，攤位數:', Object.keys(stallsMap).length);
+    
     try {
       const auth = getAuth();
       const idToken = await auth.currentUser.getIdToken();
+      console.log('[BatchImportMerchant] Token 獲取成功');
 
-      const stalls = Object.values(stallsMap).map(({ stallName, owner, asists }) => ({
+      const stallsArray = Object.values(stallsMap).map(({ stallName, owner, asists }) => ({
         stallName,
-        owner,
-        asists
+        owner: { phoneNumber: owner.phoneNumber, chineseName: owner.chineseName, englishName: owner.englishName },
+        asists: asists.map(({ phoneNumber, chineseName, englishName }) => ({ phoneNumber, chineseName, englishName }))
       }));
 
-      const response = await safeFetch('/api/importStallRosterHttp', {
+      console.log('[BatchImportMerchant] 準備發送請求:', { 
+        organizationId, 
+        eventId, 
+        攤位數: stallsArray.length,
+        第一個攤位: stallsArray[0]
+      });
+
+      // ── Step 1: 先導入用戶到 users 集合 ────────────────────────────
+      console.log('[BatchImportMerchant] Step 1: 開始導入用戶...');
+      const usersResponse = await safeFetch('/api/importStallRosterUsersHttp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,31 +323,84 @@ const BatchImportMerchant = ({ organizationId, eventId, onClose, onSuccess }) =>
         body: JSON.stringify({
           organizationId,
           eventId,
-          stalls
+          stalls: stallsArray
         })
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `匯入失敗（HTTP ${response.status}）`;
+      if (!usersResponse.ok) {
+        const errorText = await usersResponse.text();
+        console.error('[BatchImportMerchant] ❌ 用戶導入 HTTP 錯誤:', errorText);
+        let errorMessage = `用戶導入失敗（HTTP ${usersResponse.status}）`;
         try {
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.error || errorMessage;
         } catch {
-          if (response.status === 502 || response.status === 504) {
+          if (usersResponse.status === 502 || usersResponse.status === 504) {
             errorMessage = '服務器處理超時，請稍後重試';
           }
         }
         throw new Error(errorMessage);
       }
 
-      const result = await response.json();
-      setImportResult(result);
+      const usersResult = await usersResponse.json();
+      console.log('[BatchImportMerchant] ✅ 用戶導入成功:', usersResult);
+
+      // ── Step 2: 再導入攤位到 merchants 集合 ────────────────────────────
+      console.log('[BatchImportMerchant] Step 2: 開始導入攤位...');
+      const merchantsResponse = await safeFetch('/api/importStallRosterHttp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          organizationId,
+          eventId,
+          stalls: stallsArray
+        })
+      });
+
+      console.log('[BatchImportMerchant] 收到響應:', merchantsResponse.status, merchantsResponse.statusText);
+
+      if (!merchantsResponse.ok) {
+        const errorText = await merchantsResponse.text();
+        console.error('[BatchImportMerchant] ❌ 攤位導入 HTTP 錯誤:', errorText);
+        let errorMessage = `攤位導入失敗（HTTP ${merchantsResponse.status}）`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          if (merchantsResponse.status === 502 || merchantsResponse.status === 504) {
+            errorMessage = '服務器處理超時，請稍後重試';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      const merchantsResult = await merchantsResponse.json();
+      console.log('[BatchImportMerchant] ✅ 攤位導入成功:', merchantsResult);
+
+      // ── 合併結果 ────────────────────────────────────────────────
+      const combinedResult = {
+        success: true,
+        createdMerchants: merchantsResult.createdMerchants || 0,
+        createdUsers: usersResult.createdUsers || 0,
+        updatedUsers: usersResult.updatedUsers || 0,
+        errors: [
+          ...(usersResult.errors || []),
+          ...(merchantsResult.errors || [])
+        ],
+        message: `匯入完成：${merchantsResult.createdMerchants || 0} 個攤位，${usersResult.createdUsers || 0} 位新建用戶，${usersResult.updatedUsers || 0} 位更新用戶`
+      };
+
+      setImportResult(combinedResult);
       setStep(3);
       if (onSuccess) onSuccess();
     } catch (err) {
-      console.error('匯入失敗:', err);
-      setParseErrors([err.message]);
+      console.error('[BatchImportMerchant] ❌ 匯入異常:', err);
+      // 保持在步骤2，显示错误
+      setParseErrors([`匯入失敗: ${err.message}`]);
+      // 不改变 step，保持在步骤2
     } finally {
       setImporting(false);
     }
@@ -446,6 +542,18 @@ const BatchImportMerchant = ({ organizationId, eventId, onClose, onSuccess }) =>
                   ))}
                 </div>
               ))}
+
+              {/* 錯誤顯示 */}
+              {parseErrors.length > 0 && (
+                <div style={styles.errorBox}>
+                  <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: '0.5rem' }}>
+                    ❌ 匯入失敗
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.875rem', color: '#991b1b' }}>
+                    {parseErrors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div style={styles.footer}>
